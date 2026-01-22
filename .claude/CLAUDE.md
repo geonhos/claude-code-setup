@@ -182,6 +182,26 @@ project/
 | TDD 워크플로우 | - | `/tdd_workflow` |
 | 커버리지 분석 | - | `/coverage_report` |
 | 테스트 실패 복구 | `qa-healer` | - |
+| 보안 코드 리뷰 | `security-analyst` | - |
+| 취약점 분석 | `security-analyst` | - |
+
+### 보안 검토 규칙
+
+**규칙:**
+- 새 기능 배포 전 → `security-analyst` agent로 보안 검토 필수
+- 인증/인가 로직 변경 시 → `security-analyst` agent 사용 필수
+- 외부 입력 처리 코드 작성 시 → OWASP Top 10 검토
+
+**Security Analyst 활용 시나리오:**
+
+| 시나리오 | 검토 항목 |
+|----------|----------|
+| API 엔드포인트 추가 | 인증, 인가, 입력 검증, Rate Limiting |
+| 사용자 입력 처리 | Injection, XSS, CSRF 방지 |
+| 인증 시스템 구현 | 세션 관리, 비밀번호 정책, MFA |
+| 외부 서비스 연동 | SSRF, 시크릿 관리, TLS |
+| 파일 업로드 기능 | 파일 타입 검증, 저장 경로, 실행 방지 |
+| 데이터베이스 작업 | SQL Injection, 권한 분리, 암호화 |
 
 ### Cross-LLM 검증
 
@@ -297,6 +317,13 @@ Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>
 1. ✅ Ensure all tests pass
 2. ✅ Update documentation if needed
 3. ✅ Verify no sensitive data in commits
+4. ✅ Run `security-analyst` for security-critical changes
+
+**For security-critical features:**
+1. ✅ Use `security-analyst` agent for code review
+2. ✅ Check OWASP Top 10 vulnerabilities
+3. ✅ Scan dependencies for known CVEs
+4. ✅ Verify secure headers and configurations
 
 **For complex tasks:**
 1. ✅ Use `requirements-analyst` for unclear requirements

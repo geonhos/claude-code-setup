@@ -54,7 +54,7 @@ A pipeline-based multi-agent system for automated software development.
        └────────────────┴───────┬───────┴────────────────┘
                                 ▼
 ┌─────────────────────────────────────────────────────────────────────┐
-│                        QA PIPELINE                                   │
+│                        QA & SECURITY PIPELINE                        │
 ├─────────────────────────────────────────────────────────────────────┤
 │  ┌─────────────┐    ┌─────────────┐    ┌─────────────┐              │
 │  │ QA PLANNER  │ →  │ QA EXECUTOR │ →  │ QA HEALER   │              │
@@ -63,6 +63,14 @@ A pipeline-based multi-agent system for automated software development.
 │  │ - Strategy  │    │ - Analyze   │    │ - Fix       │              │
 │  │ - Priority  │    │ - Report    │    │ - Verify    │              │
 │  └─────────────┘    └─────────────┘    └─────────────┘              │
+│                                                                      │
+│  ┌─────────────────────────────────────────────────────┐            │
+│  │ SECURITY ANALYST                                     │            │
+│  │                                                      │            │
+│  │ - OWASP Top 10 review    - Dependency CVE scan      │            │
+│  │ - Auth/Authz analysis    - Threat modeling (STRIDE) │            │
+│  │ - Input validation       - Remediation guidance     │            │
+│  └─────────────────────────────────────────────────────┘            │
 └─────────────────────────────────────────────────────────────────────┘
                                 │
                                 ▼
@@ -93,16 +101,17 @@ A pipeline-based multi-agent system for automated software development.
 | AI Expert | `execution/ai-expert.md` | sonnet | Python, ML/DL, LLM, Data Pipeline |
 | Git Ops | `execution/git-ops.md` | haiku | Branch, Commit, PR, Merge |
 
-### Quality Agents (4)
+### Quality Agents (5)
 
 | Agent | File | Model | Role |
 |-------|------|-------|------|
 | QA Planner | `quality/qa-planner.md` | sonnet | Test strategy & test plan creation |
 | QA Executor | `quality/qa-executor.md` | sonnet | Test execution & result analysis |
 | QA Healer | `quality/qa-healer.md` | sonnet | Failure diagnosis & recovery |
+| Security Analyst | `quality/security-analyst.md` | sonnet | Security code review & vulnerability assessment |
 | Reporter | `quality/reporter.md` | haiku | Execution summary & report generation |
 
-**Total: 12 Agents**
+**Total: 13 Agents**
 
 ## Directory Structure
 
@@ -123,6 +132,7 @@ A pipeline-based multi-agent system for automated software development.
     ├── qa-planner.md                   # Test planning
     ├── qa-executor.md                  # Test execution
     ├── qa-healer.md                    # Failure recovery
+    ├── security-analyst.md             # Security code review
     └── reporter.md                     # Reporting
 ```
 
@@ -318,6 +328,7 @@ type AgentType =
   | 'qa-planner'
   | 'qa-executor'
   | 'qa-healer'
+  | 'security-analyst'
   | 'reporter';
 ```
 
@@ -367,6 +378,24 @@ User: "Add sentiment analysis to customer reviews"
 → QA Executor: Runs tests, validates model accuracy
 → QA Healer: (no failures)
 → Reporter: Reports accuracy metrics, API endpoints, UI components
+```
+
+### Example 4: Security Review for Payment Feature
+```
+User: "Review the payment module for security vulnerabilities"
+
+→ Requirements Analyst: Identifies scope (payment API, forms, data handling)
+→ Plan Architect: Creates security review task (complexity: moderate)
+→ Plan Feedback: Gemini confirms security focus areas
+→ Orchestrator: Dispatches to security-analyst
+→ Security Analyst:
+   - OWASP Top 10 review (finds SQL injection risk, missing CSRF protection)
+   - Auth/Authz analysis (session fixation vulnerability)
+   - Dependency scan (2 CVEs in payment library)
+   - Output: 5 findings (1 critical, 2 high, 2 medium)
+→ Backend-dev: Applies remediation (parameterized queries, CSRF tokens)
+→ QA Executor: Runs security regression tests
+→ Reporter: Documents vulnerabilities found, fixes applied, verification status
 ```
 
 ## Error Handling
