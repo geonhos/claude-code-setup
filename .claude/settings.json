@@ -1,3 +1,14 @@
 {
-  "plansDirectory": "./plans"
+  "plansDirectory": "./plans",
+  "permissions": {
+    "deny": [
+      "Bash(rm -rf:*)",
+      "Bash(sudo:*)",
+      "Bash(chmod 777:*)",
+      "Read(./.env)",
+      "Read(./.env.*)",
+      "Read(./secrets/**)",
+      "Read(**/*credentials*)"
+    ]
+  }
 }
