@@ -1,331 +1,100 @@
-# Development Guidelines
+# 개발 지침
 
-This document defines the development principles and best practices for all projects in this workspace.
+## 환경 설정
 
-## Dependency Management Principles
-
-### Core Rules
-
-1. **Minimize Local Dependencies**
-   - Avoid global package installations
-   - Keep system environment clean
-   - Prevent version conflicts between projects
-
-2. **Use Virtual Environments**
-   - Python: Always use `venv` or `virtualenv`
-   - Node.js: Use project-local `node_modules`
-   - Each project must have isolated dependencies
-
-3. **Lock Dependencies**
-   - Maintain version lock files
-   - Ensure reproducible builds
-   - Document all dependencies
-
-## Python Development
-
-### Virtual Environment Setup
-
-**Always create and activate venv before starting work:**
-
+### Python
 ```bash
-# Create virtual environment
 python -m venv .venv
-
-# Activate (macOS/Linux)
-source .venv/bin/activate
-
-# Activate (Windows)
-.venv\Scripts\activate
-
-# Verify activation
-which python  # Should point to .venv/bin/python
-```
-
-### Dependency Management
-
-```bash
-# Install packages (only in activated venv)
-pip install package-name
-
-# Lock dependencies
-pip freeze > requirements.txt
-
-# Install from requirements
+source .venv/bin/activate  # macOS/Linux
 pip install -r requirements.txt
 ```
 
-### Best Practices
-
-**✅ DO:**
-- Create `.venv` in project root
-- Add `.venv/` to `.gitignore`
-- Use `requirements.txt` or `pyproject.toml`
-- Use Poetry or pipenv for complex projects
-- Document Python version in README
-
-**❌ DON'T:**
-- Install packages globally with `pip install --user`
-- Mix system Python with project dependencies
-- Commit virtual environment to git
-- Use `sudo pip install`
-
-### Poetry (Recommended)
-
+### Node.js
 ```bash
-# Initialize project
-poetry init
-
-# Add dependency
-poetry add package-name
-
-# Install dependencies
-poetry install
-
-# Activate shell
-poetry shell
+npm install  # 로컬 설치만
+npx <tool>   # CLI 도구 실행
 ```
 
-## Node.js Development
+---
 
-### Package Management
+## Agent 사용 규칙
 
-```bash
-# Initialize project
-npm init -y
+### Git 작업
 
-# Install dependencies (local only)
-npm install package-name
+| 작업 | 도구 |
+|------|------|
+| Commit | `git-ops` 또는 `/git_commit` |
+| Branch | `git-ops` 또는 `/git_branch` |
+| PR | `/git_pr` |
+| 분석 | `/git_analyze` |
 
-# Use package manager lock files
-npm ci  # Use package-lock.json
-```
+### 복잡한 작업
 
-**✅ DO:**
-- Use `package-lock.json` or `yarn.lock`
-- Install locally: `npm install` (not `npm install -g`)
-- Use `npx` for CLI tools: `npx eslint .`
-
-**❌ DON'T:**
-- Install packages globally unless necessary
-- Commit `node_modules/` to git
-
-## Project Structure
-
-### Python Project
-
-```
-project/
-├── .venv/                 # Virtual environment (not in git)
-├── src/                   # Source code
-├── tests/                 # Tests
-├── requirements.txt       # Dependencies (pip)
-├── pyproject.toml        # Project config (Poetry)
-├── .gitignore            # Include .venv/
-└── README.md             # Setup instructions
-```
-
-### Node.js Project
-
-```
-project/
-├── node_modules/         # Dependencies (not in git)
-├── src/                  # Source code
-├── package.json          # Project config
-├── package-lock.json     # Lock file
-├── .gitignore           # Include node_modules/
-└── README.md            # Setup instructions
-```
-
-## Agent & Skill Usage Rules
-
-이 워크스페이스에서는 `.claude/agents/`와 `.claude/skills/`에 정의된 Agent와 Skill을 활용합니다.
-
-### Git 작업 규칙
-
-| 작업 | 사용할 도구 | 호출 방법 |
-|------|------------|----------|
-| Commit | git-ops agent 또는 /git_commit | Task tool 또는 Skill |
-| Branch 생성 | git-ops agent 또는 /git_branch | Task tool 또는 Skill |
-| PR 생성 | git-ops agent 또는 /git_pr | Task tool 또는 Skill |
-| 변경사항 분석 | /git_analyze | Skill |
-| 단순 status/diff | Bash 직접 실행 | 예외 허용 |
-
-**규칙:**
-- commit & push 요청 시 → `git-ops` agent 사용 권장
-- PR 생성 시 → `/git_pr` skill 사용 필수
-- 브랜치 전략 필요 시 → `git-ops` agent 사용 필수
-
-### 복잡한 작업 규칙
-
-| 작업 복잡도 | 사용할 Agent |
-|------------|-------------|
+| 상황 | Agent |
+|------|-------|
 | 요구사항 불명확 | `requirements-analyst` |
-| 실행 계획 필요 | `plan-architect` → `plan-feedback` |
-| 다중 도메인 작업 | `orchestrator` |
+| 계획 수립 필요 | `plan-architect` → `plan-feedback` |
+| 다중 도메인 | `orchestrator` |
 
-### 개발 작업 규칙
+### 개발 작업
 
 | 도메인 | Agent | Skill |
 |--------|-------|-------|
-| Python 프로젝트 초기화 | - | `/python_setup` |
-| FastAPI 프로젝트 | `ai-expert` | `/fastapi_setup` |
-| React 프로젝트 | `frontend-dev` | `/react_setup` |
-| Spring Boot 프로젝트 | `backend-dev` | `/spring_boot_setup` |
-| AI/ML 개발 | `ai-expert` | `/mlflow_setup`, `/langchain_setup` |
+| Python/FastAPI | `ai-expert` | `/fastapi_setup` |
+| React | `frontend-dev` | `/react_setup` |
+| Spring Boot | `backend-dev` | `/spring_boot_setup` |
+| AI/ML | `ai-expert` | `/mlflow_setup`, `/langchain_setup` |
 
-### 품질 관리 규칙
+### 품질 관리
 
 | 작업 | Agent | Skill |
 |------|-------|-------|
 | 테스트 계획 | `qa-planner` | `/test_plan_template` |
 | 테스트 실행 | `qa-executor` | `/test_runner` |
-| TDD 워크플로우 | - | `/tdd_workflow` |
-| 커버리지 분석 | - | `/coverage_report` |
-| 테스트 실패 복구 | `qa-healer` | - |
-| 보안 코드 리뷰 | `security-analyst` | - |
-| 취약점 분석 | `security-analyst` | - |
+| 테스트 복구 | `qa-healer` | - |
+| 보안 검토 | `security-analyst` | - |
+| 커버리지 | - | `/coverage_report` |
 
-### 보안 검토 규칙
+---
 
-**규칙:**
-- 새 기능 배포 전 → `security-analyst` agent로 보안 검토 필수
-- 인증/인가 로직 변경 시 → `security-analyst` agent 사용 필수
-- 외부 입력 처리 코드 작성 시 → OWASP Top 10 검토
+## 체크리스트
 
-**Security Analyst 활용 시나리오:**
+### 작업 시작 전
+- [ ] 가상환경 활성화
+- [ ] 의존성 설치 확인
+- [ ] 최신 코드 pull
+- [ ] Feature branch 생성
 
-| 시나리오 | 검토 항목 |
-|----------|----------|
-| API 엔드포인트 추가 | 인증, 인가, 입력 검증, Rate Limiting |
-| 사용자 입력 처리 | Injection, XSS, CSRF 방지 |
-| 인증 시스템 구현 | 세션 관리, 비밀번호 정책, MFA |
-| 외부 서비스 연동 | SSRF, 시크릿 관리, TLS |
-| 파일 업로드 기능 | 파일 타입 검증, 저장 경로, 실행 방지 |
-| 데이터베이스 작업 | SQL Injection, 권한 분리, 암호화 |
+### 커밋 전
+- [ ] 테스트 실행 (`/test_runner`)
+- [ ] 린터 실행
+- [ ] 변경사항 검토 (`/git_analyze`)
 
-### Cross-LLM 검증
+### 푸시 전
+- [ ] 모든 테스트 통과
+- [ ] 민감 정보 제외 확인
+- [ ] 보안 관련 변경 시 `security-analyst` 실행
 
-복잡한 계획(complexity >= moderate) 수립 시:
-```
-plan-architect → plan-feedback (Gemini CLI) → orchestrator
-```
+---
 
-## Git Best Practices
-
-### .gitignore Essentials
-
-```gitignore
-# Python
-.venv/
-__pycache__/
-*.pyc
-.pytest_cache/
-
-# Node.js
-node_modules/
-npm-debug.log
-
-# Environment
-.env
-.env.local
-```
-
-## Environment Variables
-
-### Management
-
-**✅ DO:**
-- Use `.env` files for local development
-- Provide `.env.example` template
-- Never commit `.env` to git
-- Use different .env for different environments
-
-**Example .env.example:**
-```bash
-# API Keys
-ANTHROPIC_API_KEY=your_api_key_here
-GITHUB_TOKEN=your_token_here
-
-# Database
-DATABASE_URL=postgresql://localhost/mydb
-
-# Environment
-ENVIRONMENT=development
-```
-
-## Code Quality Standards
-
-### Testing
-
-- Write tests for all new features
-- Use TDD workflow when appropriate
-- Maintain test coverage > 80%
-- Run tests before commits
-
-### Code Style
-
-- Follow language-specific style guides
-- Use linters and formatters
-- Configure pre-commit hooks
-- Keep code DRY (Don't Repeat Yourself)
-
-## Commit Guidelines
-
-> **권장**: `/git_commit` skill 또는 `git-ops` agent 사용
-
-Follow the structured commit message format:
+## 커밋 메시지 형식
 
 ```
-[Phase X] Summary
+[Phase X] 요약
 
-Section 1:
-- Change description
+섹션:
+- 변경 내용
 
-Section 2:
-- Change description
-
-Closes #issue_number
+Refs #이슈번호
 
 Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>
 ```
 
-### Skill/Agent 사용 예시
+---
 
-```bash
-# Skill 사용 (권장)
-/git_commit
+## 금지 사항
 
-# Agent 사용 (복잡한 커밋)
-→ git-ops agent 호출
-```
-
-## Reminders
-
-**Before starting work:**
-1. ✅ Activate virtual environment
-2. ✅ Check dependencies are installed
-3. ✅ Pull latest changes
-4. ✅ Create feature branch (`/git_branch` 또는 `git-ops`)
-
-**Before committing:**
-1. ✅ Run tests (`/test_runner`)
-2. ✅ Run linters
-3. ✅ Review changes (`/git_analyze`)
-4. ✅ Use `/git_commit` 또는 `git-ops` agent
-
-**Before pushing:**
-1. ✅ Ensure all tests pass
-2. ✅ Update documentation if needed
-3. ✅ Verify no sensitive data in commits
-4. ✅ Run `security-analyst` for security-critical changes
-
-**For security-critical features:**
-1. ✅ Use `security-analyst` agent for code review
-2. ✅ Check OWASP Top 10 vulnerabilities
-3. ✅ Scan dependencies for known CVEs
-4. ✅ Verify secure headers and configurations
-
-**For complex tasks:**
-1. ✅ Use `requirements-analyst` for unclear requirements
-2. ✅ Use `plan-architect` + `plan-feedback` for planning
-3. ✅ Use domain-specific agents (backend-dev, frontend-dev, ai-expert)
+- 전역 패키지 설치 (`pip install --user`, `npm install -g`)
+- `.venv/`, `node_modules/` 커밋
+- `.env` 파일 커밋
+- `sudo pip install`
