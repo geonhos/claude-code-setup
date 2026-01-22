@@ -1,0 +1,50 @@
+{
+  "name": "python_best_practices",
+  "version": "1.0.0",
+  "author": "cc-settings",
+  "description": "Performance optimization and best practices guide for Python/FastAPI applications",
+  "tags": [
+    "python",
+    "fastapi",
+    "performance",
+    "async",
+    "best-practices"
+  ],
+  "sections": [
+    {
+      "id": "async",
+      "title": "Async Patterns",
+      "impact": "CRITICAL",
+      "prefix": "async-"
+    },
+    {
+      "id": "db",
+      "title": "Database Optimization",
+      "impact": "CRITICAL",
+      "prefix": "db-"
+    },
+    {
+      "id": "api",
+      "title": "API Performance",
+      "impact": "HIGH",
+      "prefix": "api-"
+    },
+    {
+      "id": "memory",
+      "title": "Memory Management",
+      "impact": "MEDIUM",
+      "prefix": "memory-"
+    },
+    {
+      "id": "caching",
+      "title": "Caching Strategies",
+      "impact": "MEDIUM",
+      "prefix": "caching-"
+    }
+  ],
+  "references": [
+    "https://fastapi.tiangolo.com/",
+    "https://docs.python.org/3/library/asyncio.html",
+    "https://docs.sqlalchemy.org/"
+  ]
+}

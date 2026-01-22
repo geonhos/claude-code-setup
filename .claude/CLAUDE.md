@@ -40,9 +40,9 @@ npx <tool>   # CLI 도구 실행
 
 | 도메인 | Agent | Skill |
 |--------|-------|-------|
-| Python/FastAPI | `ai-expert` | `/fastapi_setup` |
+| Python/FastAPI | `ai-expert` | `/fastapi_setup`, `/python_best_practices` |
 | React | `frontend-dev` | `/react_setup`, `/react_best_practices` |
-| Spring Boot | `backend-dev` | `/spring_boot_setup` |
+| Spring Boot | `backend-dev` | `/spring_boot_setup`, `/spring_best_practices` |
 | AI/ML | `ai-expert` | `/mlflow_setup`, `/langchain_setup` |
 
 ### 품질 관리

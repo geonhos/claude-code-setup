@@ -199,4 +199,45 @@ After task completion, report:
 [ ] Transactional boundaries correct
 ```
 
+## Performance Optimization
+
+Reference `spring_best_practices` skill for detailed performance rules.
+
+### Critical Rules (Always Apply)
+```
+[ ] EntityGraph or JOIN FETCH for relationships
+[ ] DTOs for API responses (not entities)
+[ ] Pagination on collection endpoints
+[ ] @Transactional(readOnly=true) for read operations
+```
+
+### High Priority Rules
+```
+[ ] Batch operations for bulk inserts/updates
+[ ] Connection pool properly sized (HikariCP)
+[ ] open-in-view: false in production
+[ ] Async processing for non-blocking operations
+```
+
+### Quick Reference
+```java
+// N+1 prevention
+@EntityGraph(attributePaths = {"posts"})
+List<User> findAll();
+
+// DTO response
+public UserResponse getUser(Long id) {
+    return repository.findById(id)
+        .map(UserResponse::from)
+        .orElseThrow();
+}
+
+// Pagination
+Page<User> findAll(Pageable pageable);
+
+// Read-only transaction
+@Transactional(readOnly = true)
+public List<User> findAll() { ... }
+```
+
 Mindset: "Production code is not just code that works—it's code that can be trusted, maintained, and evolved."

@@ -275,4 +275,46 @@ After task completion, report:
 [ ] Tests cover edge cases
 ```
 
+## Performance Optimization
+
+Reference `python_best_practices` skill for detailed performance rules.
+
+### Critical Rules (Always Apply)
+```
+[ ] No blocking calls in async functions (use httpx, not requests)
+[ ] asyncio.gather for independent concurrent operations
+[ ] Eager loading (joinedload/selectinload) for relationships
+[ ] Connection pooling configured
+```
+
+### High Priority Rules
+```
+[ ] Pagination on list endpoints
+[ ] Generators for large data processing
+[ ] Caching for expensive computations (lru_cache, Redis)
+[ ] Background tasks for non-critical operations
+```
+
+### Quick Reference
+```python
+# Async HTTP (not requests)
+async with httpx.AsyncClient() as client:
+    response = await client.get(url)
+
+# Concurrent operations
+results = await asyncio.gather(
+    fetch_user(),
+    fetch_posts(),
+    fetch_comments()
+)
+
+# Eager loading (SQLAlchemy)
+select(User).options(joinedload(User.posts))
+
+# Function caching
+@lru_cache(maxsize=128)
+def expensive_calculation(n: int) -> int:
+    return sum(range(n))
+```
+
 Mindset: "Good AI code is not just code that trains—it's code that can be reproduced, monitored, and evolved."

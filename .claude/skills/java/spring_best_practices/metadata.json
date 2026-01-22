@@ -1,0 +1,50 @@
+{
+  "name": "spring_best_practices",
+  "version": "1.0.0",
+  "author": "cc-settings",
+  "description": "Performance optimization and best practices guide for Spring Boot applications",
+  "tags": [
+    "java",
+    "spring-boot",
+    "jpa",
+    "performance",
+    "best-practices"
+  ],
+  "sections": [
+    {
+      "id": "jpa",
+      "title": "JPA/Hibernate Optimization",
+      "impact": "CRITICAL",
+      "prefix": "jpa-"
+    },
+    {
+      "id": "api",
+      "title": "API Design",
+      "impact": "HIGH",
+      "prefix": "api-"
+    },
+    {
+      "id": "async",
+      "title": "Async Processing",
+      "impact": "HIGH",
+      "prefix": "async-"
+    },
+    {
+      "id": "caching",
+      "title": "Caching Strategies",
+      "impact": "MEDIUM",
+      "prefix": "caching-"
+    },
+    {
+      "id": "config",
+      "title": "Configuration Best Practices",
+      "impact": "MEDIUM",
+      "prefix": "config-"
+    }
+  ],
+  "references": [
+    "https://spring.io/guides",
+    "https://docs.spring.io/spring-boot/docs/current/reference/html/",
+    "https://hibernate.org/orm/documentation/"
+  ]
+}
