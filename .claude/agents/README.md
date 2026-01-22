@@ -25,6 +25,15 @@ A pipeline-based multi-agent system for automated software development.
                                 │
                                 ▼
 ┌─────────────────────────────────────────────────────────────────────┐
+│  2.5 PLAN FEEDBACK (Cross-LLM Validation)                            │
+│     Input: Execution plan                                            │
+│     Output: Validated/improved plan (via Gemini CLI)                 │
+│     - Skipped for simple plans                                       │
+│     - Iterates until score >= threshold                              │
+└─────────────────────────────────────────────────────────────────────┘
+                                │
+                                ▼
+┌─────────────────────────────────────────────────────────────────────┐
 │  3. ORCHESTRATOR                                                     │
 │     - Dispatches tasks to execution agents                           │
 │     - Monitors progress                                              │
@@ -66,12 +75,13 @@ A pipeline-based multi-agent system for automated software development.
 
 ## Agent Specifications
 
-### Pipeline Agents (3)
+### Pipeline Agents (4)
 
 | Agent | File | Model | Role |
 |-------|------|-------|------|
 | Requirements Analyst | `pipeline/requirements-analyst.md` | sonnet | Prompt refinement & clarification |
 | Plan Architect | `pipeline/plan-architect.md` | opus | Convert requirements to actionable plan |
+| Plan Feedback | `pipeline/plan-feedback.md` | sonnet | Cross-LLM plan validation via Gemini CLI |
 | Orchestrator | `pipeline/orchestrator.md` | sonnet | Task dispatch & monitoring |
 
 ### Execution Agents (4)
@@ -92,7 +102,7 @@ A pipeline-based multi-agent system for automated software development.
 | QA Healer | `quality/qa-healer.md` | sonnet | Failure diagnosis & recovery |
 | Reporter | `quality/reporter.md` | haiku | Execution summary & report generation |
 
-**Total: 11 Agents**
+**Total: 12 Agents**
 
 ## Directory Structure
 
@@ -102,6 +112,7 @@ A pipeline-based multi-agent system for automated software development.
 ├── pipeline/
 │   ├── requirements-analyst.md         # Prompt refinement
 │   ├── plan-architect.md               # Execution planning
+│   ├── plan-feedback.md                # Cross-LLM validation (Gemini)
 │   └── orchestrator.md                 # Task dispatch
 ├── execution/
 │   ├── backend-dev.md                  # Java/Spring Boot
@@ -142,6 +153,29 @@ output:
     critical_path: list[task_id]
     risk_areas: list
 ```
+
+### 2.5 Plan Feedback
+```yaml
+input:
+  execution_plan: from Plan Architect
+  requirements: from Requirements Analyst (for context)
+output:
+  feedback_score: number (1-10)
+  review_source: "gemini-cli"
+  strengths: list
+  improvements: list (area, suggestion, priority)
+  missing_tasks: list
+  dependency_issues: list
+  revised_plan: execution_plan (if score < threshold)
+  skip_reason: string (if complexity = simple)
+```
+
+**Conditional Execution Rules:**
+| Complexity | Action | Threshold |
+|------------|--------|-----------|
+| simple | Skip | - |
+| moderate | Review once | score >= 7 |
+| complex | Review + iterate | score >= 8, max 2 iterations |
 
 ### 3. Orchestrator
 ```yaml
@@ -272,9 +306,10 @@ interface AgentMessage {
   };
 }
 
-type AgentType = 
+type AgentType =
   | 'requirements-analyst'
   | 'plan-architect'
+  | 'plan-feedback'
   | 'orchestrator'
   | 'backend-dev'
   | 'frontend-dev'
@@ -294,6 +329,9 @@ User: "Add user authentication with JWT"
 
 → Requirements Analyst: Clarifies OAuth vs JWT, session handling
 → Plan Architect: Creates tasks for Backend (auth API), Frontend (login UI)
+→ Plan Feedback: Gemini reviews plan (score: 6/10)
+   - Missing: logout, auth middleware, protected routes
+   - Plan Architect revises plan (score: 8/10) ✓
 → Orchestrator: Dispatches to backend-dev, then frontend-dev
 → QA Planner: Creates test plan (security, validation, E2E)
 → QA Executor: Runs tests, reports 2 failures
@@ -306,7 +344,8 @@ User: "Add user authentication with JWT"
 User: "Fix the payment processing timeout issue"
 
 → Requirements Analyst: Identifies affected components
-→ Plan Architect: Creates investigation + fix tasks
+→ Plan Architect: Creates investigation + fix tasks (complexity: simple)
+→ Plan Feedback: Skipped (simple complexity)
 → Orchestrator: Dispatches to backend-dev
 → QA Planner: Creates regression test plan
 → QA Executor: Runs regression, finds 1 new failure
@@ -320,6 +359,9 @@ User: "Add sentiment analysis to customer reviews"
 
 → Requirements Analyst: Clarifies model requirements, accuracy targets
 → Plan Architect: Creates tasks for AI (model), Backend (API), Frontend (UI)
+→ Plan Feedback: Gemini reviews complex plan (score: 7/10)
+   - Suggests: add model versioning, fallback strategy
+   - Plan Architect revises (score: 9/10) ✓
 → Orchestrator: Dispatches to ai-expert, backend-dev, frontend-dev
 → QA Planner: Creates ML validation + integration test plan
 → QA Executor: Runs tests, validates model accuracy

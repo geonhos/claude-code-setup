@@ -8,7 +8,7 @@ Claude Code를 위한 커스텀 Agent 및 Skill 라이브러리입니다.
 
 | 항목 | 수량 | 설명 |
 |------|------|------|
-| **[Agents](./.claude/agents/README.md)** | 11개 | 특화된 작업을 수행하는 AI 에이전트 |
+| **[Agents](./.claude/agents/README.md)** | 12개 | 특화된 작업을 수행하는 AI 에이전트 |
 | **[Skills](./.claude/skills/README.md)** | 25개 | 재사용 가능한 워크플로우 템플릿 |
 
 ### 벤치마크 결과
@@ -48,7 +48,7 @@ Agent/Skill 사용 시 정확도: 4.5/5 (+50% 향상)
 
 ## Agents
 
-### Pipeline Agents (3)
+### Pipeline Agents (4)
 
 작업 흐름을 관리하는 에이전트
 
@@ -56,6 +56,7 @@ Agent/Skill 사용 시 정확도: 4.5/5 (+50% 향상)
 |-------|------|--------|
 | [`requirements-analyst`](./.claude/agents/pipeline/requirements-analyst.md) | 요구사항 분석 및 명확화 | 5/5 |
 | [`plan-architect`](./.claude/agents/pipeline/plan-architect.md) | 실행 계획 수립 | 5/5 |
+| [`plan-feedback`](./.claude/agents/pipeline/plan-feedback.md) | Cross-LLM 검증 (Gemini CLI) | 5/5 |
 | [`orchestrator`](./.claude/agents/pipeline/orchestrator.md) | 작업 조율 및 분배 | 4/5 |
 
 ### Execution Agents (4)
@@ -162,6 +163,7 @@ Agent/Skill 사용 시 정확도: 4.5/5 (+50% 향상)
 │   ├── pipeline/
 │   │   ├── requirements-analyst.md
 │   │   ├── plan-architect.md
+│   │   ├── plan-feedback.md
 │   │   └── orchestrator.md
 │   ├── execution/
 │   │   ├── backend-dev.md
@@ -231,10 +233,11 @@ Agent/Skill 사용 시 정확도: 4.5/5 (+50% 향상)
 1. /project_init              # 프로젝트 초기화
 2. requirements-analyst       # 요구사항 분석
 3. plan-architect            # 실행 계획 수립
-4. /fastapi_setup            # 백엔드 설정
-5. backend-dev               # API 개발
-6. /git_commit               # 커밋
-7. /git_pr                   # PR 생성
+4. plan-feedback             # Gemini CLI로 계획 검증
+5. /fastapi_setup            # 백엔드 설정
+6. backend-dev               # API 개발
+7. /git_commit               # 커밋
+8. /git_pr                   # PR 생성
 ```
 
 ### 2. 버그 수정

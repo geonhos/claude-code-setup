@@ -68,6 +68,86 @@ Produce execution plan:
 }
 ```
 
+## Complexity Assessment
+
+### Complexity Levels
+
+| Level | Criteria | Examples |
+|-------|----------|----------|
+| **simple** | Tasks ≤ 3 AND Agents = 1 AND Linear dependencies | Bug fix, single function, config change |
+| **moderate** | Tasks 4-8 OR Agents = 2 OR Parallel dependencies | Single feature (login, CRUD), API endpoint |
+| **complex** | Tasks > 8 OR Agents ≥ 3 OR External integrations OR AI/ML | Auth system, ML pipeline, multi-service |
+
+### Complexity Calculation
+
+```python
+def calculate_complexity(plan):
+    score = 0
+
+    # Task count (1 point each)
+    score += len(plan.tasks)
+
+    # Agent diversity (2 points each)
+    score += len(set(plan.agents)) * 2
+
+    # Parallel execution groups (1.5 points each)
+    score += len(plan.parallel_groups) * 1.5
+
+    # External integrations (3 points each)
+    score += len(plan.external_apis) * 3
+
+    # AI/ML involvement (5 points)
+    if "ai-expert" in plan.agents:
+        score += 5
+
+    # Database migrations (2 points)
+    if plan.has_migrations:
+        score += 2
+
+    # Determine level
+    if score <= 5:
+        return "simple"
+    elif score <= 15:
+        return "moderate"
+    else:
+        return "complex"
+```
+
+### Complexity Examples
+
+**Simple (score ≤ 5):**
+```json
+{
+  "tasks": 2,
+  "agents": ["backend-dev"],
+  "parallel_groups": 0,
+  "external_apis": 0,
+  "score": 2 + 2 = 4
+}
+```
+
+**Moderate (score 6-15):**
+```json
+{
+  "tasks": 5,
+  "agents": ["backend-dev", "frontend-dev"],
+  "parallel_groups": 1,
+  "external_apis": 0,
+  "score": 5 + 4 + 1.5 = 10.5
+}
+```
+
+**Complex (score > 15):**
+```json
+{
+  "tasks": 10,
+  "agents": ["backend-dev", "frontend-dev", "ai-expert"],
+  "parallel_groups": 2,
+  "external_apis": 1,
+  "score": 10 + 6 + 3 + 3 + 5 = 27
+}
+```
+
 ## Task Assignment Rules
 
 | Domain | Agent | Task Types |
