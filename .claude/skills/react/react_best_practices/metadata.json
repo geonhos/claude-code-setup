@@ -1,0 +1,68 @@
+{
+  "name": "react_best_practices",
+  "version": "1.0.0",
+  "author": "cc-settings",
+  "description": "Comprehensive performance optimization guide for React and Next.js applications, designed for AI agents and developers",
+  "tags": [
+    "react",
+    "nextjs",
+    "performance",
+    "optimization",
+    "best-practices"
+  ],
+  "sections": [
+    {
+      "id": "async",
+      "title": "Eliminating Waterfalls",
+      "impact": "CRITICAL",
+      "prefix": "async-"
+    },
+    {
+      "id": "bundle",
+      "title": "Bundle Size Optimization",
+      "impact": "CRITICAL",
+      "prefix": "bundle-"
+    },
+    {
+      "id": "server",
+      "title": "Server-Side Performance",
+      "impact": "HIGH",
+      "prefix": "server-"
+    },
+    {
+      "id": "client",
+      "title": "Client-Side Data Fetching",
+      "impact": "MEDIUM-HIGH",
+      "prefix": "client-"
+    },
+    {
+      "id": "rerender",
+      "title": "Re-render Optimization",
+      "impact": "MEDIUM",
+      "prefix": "rerender-"
+    },
+    {
+      "id": "rendering",
+      "title": "Rendering Performance",
+      "impact": "MEDIUM",
+      "prefix": "rendering-"
+    },
+    {
+      "id": "js",
+      "title": "JavaScript Performance",
+      "impact": "LOW-MEDIUM",
+      "prefix": "js-"
+    },
+    {
+      "id": "advanced",
+      "title": "Advanced Patterns",
+      "impact": "LOW",
+      "prefix": "advanced-"
+    }
+  ],
+  "references": [
+    "https://react.dev/",
+    "https://nextjs.org/docs",
+    "https://web.dev/performance/"
+  ]
+}

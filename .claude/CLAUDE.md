@@ -41,7 +41,7 @@ npx <tool>   # CLI 도구 실행
 | 도메인 | Agent | Skill |
 |--------|-------|-------|
 | Python/FastAPI | `ai-expert` | `/fastapi_setup` |
-| React | `frontend-dev` | `/react_setup` |
+| React | `frontend-dev` | `/react_setup`, `/react_best_practices` |
 | Spring Boot | `backend-dev` | `/spring_boot_setup` |
 | AI/ML | `ai-expert` | `/mlflow_setup`, `/langchain_setup` |
 

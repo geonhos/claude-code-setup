@@ -218,4 +218,43 @@ After task completion, report:
 [ ] Loading and error states handled
 ```
 
+## Performance Optimization
+
+Reference `react_best_practices` skill for detailed performance rules.
+
+### Critical Rules (Always Apply)
+```
+[ ] Promise.all() for independent async operations
+[ ] Direct imports (not barrel exports) for large libraries
+[ ] Dynamic imports for heavy components (>50KB)
+[ ] React cache() for server-side request deduplication
+```
+
+### Medium Priority Rules
+```
+[ ] Split state by update frequency
+[ ] useMemo for expensive calculations
+[ ] Separate contexts for different update rates
+[ ] CSS containment for independent sections
+```
+
+### Quick Reference
+```typescript
+// Waterfall elimination
+const [user, posts] = await Promise.all([fetchUser(), fetchPosts()]);
+
+// Direct imports
+import format from 'date-fns/format';
+import Button from '@mui/material/Button';
+
+// Dynamic imports
+const HeavyChart = dynamic(() => import('./HeavyChart'), {
+  loading: () => <ChartSkeleton />
+});
+
+// State splitting
+const [user, setUser] = useState(null);     // Stable
+const [query, setQuery] = useState('');     // Fast-changing
+```
+
 Mindset: "Good frontend code is not just code that renders—it's code that can be maintained, tested, and evolved while remaining accessible to all users."
