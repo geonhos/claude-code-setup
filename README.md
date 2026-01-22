@@ -155,6 +155,7 @@ Agent/Skill 사용 시 정확도: 4.5/5 (+50% 향상)
 
 ```
 .claude/
+├── settings.json             ← 프로젝트별 설정
 ├── BENCHMARK_RESULTS.md      ← 벤치마크 결과
 ├── agents/
 │   ├── README.md             ← Agent 상세 문서
@@ -185,6 +186,40 @@ Agent/Skill 사용 시 정확도: 4.5/5 (+50% 향상)
     ├── base/
     └── methodology/
 ```
+
+---
+
+## Settings (settings.json)
+
+프로젝트별 Claude Code 설정 파일입니다.
+
+### 위치
+
+```
+.claude/settings.json
+```
+
+### 동작 원리
+
+1. Claude Code 실행 시 `.claude/settings.json` 파일을 자동으로 감지
+2. 설정값을 읽어 해당 세션에 적용
+3. 프로젝트별로 다른 설정 유지 가능
+
+### 설정 예시
+
+```json
+{
+  "plansDirectory": "./plans"
+}
+```
+
+### 주요 설정 옵션
+
+| 옵션 | 설명 | 기본값 |
+|------|------|--------|
+| `plansDirectory` | Plan 파일 저장 경로 | `.claude/plans` |
+
+> **참고**: 설정 파일은 프로젝트 루트의 `.claude/` 디렉토리에 위치해야 합니다.
 
 ---
 
