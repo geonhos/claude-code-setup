@@ -6,7 +6,7 @@ Claude Code를 위한 커스텀 Agent 및 Skill 라이브러리
 
 | 항목 | 수량 |
 |------|------|
-| Agents | 13개 |
+| Agents | 14개 |
 | Skills | 25개 |
 
 ---
@@ -35,7 +35,7 @@ Claude Code를 위한 커스텀 Agent 및 Skill 라이브러리
 | [`ai-expert`](.claude/agents/execution/ai-expert.md) | AI/ML 개발 | Python, LLM, RAG |
 | [`git-ops`](.claude/agents/execution/git-ops.md) | Git 작업 관리 | Git Flow, GitHub CLI |
 
-### Quality (5개)
+### Quality (6개)
 
 품질 보증
 
@@ -45,6 +45,7 @@ Claude Code를 위한 커스텀 Agent 및 Skill 라이브러리
 | [`qa-executor`](.claude/agents/quality/qa-executor.md) | 테스트 실행 및 분석 |
 | [`qa-healer`](.claude/agents/quality/qa-healer.md) | 테스트 실패 복구 |
 | [`security-analyst`](.claude/agents/quality/security-analyst.md) | 보안 코드 리뷰, OWASP Top 10 |
+| [`pr-reviewer`](.claude/agents/quality/pr-reviewer.md) | PR 리뷰 (Gemini CLI) |
 | [`reporter`](.claude/agents/quality/reporter.md) | 실행 보고서 생성 |
 
 ---

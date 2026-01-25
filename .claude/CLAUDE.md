@@ -53,6 +53,7 @@ npx <tool>   # CLI 도구 실행
 | 테스트 실행 | `qa-executor` | `/test_runner` |
 | 테스트 복구 | `qa-healer` | - |
 | 보안 검토 | `security-analyst` | - |
+| PR 리뷰 | `pr-reviewer` | - |
 | 커버리지 | - | `/coverage_report` |
 
 ---
