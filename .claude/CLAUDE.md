@@ -17,6 +17,51 @@ npx <tool>   # CLI 도구 실행
 
 ---
 
+## Agent 자동 사용 규칙
+
+### 키워드 기반 자동 트리거
+
+다음 키워드가 감지되면 해당 에이전트를 **자동으로** 사용:
+
+| 키워드/패턴 | Agent | 우선순위 |
+|------------|-------|----------|
+| 보안, 취약점, OWASP, XSS, 인증 | `security-analyst` | 높음 |
+| 테스트, QA, 커버리지 | `qa-planner` → `qa-executor` | 높음 |
+| PR, 리뷰, pull request | `pr-reviewer` | 높음 |
+| Docker, K8s, CI/CD, 배포 | `devops-engineer` | 높음 |
+| DB, 스키마, 쿼리, 인덱스 | `database-expert` | 높음 |
+| 성능, 느림, 병목, 최적화 | `performance-analyst` | 중간 |
+| 리팩토링, 정리, 개선 | `refactoring-expert` | 중간 |
+| 문서, API docs, README | `docs-writer` | 중간 |
+| 요구사항, 기능 정의 | `requirements-analyst` | 높음 |
+| 계획, 설계, 아키텍처 | `plan-architect` | 높음 |
+
+### 자동 파이프라인
+
+복합 작업 시 자동으로 에이전트 체인 실행:
+
+```
+새 기능 구현:
+  requirements-analyst → plan-architect → [execution agents] → qa-planner → qa-executor
+
+코드 변경 완료 후:
+  code-reviewer → qa-executor → (보안 관련 시) security-analyst
+
+PR 생성 전:
+  code-reviewer → pr-reviewer → git-ops
+```
+
+### 필수 사용 (MUST USE)
+
+| 상황 | Agent |
+|------|-------|
+| 코드 작성 완료 후 | `qa-planner` + `qa-executor` |
+| 커밋 전 (보안 관련 변경) | `security-analyst` |
+| PR 생성 시 | `pr-reviewer` |
+| 성능 이슈 언급 시 | `performance-analyst` |
+
+---
+
 ## Agent 사용 규칙
 
 ### Git 작업
@@ -44,6 +89,8 @@ npx <tool>   # CLI 도구 실행
 | React | `frontend-dev` | `/react_setup`, `/react_best_practices` |
 | Spring Boot | `backend-dev` | `/spring_boot_setup`, `/spring_best_practices` |
 | AI/ML | `ai-expert` | `/mlflow_setup`, `/langchain_setup` |
+| DevOps/Infra | `devops-engineer` | `/docker_setup` |
+| Database | `database-expert` | `/alembic_migration`, `/jpa_entity` |
 
 ### 품질 관리
 
@@ -54,7 +101,17 @@ npx <tool>   # CLI 도구 실행
 | 테스트 복구 | `qa-healer` | - |
 | 보안 검토 | `security-analyst` | - |
 | PR 리뷰 | `pr-reviewer` | - |
+| 코드 리뷰 | `code-reviewer` | - |
+| 성능 분석 | `performance-analyst` | - |
 | 커버리지 | - | `/coverage_report` |
+
+### 코드 품질
+
+| 작업 | Agent |
+|------|-------|
+| 리팩토링 | `refactoring-expert` |
+| 문서화 | `docs-writer` |
+| 코드 리뷰 | `code-reviewer` |
 
 ---
 
@@ -70,11 +127,17 @@ npx <tool>   # CLI 도구 실행
 - [ ] 테스트 실행 (`/test_runner`)
 - [ ] 린터 실행
 - [ ] 변경사항 검토 (`/git_analyze`)
+- [ ] 코드 리뷰 (`code-reviewer`)
 
 ### 푸시 전
 - [ ] 모든 테스트 통과
 - [ ] 민감 정보 제외 확인
 - [ ] 보안 관련 변경 시 `security-analyst` 실행
+
+### PR 생성 전
+- [ ] `code-reviewer` 실행
+- [ ] `pr-reviewer` 실행 (Gemini CLI 리뷰)
+- [ ] 문서 업데이트 확인
 
 ---
 
