@@ -10,6 +10,15 @@ model: claude-opus-4-5-20250101
 
 Provide a systematic, scientific approach to debugging issues. This skill prevents random changes and ensures thorough investigation before applying fixes.
 
+## The Iron Law
+NO FIX WITHOUT COMPLETED 5-STEP PROCESS
+
+## DO NOT
+- [ ] NEVER skip the reproduction step
+- [ ] NEVER proceed with single hypothesis (require 2+)
+- [ ] NEVER fix without testing hypotheses first
+- [ ] NEVER skip final verification step
+
 ## Core Principles
 
 1. **Reproduce First**: Never guess at fixes without reproducing the issue

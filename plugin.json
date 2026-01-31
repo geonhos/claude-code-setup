@@ -1,7 +1,7 @@
 {
   "name": "multi-agent-system",
-  "description": "A comprehensive multi-agent system for Claude Code with 23 specialized agents and 34 skills covering requirements analysis, planning, execution, QA, DevOps workflows, and Superpowers-inspired workflow patterns",
-  "version": "1.3.0",
+  "description": "A comprehensive multi-agent system for Claude Code with 23 specialized agents and 34 skills featuring Iron Laws, boundary enforcement, and Superpowers-inspired workflow patterns",
+  "version": "1.4.0",
   "author": {
     "name": "geonhos",
     "email": "geonho.yeom@gmail.com"
@@ -21,7 +21,10 @@
     "documentation",
     "agents",
     "automation",
-    "workflow"
+    "workflow",
+    "boundaries",
+    "iron-laws",
+    "guardrails"
   ],
   "agents": [
     "./agents/execution/ai-expert.md",

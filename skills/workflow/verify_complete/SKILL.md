@@ -10,6 +10,24 @@ model: claude-opus-4-5-20250101
 
 Ensure every task is thoroughly verified before being marked as complete. This skill enforces explicit validation and prevents premature task completion.
 
+## The Iron Law
+VERIFICATION IS MANDATORY - NO EXCEPTIONS
+
+## DO NOT
+- [ ] NEVER skip verification for any task
+- [ ] NEVER mark complete without running tests
+- [ ] NEVER assume "obvious" correctness
+- [ ] NEVER skip verification for "simple" tasks
+
+## Rationalization Prevention
+
+| Excuse | Reality |
+|--------|---------|
+| "It's obviously correct" | Run verification anyway |
+| "Tests are slow" | Run them anyway |
+| "Just a config change" | Verify config is applied |
+| "I already tested manually" | Run automated verification |
+
 ## Core Rule
 
 **NEVER skip verification. This is MANDATORY for every task.**

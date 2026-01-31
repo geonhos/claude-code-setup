@@ -179,6 +179,12 @@ Options:
 Choice?
 ```
 
+## DO NOT
+- [ ] NEVER continue execution without user verification
+- [ ] NEVER skip checkpoint summary generation
+- [ ] NEVER ignore user rollback request
+- [ ] NEVER modify checkpoint batch size without reason
+
 ## Quality Checklist
 
 - [ ] Batch size is configurable

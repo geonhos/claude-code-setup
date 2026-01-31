@@ -194,6 +194,50 @@ PR 생성 전:
 
 ---
 
+## Boundary Enforcement
+
+모든 에이전트는 [Boundary Protocol](./protocols/boundary-protocol.md)을 따릅니다.
+
+### Reference Protocol
+All agents MUST follow: [Boundary Protocol](./protocols/boundary-protocol.md)
+
+### Universal DO NOT Rules
+- [ ] NEVER skip Iron Law check before action
+- [ ] NEVER ignore Red Flag signals
+- [ ] NEVER rationalize boundary violations
+- [ ] NEVER cross domain boundaries without proper handoff
+
+### Gate Functions
+
+Before ANY of these actions, verify boundaries:
+
+| Action | Required Check |
+|--------|---------------|
+| Write code | Verify domain ownership (backend/frontend/ai) |
+| Approve/Review | Complete all checklist items |
+| Dispatch task | Verify dependencies satisfied |
+| Mark complete | Run verify_complete checks |
+| Commit/Push | Safety checklist via git-ops |
+
+### Violation Response
+
+If boundary violation detected:
+1. **STOP** immediately - do not proceed
+2. **IDENTIFY** - which boundary is being violated?
+3. **ASSESS** - is this a legitimate exception? (almost never)
+4. **ESCALATE** - ask user/orchestrator for clarification
+5. **LOG** - record the near-violation
+
+### Key Boundaries by Agent Category
+
+| Category | Primary Boundary | Focus |
+|----------|-----------------|-------|
+| Pipeline (5) | Role separation | Planning vs Execution |
+| Execution (8) | Domain ownership | Specialization |
+| Quality (10) | Verification-only | Review vs Fix |
+
+---
+
 ## 금지 사항
 
 - 전역 패키지 설치 (`pip install --user`, `npm install -g`)

@@ -33,9 +33,53 @@ assistant: "{에이전트 응답}"
 ## 필수 섹션
 
 1. **Core Expertise** - 핵심 역량 목록
-2. **Workflow Protocol** - 작업 절차
-3. **Output Format** - 출력 형식 (JSON)
-4. **Quality Checklist** - 품질 체크리스트
+2. **The Iron Law** - 단일 비협상 규칙 (ALL CAPS)
+3. **DO NOT** - 4-6개의 금지 항목 (체크박스 형식)
+4. **Scope Boundaries** - DOES vs DOES NOT (해당되는 경우)
+5. **Red Flags - STOP** - 경고 신호 (3-5개)
+6. **Workflow Protocol** - 작업 절차
+7. **Output Format** - 출력 형식 (JSON)
+8. **Quality Checklist** - 품질 체크리스트
+
+## 경계 정의 (Boundary Definitions)
+
+모든 에이전트는 [Boundary Protocol](./boundary-protocol.md)을 따릅니다.
+
+### The Iron Law 형식
+```markdown
+## The Iron Law
+[단일 규칙을 ALL CAPS로 작성]
+```
+
+### DO NOT 형식
+```markdown
+## DO NOT
+- [ ] NEVER [금지 항목 1]
+- [ ] NEVER [금지 항목 2]
+- [ ] NEVER [금지 항목 3]
+- [ ] NEVER [금지 항목 4]
+```
+
+### Scope Boundaries 형식
+```markdown
+## Scope Boundaries
+
+### This Agent DOES:
+- [책임 1]
+- [책임 2]
+
+### This Agent DOES NOT:
+- [비책임 1] (-> [담당 에이전트])
+- [비책임 2] (-> [담당 에이전트])
+```
+
+### Red Flags 형식
+```markdown
+## Red Flags - STOP
+- [경고 신호 1]
+- [경고 신호 2]
+- [경고 신호 3]
+```
 
 ## 선택 섹션
 

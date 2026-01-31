@@ -18,6 +18,15 @@ Guides through Test-Driven Development using the Red-Green-Refactor cycle.
 | **Go** | testing | testify | gomock | go test -cover |
 | **Rust** | cargo test | assert! | mockall | tarpaulin |
 
+## The Iron Law
+RED -> GREEN -> REFACTOR - NO SHORTCUTS
+
+## DO NOT
+- [ ] NEVER write production code before failing test
+- [ ] NEVER skip the RED phase
+- [ ] NEVER refactor without green tests first
+- [ ] NEVER add features during refactor phase
+
 ## TDD Cycle
 
 ```

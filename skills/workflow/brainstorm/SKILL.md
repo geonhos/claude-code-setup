@@ -137,6 +137,12 @@ Recommendation: PostgreSQL with Redis cache
 - **Works with**: `requirements-analyst`, `plan-architect`
 - **Output feeds into**: `plan-architect` for implementation planning
 
+## DO NOT
+- [ ] NEVER recommend with fewer than 3 approaches explored
+- [ ] NEVER proceed to implementation without user confirmation
+- [ ] NEVER skip the tradeoff matrix
+- [ ] NEVER implement any solution (only recommend)
+
 ## Quality Checklist
 
 - [ ] Minimum 3 approaches explored

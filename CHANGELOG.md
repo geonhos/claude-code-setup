@@ -5,6 +5,51 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.0] - 2026-01-31
+
+### Added
+
+- **Boundary Protocol System**
+  - `.claude/protocols/boundary-protocol.md` - 경계 정의 마스터 프로토콜
+  - Iron Law, DO NOT, Scope Boundaries, Rationalization Prevention, Red Flags 템플릿
+
+- **Agent Boundary Definitions** (23개 에이전트 전체)
+  - **Iron Laws**: 에이전트별 1개 비타협 규칙
+    - `plan-architect`: "NO EXECUTION WITHOUT VALIDATED PLAN"
+    - `backend-dev`: "NO CODE WITHOUT TESTS"
+    - `git-ops`: "NO PUSH WITHOUT LOCAL VERIFICATION"
+    - `debug-specialist`: "NO FIX WITHOUT REPRODUCTION AND HYPOTHESIS TESTING"
+  - **DO NOT Lists**: 에이전트별 4-6개 명시적 금지사항
+  - **Red Flags - STOP**: 즉시 중단해야 하는 경고 신호
+
+- **Skill Boundary Definitions** (5개 핵심 스킬)
+  - `brainstorm`, `checkpoint`, `verify_complete`, `debug_workflow`, `tdd_workflow`
+
+- **CLAUDE.md Boundary Enforcement Section**
+  - Universal DO NOT Rules
+  - Gate Functions 테이블
+  - Violation Response 절차
+
+### Changed
+
+- **Enhanced Protocol System**
+  - `agent-template.md` - 경계 섹션 필수 항목으로 추가
+
+- **Rationalization Prevention** (고위험 에이전트)
+  - `git-ops`, `qa-executor`, `pr-reviewer`, `code-reviewer`, `debug-specialist`
+  - Excuse vs Reality 테이블로 변명 방지
+
+### Summary
+
+| 항목 | v1.3.0 | v1.4.0 |
+|------|--------|--------|
+| Iron Laws | 0개 | 23개 (에이전트당 1개) |
+| DO NOT Rules | 0개 | ~120개 (에이전트당 4-6개) |
+| Red Flags | 0개 | ~70개 (에이전트당 3-4개) |
+| Boundary Protocol | 없음 | 완전한 프로토콜 시스템 |
+
+---
+
 ## [1.3.0] - 2026-01-31
 
 ### Added
