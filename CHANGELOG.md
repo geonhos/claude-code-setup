@@ -5,6 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] - 2026-01-31
+
+### Added
+
+- **Local Agent Installer**: `scripts/install-agents.sh` - 에이전트를 프로젝트에 로컬 설치
+- **Update Checker**: `scripts/check-update.sh` - 버전 업데이트 확인
+- **Setup Guide**: `docs/SETUP_GUIDE.md` - 상세 설치 가이드 문서
+- 버전 추적 파일 (`.claude/.agent-version`)
+
+### Fixed
+
+- 플러그인 에이전트 자동 감지 문제 해결 (로컬 복사 방식 도입)
+- 스킬 frontmatter에서 지원되지 않는 `color` 필드 제거
+- 중첩된 에이전트/스킬 디렉토리 경로 명시적 지정
+
+### Changed
+
+- README 설치 가이드 개선
+- plugin.json에 명시적 경로 목록 추가
+
+---
+
 ## [1.0.0] - 2026-01-31
 
 ### Added

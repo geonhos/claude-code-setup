@@ -4,34 +4,52 @@ Claude Code를 위한 멀티에이전트 시스템 플러그인
 
 ## 설치
 
-### 플러그인으로 설치 (권장)
+### 1단계: 플러그인 설치
 
 ```bash
-# Claude Code에서 플러그인 설치
-/plugin install multi-agent-system@geonho-yeom/claude-code-setup
+# 마켓플레이스 추가
+/plugin marketplace add geonhos/claude-code-setup
+
+# 플러그인 설치
+/plugin add multi-agent-system
 ```
 
-또는 마켓플레이스 추가 후 설치:
+### 2단계: 에이전트 활성화 (중요!)
+
+플러그인 에이전트는 자동 감지되지 않습니다. 프로젝트에서 에이전트를 사용하려면 로컬에 복사해야 합니다.
 
 ```bash
-/plugin marketplace add geonho-yeom/claude-code-setup
-/plugin install multi-agent-system
+# 설치 스크립트를 프로젝트에 복사 (최초 1회)
+cp -r "$(find ~/.claude/plugins/cache/geonhos-plugins/multi-agent-system -maxdepth 1 -type d | tail -1)/scripts" ./
+chmod +x ./scripts/*.sh
+
+# 에이전트 설치
+./scripts/install-agents.sh
 ```
 
-### 로컬 테스트
+이 스크립트는:
+- 21개 에이전트를 프로젝트의 `.claude/agents/`에 복사
+- 버전 정보를 `.claude/.agent-version`에 저장
+- 이미 설치된 경우 버전 비교 후 업데이트 제안
+
+> 📖 자세한 내용은 [설치 가이드](docs/SETUP_GUIDE.md)를 참조하세요.
+
+### 버전 업데이트
+
+새 버전이 출시되면:
 
 ```bash
-# 저장소 클론 후 로컬에서 테스트
-git clone https://github.com/geonho-yeom/claude-code-setup.git
-cd claude-code-setup
-claude --plugin-dir .
+# 1. 플러그인 업데이트
+/plugin update multi-agent-system
+
+# 2. 에이전트 재설치
+./scripts/install-agents.sh
 ```
 
-### Standalone 설정으로 사용
+### 업데이트 확인
 
 ```bash
-# .claude 디렉토리를 프로젝트에 복사
-cp -r .claude /path/to/your/project/
+./scripts/check-update.sh
 ```
 
 ## 구성
