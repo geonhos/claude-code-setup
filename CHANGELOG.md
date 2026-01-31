@@ -5,6 +5,53 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0] - 2026-01-31
+
+### Added
+
+- **Superpowers-Inspired Workflow Skills** (6개 신규)
+  - `/brainstorm` - 최소 3개 접근법 탐색 후 결정
+  - `/checkpoint` - 5개 태스크마다 검증 일시정지
+  - `/task_breakdown` - 2-5분 단위 atomic 태스크 생성
+  - `/debug_workflow` - 가설 기반 체계적 디버깅
+  - `/verify_complete` - 태스크 완료 전 필수 검증
+  - `/git_worktree` - 병렬 브랜치 개발 지원
+
+- **New Agents** (2개 신규)
+  - `brainstorm-facilitator` - 설계 탐색 및 의사결정 촉진
+  - `debug-specialist` - 체계적 디버깅 (reproduce → hypothesize → test → fix → verify)
+
+- **New Keywords for Auto-Trigger**
+  - brainstorm, explore, alternatives, approaches, options → `brainstorm-facilitator`
+  - debug, bug, issue, error, crash, not working → `debug-specialist`
+  - worktree, parallel branch, multiple branches → `git-ops`
+
+### Changed
+
+- **Enhanced Agents** (3개 업데이트)
+  - `git-ops` - Worktree 작업 섹션 추가
+  - `plan-architect` - 2-5분 atomic 태스크 분해 규칙 추가
+  - `orchestrator` - 체크포인트 실행 모드 추가 (기본 5개 태스크마다 검증)
+
+- **Updated Pipeline**
+  ```
+  새 기능 구현:
+    requirements-analyst → brainstorm-facilitator (복잡한 결정 시)
+    → plan-architect (atomic task breakdown)
+    → [execution agents with checkpoint every 5 tasks]
+    → verify-complete → qa-planner → qa-executor
+  ```
+
+### Summary
+
+| 항목 | 이전 | 이후 |
+|------|------|------|
+| 에이전트 | 21개 | 23개 |
+| 스킬 | 28개 | 34개 |
+| 워크플로우 패턴 | 0개 | 6개 |
+
+---
+
 ## [1.2.0] - 2026-01-31
 
 ### Added

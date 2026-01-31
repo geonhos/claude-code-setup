@@ -1,7 +1,7 @@
 {
   "name": "multi-agent-system",
-  "description": "A comprehensive multi-agent system for Claude Code with 21 specialized agents covering requirements analysis, planning, execution, QA, and DevOps workflows",
-  "version": "1.2.0",
+  "description": "A comprehensive multi-agent system for Claude Code with 23 specialized agents and 34 skills covering requirements analysis, planning, execution, QA, DevOps workflows, and Superpowers-inspired workflow patterns",
+  "version": "1.3.0",
   "author": {
     "name": "geonhos",
     "email": "geonho.yeom@gmail.com"
@@ -32,11 +32,13 @@
     "./agents/execution/frontend-dev.md",
     "./agents/execution/git-ops.md",
     "./agents/execution/refactoring-expert.md",
+    "./agents/pipeline/brainstorm-facilitator.md",
     "./agents/pipeline/orchestrator.md",
     "./agents/pipeline/plan-architect.md",
     "./agents/pipeline/plan-feedback.md",
     "./agents/pipeline/requirements-analyst.md",
     "./agents/quality/code-reviewer.md",
+    "./agents/quality/debug-specialist.md",
     "./agents/quality/docs-reviewer.md",
     "./agents/quality/performance-analyst.md",
     "./agents/quality/pr-reviewer.md",
@@ -56,6 +58,7 @@
     "./skills/git/git_commit",
     "./skills/git/git_issue",
     "./skills/git/git_pr",
+    "./skills/git/git_worktree",
     "./skills/infra/alembic_migration",
     "./skills/infra/docker_setup",
     "./skills/java/gradle_setup",
@@ -75,6 +78,11 @@
     "./skills/react/component_generator",
     "./skills/react/nextjs_setup",
     "./skills/react/react_best_practices",
-    "./skills/react/react_setup"
+    "./skills/react/react_setup",
+    "./skills/workflow/brainstorm",
+    "./skills/workflow/checkpoint",
+    "./skills/workflow/debug_workflow",
+    "./skills/workflow/task_breakdown",
+    "./skills/workflow/verify_complete"
   ]
 }
