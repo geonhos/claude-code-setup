@@ -84,6 +84,74 @@ elif complexity == "complex":
 After plan validation passes:
 - Initialize execution state
 - Prepare agent contexts
+- Configure checkpoint settings
+
+### 2.5 Checkpoint Execution Mode
+Execute tasks in batches with verification pauses.
+Reference: [/checkpoint](../../skills/workflow/checkpoint/SKILL.md)
+
+**Configuration:**
+```json
+{
+  "batch_size": 5,
+  "auto_continue": false,
+  "rollback_on_failure": true
+}
+```
+
+**Checkpoint Flow:**
+```
+Execute Task 1 → Execute Task 2 → ... → Execute Task N
+                                              ↓
+                                     [Checkpoint Triggered]
+                                              ↓
+                                    Generate Summary Report
+                                              ↓
+                                    Run Verification Checks
+                                              ↓
+                                    Wait for User Decision
+                                              ↓
+                              Continue / Rollback / Pause
+```
+
+**Checkpoint Summary Template:**
+```
+=== Checkpoint N ===
+Tasks Completed: X (this batch) / Y (total)
+Time Elapsed: Z minutes
+
+## Changes Since Last Checkpoint
+
+### Files Created
+- [list of new files]
+
+### Files Modified
+- [list of modified files with line changes]
+
+## Test Status
+- Unit Tests: PASS/FAIL
+- Lint: PASS/FAIL
+
+## Summary of Work
+1. T-XXX: [description]
+2. T-XXX: [description]
+...
+
+## Next Tasks
+- T-XXX: [description]
+- T-XXX: [description]
+
+---
+Continue execution? (yes/no/rollback)
+```
+
+**Rollback Procedure:**
+If user requests rollback:
+1. Identify all changes since last checkpoint
+2. Revert file changes (git checkout or manual)
+3. Remove created files
+4. Reset task status to pending
+5. Report rollback completion
 
 ### 3. Task Dispatch
 For each ready task (dependencies satisfied):

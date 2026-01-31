@@ -141,6 +141,65 @@ After task completion, report:
 }
 ```
 
+## Worktree Operations
+
+Git worktree enables parallel development on multiple branches simultaneously.
+For detailed usage, see: [/git_worktree](../../skills/git/git_worktree/SKILL.md)
+
+### Worktree Commands
+```bash
+# Create worktree for existing branch
+git worktree add ../project-feature feature/branch-name
+
+# Create worktree with new branch
+git worktree add -b feature/new-feature ../project-new-feature main
+
+# List all worktrees
+git worktree list
+
+# Remove worktree (after merge)
+git worktree remove ../project-feature
+
+# Prune stale worktrees
+git worktree prune
+```
+
+### Worktree Naming Convention
+```
+../{project-name}-{feature-short}
+
+Examples:
+- ../myapp-auth (authentication feature)
+- ../myapp-api (API development)
+- ../myapp-hotfix (urgent fix)
+```
+
+### Worktree Use Cases
+| Scenario | Action |
+|----------|--------|
+| Parallel feature development | Create separate worktree per feature |
+| Quick hotfix without stashing | Create worktree from main, fix, merge |
+| PR review in isolation | Checkout PR branch in dedicated worktree |
+| A/B testing approaches | Create worktrees for each approach |
+
+### Worktree Safety Protocols
+```
+Before Creating:
+[ ] Verify sufficient disk space
+[ ] Check for naming conflicts
+[ ] Ensure branch exists (or use -b for new)
+
+Before Removing:
+[ ] Check for uncommitted changes
+[ ] Verify branch is merged or backed up
+[ ] Confirm removal if worktree is locked
+
+Maintenance:
+[ ] Run `git worktree list` periodically
+[ ] Remove completed worktrees promptly
+[ ] Run `git worktree prune` to clean stale entries
+```
+
 ## Quality Checklist
 ```
 [ ] Branch name follows convention
@@ -149,6 +208,7 @@ After task completion, report:
 [ ] PR description is complete
 [ ] Reviewers assigned (if applicable)
 [ ] Labels added (if applicable)
+[ ] Worktrees cleaned up after use
 ```
 
 Mindset: "Clean git history tells the story of the project. Every commit should be meaningful, every branch purposeful."

@@ -19,11 +19,38 @@ Review structured requirements from Requirements Analyst:
 - Map to execution agents (backend, frontend, ai, git-ops)
 - Identify cross-cutting concerns
 
-### 2. Task Decomposition
-Break down into atomic tasks:
-- Each task assignable to single agent
-- Clear input/output definition
-- Testable completion criteria
+### 2. Task Decomposition (Atomic Breakdown)
+Break down into atomic 2-5 minute tasks using the task_breakdown skill.
+Reference: [/task_breakdown](../../skills/workflow/task_breakdown/SKILL.md)
+
+**Granularity Rules:**
+- **Time**: Each task should take 2-5 minutes (not longer)
+- **Scope**: Single file modification per task (test pairs allowed)
+- **Verification**: Every task must have explicit verification method
+- **Independence**: Each task independently verifiable
+
+**Task Template:**
+```yaml
+id: T-{feature}-{sequence}
+type: CREATE | MODIFY | DELETE | REFACTOR | TEST | CONFIG | DOC
+duration: 2-5 min
+file:
+  path: /absolute/path/to/file.ext
+  action: create | modify | delete
+description: Brief description
+verification:
+  command: "test command"
+  expected: "expected output"
+acceptance_criteria:
+  - [ ] Criterion 1
+  - [ ] Criterion 2
+```
+
+**Validation Checklist:**
+- [ ] All tasks are 2-5 minutes?
+- [ ] Single file per task (test pairs allowed)?
+- [ ] Each task has verification command?
+- [ ] Dependencies are explicit?
 
 ### 3. Dependency Mapping
 Identify task relationships:

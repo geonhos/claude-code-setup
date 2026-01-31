@@ -34,23 +34,24 @@ Claude Code에서 실행:
 
 | 항목 | 수량 |
 |------|------|
-| Agents | 21개 |
-| Skills | 28개 |
+| Agents | 23개 |
+| Skills | 34개 |
 
 ---
 
 ## Agents
 
-### Pipeline (4개)
+### Pipeline (5개)
 
 작업 흐름 관리
 
 | Agent | 역할 |
 |-------|------|
 | [`requirements-analyst`](agents/pipeline/requirements-analyst.md) | 요구사항 분석 및 명확화 |
-| [`plan-architect`](agents/pipeline/plan-architect.md) | 실행 계획 수립 |
+| [`plan-architect`](agents/pipeline/plan-architect.md) | 실행 계획 수립 (atomic 2-5min task breakdown) |
 | [`plan-feedback`](agents/pipeline/plan-feedback.md) | Cross-LLM 검증 (Gemini CLI) |
-| [`orchestrator`](agents/pipeline/orchestrator.md) | 작업 조율 및 분배 |
+| [`orchestrator`](agents/pipeline/orchestrator.md) | 작업 조율 및 분배 (checkpoint 실행 지원) |
+| [`brainstorm-facilitator`](agents/pipeline/brainstorm-facilitator.md) | 설계 탐색 및 결정 촉진 (NEW) |
 
 ### Execution (8개)
 
@@ -67,7 +68,7 @@ Claude Code에서 실행:
 | [`refactoring-expert`](agents/execution/refactoring-expert.md) | 리팩토링 | 레거시 개선, 기술부채 |
 | [`docs-writer`](agents/execution/docs-writer.md) | 문서화 | API docs, README |
 
-### Quality (9개)
+### Quality (10개)
 
 품질 보증
 
@@ -82,12 +83,13 @@ Claude Code에서 실행:
 | [`reporter`](agents/quality/reporter.md) | 실행 보고서 생성 |
 | [`code-reviewer`](agents/quality/code-reviewer.md) | 코드 품질 리뷰 |
 | [`performance-analyst`](agents/quality/performance-analyst.md) | 성능 분석 및 최적화 |
+| [`debug-specialist`](agents/quality/debug-specialist.md) | 체계적 가설 기반 디버깅 (NEW) |
 
 ---
 
 ## Skills
 
-### Git (5개)
+### Git (6개)
 
 | Skill | 설명 |
 |-------|------|
@@ -96,6 +98,7 @@ Claude Code에서 실행:
 | [`/git_pr`](skills/git/git_pr/SKILL.md) | PR 템플릿 |
 | [`/git_issue`](skills/git/git_issue/SKILL.md) | Issue 템플릿 |
 | [`/git_analyze`](skills/git/git_analyze/SKILL.md) | 변경사항 분석 |
+| [`/git_worktree`](skills/git/git_worktree/SKILL.md) | 병렬 브랜치 개발 (NEW) |
 
 ### Python (5개)
 
@@ -155,6 +158,16 @@ Claude Code에서 실행:
 | [`/project_init`](skills/base/project_init/SKILL.md) | 프로젝트 초기화 |
 | [`/tdd_workflow`](skills/methodology/tdd_workflow/SKILL.md) | TDD 워크플로우 |
 
+### Workflow (5개) (NEW)
+
+| Skill | 설명 |
+|-------|------|
+| [`/brainstorm`](skills/workflow/brainstorm/SKILL.md) | 설계 탐색 - 최소 3개 접근법 비교 후 결정 |
+| [`/checkpoint`](skills/workflow/checkpoint/SKILL.md) | 실행 체크포인트 - 5개 태스크마다 검증 |
+| [`/task_breakdown`](skills/workflow/task_breakdown/SKILL.md) | 태스크 분해 - 2-5분 단위 atomic 태스크 |
+| [`/debug_workflow`](skills/workflow/debug_workflow/SKILL.md) | 디버깅 워크플로우 - 가설 기반 체계적 디버깅 |
+| [`/verify_complete`](skills/workflow/verify_complete/SKILL.md) | 완료 검증 - 태스크 완료 전 필수 검증 |
+
 ---
 
 ## 디렉토리 구조
@@ -170,7 +183,7 @@ agents/                    # 에이전트 정의
 └── quality/               # 품질 에이전트
 
 skills/                    # 스킬 정의
-├── git/                   # Git 관련
+├── git/                   # Git 관련 (worktree 포함)
 ├── python/                # Python 관련
 ├── java/                  # Java 관련
 ├── react/                 # React 관련
@@ -178,7 +191,8 @@ skills/                    # 스킬 정의
 ├── infra/                 # 인프라 관련
 ├── quality/               # 품질 관련
 ├── base/                  # 기본
-└── methodology/           # 방법론
+├── methodology/           # 방법론
+└── workflow/              # 워크플로우 (brainstorm, checkpoint, etc.)
 
 # 프로젝트 설정 (Standalone 사용 시)
 .claude/
@@ -196,11 +210,12 @@ reports/                   # 실행 리포트
 
 ## 사용 예시
 
-### 새 기능 개발
+### 새 기능 개발 (Enhanced Pipeline)
 
 ```
-/project_init → requirements-analyst → plan-architect →
-backend-dev/frontend-dev → qa-executor → /git_commit → /git_pr
+/project_init → requirements-analyst → brainstorm-facilitator (복잡한 결정 시)
+→ plan-architect (atomic 2-5min tasks) → [execution agents with checkpoint every 5 tasks]
+→ /verify_complete → qa-executor → /git_commit → /git_pr
 ```
 
 ### 보안 검토
@@ -209,8 +224,24 @@ backend-dev/frontend-dev → qa-executor → /git_commit → /git_pr
 security-analyst → backend-dev (수정) → qa-executor (검증)
 ```
 
-### 버그 수정
+### 버그 수정 (Systematic Debugging)
 
 ```
-/git_branch → qa-healer → /git_commit → /git_pr
+debug-specialist (reproduce → hypothesize → test → fix → verify)
+→ /verify_complete → /git_commit → /git_pr
+```
+
+### 병렬 기능 개발 (Git Worktree)
+
+```
+/git_worktree (create ../project-feature) → [개발] → /git_worktree (remove)
+```
+
+### 체크포인트 실행
+
+```
+orchestrator (batch_size: 5)
+→ [Task 1-5] → /checkpoint (summary + verification)
+→ [Task 6-10] → /checkpoint
+→ ... → completion
 ```

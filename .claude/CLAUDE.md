@@ -25,7 +25,7 @@ npx <tool>   # CLI 도구 실행
 
 | 키워드/패턴 | Agent | 우선순위 |
 |------------|-------|----------|
-| commit, branch, merge, push, git, gh, worktree, 커밋, 브랜치, 머지, 푸시, 풀리퀘, 이슈 생성, PR 생성, 워크트리, 병렬 브랜치 | `git-ops` | 높음 |
+| commit, branch, merge, push, git, gh, worktree, 커밋, 브랜치, 머지, 푸시, 풀리퀘, 이슈 생성, PR 생성, 워크트리, 병렬 브랜치, multiple branches | `git-ops` | 높음 |
 | security, 보안, 취약점, OWASP, XSS, SQL injection, 인증, 인가, 암호화, 해킹 | `security-analyst` | 높음 |
 | test, 테스트, QA, 커버리지, 품질, 검증, 단위테스트, 통합테스트, e2e, Playwright, UI테스트 | `qa-planner` → `qa-executor` | 높음 |
 | review, PR, 리뷰, 코드리뷰, 검토, pull request | `pr-reviewer` | 높음 |
@@ -40,6 +40,8 @@ npx <tool>   # CLI 도구 실행
 | AI, ML, 머신러닝, 딥러닝, LLM, 모델, 학습, 임베딩 | `ai-expert` | 높음 |
 | React, 컴포넌트, 프론트엔드, UI, 화면, 페이지, 폼 | `frontend-dev` | 높음 |
 | Spring, Java, API, 백엔드, 서버, 엔드포인트, 컨트롤러 | `backend-dev` | 높음 |
+| brainstorm, explore, alternatives, approaches, options, 브레인스톰, 탐색, 대안, 접근법, 옵션 | `brainstorm-facilitator` | 높음 |
+| debug, bug, issue, error, crash, not working, 디버그, 버그, 이슈, 에러, 크래시, 오류 | `debug-specialist` | 높음 |
 
 ### 자동 파이프라인
 
@@ -47,7 +49,10 @@ npx <tool>   # CLI 도구 실행
 
 ```
 새 기능 구현:
-  requirements-analyst → docs-reviewer → plan-architect → [execution agents] → qa-planner → qa-executor
+  requirements-analyst → brainstorm-facilitator (복잡한 결정 시)
+  → docs-reviewer → plan-architect (atomic task breakdown)
+  → [execution agents with checkpoint every 5 tasks]
+  → verify-complete → qa-planner → qa-executor
 
 코드 변경 완료 후:
   code-reviewer → qa-executor → (보안 관련 시) security-analyst
@@ -57,6 +62,9 @@ npx <tool>   # CLI 도구 실행
 
 PR 생성 전:
   pr-reviewer → git-ops
+
+디버깅:
+  debug-specialist (reproduce → hypothesize → test → fix → verify)
 ```
 
 ### 필수 사용 (MUST USE)
@@ -110,6 +118,17 @@ PR 생성 전:
 | AI/ML | `ai-expert` | `/mlflow_setup`, `/langchain_setup` |
 | DevOps/Infra | `devops-engineer` | `/docker_setup` |
 | Database | `database-expert` | `/alembic_migration`, `/jpa_entity` |
+
+### Workflow Skills
+
+| 작업 | Skill | 설명 |
+|------|-------|------|
+| 설계 탐색 | `/brainstorm` | 최소 3개 접근법 탐색 후 결정 |
+| 실행 체크포인트 | `/checkpoint` | 5개 태스크마다 검증 일시정지 |
+| 태스크 분해 | `/task_breakdown` | 2-5분 단위 atomic 태스크 생성 |
+| 디버깅 워크플로우 | `/debug_workflow` | 가설 기반 체계적 디버깅 |
+| 완료 검증 | `/verify_complete` | 태스크 완료 전 필수 검증 |
+| Git Worktree | `/git_worktree` | 병렬 브랜치 개발 지원 |
 
 ### 품질 관리
 
