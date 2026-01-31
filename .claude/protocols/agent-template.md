@@ -9,7 +9,6 @@
 name: agent-name
 description: "1-2 sentence description. **Use proactively** when: keyword1, keyword2, keyword3."
 model: sonnet  # sonnet | opus | haiku
-color: blue    # 시각적 구분용
 ---
 ```
 

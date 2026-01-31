@@ -15,8 +15,8 @@
         "source": "github",
         "repo": "geonhos/claude-code-setup"
       },
-      "description": "A comprehensive multi-agent system with 21 specialized agents and 28 skills",
-      "version": "1.0.0",
+      "description": "A comprehensive multi-agent system with 23 specialized agents and 34 skills featuring Iron Laws and boundary enforcement",
+      "version": "1.4.2",
       "author": {
         "name": "geonhos"
       },

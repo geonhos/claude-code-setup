@@ -5,6 +5,32 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.3] - 2026-01-31
+
+### Fixed
+
+- **문서 정확성 개선** (docs-reviewer 리뷰 반영)
+  - README.md 예시 출력 카운트 수정 (21/28 → 23/34)
+  - README.md 디렉토리 구조 실제와 일치하도록 수정
+  - marketplace.json (2개) 버전 및 설명 업데이트
+  - LICENSE 저작권 연도 수정 (2025 → 2025-2026)
+  - boundary-protocol.md "Domain Boundaries" → "Scope Boundaries" 통일
+  - agent-template.md deprecated `color` 필드 제거
+  - hooks.json `/git_issue` 스킬 추가
+
+### Summary
+
+| 수정 파일 | 변경 내용 |
+|----------|----------|
+| README.md | 예시 출력, 디렉토리 구조 |
+| marketplace.json (2개) | 버전, 설명 |
+| LICENSE | 저작권 연도 |
+| boundary-protocol.md | 섹션명 통일 |
+| agent-template.md | color 필드 제거 |
+| hooks.json | /git_issue 추가 |
+
+---
+
 ## [1.4.2] - 2026-01-31
 
 ### Fixed

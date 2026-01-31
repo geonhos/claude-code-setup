@@ -16,16 +16,18 @@ Claude Code에서 실행:
 ```
 ===== Multi-Agent System 활성화 =====
 
-21개 전문 에이전트와 28개 스킬이 로드되었습니다.
+23개 전문 에이전트와 34개 스킬이 로드되었습니다.
 
 [Agents]
-- Pipeline: requirements-analyst, plan-architect, orchestrator
-- Execution: git-ops, backend-dev, frontend-dev, ai-expert...
-- Quality: qa-planner, qa-executor, code-reviewer, security-analyst...
+- Pipeline: requirements-analyst, plan-architect, plan-feedback, brainstorm-facilitator, orchestrator
+- Execution: git-ops, backend-dev, frontend-dev, ai-expert, devops-engineer, database-expert, docs-writer, refactoring-expert
+- Quality: qa-planner, qa-executor, qa-healer, code-reviewer, pr-reviewer, docs-reviewer, security-analyst, performance-analyst, debug-specialist, reporter
 
 [Skills]
-- Git: /git_commit, /git_branch, /git_pr, /git_analyze
-- Dev: /python_setup, /fastapi_setup, /react_setup...
+- Git: /git_commit, /git_branch, /git_pr, /git_issue, /git_analyze, /git_worktree
+- Dev: /python_setup, /fastapi_setup, /react_setup, /spring_boot_setup
+- Quality: /test_runner, /coverage_report, /test_plan_template
+- Workflow: /brainstorm, /checkpoint, /verify_complete, /debug_workflow, /task_breakdown
 
 ==========================================
 ```
@@ -174,8 +176,10 @@ Claude Code에서 실행:
 
 ```
 # 플러그인 구조 (루트)
+plugin.json                # 플러그인 매니페스트
+marketplace.json           # 마켓플레이스 정보
 .claude-plugin/
-└── plugin.json            # 플러그인 매니페스트
+└── marketplace.json       # 마켓플레이스 정보 (복사본)
 
 agents/                    # 에이전트 정의
 ├── pipeline/              # 워크플로우 에이전트
