@@ -23,8 +23,8 @@
     "workflow"
   ],
   "content": {
-    "agents": "../agents",
-    "skills": "../skills",
-    "instructions": "../.claude/CLAUDE.md"
+    "agents": "agents",
+    "skills": "skills",
+    "instructions": ".claude/CLAUDE.md"
   }
 }
