@@ -5,6 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.1] - 2026-01-31
+
+### Fixed
+
+- **hooks.json 정확성 개선**
+  - 에이전트 카운트 수정: 21개 → 23개
+  - 스킬 카운트 수정: 28개 → 34개
+  - 누락된 에이전트 추가: plan-feedback, brainstorm-facilitator, docs-writer, refactoring-expert, qa-healer, docs-reviewer, debug-specialist, reporter
+  - 누락된 스킬 추가: /git_worktree, /test_plan_template, Workflow 스킬 전체
+
+- **섹션 명명 표준화**
+  - 6개 에이전트의 "Domain Boundaries" → "Scope Boundaries" 통일
+  - 영향 파일: database-expert, devops-engineer, git-ops, ai-expert, frontend-dev, backend-dev
+
+### Changed
+
+- **SessionStart 메시지 개선**
+  - 전체 에이전트 목록 표시 (23개)
+  - Workflow 스킬 섹션 추가
+  - debug-specialist 자동 트리거 추가
+
+---
+
 ## [1.4.0] - 2026-01-31
 
 ### Added

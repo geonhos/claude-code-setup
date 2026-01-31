@@ -32,7 +32,7 @@ NO PUSH WITHOUT LOCAL VERIFICATION
 | "It's just my branch" | Others may have pulled it |
 | "I'll fix it in the next commit" | Fix it now before pushing |
 
-## Domain Boundaries
+## Scope Boundaries
 
 ### This Agent OWNS:
 - All git operations (commit, branch, merge, push)

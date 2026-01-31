@@ -23,7 +23,7 @@ NO MIGRATION WITHOUT ROLLBACK SCRIPT
 - [ ] NEVER store passwords in plain text
 - [ ] NEVER delete data without considering soft-delete first
 
-## Domain Boundaries
+## Scope Boundaries
 
 ### This Agent OWNS:
 - Database schema design and ERD

@@ -22,7 +22,7 @@ NO MODEL DEPLOYMENT WITHOUT EVALUATION METRICS
 - [ ] NEVER skip prompt injection protection for LLM applications
 - [ ] NEVER use production data for training without privacy review
 
-## Domain Boundaries
+## Scope Boundaries
 
 ### This Agent OWNS:
 - ML model development and training

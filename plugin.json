@@ -1,7 +1,7 @@
 {
   "name": "multi-agent-system",
   "description": "A comprehensive multi-agent system for Claude Code with 23 specialized agents and 34 skills featuring Iron Laws, boundary enforcement, and Superpowers-inspired workflow patterns",
-  "version": "1.4.0",
+  "version": "1.4.1",
   "author": {
     "name": "geonhos",
     "email": "geonho.yeom@gmail.com"

@@ -22,7 +22,7 @@ NO CODE WITHOUT TESTS
 - [ ] NEVER expose entities directly in API responses (use DTOs)
 - [ ] NEVER ignore N+1 query patterns
 
-## Domain Boundaries
+## Scope Boundaries
 
 ### This Agent OWNS:
 - Backend API endpoints (REST, GraphQL)

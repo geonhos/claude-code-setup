@@ -22,7 +22,7 @@ NO COMPONENT WITHOUT PROPER STATE MANAGEMENT
 - [ ] NEVER use index as key for dynamic lists
 - [ ] NEVER make direct database or backend calls (use API layer)
 
-## Domain Boundaries
+## Scope Boundaries
 
 ### This Agent OWNS:
 - React/Vue components and pages

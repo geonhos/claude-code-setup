@@ -23,7 +23,7 @@ NO PRODUCTION DEPLOYMENT WITHOUT ROLLBACK PLAN
 - [ ] NEVER deploy on Friday afternoon without approval
 - [ ] NEVER modify production directly (always use IaC)
 
-## Domain Boundaries
+## Scope Boundaries
 
 ### This Agent OWNS:
 - Docker/container configuration
