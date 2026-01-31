@@ -10,7 +10,7 @@
   "plugins": [
     {
       "name": "multi-agent-system",
-      "source": "./",
+      "source": "../",
       "description": "A comprehensive multi-agent system with 21 specialized agents and 28 skills",
       "version": "1.0.0",
       "category": "productivity",
