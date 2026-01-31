@@ -25,17 +25,20 @@ npx <tool>   # CLI 도구 실행
 
 | 키워드/패턴 | Agent | 우선순위 |
 |------------|-------|----------|
-| **commit, branch, merge, push, git, gh, 커밋, 브랜치, PR 생성** | `git-ops` | **높음** |
-| 보안, 취약점, OWASP, XSS, 인증 | `security-analyst` | 높음 |
-| 테스트, QA, 커버리지 | `qa-planner` → `qa-executor` | 높음 |
-| PR, 리뷰, pull request | `pr-reviewer` | 높음 |
-| Docker, K8s, CI/CD, 배포 | `devops-engineer` | 높음 |
-| DB, 스키마, 쿼리, 인덱스 | `database-expert` | 높음 |
-| 성능, 느림, 병목, 최적화 | `performance-analyst` | 중간 |
-| 리팩토링, 정리, 개선 | `refactoring-expert` | 중간 |
-| 문서, API docs, README | `docs-writer` | 중간 |
-| 요구사항, 기능 정의 | `requirements-analyst` | 높음 |
-| 계획, 설계, 아키텍처 | `plan-architect` | 높음 |
+| commit, branch, merge, push, git, gh, 커밋, 브랜치, 머지, 푸시, 풀리퀘, 이슈 생성, PR 생성 | `git-ops` | **높음** |
+| security, 보안, 취약점, OWASP, XSS, SQL injection, 인증, 인가, 암호화, 해킹 | `security-analyst` | 높음 |
+| test, 테스트, QA, 커버리지, 품질, 검증, 단위테스트, 통합테스트 | `qa-planner` → `qa-executor` | 높음 |
+| review, PR, 리뷰, 코드리뷰, 검토, pull request | `pr-reviewer` | 높음 |
+| Docker, K8s, Kubernetes, CI/CD, 배포, 컨테이너, 파이프라인, 인프라, 쿠버네티스 | `devops-engineer` | 높음 |
+| DB, database, 스키마, 쿼리, 인덱스, 데이터베이스, 마이그레이션, 테이블 | `database-expert` | 높음 |
+| performance, 성능, 속도, 느림, 병목, 최적화, 프로파일링, 지연, 레이턴시 | `performance-analyst` | 중간 |
+| refactor, 리팩토링, 정리, 개선, 레거시, 기술부채, 클린업 | `refactoring-expert` | 중간 |
+| docs, 문서, 문서화, API docs, README, 가이드, 설명서 | `docs-writer` | 중간 |
+| requirements, 요구사항, 기능 정의, 스펙, 명세 | `requirements-analyst` | 높음 |
+| plan, 계획, 설계, 아키텍처, 구조, 디자인 | `plan-architect` | 높음 |
+| AI, ML, 머신러닝, 딥러닝, LLM, 모델, 학습, 임베딩 | `ai-expert` | 높음 |
+| React, 컴포넌트, 프론트엔드, UI, 화면, 페이지, 폼 | `frontend-dev` | 높음 |
+| Spring, Java, API, 백엔드, 서버, 엔드포인트, 컨트롤러 | `backend-dev` | 높음 |
 
 ### 자동 파이프라인
 
