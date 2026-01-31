@@ -1,0 +1,48 @@
+# Environment
+.env
+.env.*
+.env.local
+
+# Secrets
+secrets/
+*credentials*
+*.key
+*.pem
+id_rsa*
+
+# Dependencies
+.venv/
+venv/
+node_modules/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.coverage
+coverage/
+.pytest_cache/
+*.egg-info/
+
+# IDE/OS
+.idea/
+.vscode/
+.DS_Store
+*.swp
+*.swo
+Thumbs.db
+
+# Logs
+logs/
+*.log
+
+# Plans (generated)
+plans/
+
+# Reports (generated)
+reports/
+
+# Build
+dist/
+build/
+*.egg

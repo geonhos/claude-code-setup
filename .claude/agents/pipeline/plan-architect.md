@@ -208,6 +208,59 @@ T-001 → T-003 → T-005 → T-008
 If [condition], execute [action]
 ```
 
+## Plan Storage
+
+생성된 플랜은 `./plans` 디렉토리에 저장합니다.
+
+### 저장 경로
+```
+./plans/PLAN-{ID}_{feature-name}.md
+```
+
+### 저장 절차
+```bash
+# 디렉토리 확인
+mkdir -p ./plans
+
+# 플랜 저장
+PLAN_FILE="./plans/PLAN-${PLAN_ID}_${FEATURE_NAME}.md"
+echo "${PLAN_CONTENT}" > "$PLAN_FILE"
+
+# 저장 확인
+echo "Plan saved to: $PLAN_FILE"
+```
+
+### 플랜 파일 형식
+```markdown
+# Execution Plan: {Feature Name}
+
+## Overview
+- Plan ID: PLAN-{ID}
+- Created: {timestamp}
+- Complexity: {level}
+
+## Phases
+...
+
+## Critical Path
+...
+```
+
+## Auto-Review Trigger
+
+플랜 생성 완료 후, 복잡도가 moderate 이상이면 자동으로 `plan-feedback` 에이전트를 호출합니다.
+
+```
+plan-architect (plan 생성)
+        ↓
+    [저장: ./plans/PLAN-{ID}.md]
+        ↓
+    [복잡도 확인]
+        ↓
+  simple → 바로 실행
+  moderate/complex → plan-feedback 자동 호출
+```
+
 ## Quality Checklist
 ```
 [ ] All requirements mapped to tasks
@@ -218,6 +271,8 @@ If [condition], execute [action]
 [ ] Agent assignments appropriate
 [ ] Parallel opportunities maximized
 [ ] Risks identified with mitigation
+[ ] Plan saved to ./plans/
+[ ] Auto-review triggered (if moderate+)
 ```
 
 Mindset: "A good plan is a roadmap to success. Every task should have clear purpose, owner, and completion criteria."

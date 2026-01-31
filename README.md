@@ -6,8 +6,8 @@ Claude Code를 위한 커스텀 Agent 및 Skill 라이브러리
 
 | 항목 | 수량 |
 |------|------|
-| Agents | 14개 |
-| Skills | 25개 |
+| Agents | 20개 |
+| Skills | 28개 |
 
 ---
 
@@ -24,7 +24,7 @@ Claude Code를 위한 커스텀 Agent 및 Skill 라이브러리
 | [`plan-feedback`](.claude/agents/pipeline/plan-feedback.md) | Cross-LLM 검증 (Gemini CLI) |
 | [`orchestrator`](.claude/agents/pipeline/orchestrator.md) | 작업 조율 및 분배 |
 
-### Execution (4개)
+### Execution (8개)
 
 개발 작업 수행
 
@@ -34,8 +34,12 @@ Claude Code를 위한 커스텀 Agent 및 Skill 라이브러리
 | [`frontend-dev`](.claude/agents/execution/frontend-dev.md) | 프론트엔드 개발 | React, TypeScript, MVVM |
 | [`ai-expert`](.claude/agents/execution/ai-expert.md) | AI/ML 개발 | Python, LLM, RAG |
 | [`git-ops`](.claude/agents/execution/git-ops.md) | Git 작업 관리 | Git Flow, GitHub CLI |
+| [`devops-engineer`](.claude/agents/execution/devops-engineer.md) | DevOps/인프라 | Docker, K8s, CI/CD |
+| [`database-expert`](.claude/agents/execution/database-expert.md) | 데이터베이스 | Schema, Query 최적화 |
+| [`refactoring-expert`](.claude/agents/execution/refactoring-expert.md) | 리팩토링 | 레거시 개선, 기술부채 |
+| [`docs-writer`](.claude/agents/execution/docs-writer.md) | 문서화 | API docs, README |
 
-### Quality (6개)
+### Quality (8개)
 
 품질 보증
 
@@ -47,6 +51,8 @@ Claude Code를 위한 커스텀 Agent 및 Skill 라이브러리
 | [`security-analyst`](.claude/agents/quality/security-analyst.md) | 보안 코드 리뷰, OWASP Top 10 |
 | [`pr-reviewer`](.claude/agents/quality/pr-reviewer.md) | PR 리뷰 (Gemini CLI) |
 | [`reporter`](.claude/agents/quality/reporter.md) | 실행 보고서 생성 |
+| [`code-reviewer`](.claude/agents/quality/code-reviewer.md) | 코드 품질 리뷰 |
+| [`performance-analyst`](.claude/agents/quality/performance-analyst.md) | 성능 분석 및 최적화 |
 
 ---
 
@@ -62,7 +68,7 @@ Claude Code를 위한 커스텀 Agent 및 Skill 라이브러리
 | [`/git_issue`](.claude/skills/git/git_issue/SKILL.md) | Issue 템플릿 |
 | [`/git_analyze`](.claude/skills/git/git_analyze/SKILL.md) | 변경사항 분석 |
 
-### Python (4개)
+### Python (5개)
 
 | Skill | 설명 |
 |-------|------|
@@ -70,22 +76,25 @@ Claude Code를 위한 커스텀 Agent 및 Skill 라이브러리
 | [`/fastapi_setup`](.claude/skills/python/fastapi_setup/SKILL.md) | FastAPI 프로젝트 구조 |
 | [`/api_test_setup`](.claude/skills/python/api_test_setup/SKILL.md) | API 테스트 설정 |
 | [`/rag_setup`](.claude/skills/python/rag_setup/SKILL.md) | RAG 파이프라인 설정 |
+| [`/python_best_practices`](.claude/skills/python/python_best_practices/SKILL.md) | Python 모범 사례 |
 
-### Java (3개)
+### Java (4개)
 
 | Skill | 설명 |
 |-------|------|
 | [`/spring_boot_setup`](.claude/skills/java/spring_boot_setup/SKILL.md) | Spring Boot 프로젝트 |
 | [`/gradle_setup`](.claude/skills/java/gradle_setup/SKILL.md) | Gradle 멀티모듈 설정 |
 | [`/jpa_entity`](.claude/skills/java/jpa_entity/SKILL.md) | JPA Entity 생성 |
+| [`/spring_best_practices`](.claude/skills/java/spring_best_practices/SKILL.md) | Spring 모범 사례 |
 
-### React (3개)
+### React (4개)
 
 | Skill | 설명 |
 |-------|------|
 | [`/react_setup`](.claude/skills/react/react_setup/SKILL.md) | React/Vite 프로젝트 |
 | [`/nextjs_setup`](.claude/skills/react/nextjs_setup/SKILL.md) | Next.js 14+ 프로젝트 |
 | [`/component_generator`](.claude/skills/react/component_generator/SKILL.md) | MVVM 컴포넌트 생성 |
+| [`/react_best_practices`](.claude/skills/react/react_best_practices/SKILL.md) | React 모범 사례 |
 
 ### AI/ML (2개)
 
@@ -125,6 +134,9 @@ Claude Code를 위한 커스텀 Agent 및 Skill 라이브러리
 .claude/
 ├── CLAUDE.md              # 개발 지침
 ├── settings.json          # 프로젝트 설정
+├── protocols/             # 공통 프로토콜
+│   ├── logging.md         # 로깅 규칙
+│   └── agent-template.md  # 에이전트 템플릿
 ├── agents/
 │   ├── pipeline/          # 워크플로우 에이전트
 │   ├── execution/         # 개발 에이전트
@@ -139,6 +151,11 @@ Claude Code를 위한 커스텀 Agent 및 Skill 라이브러리
     ├── quality/           # 품질 관련
     ├── base/              # 기본
     └── methodology/       # 방법론
+
+# Generated directories (gitignored)
+plans/                     # 실행 계획
+logs/                      # 에이전트 로그
+reports/                   # 실행 리포트
 ```
 
 ---

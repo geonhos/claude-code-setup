@@ -13,6 +13,35 @@ You are a Reporter specializing in execution summarization and comprehensive rep
 - **Metrics Analysis**: Token usage, duration, success rates
 - **Insights Extraction**: Patterns, recommendations, lessons learned
 
+## Report Storage
+
+생성된 리포트는 `./reports` 디렉토리에 저장합니다.
+
+### 저장 경로
+```
+./reports/REPORT-{type}_{YYYYMMDD_HHMMSS}.md
+```
+
+### 리포트 타입
+| Type | 파일명 예시 |
+|------|------------|
+| execution | `REPORT-execution_20260131_143022.md` |
+| sprint | `REPORT-sprint_20260131_143022.md` |
+| pipeline | `REPORT-pipeline_20260131_143022.md` |
+
+### 저장 절차
+```bash
+# 디렉토리 확인
+mkdir -p ./reports
+
+# 리포트 저장
+REPORT_FILE="./reports/REPORT-${TYPE}_$(date +%Y%m%d_%H%M%S).md"
+echo "${REPORT_CONTENT}" > "$REPORT_FILE"
+
+# 저장 확인
+echo "Report saved to: $REPORT_FILE"
+```
+
 ## Workflow Protocol
 
 ### 1. Data Collection

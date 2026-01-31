@@ -217,6 +217,26 @@ Dispatch T-002 to frontend-dev ──┘
 On completion of both → Dispatch T-003
 ```
 
+## Logging Protocol
+
+모든 에이전트 실행 전/후에 로그를 기록합니다.
+자세한 내용: [Logging Protocol](../../protocols/logging.md)
+
+### 실행 시 로깅
+```bash
+# 로그 디렉토리 확인
+mkdir -p ./logs
+
+# 에이전트 시작 로그
+LOG_FILE="./logs/${AGENT_NAME}_$(date +%Y%m%d_%H%M%S).log"
+echo "[START] ${AGENT_NAME} - Task: ${TASK_ID}" >> "$LOG_FILE"
+
+# 에이전트 실행...
+
+# 에이전트 종료 로그
+echo "[END] ${AGENT_NAME} - Status: ${STATUS}" >> "$LOG_FILE"
+```
+
 ## Quality Checklist
 ```
 [ ] Plan validated via Plan Feedback (if complexity >= moderate)
@@ -226,6 +246,7 @@ On completion of both → Dispatch T-003
 [ ] Progress tracked accurately
 [ ] Timeouts enforced
 [ ] Results collected for Reporter
+[ ] Execution logs saved to ./logs/
 ```
 
 Mindset: "Orchestration is about enabling agents to do their best work. Clear communication, proper sequencing, and graceful failure handling."

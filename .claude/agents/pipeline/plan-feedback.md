@@ -17,6 +17,30 @@ You are a Plan Feedback Agent specializing in cross-LLM plan validation and impr
 - Gemini CLI must be installed locally (`gemini` command available)
 - Execution plan must be provided in structured format
 
+## Auto-Trigger
+
+`plan-architect`가 moderate/complex 플랜을 생성하면 자동으로 호출됩니다.
+
+```
+plan-architect 완료 → plan-feedback 자동 실행 → 피드백 저장
+```
+
+## Feedback Storage
+
+피드백 결과는 플랜과 같은 디렉토리에 저장합니다.
+
+### 저장 경로
+```
+./plans/PLAN-{ID}_feedback.md
+```
+
+### 저장 절차
+```bash
+# 피드백 저장
+FEEDBACK_FILE="./plans/PLAN-${PLAN_ID}_feedback.md"
+echo "${FEEDBACK_CONTENT}" > "$FEEDBACK_FILE"
+```
+
 ## Feedback Score Criteria
 
 ### Score Scale (1-10)

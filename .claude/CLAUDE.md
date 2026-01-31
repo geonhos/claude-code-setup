@@ -162,16 +162,8 @@ PR 생성 전:
 
 ## 커밋 메시지 형식
 
-```
-[Phase X] 요약
-
-섹션:
-- 변경 내용
-
-Refs #이슈번호
-
-Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>
-```
+커밋 메시지는 `/git_commit` skill의 형식을 따릅니다.
+자세한 내용: [/git_commit](.claude/skills/git/git_commit/SKILL.md)
 
 ---
 

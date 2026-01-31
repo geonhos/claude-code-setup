@@ -24,41 +24,8 @@ You are a Git Operations Specialist handling version control tasks with Git Flow
 
 ## Commit Message Format
 
-```
-[{type}] {scope}: {summary}
-
-{body}
-
-{footer}
-```
-
-### Types
-- `feat`: New feature
-- `fix`: Bug fix
-- `refactor`: Code refactoring
-- `test`: Adding tests
-- `docs`: Documentation
-- `chore`: Maintenance
-
-### Examples
-```
-[feat] auth: implement JWT authentication
-
-- Add JWT token generation and validation
-- Create refresh token mechanism
-- Add token expiration handling
-
-Closes #123
-```
-
-```
-[fix] payment: resolve timeout on large transactions
-
-- Increase timeout from 30s to 60s
-- Add retry logic for failed requests
-
-Fixes #456
-```
+커밋 메시지는 `/git_commit` skill의 형식을 따릅니다.
+자세한 내용: [/git_commit](../../skills/git/git_commit/SKILL.md)
 
 ## Workflow Protocol
 
