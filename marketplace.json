@@ -2,11 +2,7 @@
   "name": "geonhos-plugins",
   "owner": {
     "name": "geonhos",
-    "email": "geonho.yeom@gmail.com"
-  },
-  "metadata": {
-    "description": "Multi-agent system plugins for Claude Code",
-    "version": "1.0.0"
+    "email": "ghyeom.dev@gmail.com"
   },
   "plugins": [
     {
@@ -15,18 +11,10 @@
         "source": "github",
         "repo": "geonhos/claude-code-setup"
       },
-      "description": "A comprehensive multi-agent system with 23 specialized agents and 34 skills featuring Iron Laws and boundary enforcement",
+      "description": "Multi-agent system with 23 agents and 34 skills",
       "version": "1.4.3",
-      "author": {
-        "name": "geonhos"
-      },
-      "homepage": "https://github.com/geonhos/claude-code-setup",
-      "repository": "https://github.com/geonhos/claude-code-setup",
       "license": "MIT",
-      "keywords": ["multi-agent", "agents", "automation"],
-      "category": "productivity",
-      "tags": ["multi-agent", "pipeline", "qa", "devops", "automation"],
-      "strict": false
+      "keywords": ["multi-agent", "automation", "qa", "devops"]
     }
   ]
 }
