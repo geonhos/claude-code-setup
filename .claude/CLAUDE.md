@@ -25,9 +25,9 @@ npx <tool>   # CLI 도구 실행
 
 | 키워드/패턴 | Agent | 우선순위 |
 |------------|-------|----------|
-| commit, branch, merge, push, git, gh, 커밋, 브랜치, 머지, 푸시, 풀리퀘, 이슈 생성, PR 생성 | `git-ops` | **높음** |
+| commit, branch, merge, push, git, gh, worktree, 커밋, 브랜치, 머지, 푸시, 풀리퀘, 이슈 생성, PR 생성, 워크트리, 병렬 브랜치 | `git-ops` | 높음 |
 | security, 보안, 취약점, OWASP, XSS, SQL injection, 인증, 인가, 암호화, 해킹 | `security-analyst` | 높음 |
-| test, 테스트, QA, 커버리지, 품질, 검증, 단위테스트, 통합테스트 | `qa-planner` → `qa-executor` | 높음 |
+| test, 테스트, QA, 커버리지, 품질, 검증, 단위테스트, 통합테스트, e2e, Playwright, UI테스트 | `qa-planner` → `qa-executor` | 높음 |
 | review, PR, 리뷰, 코드리뷰, 검토, pull request | `pr-reviewer` | 높음 |
 | Docker, K8s, Kubernetes, CI/CD, 배포, 컨테이너, 파이프라인, 인프라, 쿠버네티스 | `devops-engineer` | 높음 |
 | DB, database, 스키마, 쿼리, 인덱스, 데이터베이스, 마이그레이션, 테이블 | `database-expert` | 높음 |
@@ -49,10 +49,10 @@ npx <tool>   # CLI 도구 실행
   requirements-analyst → plan-architect → [execution agents] → qa-planner → qa-executor
 
 코드 변경 완료 후:
-  code-reviewer → qa-executor → (보안 관련 시) security-analyst
+  pr-reviewer → qa-executor → (보안 관련 시) security-analyst
 
 PR 생성 전:
-  code-reviewer → pr-reviewer → git-ops
+  pr-reviewer → git-ops
 ```
 
 ### 필수 사용 (MUST USE)
@@ -61,7 +61,7 @@ PR 생성 전:
 
 | 상황 | Agent | 이유 |
 |------|-------|------|
-| **git commit, branch, merge, push, gh pr/issue** | `git-ops` | Git Flow 규칙 준수 |
+| git commit, branch, merge, push, gh pr/issue | `git-ops` | Git Flow 규칙 준수 |
 | 코드 작성 완료 후 | `qa-planner` + `qa-executor` | 품질 보장 |
 | 커밋 전 (보안 관련 변경) | `security-analyst` | 보안 검증 |
 | PR 생성 시 | `pr-reviewer` | 코드 리뷰 |
@@ -84,6 +84,7 @@ PR 생성 전:
 | PR 생성 (gh pr) | `git-ops` 에이전트 | 템플릿 적용 |
 | Issue 생성 (gh issue) | `git-ops` 에이전트 | 이슈 관리 |
 | Release (gh release) | `git-ops` 에이전트 | 버전 관리 |
+| Worktree | `git-ops` 에이전트 | 병렬 개발 지원 |
 | 분석 | `/git_analyze` | 변경사항 분석 |
 
 ### 복잡한 작업
@@ -113,8 +114,7 @@ PR 생성 전:
 | 테스트 실행 | `qa-executor` | `/test_runner` |
 | 테스트 복구 | `qa-healer` | - |
 | 보안 검토 | `security-analyst` | - |
-| PR 리뷰 | `pr-reviewer` | - |
-| 코드 리뷰 | `code-reviewer` | - |
+| PR/코드 리뷰 | `pr-reviewer` | Gemini CLI 통합 |
 | 성능 분석 | `performance-analyst` | - |
 | 커버리지 | - | `/coverage_report` |
 
@@ -124,7 +124,14 @@ PR 생성 전:
 |------|-------|
 | 리팩토링 | `refactoring-expert` |
 | 문서화 | `docs-writer` |
-| 코드 리뷰 | `code-reviewer` |
+
+### 작업 로깅
+
+| 작업 | Agent | 설명 |
+|------|-------|------|
+| 작업 전 로깅 | `reporter` | 에이전트 작업 시작 전 계획 기록 |
+| 작업 후 요약 | `reporter` | 완료된 작업 내용 요약 및 결과 기록 |
+| 실행 리포트 | `reporter` | 전체 파이프라인 실행 결과 종합 |
 
 ---
 
@@ -140,7 +147,7 @@ PR 생성 전:
 - [ ] 테스트 실행 (`/test_runner`)
 - [ ] 린터 실행
 - [ ] 변경사항 검토 (`/git_analyze`)
-- [ ] 코드 리뷰 (`code-reviewer`)
+- [ ] 코드 리뷰 (`pr-reviewer`)
 
 ### 푸시 전
 - [ ] 모든 테스트 통과
@@ -148,7 +155,6 @@ PR 생성 전:
 - [ ] 보안 관련 변경 시 `security-analyst` 실행
 
 ### PR 생성 전
-- [ ] `code-reviewer` 실행
 - [ ] `pr-reviewer` 실행 (Gemini CLI 리뷰)
 - [ ] 문서 업데이트 확인
 
