@@ -25,6 +25,7 @@ npx <tool>   # CLI 도구 실행
 
 | 키워드/패턴 | Agent | 우선순위 |
 |------------|-------|----------|
+| **commit, branch, merge, push, git, gh, 커밋, 브랜치, PR 생성** | `git-ops` | **높음** |
 | 보안, 취약점, OWASP, XSS, 인증 | `security-analyst` | 높음 |
 | 테스트, QA, 커버리지 | `qa-planner` → `qa-executor` | 높음 |
 | PR, 리뷰, pull request | `pr-reviewer` | 높음 |
@@ -53,25 +54,34 @@ PR 생성 전:
 
 ### 필수 사용 (MUST USE)
 
-| 상황 | Agent |
-|------|-------|
-| 코드 작성 완료 후 | `qa-planner` + `qa-executor` |
-| 커밋 전 (보안 관련 변경) | `security-analyst` |
-| PR 생성 시 | `pr-reviewer` |
-| 성능 이슈 언급 시 | `performance-analyst` |
+**CRITICAL**: 아래 상황에서는 반드시 해당 Agent를 사용해야 합니다. Bash로 직접 실행하지 마세요.
+
+| 상황 | Agent | 이유 |
+|------|-------|------|
+| **git commit, branch, merge, push, gh pr/issue** | `git-ops` | Git Flow 규칙 준수 |
+| 코드 작성 완료 후 | `qa-planner` + `qa-executor` | 품질 보장 |
+| 커밋 전 (보안 관련 변경) | `security-analyst` | 보안 검증 |
+| PR 생성 시 | `pr-reviewer` | 코드 리뷰 |
+| 성능 이슈 언급 시 | `performance-analyst` | 성능 분석 |
 
 ---
 
 ## Agent 사용 규칙
 
-### Git 작업
+### Git 작업 (MUST delegate to git-ops)
 
-| 작업 | 도구 |
-|------|------|
-| Commit | `git-ops` 또는 `/git_commit` |
-| Branch | `git-ops` 또는 `/git_branch` |
-| PR | `/git_pr` |
-| 분석 | `/git_analyze` |
+**중요**: 모든 Git 작업은 `git-ops` 에이전트에 위임해야 합니다. 직접 `git` 명령을 실행하지 마세요.
+
+| 작업 | 방법 | 비고 |
+|------|------|------|
+| Commit | `git-ops` 에이전트 | Conventional Commits 준수 |
+| Branch | `git-ops` 에이전트 | Git Flow 브랜치 네이밍 |
+| Merge | `git-ops` 에이전트 | 적절한 전략 선택 |
+| Push | `git-ops` 에이전트 | 안전성 검증 포함 |
+| PR 생성 (gh pr) | `git-ops` 에이전트 | 템플릿 적용 |
+| Issue 생성 (gh issue) | `git-ops` 에이전트 | 이슈 관리 |
+| Release (gh release) | `git-ops` 에이전트 | 버전 관리 |
+| 분석 | `/git_analyze` | 변경사항 분석 |
 
 ### 복잡한 작업
 
