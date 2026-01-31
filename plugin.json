@@ -3,7 +3,8 @@
   "description": "A comprehensive multi-agent system for Claude Code with 21 specialized agents covering requirements analysis, planning, execution, QA, and DevOps workflows",
   "version": "1.0.0",
   "author": {
-    "name": "geonhos"
+    "name": "geonhos",
+    "email": "geonho.yeom@gmail.com"
   },
   "homepage": "https://github.com/geonho-yeom/claude-code-setup",
   "repository": "https://github.com/geonho-yeom/claude-code-setup",
@@ -22,9 +23,6 @@
     "automation",
     "workflow"
   ],
-  "content": {
-    "agents": "agents",
-    "skills": "skills",
-    "instructions": ".claude/CLAUDE.md"
-  }
+  "agents": "./agents/",
+  "skills": "./skills/"
 }

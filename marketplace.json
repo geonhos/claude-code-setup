@@ -1,0 +1,29 @@
+{
+  "name": "geonhos-plugins",
+  "owner": {
+    "name": "geonhos",
+    "email": "geonho.yeom@gmail.com"
+  },
+  "metadata": {
+    "description": "Multi-agent system plugins for Claude Code",
+    "version": "1.0.0"
+  },
+  "plugins": [
+    {
+      "name": "multi-agent-system",
+      "source": "./",
+      "description": "A comprehensive multi-agent system with 21 specialized agents and 28 skills",
+      "version": "1.0.0",
+      "author": {
+        "name": "geonhos"
+      },
+      "homepage": "https://github.com/geonho-yeom/claude-code-setup",
+      "repository": "https://github.com/geonho-yeom/claude-code-setup",
+      "license": "MIT",
+      "keywords": ["multi-agent", "agents", "automation"],
+      "category": "productivity",
+      "tags": ["multi-agent", "pipeline", "qa", "devops", "automation"],
+      "strict": false
+    }
+  ]
+}
