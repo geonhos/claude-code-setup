@@ -29,6 +29,7 @@ npx <tool>   # CLI 도구 실행
 | security, 보안, 취약점, OWASP, XSS, SQL injection, 인증, 인가, 암호화, 해킹 | `security-analyst` | 높음 |
 | test, 테스트, QA, 커버리지, 품질, 검증, 단위테스트, 통합테스트, e2e, Playwright, UI테스트 | `qa-planner` → `qa-executor` | 높음 |
 | review, PR, 리뷰, 코드리뷰, 검토, pull request | `pr-reviewer` | 높음 |
+| 문서 리뷰, 문서 검토, 요구사항 리뷰, 스펙 리뷰, doc review, spec review | `docs-reviewer` | 높음 |
 | Docker, K8s, Kubernetes, CI/CD, 배포, 컨테이너, 파이프라인, 인프라, 쿠버네티스 | `devops-engineer` | 높음 |
 | DB, database, 스키마, 쿼리, 인덱스, 데이터베이스, 마이그레이션, 테이블 | `database-expert` | 높음 |
 | performance, 성능, 속도, 느림, 병목, 최적화, 프로파일링, 지연, 레이턴시 | `performance-analyst` | 중간 |
@@ -46,10 +47,13 @@ npx <tool>   # CLI 도구 실행
 
 ```
 새 기능 구현:
-  requirements-analyst → plan-architect → [execution agents] → qa-planner → qa-executor
+  requirements-analyst → docs-reviewer → plan-architect → [execution agents] → qa-planner → qa-executor
 
 코드 변경 완료 후:
-  pr-reviewer → qa-executor → (보안 관련 시) security-analyst
+  code-reviewer → qa-executor → (보안 관련 시) security-analyst
+
+문서/요구사항 작성 완료 후:
+  docs-reviewer
 
 PR 생성 전:
   pr-reviewer → git-ops
@@ -62,9 +66,10 @@ PR 생성 전:
 | 상황 | Agent | 이유 |
 |------|-------|------|
 | git commit, branch, merge, push, gh pr/issue | `git-ops` | Git Flow 규칙 준수 |
-| 코드 작성 완료 후 | `qa-planner` + `qa-executor` | 품질 보장 |
+| 코드 작성 완료 후 | `code-reviewer` + `qa-planner` + `qa-executor` | 품질 보장 |
+| 문서/요구사항 작성 완료 후 | `docs-reviewer` | 문서 품질 보장 |
 | 커밋 전 (보안 관련 변경) | `security-analyst` | 보안 검증 |
-| PR 생성 시 | `pr-reviewer` | 코드 리뷰 |
+| PR 생성 시 | `pr-reviewer` | PR 리뷰 |
 | 성능 이슈 언급 시 | `performance-analyst` | 성능 분석 |
 
 ---
@@ -91,7 +96,7 @@ PR 생성 전:
 
 | 상황 | Agent |
 |------|-------|
-| 요구사항 불명확 | `requirements-analyst` |
+| 요구사항 불명확 | `requirements-analyst` → `docs-reviewer` |
 | 계획 수립 필요 | `plan-architect` → `plan-feedback` |
 | 다중 도메인 | `orchestrator` |
 
@@ -114,7 +119,9 @@ PR 생성 전:
 | 테스트 실행 | `qa-executor` | `/test_runner` |
 | 테스트 복구 | `qa-healer` | - |
 | 보안 검토 | `security-analyst` | - |
-| PR/코드 리뷰 | `pr-reviewer` | Gemini CLI 통합 |
+| 코드 리뷰 | `code-reviewer` | - |
+| 문서 리뷰 | `docs-reviewer` | - |
+| PR 리뷰 | `pr-reviewer` | Gemini CLI 통합 |
 | 성능 분석 | `performance-analyst` | - |
 | 커버리지 | - | `/coverage_report` |
 
@@ -123,7 +130,8 @@ PR 생성 전:
 | 작업 | Agent |
 |------|-------|
 | 리팩토링 | `refactoring-expert` |
-| 문서화 | `docs-writer` |
+| 문서 작성 | `docs-writer` |
+| 문서 리뷰 | `docs-reviewer` |
 
 ### 작업 로깅
 
