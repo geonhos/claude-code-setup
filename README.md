@@ -13,28 +13,29 @@ Claude Code에서 실행:
 /plugin add multi-agent-system
 ```
 
-### 2단계: 에이전트 활성화
-
-프로젝트 디렉토리에서 실행:
+### 2단계: 프로젝트에 적용
 
 ```bash
-# scripts 폴더 복사 (최초 1회)
+# 설치 스크립트 실행
+bash <(cat ~/.claude/plugins/cache/geonhos-plugins/multi-agent-system/*/scripts/install-agents.sh)
+```
+
+또는:
+
+```bash
+# scripts 폴더를 프로젝트에 복사 후 실행
 PLUGIN_DIR=$(find ~/.claude/plugins/cache/geonhos-plugins/multi-agent-system -maxdepth 1 -type d | tail -1)
 cp -r "$PLUGIN_DIR/scripts" ./
-chmod +x ./scripts/*.sh
-
-# 에이전트 설치
 ./scripts/install-agents.sh
 ```
 
-### 업데이트
+### 설치 결과
 
-```bash
-# 버전 확인
-./scripts/check-update.sh
-
-# 새 버전 설치 (플러그인 업데이트 후)
-./scripts/install-agents.sh
+```
+.claude/
+├── agents/       # 21개 에이전트
+├── skills/       # 28개 스킬
+└── CLAUDE.md     # 개발 지침
 ```
 
 > 📖 자세한 내용은 [설치 가이드](docs/SETUP_GUIDE.md)를 참조하세요.

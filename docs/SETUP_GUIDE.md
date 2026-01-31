@@ -19,13 +19,17 @@
 /plugin marketplace add geonhos/claude-code-setup
 /plugin add multi-agent-system
 
-# 2. 프로젝트에 설치 스크립트 복사
-PLUGIN_DIR=$(find ~/.claude/plugins/cache/geonhos-plugins/multi-agent-system -maxdepth 1 -type d | tail -1)
-cp -r "$PLUGIN_DIR/scripts" ./
-chmod +x ./scripts/*.sh
+# 2. 프로젝트에 적용 (터미널에서)
+bash <(cat ~/.claude/plugins/cache/geonhos-plugins/multi-agent-system/*/scripts/install-agents.sh)
+```
 
-# 3. 에이전트 설치
-./scripts/install-agents.sh
+설치 완료 후 프로젝트에 다음이 생성됩니다:
+
+```
+.claude/
+├── agents/       # 21개 에이전트 (자동 감지)
+├── skills/       # 28개 스킬 (자동 감지)
+└── CLAUDE.md     # 개발 지침
 ```
 
 ---
