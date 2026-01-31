@@ -6,8 +6,8 @@
     "name": "geonhos",
     "email": "geonho.yeom@gmail.com"
   },
-  "homepage": "https://github.com/geonho-yeom/claude-code-setup",
-  "repository": "https://github.com/geonho-yeom/claude-code-setup",
+  "homepage": "https://github.com/geonhos/claude-code-setup",
+  "repository": "https://github.com/geonhos/claude-code-setup",
   "license": "MIT",
   "keywords": [
     "multi-agent",
@@ -23,6 +23,6 @@
     "automation",
     "workflow"
   ],
-  "agents": "./agents/",
-  "skills": "./skills/"
+  "agents": "./agents",
+  "skills": "./skills"
 }

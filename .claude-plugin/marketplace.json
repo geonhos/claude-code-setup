@@ -25,8 +25,7 @@
       "license": "MIT",
       "keywords": ["multi-agent", "agents", "automation"],
       "category": "productivity",
-      "tags": ["multi-agent", "pipeline", "qa", "devops", "automation"],
-      "strict": false
+      "tags": ["multi-agent", "pipeline", "qa", "devops", "automation"]
     }
   ]
 }
