@@ -28,8 +28,9 @@ npx <tool>   # CLI 도구 실행
 | commit, branch, merge, push, git, gh, worktree, 커밋, 브랜치, 머지, 푸시, 풀리퀘, 이슈 생성, PR 생성, 워크트리, 병렬 브랜치, multiple branches | `git-ops` | 높음 |
 | security, 보안, 취약점, OWASP, XSS, SQL injection, 인증, 인가, 암호화, 해킹 | `security-analyst` | 높음 |
 | test, 테스트, QA, 커버리지, 품질, 검증, 단위테스트, 통합테스트, e2e, Playwright, UI테스트 | `qa-planner` → `qa-executor` | 높음 |
-| review, PR, 리뷰, 코드리뷰, 검토, pull request | `pr-reviewer` | 높음 |
-| 문서 리뷰, 문서 검토, 요구사항 리뷰, 스펙 리뷰, doc review, spec review | `docs-reviewer` | 높음 |
+| review, 리뷰, 코드리뷰, code review, 검토, 코드 검토 | `code-reviewer` | 높음 |
+| PR review, PR 리뷰, pull request, PR 검토 | `pr-reviewer` | 높음 |
+| 문서 리뷰, 문서 검토, 요구사항 리뷰, 스펙 리뷰, doc review, spec review, README 리뷰 | `docs-reviewer` | 높음 |
 | Docker, K8s, Kubernetes, CI/CD, 배포, 컨테이너, 파이프라인, 인프라, 쿠버네티스 | `devops-engineer` | 높음 |
 | DB, database, 스키마, 쿼리, 인덱스, 데이터베이스, 마이그레이션, 테이블 | `database-expert` | 높음 |
 | performance, 성능, 속도, 느림, 병목, 최적화, 프로파일링, 지연, 레이턴시 | `performance-analyst` | 중간 |
@@ -143,6 +144,19 @@ PR 생성 전:
 | PR 리뷰 | `pr-reviewer` | Gemini CLI 통합 |
 | 성능 분석 | `performance-analyst` | - |
 | 커버리지 | - | `/coverage_report` |
+
+### 리뷰 에이전트 구분 (IMPORTANT)
+
+| 상황 | Agent | 설명 |
+|------|-------|------|
+| "리뷰", "코드리뷰", "review" | `code-reviewer` | 일반 코드 품질 검토 |
+| "PR 리뷰", "PR review", "pull request" | `pr-reviewer` | PR 생성 전 Gemini CLI 검증 |
+| "문서 리뷰", "doc review", "스펙 리뷰" | `docs-reviewer` | 문서/요구사항 검토 |
+
+**예시:**
+- "이 코드 리뷰해줘" → `code-reviewer`
+- "PR 리뷰 진행" → `pr-reviewer`
+- "README 리뷰해줘" → `docs-reviewer`
 
 ### 코드 품질
 
