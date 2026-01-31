@@ -1,0 +1,25 @@
+{
+  "name": "multi-agent-system",
+  "description": "A comprehensive multi-agent system for Claude Code with 21 specialized agents covering requirements analysis, planning, execution, QA, and DevOps workflows",
+  "version": "1.0.0",
+  "author": {
+    "name": "geonhos"
+  },
+  "homepage": "https://github.com/geonho-yeom/claude-code-setup",
+  "repository": "https://github.com/geonho-yeom/claude-code-setup",
+  "license": "MIT",
+  "keywords": [
+    "multi-agent",
+    "pipeline",
+    "qa",
+    "code-review",
+    "security",
+    "devops",
+    "git-ops",
+    "testing",
+    "documentation",
+    "agents",
+    "automation",
+    "workflow"
+  ]
+}

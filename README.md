@@ -1,12 +1,44 @@
 # Claude Code Agents & Skills
 
-Claude Code를 위한 커스텀 Agent 및 Skill 라이브러리
+Claude Code를 위한 멀티에이전트 시스템 플러그인
+
+## 설치
+
+### 플러그인으로 설치 (권장)
+
+```bash
+# Claude Code에서 플러그인 설치
+/plugin install multi-agent-system@geonho-yeom/claude-code-setup
+```
+
+또는 마켓플레이스 추가 후 설치:
+
+```bash
+/plugin marketplace add geonho-yeom/claude-code-setup
+/plugin install multi-agent-system
+```
+
+### 로컬 테스트
+
+```bash
+# 저장소 클론 후 로컬에서 테스트
+git clone https://github.com/geonho-yeom/claude-code-setup.git
+cd claude-code-setup
+claude --plugin-dir .
+```
+
+### Standalone 설정으로 사용
+
+```bash
+# .claude 디렉토리를 프로젝트에 복사
+cp -r .claude /path/to/your/project/
+```
 
 ## 구성
 
 | 항목 | 수량 |
 |------|------|
-| Agents | 20개 |
+| Agents | 21개 |
 | Skills | 28개 |
 
 ---
@@ -39,7 +71,7 @@ Claude Code를 위한 커스텀 Agent 및 Skill 라이브러리
 | [`refactoring-expert`](.claude/agents/execution/refactoring-expert.md) | 리팩토링 | 레거시 개선, 기술부채 |
 | [`docs-writer`](.claude/agents/execution/docs-writer.md) | 문서화 | API docs, README |
 
-### Quality (8개)
+### Quality (9개)
 
 품질 보증
 
@@ -50,6 +82,7 @@ Claude Code를 위한 커스텀 Agent 및 Skill 라이브러리
 | [`qa-healer`](.claude/agents/quality/qa-healer.md) | 테스트 실패 복구 |
 | [`security-analyst`](.claude/agents/quality/security-analyst.md) | 보안 코드 리뷰, OWASP Top 10 |
 | [`pr-reviewer`](.claude/agents/quality/pr-reviewer.md) | PR 리뷰 (Gemini CLI) |
+| [`docs-reviewer`](.claude/agents/quality/docs-reviewer.md) | 문서 품질 리뷰 |
 | [`reporter`](.claude/agents/quality/reporter.md) | 실행 보고서 생성 |
 | [`code-reviewer`](.claude/agents/quality/code-reviewer.md) | 코드 품질 리뷰 |
 | [`performance-analyst`](.claude/agents/quality/performance-analyst.md) | 성능 분석 및 최적화 |
