@@ -105,7 +105,39 @@ else
     echo -e "  ${YELLOW}⚠${NC} CLAUDE.md 없음 (스킵)"
 fi
 
-# 4. Save version
+# 4. Copy settings.json
+echo -e "${YELLOW}settings.json 복사 중...${NC}"
+if [ -f "$PLUGIN_DIR/.claude/settings.json" ]; then
+    cp "$PLUGIN_DIR/.claude/settings.json" "$TARGET_DIR/settings.json"
+    echo -e "  ${GREEN}✓${NC} settings.json 복사 완료"
+else
+    echo -e "  ${YELLOW}⚠${NC} settings.json 없음 (스킵)"
+fi
+
+# 5. Copy protocols
+echo -e "${YELLOW}protocols 복사 중...${NC}"
+if [ -d "$PLUGIN_DIR/.claude/protocols" ]; then
+    mkdir -p "$TARGET_DIR/protocols"
+    cp -r "$PLUGIN_DIR/.claude/protocols/"* "$TARGET_DIR/protocols/"
+    protocol_count=$(ls -1 "$TARGET_DIR/protocols/" | wc -l | tr -d ' ')
+    echo -e "  ${GREEN}✓${NC} $protocol_count개 프로토콜 복사 완료"
+else
+    echo -e "  ${YELLOW}⚠${NC} protocols 없음 (스킵)"
+fi
+
+# 6. Copy .mcp.json
+echo -e "${YELLOW}.mcp.json 복사 중...${NC}"
+if [ -f "$PLUGIN_DIR/.mcp.json" ]; then
+    cp "$PLUGIN_DIR/.mcp.json" "$PROJECT_PATH/.mcp.json"
+    echo -e "  ${GREEN}✓${NC} .mcp.json 복사 완료"
+else
+    echo -e "  ${YELLOW}⚠${NC} .mcp.json 없음 (스킵)"
+fi
+
+# 7. Create plans directory
+mkdir -p "$PROJECT_PATH/plans"
+
+# 8. Save version
 echo "$LATEST_VERSION" > "$PROJECT_PATH/$VERSION_FILE"
 
 echo ""
@@ -114,9 +146,14 @@ echo -e "${GREEN}  설치 완료!${NC}"
 echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo ""
 echo "설치된 항목:"
-echo "  - .claude/agents/     ($agent_count개 에이전트)"
-echo "  - .claude/skills/     ($skill_count개 스킬)"
-echo "  - .claude/CLAUDE.md   (개발 지침)"
+echo "  .claude/"
+echo "  ├── agents/        ($agent_count개 에이전트)"
+echo "  ├── skills/        ($skill_count개 스킬)"
+echo "  ├── protocols/     (로깅, 템플릿)"
+echo "  ├── settings.json  (보안 설정)"
+echo "  └── CLAUDE.md      (개발 지침)"
+echo "  .mcp.json          (MCP 서버 설정)"
+echo "  plans/             (실행 계획 저장)"
 echo ""
 echo "이제 Claude Code가 자동으로 에이전트와 스킬을 감지합니다."
 echo ""

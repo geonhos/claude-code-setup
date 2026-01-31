@@ -27,9 +27,13 @@ bash <(cat ~/.claude/plugins/cache/geonhos-plugins/multi-agent-system/*/scripts/
 
 ```
 .claude/
-├── agents/       # 21개 에이전트 (자동 감지)
-├── skills/       # 28개 스킬 (자동 감지)
-└── CLAUDE.md     # 개발 지침
+├── agents/        # 21개 에이전트 (자동 감지)
+├── skills/        # 28개 스킬 (자동 감지)
+├── protocols/     # 로깅, 템플릿
+├── settings.json  # 보안 설정
+└── CLAUDE.md      # 개발 지침
+.mcp.json          # MCP 서버 설정
+plans/             # 실행 계획 저장
 ```
 
 ---
