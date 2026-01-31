@@ -2,7 +2,6 @@
 name: git_commit
 description: Analyzes staged changes and generates structured commit messages following [Phase X] format. Includes status check, staging, and commit execution.
 model: haiku
-color: green
 ---
 
 # Git Commit Skill

@@ -2,7 +2,6 @@
 name: python_best_practices
 description: Python/FastAPI performance optimization guide with async patterns, database optimization, and caching strategies
 model: haiku
-color: green
 ---
 
 # Python Best Practices

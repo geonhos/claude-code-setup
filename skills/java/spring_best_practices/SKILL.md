@@ -2,7 +2,6 @@
 name: spring_best_practices
 description: Spring Boot performance optimization guide with JPA tuning, async processing, and caching strategies
 model: haiku
-color: green
 ---
 
 # Spring Boot Best Practices

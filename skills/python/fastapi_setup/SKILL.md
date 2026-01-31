@@ -2,7 +2,6 @@
 name: fastapi_setup
 description: Sets up FastAPI project structure with routers, models, schemas, services, database, and comprehensive testing. Use after python_setup for API projects.
 model: haiku
-color: green
 ---
 
 # FastAPI Project Setup Skill

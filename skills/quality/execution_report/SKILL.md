@@ -2,7 +2,6 @@
 name: execution_report
 description: Generates comprehensive execution reports summarizing all agent activities, prompts used, and outcomes.
 model: haiku
-color: white
 ---
 
 # Execution Report Skill

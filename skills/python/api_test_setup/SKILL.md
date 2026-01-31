@@ -2,7 +2,6 @@
 name: api_test_setup
 description: Sets up API testing patterns with pytest, httpx TestClient, fixtures, and coverage configuration for FastAPI projects.
 model: haiku
-color: cyan
 ---
 
 # API Test Setup Skill

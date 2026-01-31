@@ -2,7 +2,6 @@
 name: jpa_entity
 description: Generates JPA entities with proper annotations, relationships, and base entity inheritance following DDD patterns.
 model: haiku
-color: purple
 ---
 
 # JPA Entity Generator Skill

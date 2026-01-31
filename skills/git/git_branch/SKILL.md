@@ -2,7 +2,6 @@
 name: git_branch
 description: Manages Git branches with consistent naming conventions. Handles creation, switching, deletion, and cleanup based on issue numbers.
 model: haiku
-color: cyan
 ---
 
 # Git Branch Skill

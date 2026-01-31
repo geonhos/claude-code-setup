@@ -2,7 +2,6 @@
 name: git_pr
 description: Creates and manages Pull Requests with structured templates. Handles PR creation, description formatting, and merge strategies.
 model: haiku
-color: purple
 ---
 
 # Git PR Skill

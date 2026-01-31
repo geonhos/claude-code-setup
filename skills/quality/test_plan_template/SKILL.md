@@ -2,7 +2,6 @@
 name: test_plan_template
 description: Generates comprehensive test plans with test cases, priorities, and coverage targets for features.
 model: haiku
-color: yellow
 ---
 
 # Test Plan Template Skill

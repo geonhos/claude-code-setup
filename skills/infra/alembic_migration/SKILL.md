@@ -2,7 +2,6 @@
 name: alembic_migration
 description: Manages database migrations with Alembic. Handles init, revision creation, upgrade, downgrade, and migration history.
 model: haiku
-color: orange
 ---
 
 # Alembic Migration Skill
