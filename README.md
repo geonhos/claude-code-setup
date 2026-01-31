@@ -181,6 +181,9 @@ marketplace.json           # 마켓플레이스 정보
 .claude-plugin/
 └── marketplace.json       # 마켓플레이스 정보 (복사본)
 
+hooks/
+└── hooks.json             # SessionStart 훅 설정
+
 agents/                    # 에이전트 정의
 ├── pipeline/              # 워크플로우 에이전트
 ├── execution/             # 개발 에이전트

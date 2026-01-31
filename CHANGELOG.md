@@ -227,4 +227,3 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Quality assurance automation (code review, security analysis, testing)
 - Git Flow compliance with git-ops agent
 
-[1.0.0]: https://github.com/geonho-yeom/claude-code-setup/releases/tag/v1.0.0
