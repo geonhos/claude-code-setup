@@ -14,24 +14,18 @@
 
 ## 빠른 시작
 
-### 방법 1: 원클릭 설치 (권장)
-
 ```bash
-# 1. 플러그인 설치
+# 1. 플러그인 설치 (Claude Code에서)
 /plugin marketplace add geonhos/claude-code-setup
 /plugin add multi-agent-system
 
-# 2. 설치 스크립트를 프로젝트에 복사 & 실행
-cp -r "$(find ~/.claude/plugins/cache/geonhos-plugins/multi-agent-system -maxdepth 1 -type d | tail -1)/scripts" ./
+# 2. 프로젝트에 설치 스크립트 복사
+PLUGIN_DIR=$(find ~/.claude/plugins/cache/geonhos-plugins/multi-agent-system -maxdepth 1 -type d | tail -1)
+cp -r "$PLUGIN_DIR/scripts" ./
+chmod +x ./scripts/*.sh
+
+# 3. 에이전트 설치
 ./scripts/install-agents.sh
-```
-
-### 방법 2: 수동 설치
-
-```bash
-# agents 폴더 직접 복사
-mkdir -p .claude/agents
-cp ~/.claude/plugins/cache/geonhos-plugins/multi-agent-system/*/agents/**/*.md .claude/agents/
 ```
 
 ---
