@@ -4,8 +4,6 @@ Claude Code를 위한 멀티에이전트 시스템 플러그인
 
 ## 설치
 
-### 1단계: 플러그인 설치
-
 Claude Code에서 실행:
 
 ```
@@ -13,36 +11,24 @@ Claude Code에서 실행:
 /plugin add multi-agent-system
 ```
 
-### 2단계: 프로젝트에 적용
-
-```bash
-# 설치 스크립트 실행
-bash <(cat ~/.claude/plugins/cache/geonhos-plugins/multi-agent-system/*/scripts/install-agents.sh)
-```
-
-또는:
-
-```bash
-# scripts 폴더를 프로젝트에 복사 후 실행
-PLUGIN_DIR=$(find ~/.claude/plugins/cache/geonhos-plugins/multi-agent-system -maxdepth 1 -type d | tail -1)
-cp -r "$PLUGIN_DIR/scripts" ./
-./scripts/install-agents.sh
-```
-
-### 설치 결과
+설치 완료! 세션 시작 시 자동으로 에이전트와 스킬이 소개됩니다.
 
 ```
-.claude/
-├── agents/        # 21개 에이전트
-├── skills/        # 28개 스킬
-├── protocols/     # 로깅, 템플릿
-├── settings.json  # 보안 설정
-└── CLAUDE.md      # 개발 지침
-.mcp.json          # MCP 서버 설정
-plans/             # 실행 계획 저장
-```
+===== Multi-Agent System 활성화 =====
 
-> 📖 자세한 내용은 [설치 가이드](docs/SETUP_GUIDE.md)를 참조하세요.
+21개 전문 에이전트와 28개 스킬이 로드되었습니다.
+
+[Agents]
+- Pipeline: requirements-analyst, plan-architect, orchestrator
+- Execution: git-ops, backend-dev, frontend-dev, ai-expert...
+- Quality: qa-planner, qa-executor, code-reviewer, security-analyst...
+
+[Skills]
+- Git: /git_commit, /git_branch, /git_pr, /git_analyze
+- Dev: /python_setup, /fastapi_setup, /react_setup...
+
+==========================================
+```
 
 ## 구성
 

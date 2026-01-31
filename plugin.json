@@ -1,7 +1,7 @@
 {
   "name": "multi-agent-system",
   "description": "A comprehensive multi-agent system for Claude Code with 21 specialized agents covering requirements analysis, planning, execution, QA, and DevOps workflows",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "author": {
     "name": "geonhos",
     "email": "geonho.yeom@gmail.com"
@@ -46,6 +46,7 @@
     "./agents/quality/reporter.md",
     "./agents/quality/security-analyst.md"
   ],
+  "hooks": "./hooks/hooks.json",
   "skills": [
     "./skills/ai/langchain_setup",
     "./skills/ai/mlflow_setup",

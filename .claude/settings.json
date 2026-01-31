@@ -9,5 +9,16 @@
       "Read(./secrets/**)",
       "Read(**/*credentials*)"
     ]
+  },
+  "extraKnownMarketplaces": {
+    "geonhos-plugins": {
+      "source": {
+        "source": "github",
+        "repo": "geonhos/claude-code-setup"
+      }
+    }
+  },
+  "enabledPlugins": {
+    "multi-agent-system@geonhos-plugins": true
   }
 }

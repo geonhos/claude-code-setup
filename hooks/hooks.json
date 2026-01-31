@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cat << 'EOF'\n\n===== Multi-Agent System 활성화 =====\n\n21개 전문 에이전트와 28개 스킬이 로드되었습니다.\n\n[Agents]\n- Pipeline: requirements-analyst, plan-architect, orchestrator\n- Execution: git-ops, backend-dev, frontend-dev, ai-expert, devops-engineer, database-expert\n- Quality: qa-planner, qa-executor, code-reviewer, security-analyst, pr-reviewer\n\n[Skills]\n- Git: /git_commit, /git_branch, /git_pr, /git_analyze\n- Dev: /python_setup, /fastapi_setup, /react_setup, /spring_boot_setup\n- Quality: /test_runner, /coverage_report\n\n[자동 트리거]\n- 'commit', 'branch', 'git' → git-ops\n- 'test', '테스트', 'QA' → qa-planner\n- 'review', '리뷰' → code-reviewer\n- 'security', '보안' → security-analyst\n\n==========================================\n\nEOF"
+          }
+        ]
+      }
+    ]
+  }
+}
