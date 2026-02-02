@@ -17,162 +17,157 @@ npx <tool>   # CLI 도구 실행
 
 ---
 
-## Agent 자동 사용 규칙
+## 핵심 워크플로우 (6단계)
 
-### 키워드 기반 자동 트리거
-
-다음 키워드가 감지되면 해당 에이전트를 **자동으로** 사용:
-
-| 키워드/패턴 | Agent | 우선순위 |
-|------------|-------|----------|
-| commit, branch, merge, push, git, gh, worktree, 커밋, 브랜치, 머지, 푸시, 풀리퀘, 이슈 생성, PR 생성, 워크트리, 병렬 브랜치, multiple branches | `git-ops` | 높음 |
-| security, 보안, 취약점, OWASP, XSS, SQL injection, 인증, 인가, 암호화, 해킹 | `security-analyst` | 높음 |
-| test, 테스트, QA, 커버리지, 품질, 검증, 단위테스트, 통합테스트, e2e, Playwright, UI테스트 | `qa-planner` → `qa-executor` | 높음 |
-| review, 리뷰, 코드리뷰, code review, 검토, 코드 검토 | `code-reviewer` | 높음 |
-| PR review, PR 리뷰, pull request, PR 검토 | `pr-reviewer` | 높음 |
-| 문서 리뷰, 문서 검토, 요구사항 리뷰, 스펙 리뷰, doc review, spec review, README 리뷰 | `docs-reviewer` | 높음 |
-| Docker, K8s, Kubernetes, CI/CD, 배포, 컨테이너, 파이프라인, 인프라, 쿠버네티스 | `devops-engineer` | 높음 |
-| DB, database, 스키마, 쿼리, 인덱스, 데이터베이스, 마이그레이션, 테이블 | `database-expert` | 높음 |
-| performance, 성능, 속도, 느림, 병목, 최적화, 프로파일링, 지연, 레이턴시 | `performance-analyst` | 중간 |
-| refactor, 리팩토링, 정리, 개선, 레거시, 기술부채, 클린업 | `refactoring-expert` | 중간 |
-| docs, 문서, 문서화, API docs, README, 가이드, 설명서 | `docs-writer` | 중간 |
-| requirements, 요구사항, 기능 정의, 스펙, 명세 | `requirements-analyst` | 높음 |
-| plan, 계획, 설계, 아키텍처, 구조, 디자인 | `plan-architect` | 높음 |
-| AI, ML, 머신러닝, 딥러닝, LLM, 모델, 학습, 임베딩 | `ai-expert` | 높음 |
-| React, 컴포넌트, 프론트엔드, UI, 화면, 페이지, 폼 | `frontend-dev` | 높음 |
-| Spring, Java, API, 백엔드, 서버, 엔드포인트, 컨트롤러 | `backend-dev` | 높음 |
-| brainstorm, explore, alternatives, approaches, options, 브레인스톰, 탐색, 대안, 접근법, 옵션 | `brainstorm-facilitator` | 높음 |
-| debug, bug, issue, error, crash, not working, 디버그, 버그, 이슈, 에러, 크래시, 오류 | `debug-specialist` | 높음 |
-
-### 자동 파이프라인
-
-복합 작업 시 자동으로 에이전트 체인 실행:
+모든 복잡한 작업은 다음 6단계를 따릅니다:
 
 ```
-새 기능 구현:
-  requirements-analyst → brainstorm-facilitator (복잡한 결정 시)
-  → docs-reviewer → plan-architect (atomic task breakdown)
-  → [execution agents with checkpoint every 5 tasks]
-  → verify-complete → qa-planner → qa-executor
-
-코드 변경 완료 후:
-  code-reviewer → qa-executor → (보안 관련 시) security-analyst
-
-문서/요구사항 작성 완료 후:
-  docs-reviewer
-
-PR 생성 전:
-  pr-reviewer → git-ops
-
-디버깅:
-  debug-specialist (reproduce → hypothesize → test → fix → verify)
+┌──────────────┐    ┌──────────────┐    ┌──────────────┐
+│ 1. 요구사항   │───▶│ 2. Plan 생성 │───▶│ 3. Plan 검증 │
+│    수집       │    │              │    │  (자체검증)   │
+│requirements- │    │plan-architect│    │              │
+│   analyst    │    │              │    │              │
+└──────────────┘    └──────────────┘    └──────┬───────┘
+                                               │
+                    ┌──────────────────────────┘
+                    ▼
+┌──────────────────────────────────────────────────────┐
+│              4. Orchestrator (병렬 조율)              │
+└───────────────────────┬──────────────────────────────┘
+        ┌───────────────┼───────────────┐
+        ▼               ▼               ▼
+   [Agent A]       [Agent B]       [Agent C]  ← 5. 병렬 실행
+        └───────────────┼───────────────┘
+                        ▼
+┌──────────────────────────────────────────────────────┐
+│     6. 구현 검증 (code-reviewer + qa-executor)        │
+└──────────────────────────────────────────────────────┘
 ```
 
-### 필수 사용 (MUST USE)
-
-**CRITICAL**: 아래 상황에서는 반드시 해당 Agent를 사용해야 합니다. Bash로 직접 실행하지 마세요.
-
-| 상황 | Agent | 이유 |
-|------|-------|------|
-| git commit, branch, merge, push, gh pr/issue | `git-ops` | Git Flow 규칙 준수 |
-| 코드 작성 완료 후 | `code-reviewer` + `qa-planner` + `qa-executor` | 품질 보장 |
-| 문서/요구사항 작성 완료 후 | `docs-reviewer` | 문서 품질 보장 |
-| 커밋 전 (보안 관련 변경) | `security-analyst` | 보안 검증 |
-| PR 생성 시 | `pr-reviewer` | PR 리뷰 |
-| 성능 이슈 언급 시 | `performance-analyst` | 성능 분석 |
+| 단계 | 에이전트 | 역할 | 필수 |
+|-----|---------|------|-----|
+| 1 | `requirements-analyst` | 요구사항 수집 및 정제 | O |
+| 2 | `plan-architect` | 실행 계획 수립 | O |
+| 3 | `plan-architect` | Plan 자체 검증 (score >= 8) | O |
+| 4 | `orchestrator` | Agent 병렬 실행 조율 | O |
+| 5 | execution agents | 도메인별 병렬 구현 | O |
+| 6 | `code-reviewer` + `qa-executor` | 코드/테스트 검증 | O |
 
 ---
 
-## Agent 사용 규칙
+## 에이전트 목록 (15개)
 
-### Git 작업 (MUST delegate to git-ops)
+### Pipeline (3개)
+| 에이전트 | 역할 |
+|---------|------|
+| `requirements-analyst` | 요구사항 수집 및 정제 |
+| `plan-architect` | 실행 계획 수립 + 자체 검증 |
+| `orchestrator` | Plan 기반 Agent 병렬 실행 조율 |
 
-**중요**: 모든 Git 작업은 `git-ops` 에이전트에 위임해야 합니다. 직접 `git` 명령을 실행하지 마세요.
+### Execution (7개)
+| 에이전트 | 역할 | 트리거 키워드 |
+|---------|------|--------------|
+| `frontend-dev` | React/TypeScript 구현 | React, UI, 컴포넌트, 프론트엔드 |
+| `backend-dev` | Java/Spring 구현 | API, Spring, 백엔드, 서버 |
+| `ai-expert` | Python AI/ML 구현 | ML, AI, LLM, 모델 |
+| `database-expert` | DB 스키마/쿼리 | DB, 스키마, 쿼리, 마이그레이션 |
+| `devops-engineer` | 인프라/CI/CD | Docker, K8s, 배포, CI/CD |
+| `docs-writer` | 문서 작성 | 문서, README, API docs |
+| `refactoring-expert` | 리팩토링 | refactor, 정리, 개선 |
 
-| 작업 | 방법 | 비고 |
-|------|------|------|
-| Commit | `git-ops` 에이전트 | Conventional Commits 준수 |
-| Branch | `git-ops` 에이전트 | Git Flow 브랜치 네이밍 |
-| Merge | `git-ops` 에이전트 | 적절한 전략 선택 |
-| Push | `git-ops` 에이전트 | 안전성 검증 포함 |
-| PR 생성 (gh pr) | `git-ops` 에이전트 | 템플릿 적용 |
-| Issue 생성 (gh issue) | `git-ops` 에이전트 | 이슈 관리 |
-| Release (gh release) | `git-ops` 에이전트 | 버전 관리 |
-| Worktree | `git-ops` 에이전트 | 병렬 개발 지원 |
-| 분석 | `/git_analyze` | 변경사항 분석 |
+### Quality (5개)
+| 에이전트 | 역할 | 트리거 키워드 |
+|---------|------|--------------|
+| `code-reviewer` | 코드/문서 품질 검증 | review, 리뷰, 검토 |
+| `qa-executor` | 테스트 계획/실행/분석 | test, 테스트, QA |
+| `security-analyst` | 보안 검증 | security, 보안, 취약점 |
+| `performance-analyst` | 성능 분석 | performance, 성능, 느림 |
+| `debug-specialist` | 디버깅 | debug, 버그, 에러 |
 
-### 복잡한 작업
+---
 
-| 상황 | Agent |
-|------|-------|
-| 요구사항 불명확 | `requirements-analyst` → `docs-reviewer` |
-| 계획 수립 필요 | `plan-architect` → `plan-feedback` |
-| 다중 도메인 | `orchestrator` |
+## 자동 트리거 규칙
 
-### 개발 작업
+### 키워드 기반 자동 트리거
 
-| 도메인 | Agent | Skill |
-|--------|-------|-------|
-| Python/FastAPI | `ai-expert` | `/fastapi_setup`, `/python_best_practices` |
-| React | `frontend-dev` | `/react_setup`, `/react_best_practices` |
-| Spring Boot | `backend-dev` | `/spring_boot_setup`, `/spring_best_practices` |
-| AI/ML | `ai-expert` | `/mlflow_setup`, `/langchain_setup` |
-| DevOps/Infra | `devops-engineer` | `/docker_setup` |
-| Database | `database-expert` | `/alembic_migration`, `/jpa_entity` |
+| 키워드/패턴 | Agent | 우선순위 |
+|------------|-------|----------|
+| 요구사항, requirements, 기능 정의 | `requirements-analyst` | 높음 |
+| plan, 계획, 설계, 아키텍처 | `plan-architect` | 높음 |
+| React, 컴포넌트, 프론트엔드, UI | `frontend-dev` | 높음 |
+| Spring, Java, API, 백엔드 | `backend-dev` | 높음 |
+| AI, ML, LLM, 모델, 학습 | `ai-expert` | 높음 |
+| DB, database, 스키마, 쿼리 | `database-expert` | 높음 |
+| Docker, K8s, CI/CD, 배포 | `devops-engineer` | 높음 |
+| review, 리뷰, 코드리뷰, 검토 | `code-reviewer` | 높음 |
+| test, 테스트, QA | `qa-executor` | 높음 |
+| security, 보안, 취약점 | `security-analyst` | 높음 |
+| performance, 성능, 느림 | `performance-analyst` | 중간 |
+| debug, 버그, 에러, crash | `debug-specialist` | 높음 |
+| refactor, 리팩토링, 정리 | `refactoring-expert` | 중간 |
+| 문서, docs, README | `docs-writer` | 중간 |
 
-### Workflow Skills
+### 필수 검증 파이프라인 (Mandatory Verify)
 
-| 작업 | Skill | 설명 |
-|------|-------|------|
-| 설계 탐색 | `/brainstorm` | 최소 3개 접근법 탐색 후 결정 |
-| 실행 체크포인트 | `/checkpoint` | 5개 태스크마다 검증 일시정지 |
-| 태스크 분해 | `/task_breakdown` | 2-5분 단위 atomic 태스크 생성 |
-| 디버깅 워크플로우 | `/debug_workflow` | 가설 기반 체계적 디버깅 |
-| 완료 검증 | `/verify_complete` | 태스크 완료 전 필수 검증 |
-| Git Worktree | `/git_worktree` | 병렬 브랜치 개발 지원 |
+코드 구현 완료 후 **반드시** 다음 검증 수행:
 
-### 품질 관리
+| 순서 | 에이전트 | 조건 | 통과 기준 |
+|-----|---------|------|----------|
+| 1 | `code-reviewer` | 항상 | Critical 이슈 0개 |
+| 2 | `qa-executor` | 항상 | 모든 테스트 통과 |
+| 3 | `security-analyst` | 조건부 (인증/인가 관련) | Critical 취약점 0개 |
 
-| 작업 | Agent | Skill |
-|------|-------|-------|
-| 테스트 계획 | `qa-planner` | `/test_plan_template` |
-| 테스트 실행 | `qa-executor` | `/test_runner` |
-| 테스트 복구 | `qa-healer` | - |
-| 보안 검토 | `security-analyst` | - |
-| 코드 리뷰 | `code-reviewer` | - |
-| 문서 리뷰 | `docs-reviewer` | - |
-| PR 리뷰 | `pr-reviewer` | Gemini CLI 통합 |
-| 성능 분석 | `performance-analyst` | - |
-| 커버리지 | - | `/coverage_report` |
+---
 
-### 리뷰 에이전트 구분 (IMPORTANT)
+## Plan 검증 기준
 
-| 상황 | Agent | 설명 |
-|------|-------|------|
-| "리뷰", "코드리뷰", "review" | `code-reviewer` | 일반 코드 품질 검토 |
-| "PR 리뷰", "PR review", "pull request" | `pr-reviewer` | PR 생성 전 Gemini CLI 검증 |
-| "문서 리뷰", "doc review", "스펙 리뷰" | `docs-reviewer` | 문서/요구사항 검토 |
+plan-architect가 Plan 생성 후 자체 검증 수행:
 
-**예시:**
-- "이 코드 리뷰해줘" → `code-reviewer`
-- "PR 리뷰 진행" → `pr-reviewer`
-- "README 리뷰해줘" → `docs-reviewer`
+| 항목 | 점수 | 기준 |
+|------|-----|------|
+| 완전성 | 0-2 | 모든 요구사항 → 태스크 매핑 |
+| 의존성 | 0-2 | 순환 없음, 순서 올바름 |
+| 에이전트 할당 | 0-2 | 적합한 에이전트 할당 |
+| 실현 가능성 | 0-2 | 구체적, 실행 가능 |
+| 테스트 가능성 | 0-2 | 검증 기준 정의됨 |
+| **통과 기준** | **≥8** | |
 
-### 코드 품질
+---
 
-| 작업 | Agent |
-|------|-------|
-| 리팩토링 | `refactoring-expert` |
-| 문서 작성 | `docs-writer` |
-| 문서 리뷰 | `docs-reviewer` |
+## 스킬 목록 (32개)
 
-### 작업 로깅
+### Git 스킬
+| 스킬 | 설명 |
+|------|------|
+| `/git_commit` | 커밋 메시지 생성 |
+| `/git_branch` | 브랜치 생성 |
+| `/git_pr` | PR 생성 |
+| `/git_issue` | 이슈 생성 |
+| `/git_worktree` | 워크트리 관리 |
+| `/git_analyze` | 변경사항 분석 |
 
-| 작업 | Agent | 설명 |
-|------|-------|------|
-| 작업 전 로깅 | `reporter` | 에이전트 작업 시작 전 계획 기록 |
-| 작업 후 요약 | `reporter` | 완료된 작업 내용 요약 및 결과 기록 |
-| 실행 리포트 | `reporter` | 전체 파이프라인 실행 결과 종합 |
+### 개발 스킬
+| 스킬 | 설명 |
+|------|------|
+| `/python_setup` | Python 프로젝트 설정 |
+| `/fastapi_setup` | FastAPI 설정 |
+| `/react_setup` | React 프로젝트 설정 |
+| `/spring_boot_setup` | Spring Boot 설정 |
+
+### 품질 스킬
+| 스킬 | 설명 |
+|------|------|
+| `/test_runner` | 테스트 실행 |
+| `/coverage_report` | 커버리지 리포트 |
+| `/test_plan_template` | 테스트 계획 템플릿 |
+
+### 워크플로우 스킬
+| 스킬 | 설명 |
+|------|------|
+| `/brainstorm` | 설계 탐색 (3+ 대안) |
+| `/task_breakdown` | 태스크 분해 |
+| `/debug_workflow` | 디버깅 워크플로우 |
+| `/verify_complete` | 완료 검증 |
 
 ---
 
@@ -187,68 +182,47 @@ PR 생성 전:
 ### 커밋 전
 - [ ] 테스트 실행 (`/test_runner`)
 - [ ] 린터 실행
-- [ ] 변경사항 검토 (`/git_analyze`)
-- [ ] 코드 리뷰 (`pr-reviewer`)
+- [ ] 코드 리뷰 (`code-reviewer`)
 
 ### 푸시 전
 - [ ] 모든 테스트 통과
 - [ ] 민감 정보 제외 확인
 - [ ] 보안 관련 변경 시 `security-analyst` 실행
 
-### PR 생성 전
-- [ ] `pr-reviewer` 실행 (Gemini CLI 리뷰)
-- [ ] 문서 업데이트 확인
-
 ---
 
 ## 커밋 메시지 형식
 
 커밋 메시지는 `/git_commit` skill의 형식을 따릅니다.
-자세한 내용: [/git_commit](.claude/skills/git/git_commit/SKILL.md)
+
+```
+[Phase {number}] {summary}
+
+{Section}:
+- {file}: {description}
+
+Refs #{issue_number}
+```
 
 ---
 
 ## Boundary Enforcement
 
-모든 에이전트는 [Boundary Protocol](./protocols/boundary-protocol.md)을 따릅니다.
-
-### Reference Protocol
-All agents MUST follow: [Boundary Protocol](./protocols/boundary-protocol.md)
+모든 에이전트는 자신의 역할 범위 내에서만 작업합니다.
 
 ### Universal DO NOT Rules
-- [ ] NEVER skip Iron Law check before action
-- [ ] NEVER ignore Red Flag signals
-- [ ] NEVER rationalize boundary violations
-- [ ] NEVER cross domain boundaries without proper handoff
+- [ ] NEVER skip verification step
+- [ ] NEVER implement outside domain boundary
+- [ ] NEVER approve with critical issues
+- [ ] NEVER skip plan validation
 
 ### Gate Functions
 
-Before ANY of these actions, verify boundaries:
-
 | Action | Required Check |
 |--------|---------------|
-| Write code | Verify domain ownership (backend/frontend/ai) |
-| Approve/Review | Complete all checklist items |
-| Dispatch task | Verify dependencies satisfied |
-| Mark complete | Run verify_complete checks |
-| Commit/Push | Safety checklist via git-ops |
-
-### Violation Response
-
-If boundary violation detected:
-1. **STOP** immediately - do not proceed
-2. **IDENTIFY** - which boundary is being violated?
-3. **ASSESS** - is this a legitimate exception? (almost never)
-4. **ESCALATE** - ask user/orchestrator for clarification
-5. **LOG** - record the near-violation
-
-### Key Boundaries by Agent Category
-
-| Category | Primary Boundary | Focus |
-|----------|-----------------|-------|
-| Pipeline (5) | Role separation | Planning vs Execution |
-| Execution (8) | Domain ownership | Specialization |
-| Quality (10) | Verification-only | Review vs Fix |
+| Plan 실행 | Plan 검증 통과 (score >= 8) |
+| 코드 머지 | code-reviewer + qa-executor 통과 |
+| 보안 관련 변경 | security-analyst 통과 |
 
 ---
 
@@ -258,3 +232,4 @@ If boundary violation detected:
 - `.venv/`, `node_modules/` 커밋
 - `.env` 파일 커밋
 - `sudo pip install`
+- 검증 단계 생략

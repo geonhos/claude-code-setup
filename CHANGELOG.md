@@ -5,6 +5,79 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.0] - 2026-02-02
+
+### Breaking Changes
+
+- **에이전트 대폭 간소화**: 23개 → 15개 (-35%)
+- **외부 의존성 제거**: Gemini CLI 의존 에이전트 삭제
+
+### Added
+
+- **6단계 명시적 워크플로우**
+  ```
+  요구사항 수집 → Plan 생성 → Plan 검증 → Orchestrator → 병렬 실행 → 구현 검증
+  ```
+
+- **Plan 자체 검증** (`plan-architect`)
+  - 5가지 기준으로 자동 검증 (완전성, 의존성, 에이전트 할당, 실현 가능성, 테스트 가능성)
+  - 점수 8/10 이상 필요
+  - 순환 의존성 자동 탐지
+
+- **병렬 실행 지원** (`orchestrator`)
+  - 의존성 분석 후 병렬 그룹으로 태스크 분류
+  - 동시 실행으로 실행 시간 단축
+
+- **필수 구현 검증**
+  - 모든 구현 완료 후 `code-reviewer` + `qa-executor` 자동 실행
+  - Critical 이슈 0개, 모든 테스트 통과 필수
+
+### Changed
+
+- **`code-reviewer` 확장**
+  - docs-reviewer 기능 통합
+  - 코드 리뷰 + 문서 리뷰 지원
+  - 리뷰 타입: code, docs
+
+- **`qa-executor` 확장**
+  - qa-planner 기능 통합 (테스트 계획)
+  - qa-healer 기능 통합 (실패 분석 및 수정 제안)
+  - 완전한 QA 사이클: 계획 → 실행 → 분석 → 수정 제안
+
+- **`orchestrator` 간소화**
+  - checkpoint 기능 제거 (복잡도 감소)
+  - plan-feedback 호출 제거 (자체 검증으로 대체)
+  - 병렬 실행에 집중
+
+### Removed
+
+- **삭제된 에이전트 (8개)**
+  - `git-ops` → `/git_commit` 스킬 사용
+  - `plan-feedback` → plan-architect 자체 검증
+  - `brainstorm-facilitator` → `/brainstorm` 스킬
+  - `reporter` → 필요시 수동 생성
+  - `pr-reviewer` → code-reviewer 통합
+  - `docs-reviewer` → code-reviewer 통합
+  - `qa-planner` → qa-executor 통합
+  - `qa-healer` → qa-executor 통합
+
+- **삭제된 스킬 (2개)**
+  - `/checkpoint` → orchestrator 간소화로 불필요
+  - `/execution_report` → reporter 삭제로 불필요
+
+### Summary
+
+| 항목 | v1.4.x | v2.0.0 | 변화 |
+|------|--------|--------|------|
+| 에이전트 | 23개 | 15개 | -35% |
+| 스킬 | 34개 | 32개 | -6% |
+| 외부 의존성 | Gemini CLI | 없음 | 제거 |
+| 워크플로우 | 암묵적 | 명시적 6단계 | 개선 |
+| Plan 검증 | 외부 (Gemini) | 자체 검증 | 개선 |
+| 구현 검증 | 선택적 | 필수 | 개선 |
+
+---
+
 ## [1.4.3] - 2026-01-31
 
 ### Fixed
@@ -18,17 +91,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - agent-template.md deprecated `color` 필드 제거
   - hooks.json `/git_issue` 스킬 추가
 
-### Summary
-
-| 수정 파일 | 변경 내용 |
-|----------|----------|
-| README.md | 예시 출력, 디렉토리 구조 |
-| marketplace.json (2개) | 버전, 설명 |
-| LICENSE | 저작권 연도 |
-| boundary-protocol.md | 섹션명 통일 |
-| agent-template.md | color 필드 제거 |
-| hooks.json | /git_issue 추가 |
-
 ---
 
 ## [1.4.2] - 2026-01-31
@@ -37,16 +99,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **리뷰 에이전트 트리거 개선**
   - CLAUDE.md와 hooks.json 간 불일치 해결
-  - 리뷰 타입별 명확한 구분:
-    - `review`, `리뷰`, `코드리뷰` → `code-reviewer`
-    - `PR review`, `PR 리뷰` → `pr-reviewer`
-    - `문서 리뷰`, `doc review` → `docs-reviewer`
-
-### Added
-
-- **리뷰 에이전트 구분 가이드** (CLAUDE.md)
-  - 상황별 올바른 리뷰 에이전트 선택 안내
-  - 사용 예시 추가
+  - 리뷰 타입별 명확한 구분
 
 ---
 
@@ -57,19 +110,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **hooks.json 정확성 개선**
   - 에이전트 카운트 수정: 21개 → 23개
   - 스킬 카운트 수정: 28개 → 34개
-  - 누락된 에이전트 추가: plan-feedback, brainstorm-facilitator, docs-writer, refactoring-expert, qa-healer, docs-reviewer, debug-specialist, reporter
-  - 누락된 스킬 추가: /git_worktree, /test_plan_template, Workflow 스킬 전체
-
-- **섹션 명명 표준화**
-  - 6개 에이전트의 "Domain Boundaries" → "Scope Boundaries" 통일
-  - 영향 파일: database-expert, devops-engineer, git-ops, ai-expert, frontend-dev, backend-dev
-
-### Changed
-
-- **SessionStart 메시지 개선**
-  - 전체 에이전트 목록 표시 (23개)
-  - Workflow 스킬 섹션 추가
-  - debug-specialist 자동 트리거 추가
 
 ---
 
@@ -78,43 +118,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **Boundary Protocol System**
-  - `.claude/protocols/boundary-protocol.md` - 경계 정의 마스터 프로토콜
-  - Iron Law, DO NOT, Scope Boundaries, Rationalization Prevention, Red Flags 템플릿
-
 - **Agent Boundary Definitions** (23개 에이전트 전체)
-  - **Iron Laws**: 에이전트별 1개 비타협 규칙
-    - `plan-architect`: "NO EXECUTION WITHOUT VALIDATED PLAN"
-    - `backend-dev`: "NO CODE WITHOUT TESTS"
-    - `git-ops`: "NO PUSH WITHOUT LOCAL VERIFICATION"
-    - `debug-specialist`: "NO FIX WITHOUT REPRODUCTION AND HYPOTHESIS TESTING"
-  - **DO NOT Lists**: 에이전트별 4-6개 명시적 금지사항
-  - **Red Flags - STOP**: 즉시 중단해야 하는 경고 신호
-
 - **Skill Boundary Definitions** (5개 핵심 스킬)
-  - `brainstorm`, `checkpoint`, `verify_complete`, `debug_workflow`, `tdd_workflow`
-
-- **CLAUDE.md Boundary Enforcement Section**
-  - Universal DO NOT Rules
-  - Gate Functions 테이블
-  - Violation Response 절차
-
-### Changed
-
-- **Enhanced Protocol System**
-  - `agent-template.md` - 경계 섹션 필수 항목으로 추가
-
-- **Rationalization Prevention** (고위험 에이전트)
-  - `git-ops`, `qa-executor`, `pr-reviewer`, `code-reviewer`, `debug-specialist`
-  - Excuse vs Reality 테이블로 변명 방지
-
-### Summary
-
-| 항목 | v1.3.0 | v1.4.0 |
-|------|--------|--------|
-| Iron Laws | 0개 | 23개 (에이전트당 1개) |
-| DO NOT Rules | 0개 | ~120개 (에이전트당 4-6개) |
-| Red Flags | 0개 | ~70개 (에이전트당 3-4개) |
-| Boundary Protocol | 없음 | 완전한 프로토콜 시스템 |
 
 ---
 
@@ -123,45 +128,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **Superpowers-Inspired Workflow Skills** (6개 신규)
-  - `/brainstorm` - 최소 3개 접근법 탐색 후 결정
-  - `/checkpoint` - 5개 태스크마다 검증 일시정지
-  - `/task_breakdown` - 2-5분 단위 atomic 태스크 생성
-  - `/debug_workflow` - 가설 기반 체계적 디버깅
-  - `/verify_complete` - 태스크 완료 전 필수 검증
-  - `/git_worktree` - 병렬 브랜치 개발 지원
-
-- **New Agents** (2개 신규)
-  - `brainstorm-facilitator` - 설계 탐색 및 의사결정 촉진
-  - `debug-specialist` - 체계적 디버깅 (reproduce → hypothesize → test → fix → verify)
-
-- **New Keywords for Auto-Trigger**
-  - brainstorm, explore, alternatives, approaches, options → `brainstorm-facilitator`
-  - debug, bug, issue, error, crash, not working → `debug-specialist`
-  - worktree, parallel branch, multiple branches → `git-ops`
-
-### Changed
-
-- **Enhanced Agents** (3개 업데이트)
-  - `git-ops` - Worktree 작업 섹션 추가
-  - `plan-architect` - 2-5분 atomic 태스크 분해 규칙 추가
-  - `orchestrator` - 체크포인트 실행 모드 추가 (기본 5개 태스크마다 검증)
-
-- **Updated Pipeline**
-  ```
-  새 기능 구현:
-    requirements-analyst → brainstorm-facilitator (복잡한 결정 시)
-    → plan-architect (atomic task breakdown)
-    → [execution agents with checkpoint every 5 tasks]
-    → verify-complete → qa-planner → qa-executor
-  ```
-
-### Summary
-
-| 항목 | 이전 | 이후 |
-|------|------|------|
-| 에이전트 | 21개 | 23개 |
-| 스킬 | 28개 | 34개 |
-| 워크플로우 패턴 | 0개 | 6개 |
+- **New Agents**: brainstorm-facilitator, debug-specialist
 
 ---
 
@@ -170,17 +137,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **SessionStart Hook**: 세션 시작 시 자동으로 에이전트/스킬 소개
-- `hooks/hooks.json` - 초기화 훅 설정
-
-### Changed
-
-- 플러그인 설치만으로 완전한 사용 가능
-- 별도 스크립트 실행 불필요
-
-### Removed
-
-- `scripts/` 디렉토리 (불필요해짐)
-- `docs/` 디렉토리 (README로 통합)
 
 ---
 
@@ -189,11 +145,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - 스킬 frontmatter에서 지원되지 않는 `color` 필드 제거
-- 중첩된 에이전트/스킬 디렉토리 경로 명시적 지정
-
-### Changed
-
-- plugin.json에 명시적 경로 목록 추가
 
 ---
 
@@ -203,27 +154,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Initial release as Claude Code plugin
 - **21 Specialized Agents**
-  - Pipeline: requirements-analyst, plan-architect, plan-feedback, orchestrator
-  - Execution: backend-dev, frontend-dev, ai-expert, git-ops, devops-engineer, database-expert, refactoring-expert, docs-writer
-  - Quality: qa-planner, qa-executor, qa-healer, security-analyst, pr-reviewer, docs-reviewer, reporter, code-reviewer, performance-analyst
 - **28 Skills**
-  - Git: git_commit, git_branch, git_pr, git_issue, git_analyze
-  - Python: python_setup, fastapi_setup, api_test_setup, rag_setup, python_best_practices
-  - Java: spring_boot_setup, gradle_setup, jpa_entity, spring_best_practices
-  - React: react_setup, nextjs_setup, component_generator, react_best_practices
-  - AI/ML: mlflow_setup, langchain_setup
-  - Infrastructure: docker_setup, alembic_migration
-  - Quality: test_plan_template, test_runner, coverage_report, execution_report
-  - Base: project_init, tdd_workflow
-- Plugin manifest (`.claude-plugin/plugin.json`)
-- MIT License
-- Comprehensive documentation
-
-### Features
-
-- Automated agent pipeline for software development workflows
-- Keyword-based automatic agent triggering
-- Cross-LLM validation with Gemini CLI integration
-- Quality assurance automation (code review, security analysis, testing)
-- Git Flow compliance with git-ops agent
-
