@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash hooks/startup.sh"
+            "command": "bash -c 'script=$(ls $HOME/.claude/plugins/cache/geonhos-plugins/multi-agent-system/*/hooks/startup.sh 2>/dev/null | tail -1); [ -n \"$script\" ] && bash \"$script\"'"
           }
         ]
       }

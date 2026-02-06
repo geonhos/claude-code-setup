@@ -1,22 +1,29 @@
 #!/bin/bash
 
 cat << 'EOF'
-┌────────────────────────────────────────────────────────────┐
-│  Multi-Agent System v2.1.0                                 │
-│  15 agents | 32 skills | 3 MCP servers                     │
-└────────────────────────────────────────────────────────────┘
 
-[Workflow]
-  1.Requirements → 2.Plan → 3.Validate(≥8) → 4.Orchestrate → 5.Execute → 6.Verify
+══════════════════════════════════════════════════════════════════════
+ ███╗   ███╗   █████╗   ███████╗
+ ████╗ ████║  ██╔══██╗  ██╔════╝
+ ██╔████╔██║  ███████║  ███████╗
+ ██║╚██╔╝██║  ██╔══██║  ╚════██║
+ ██║ ╚═╝ ██║  ██║  ██║  ███████║
+ ╚═╝     ╚═╝  ╚═╝  ╚═╝  ╚══════╝  v2.1.1
+  :: Multi-Agent System ::          Powered by Claude Code
+══════════════════════════════════════════════════════════════════════
+  15 Agents  |  32 Skills  |  3 MCP Servers
 
-[Agents]
+ [Workflow]
+  Requirements → Plan → Validate(>=8) → Orchestrate → Execute → Verify
+
+ [Agents]
   Pipeline:   requirements-analyst, plan-architect, orchestrator
   Execution:  frontend-dev, backend-dev, ai-expert, database-expert,
               devops-engineer, docs-writer, refactoring-expert
   Quality:    code-reviewer, qa-executor, security-analyst,
               performance-analyst, debug-specialist
 
-[Auto Triggers]
+ [Auto Triggers]
   requirements|요구사항  → requirements-analyst
   plan|계획|설계        → plan-architect
   test|테스트|QA        → qa-executor
@@ -29,10 +36,11 @@ cat << 'EOF'
   DB|스키마             → database-expert
   Docker|K8s|배포       → devops-engineer
 
-[MCP] context7, filesystem, memory
-[Skills] /git_commit /git_pr /brainstorm /test_runner
+ [MCP] context7, filesystem, memory
+ [Skills] /git_commit /git_pr /brainstorm /test_runner
+══════════════════════════════════════════════════════════════════════
 
-<multi-agent-system version="2.1.0">
+<multi-agent-system version="2.1.1">
 <agents>
 <pipeline>requirements-analyst, plan-architect, orchestrator</pipeline>
 <execution>frontend-dev, backend-dev, ai-expert, database-expert, devops-engineer, docs-writer, refactoring-expert</execution>

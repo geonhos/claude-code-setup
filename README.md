@@ -1,6 +1,6 @@
 # Claude Code Agents & Skills
 
-Claude Code를 위한 멀티에이전트 시스템 플러그인 v2.1.0
+Claude Code를 위한 멀티에이전트 시스템 플러그인 v2.1.1
 
 ## 설치
 
@@ -214,7 +214,8 @@ plugin.json                # 플러그인 매니페스트
 marketplace.json           # 마켓플레이스 정보
 
 hooks/
-└── hooks.json             # SessionStart 훅 설정
+├── hooks.json             # SessionStart 훅 설정
+└── startup.sh             # ASCII Art 배너 스크립트
 
 agents/                    # 에이전트 정의 (15개)
 ├── pipeline/              # 워크플로우 에이전트 (3개)
@@ -288,9 +289,12 @@ debug-specialist (reproduce → hypothesize → test → fix → verify)
 
 ## v2.1 주요 변경사항
 
-### 구조화된 Hook
+### v2.1.1 - Hook 안정화 + ASCII Art 배너
+- Hook 경로를 플러그인 캐시 기반 절대경로로 변경 (다른 프로젝트에서도 정상 동작)
+- 스프링부트 스타일 ASCII Art 배너로 시작 화면 개선
+
+### v2.1.0 - 구조화된 Hook
 - 외부 스크립트로 분리 (`hooks/startup.sh`)
-- 박스 스타일 시각적 출력
 - XML 태그 기반 Claude 인식 개선
 - 전체 자동 트리거 목록 (13개)
 

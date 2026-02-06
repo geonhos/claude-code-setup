@@ -1,7 +1,7 @@
 {
   "name": "multi-agent-system",
   "description": "Multi-agent system v2.1 with Memory MCP, context optimization, and 15 agents + 32 skills featuring 6-step workflow with parallel execution",
-  "version": "2.1.0",
+  "version": "2.1.1",
   "author": {
     "name": "geonhos",
     "email": "ghyeom.dev@gmail.com"

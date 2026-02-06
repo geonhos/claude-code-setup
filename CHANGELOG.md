@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.1] - 2026-02-06
+
+### Fixed
+
+- **Hook 경로 오류 수정**
+  - Before: `bash hooks/startup.sh` (상대경로 → 다른 프로젝트에서 `No such file or directory`)
+  - After: 플러그인 캐시 디렉토리에서 동적으로 스크립트 탐색
+  - 어떤 프로젝트에서든 플러그인 훅 정상 동작
+
+### Changed
+
+- **ASCII Art 배너**
+  - 스프링부트 스타일 "MAS" 대형 ASCII Art 배너 적용
+  - `══════` 이중선 구분자로 시각적 구분 강화
+  - `:: Multi-Agent System ::` 태그라인 추가
+
+---
+
 ## [2.1.0] - 2026-02-06
 
 ### Added
