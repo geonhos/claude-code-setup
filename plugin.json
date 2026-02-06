@@ -1,7 +1,7 @@
 {
   "name": "multi-agent-system",
-  "description": "A streamlined multi-agent system for Claude Code with 15 specialized agents and 32 skills featuring 6-step workflow: Requirements → Plan → Validate → Orchestrate → Execute → Verify",
-  "version": "2.0.0",
+  "description": "Multi-agent system v2.1 with Memory MCP, context optimization, and 15 agents + 32 skills featuring 6-step workflow with parallel execution",
+  "version": "2.1.0",
   "author": {
     "name": "geonhos",
     "email": "ghyeom.dev@gmail.com"

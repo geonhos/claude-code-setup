@@ -5,6 +5,48 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.0] - 2026-02-06
+
+### Added
+
+- **Memory MCP 통합**
+  - `@modelcontextprotocol/server-memory` 추가
+  - Knowledge Graph 기반 세션 간 컨텍스트 유지
+  - Entity, Relation, Observation 관리
+
+- **Context 최적화 (Lazy Loading)**
+  - CLAUDE.md 압축: 236줄 → 116줄 (-51%)
+  - 새 protocol 파일 6개:
+    - `workflow-detail.md` - 6단계 워크플로우 상세
+    - `agents-reference.md` - 15개 에이전트 레퍼런스
+    - `skills-reference.md` - 32개 스킬 레퍼런스
+    - `checklists.md` - 개발 체크리스트
+    - `agent-template-light.md` - 경량 에이전트 템플릿
+    - `agent-refactoring-guide.md` - 에이전트 리팩토링 가이드
+
+- **구조화된 Hook**
+  - XML 태그 기반 형식으로 Claude 인식 개선
+  - 전체 자동 트리거 목록 포함 (13개)
+  - MCP 서버 목록 표시
+
+### Changed
+
+- **에이전트 경량화 패턴**
+  - `docs-writer.md`: 617줄 → 115줄 (-81%)
+  - 공통 프로토콜 참조 방식 도입
+  - 나머지 14개 에이전트 리팩토링 가이드 제공
+
+### Summary
+
+| 항목 | v2.0.0 | v2.1.0 | 변화 |
+|------|--------|--------|------|
+| CLAUDE.md | 236줄 | 116줄 | -51% |
+| MCP 서버 | 2개 | 3개 | +memory |
+| Protocol 파일 | 3개 | 9개 | +6개 |
+| Hook 형식 | 평문 | XML 구조화 | 개선 |
+
+---
+
 ## [2.0.0] - 2026-02-02
 
 ### Breaking Changes
