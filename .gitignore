@@ -46,3 +46,7 @@ reports/
 dist/
 build/
 *.egg
+
+# Memory MCP (session data)
+memory/
+*.memory.json
