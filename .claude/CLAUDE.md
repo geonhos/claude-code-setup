@@ -96,12 +96,13 @@ After implementation, ALWAYS run:
 ## Commit Format
 
 ```
-[Phase N] Summary
+[Phase 1] Add user authentication
 
-Section:
-- file: description
+Auth:
+- auth.py: JWT token generation
+- middleware.py: Auth middleware
 
-Refs #issue
+Refs #42
 ```
 
 ---
@@ -114,3 +115,13 @@ Refs #issue
 - `sudo pip install`
 
 **Full checklists**: See `protocols/checklists.md`
+
+---
+
+## Protocols Reference
+
+| Protocol | Purpose |
+|----------|---------|
+| `boundary-protocol.md` | Agent role boundaries (DO/DO NOT) |
+| `agent-template.md` | Agent definition template |
+| `logging.md` | Logging conventions |
