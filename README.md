@@ -1,6 +1,6 @@
 # Claude Code Agents & Skills
 
-Claude Code를 위한 멀티에이전트 시스템 플러그인 v2.0
+Claude Code를 위한 멀티에이전트 시스템 플러그인 v2.1.0
 
 ## 설치
 
@@ -13,23 +13,29 @@ Claude Code에서 실행:
 
 설치 완료! 세션 시작 시 자동으로 에이전트와 스킬이 소개됩니다.
 
-```
-===== Multi-Agent System v2.0 활성화 =====
+```xml
+<multi-agent-system version="2.1.0">
+<summary>15 agents, 32 skills loaded</summary>
 
-15개 전문 에이전트와 32개 스킬이 로드되었습니다.
+<workflow>
+1.Requirements → 2.Plan → 3.Validate(≥8) → 4.Orchestrate → 5.Execute(parallel) → 6.Verify
+</workflow>
 
-[Agents]
-- Pipeline: requirements-analyst, plan-architect, orchestrator
-- Execution: backend-dev, frontend-dev, ai-expert, database-expert, devops-engineer, docs-writer, refactoring-expert
-- Quality: code-reviewer, qa-executor, security-analyst, performance-analyst, debug-specialist
+<agents>
+<pipeline>requirements-analyst, plan-architect, orchestrator</pipeline>
+<execution>frontend-dev, backend-dev, ai-expert, database-expert, devops-engineer, docs-writer, refactoring-expert</execution>
+<quality>code-reviewer, qa-executor, security-analyst, performance-analyst, debug-specialist</quality>
+</agents>
 
-[Skills]
-- Git: /git_commit, /git_branch, /git_pr, /git_issue, /git_analyze, /git_worktree
-- Dev: /python_setup, /fastapi_setup, /react_setup, /spring_boot_setup
-- Quality: /test_runner, /coverage_report, /test_plan_template
-- Workflow: /brainstorm, /verify_complete, /debug_workflow, /task_breakdown
+<auto-triggers>
+requirements|요구사항 → requirements-analyst
+plan|계획|설계 → plan-architect
+test|테스트|QA → qa-executor
+...
+</auto-triggers>
 
-==========================================
+<mcp-servers>context7, filesystem, memory</mcp-servers>
+</multi-agent-system>
 ```
 
 ## 구성
@@ -229,9 +235,17 @@ skills/                    # 스킬 정의 (32개)
 
 # 프로젝트 설정
 .claude/
-├── CLAUDE.md              # 개발 지침
+├── CLAUDE.md              # 개발 지침 (핵심만, 116줄)
 ├── settings.json          # 프로젝트 설정
 └── protocols/             # 공통 프로토콜
+    ├── workflow-detail.md     # 6단계 워크플로우 상세
+    ├── agents-reference.md    # 15개 에이전트 레퍼런스
+    ├── skills-reference.md    # 32개 스킬 레퍼런스
+    ├── checklists.md          # 개발 체크리스트
+    ├── agent-template-light.md # 경량 에이전트 템플릿
+    ├── agent-refactoring-guide.md # 에이전트 리팩토링 가이드
+    ├── boundary-protocol.md   # 역할 경계 프로토콜
+    └── logging.md             # 로깅 프로토콜
 
 # Generated directories (gitignored)
 plans/                     # 실행 계획
@@ -269,6 +283,16 @@ debug-specialist (reproduce → hypothesize → test → fix → verify)
 ```
 /brainstorm (3+ 접근법 비교) → 사용자 결정 → plan-architect
 ```
+
+---
+
+## v2.1 주요 변경사항
+
+### 구조화된 Hook
+- 외부 스크립트로 분리 (`hooks/startup.sh`)
+- 박스 스타일 시각적 출력
+- XML 태그 기반 Claude 인식 개선
+- 전체 자동 트리거 목록 (13개)
 
 ---
 

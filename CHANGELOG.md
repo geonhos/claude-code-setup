@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.0] - 2026-02-06
+
+### Added
+
+- **구조화된 Hook** (`hooks/startup.sh`)
+  - 외부 스크립트로 분리하여 유지보수성 향상
+  - 박스 스타일 시각적 출력
+  - XML 태그 기반 형식으로 Claude 인식 개선
+  - 전체 자동 트리거 목록 포함 (13개)
+
+### Changed
+
+- **Hook 실행 방식**
+  - Before: `hooks.json` 내 inline cat 명령
+  - After: `bash hooks/startup.sh` 외부 스크립트 호출
+
+---
+
 ## [2.0.0] - 2026-02-02
 
 ### Breaking Changes

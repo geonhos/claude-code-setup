@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "cat << 'EOF'\n\n===== Multi-Agent System v2.0 활성화 =====\n\n15개 전문 에이전트와 32개 스킬이 로드되었습니다.\n\n[6단계 워크플로우]\n요구사항 수집 → Plan 생성 → Plan 검증 → Orchestrator → 병렬 실행 → 구현 검증\n\n[Agents]\n- Pipeline: requirements-analyst, plan-architect, orchestrator\n- Execution: backend-dev, frontend-dev, ai-expert, database-expert, devops-engineer, docs-writer, refactoring-expert\n- Quality: code-reviewer, qa-executor, security-analyst, performance-analyst, debug-specialist\n\n[Skills]\n- Git: /git_commit, /git_branch, /git_pr, /git_issue, /git_analyze, /git_worktree\n- Dev: /python_setup, /fastapi_setup, /react_setup, /spring_boot_setup\n- Quality: /test_runner, /coverage_report, /test_plan_template\n- Workflow: /brainstorm, /verify_complete, /debug_workflow, /task_breakdown\n\n[자동 트리거]\n- 'requirements', '요구사항' → requirements-analyst\n- 'plan', '계획', '설계' → plan-architect\n- 'test', '테스트', 'QA' → qa-executor\n- 'review', '리뷰', '코드리뷰' → code-reviewer\n- 'security', '보안' → security-analyst\n- 'debug', '버그', 'error' → debug-specialist\n\n==========================================\n\nEOF"
+            "command": "bash hooks/startup.sh"
           }
         ]
       }
