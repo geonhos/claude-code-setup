@@ -1,6 +1,6 @@
 # Claude Code Agents & Skills
 
-Claude Code를 위한 멀티에이전트 시스템 플러그인 v2.1.1
+Claude Code를 위한 멀티에이전트 시스템 플러그인 v2.1.2
 
 ## 설치
 
@@ -131,78 +131,78 @@ v2.0에서는 명확한 6단계 워크플로우를 제공합니다:
 
 | Skill | 설명 |
 |-------|------|
-| [`/git_commit`](skills/git/git_commit/SKILL.md) | 구조화된 커밋 메시지 |
-| [`/git_branch`](skills/git/git_branch/SKILL.md) | 브랜치 명명 규칙 |
-| [`/git_pr`](skills/git/git_pr/SKILL.md) | PR 템플릿 |
-| [`/git_issue`](skills/git/git_issue/SKILL.md) | Issue 템플릿 |
-| [`/git_analyze`](skills/git/git_analyze/SKILL.md) | 변경사항 분석 |
-| [`/git_worktree`](skills/git/git_worktree/SKILL.md) | 병렬 브랜치 개발 |
+| [`/git_commit`](skills/git_commit/SKILL.md) | 구조화된 커밋 메시지 |
+| [`/git_branch`](skills/git_branch/SKILL.md) | 브랜치 명명 규칙 |
+| [`/git_pr`](skills/git_pr/SKILL.md) | PR 템플릿 |
+| [`/git_issue`](skills/git_issue/SKILL.md) | Issue 템플릿 |
+| [`/git_analyze`](skills/git_analyze/SKILL.md) | 변경사항 분석 |
+| [`/git_worktree`](skills/git_worktree/SKILL.md) | 병렬 브랜치 개발 |
 
 ### Python (5개)
 
 | Skill | 설명 |
 |-------|------|
-| [`/python_setup`](skills/python/python_setup/SKILL.md) | Python 프로젝트 초기화 |
-| [`/fastapi_setup`](skills/python/fastapi_setup/SKILL.md) | FastAPI 프로젝트 구조 |
-| [`/api_test_setup`](skills/python/api_test_setup/SKILL.md) | API 테스트 설정 |
-| [`/rag_setup`](skills/python/rag_setup/SKILL.md) | RAG 파이프라인 설정 |
-| [`/python_best_practices`](skills/python/python_best_practices/SKILL.md) | Python 모범 사례 |
+| [`/python_setup`](skills/python_setup/SKILL.md) | Python 프로젝트 초기화 |
+| [`/fastapi_setup`](skills/fastapi_setup/SKILL.md) | FastAPI 프로젝트 구조 |
+| [`/api_test_setup`](skills/api_test_setup/SKILL.md) | API 테스트 설정 |
+| [`/rag_setup`](skills/rag_setup/SKILL.md) | RAG 파이프라인 설정 |
+| [`/python_best_practices`](skills/python_best_practices/SKILL.md) | Python 모범 사례 |
 
 ### Java (4개)
 
 | Skill | 설명 |
 |-------|------|
-| [`/spring_boot_setup`](skills/java/spring_boot_setup/SKILL.md) | Spring Boot 프로젝트 |
-| [`/gradle_setup`](skills/java/gradle_setup/SKILL.md) | Gradle 멀티모듈 설정 |
-| [`/jpa_entity`](skills/java/jpa_entity/SKILL.md) | JPA Entity 생성 |
-| [`/spring_best_practices`](skills/java/spring_best_practices/SKILL.md) | Spring 모범 사례 |
+| [`/spring_boot_setup`](skills/spring_boot_setup/SKILL.md) | Spring Boot 프로젝트 |
+| [`/gradle_setup`](skills/gradle_setup/SKILL.md) | Gradle 멀티모듈 설정 |
+| [`/jpa_entity`](skills/jpa_entity/SKILL.md) | JPA Entity 생성 |
+| [`/spring_best_practices`](skills/spring_best_practices/SKILL.md) | Spring 모범 사례 |
 
 ### React (4개)
 
 | Skill | 설명 |
 |-------|------|
-| [`/react_setup`](skills/react/react_setup/SKILL.md) | React/Vite 프로젝트 |
-| [`/nextjs_setup`](skills/react/nextjs_setup/SKILL.md) | Next.js 14+ 프로젝트 |
-| [`/component_generator`](skills/react/component_generator/SKILL.md) | MVVM 컴포넌트 생성 |
-| [`/react_best_practices`](skills/react/react_best_practices/SKILL.md) | React 모범 사례 |
+| [`/react_setup`](skills/react_setup/SKILL.md) | React/Vite 프로젝트 |
+| [`/nextjs_setup`](skills/nextjs_setup/SKILL.md) | Next.js 14+ 프로젝트 |
+| [`/component_generator`](skills/component_generator/SKILL.md) | MVVM 컴포넌트 생성 |
+| [`/react_best_practices`](skills/react_best_practices/SKILL.md) | React 모범 사례 |
 
 ### AI/ML (2개)
 
 | Skill | 설명 |
 |-------|------|
-| [`/mlflow_setup`](skills/ai/mlflow_setup/SKILL.md) | MLflow 실험 추적 |
-| [`/langchain_setup`](skills/ai/langchain_setup/SKILL.md) | LangChain RAG 설정 |
+| [`/mlflow_setup`](skills/mlflow_setup/SKILL.md) | MLflow 실험 추적 |
+| [`/langchain_setup`](skills/langchain_setup/SKILL.md) | LangChain RAG 설정 |
 
 ### Infrastructure (2개)
 
 | Skill | 설명 |
 |-------|------|
-| [`/docker_setup`](skills/infra/docker_setup/SKILL.md) | Docker Compose 설정 |
-| [`/alembic_migration`](skills/infra/alembic_migration/SKILL.md) | DB 마이그레이션 |
+| [`/docker_setup`](skills/docker_setup/SKILL.md) | Docker Compose 설정 |
+| [`/alembic_migration`](skills/alembic_migration/SKILL.md) | DB 마이그레이션 |
 
 ### Quality (3개)
 
 | Skill | 설명 |
 |-------|------|
-| [`/test_plan_template`](skills/quality/test_plan_template/SKILL.md) | 테스트 계획 생성 |
-| [`/test_runner`](skills/quality/test_runner/SKILL.md) | 테스트 실행 |
-| [`/coverage_report`](skills/quality/coverage_report/SKILL.md) | 커버리지 분석 |
+| [`/test_plan_template`](skills/test_plan_template/SKILL.md) | 테스트 계획 생성 |
+| [`/test_runner`](skills/test_runner/SKILL.md) | 테스트 실행 |
+| [`/coverage_report`](skills/coverage_report/SKILL.md) | 커버리지 분석 |
 
 ### Base (2개)
 
 | Skill | 설명 |
 |-------|------|
-| [`/project_init`](skills/base/project_init/SKILL.md) | 프로젝트 초기화 |
-| [`/tdd_workflow`](skills/methodology/tdd_workflow/SKILL.md) | TDD 워크플로우 |
+| [`/project_init`](skills/project_init/SKILL.md) | 프로젝트 초기화 |
+| [`/tdd_workflow`](skills/tdd_workflow/SKILL.md) | TDD 워크플로우 |
 
 ### Workflow (4개)
 
 | Skill | 설명 |
 |-------|------|
-| [`/brainstorm`](skills/workflow/brainstorm/SKILL.md) | 설계 탐색 - 최소 3개 접근법 비교 |
-| [`/task_breakdown`](skills/workflow/task_breakdown/SKILL.md) | 태스크 분해 - 2-5분 단위 atomic 태스크 |
-| [`/debug_workflow`](skills/workflow/debug_workflow/SKILL.md) | 디버깅 워크플로우 |
-| [`/verify_complete`](skills/workflow/verify_complete/SKILL.md) | 완료 검증 |
+| [`/brainstorm`](skills/brainstorm/SKILL.md) | 설계 탐색 - 최소 3개 접근법 비교 |
+| [`/task_breakdown`](skills/task_breakdown/SKILL.md) | 태스크 분해 - 2-5분 단위 atomic 태스크 |
+| [`/debug_workflow`](skills/debug_workflow/SKILL.md) | 디버깅 워크플로우 |
+| [`/verify_complete`](skills/verify_complete/SKILL.md) | 완료 검증 |
 
 ---
 
@@ -222,17 +222,13 @@ agents/                    # 에이전트 정의 (15개)
 ├── execution/             # 개발 에이전트 (7개)
 └── quality/               # 품질 에이전트 (5개)
 
-skills/                    # 스킬 정의 (32개)
-├── git/                   # Git 관련
-├── python/                # Python 관련
-├── java/                  # Java 관련
-├── react/                 # React 관련
-├── ai/                    # AI/ML 관련
-├── infra/                 # 인프라 관련
-├── quality/               # 품질 관련
-├── base/                  # 기본
-├── methodology/           # 방법론
-└── workflow/              # 워크플로우
+skills/                    # 스킬 정의 (32개, flat 구조)
+├── git_commit/            # Git 관련 (6개)
+├── python_setup/          # Python 관련 (5개)
+├── spring_boot_setup/     # Java 관련 (4개)
+├── react_setup/           # React 관련 (4개)
+├── brainstorm/            # Workflow 관련 (4개)
+└── ...                    # 총 32개 스킬
 
 # 프로젝트 설정
 .claude/
@@ -288,6 +284,11 @@ debug-specialist (reproduce → hypothesize → test → fix → verify)
 ---
 
 ## v2.1 주요 변경사항
+
+### v2.1.2 - Skills 로딩 수정
+- `plugin.json`의 `skills` 필드를 배열에서 디렉토리 경로 문자열로 수정 (`"./skills"`)
+- 스킬 디렉토리를 2단계 중첩(`skills/category/skill_name/`)에서 1단계 flat 구조(`skills/skill_name/`)로 변경
+- 5개 SKILL.md 파일의 YAML frontmatter 위치 수정 (파일 최상단으로 이동)
 
 ### v2.1.1 - Hook 안정화 + ASCII Art 배너
 - Hook 경로를 플러그인 캐시 기반 절대경로로 변경 (다른 프로젝트에서도 정상 동작)

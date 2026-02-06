@@ -5,6 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.2] - 2026-02-06
+
+### Fixed
+
+- **Skills 로딩 오류 수정**
+  - `plugin.json`의 `skills` 필드를 개별 경로 배열에서 디렉토리 경로 문자열(`"./skills"`)로 변경
+  - Claude Code 플러그인 스펙에 맞게 스킬 디렉토리를 flat 구조로 평탄화
+  - Before: `skills/category/skill_name/SKILL.md` (2단계 중첩, 로딩 실패)
+  - After: `skills/skill_name/SKILL.md` (1단계, 정상 로딩)
+
+- **SKILL.md frontmatter 위치 수정** (5개 파일)
+  - 영향 파일: brainstorm, debug_workflow, git_worktree, task_breakdown, verify_complete
+  - YAML frontmatter(`---`)가 파일 최상단이 아닌 `# Title` 뒤에 위치하던 문제 수정
+
+### Changed
+
+- **디렉토리 구조 간소화**
+  - `skills/` 하위 카테고리 디렉토리(ai, git, python 등) 제거
+  - 32개 스킬이 `skills/` 바로 아래에 flat하게 배치
+  - `.claude-plugin/marketplace.json` 버전 및 설명 동기화
+
+---
+
 ## [2.1.1] - 2026-02-06
 
 ### Fixed

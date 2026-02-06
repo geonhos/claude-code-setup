@@ -1,7 +1,7 @@
 {
   "name": "multi-agent-system",
   "description": "Multi-agent system v2.1 with Memory MCP, context optimization, and 15 agents + 32 skills featuring 6-step workflow with parallel execution",
-  "version": "2.1.1",
+  "version": "2.1.2",
   "author": {
     "name": "geonhos",
     "email": "ghyeom.dev@gmail.com"
@@ -42,38 +42,5 @@
     "./agents/quality/security-analyst.md"
   ],
   "hooks": "./hooks/hooks.json",
-  "skills": [
-    "./skills/ai/langchain_setup",
-    "./skills/ai/mlflow_setup",
-    "./skills/base/project_init",
-    "./skills/git/git_analyze",
-    "./skills/git/git_branch",
-    "./skills/git/git_commit",
-    "./skills/git/git_issue",
-    "./skills/git/git_pr",
-    "./skills/git/git_worktree",
-    "./skills/infra/alembic_migration",
-    "./skills/infra/docker_setup",
-    "./skills/java/gradle_setup",
-    "./skills/java/jpa_entity",
-    "./skills/java/spring_best_practices",
-    "./skills/java/spring_boot_setup",
-    "./skills/methodology/tdd_workflow",
-    "./skills/python/api_test_setup",
-    "./skills/python/fastapi_setup",
-    "./skills/python/python_best_practices",
-    "./skills/python/python_setup",
-    "./skills/python/rag_setup",
-    "./skills/quality/coverage_report",
-    "./skills/quality/test_plan_template",
-    "./skills/quality/test_runner",
-    "./skills/react/component_generator",
-    "./skills/react/nextjs_setup",
-    "./skills/react/react_best_practices",
-    "./skills/react/react_setup",
-    "./skills/workflow/brainstorm",
-    "./skills/workflow/debug_workflow",
-    "./skills/workflow/task_breakdown",
-    "./skills/workflow/verify_complete"
-  ]
+  "skills": "./skills"
 }

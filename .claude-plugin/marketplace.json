@@ -11,8 +11,8 @@
         "source": "github",
         "repo": "geonhos/claude-code-setup"
       },
-      "description": "Multi-agent system with 23 agents and 34 skills",
-      "version": "1.4.3",
+      "description": "Multi-agent system v2.1 with Memory MCP, context optimization, 15 agents + 32 skills, 6-step parallel workflow",
+      "version": "2.1.2",
       "license": "MIT",
       "keywords": ["multi-agent", "automation", "qa", "devops"]
     }

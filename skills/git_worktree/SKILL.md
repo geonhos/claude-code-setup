@@ -1,10 +1,10 @@
-# Git Worktree Skill
-
 ---
 name: git_worktree
 description: Enable parallel development on multiple branches simultaneously.
 model: claude-opus-4-5-20250101
 ---
+
+# Git Worktree Skill
 
 ## Purpose
 
