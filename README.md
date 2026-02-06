@@ -1,6 +1,6 @@
 # Claude Code Agents & Skills
 
-Claude Code를 위한 멀티에이전트 시스템 플러그인 v2.1
+Claude Code를 위한 멀티에이전트 시스템 플러그인 v2.1.0
 
 ## 설치
 
@@ -14,7 +14,7 @@ Claude Code에서 실행:
 설치 완료! 세션 시작 시 자동으로 에이전트와 스킬이 소개됩니다.
 
 ```xml
-<multi-agent-system version="2.1">
+<multi-agent-system version="2.1.0">
 <summary>15 agents, 32 skills loaded</summary>
 
 <workflow>
@@ -288,22 +288,11 @@ debug-specialist (reproduce → hypothesize → test → fix → verify)
 
 ## v2.1 주요 변경사항
 
-### 새로운 기능
-- **Memory MCP 통합**: Knowledge Graph 기반 세션 간 컨텍스트 유지
-- **Context 최적화**: Lazy Loading 패턴 도입
-- **구조화된 Hook**: XML 태그 기반 자동 트리거 인식 개선
-
-### Context 최적화
-- CLAUDE.md: 236줄 → 116줄 (-51%)
-- protocols/ 폴더에 상세 문서 분리 (6개 파일)
-- 에이전트 경량화 패턴 도입
-
-### MCP 서버
-| Server | 용도 |
-|--------|------|
-| `context7` | 라이브러리 문서 조회 |
-| `filesystem` | 파일 시스템 작업 |
-| `memory` | Knowledge Graph 기반 영구 메모리 |
+### 구조화된 Hook
+- 외부 스크립트로 분리 (`hooks/startup.sh`)
+- 박스 스타일 시각적 출력
+- XML 태그 기반 Claude 인식 개선
+- 전체 자동 트리거 목록 (13개)
 
 ---
 

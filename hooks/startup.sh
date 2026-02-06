@@ -2,7 +2,7 @@
 
 cat << 'EOF'
 ┌────────────────────────────────────────────────────────────┐
-│  Multi-Agent System v2.1                                   │
+│  Multi-Agent System v2.1.0                                 │
 │  15 agents | 32 skills | 3 MCP servers                     │
 └────────────────────────────────────────────────────────────┘
 
@@ -32,7 +32,7 @@ cat << 'EOF'
 [MCP] context7, filesystem, memory
 [Skills] /git_commit /git_pr /brainstorm /test_runner
 
-<multi-agent-system version="2.1">
+<multi-agent-system version="2.1.0">
 <agents>
 <pipeline>requirements-analyst, plan-architect, orchestrator</pipeline>
 <execution>frontend-dev, backend-dev, ai-expert, database-expert, devops-engineer, docs-writer, refactoring-expert</execution>
