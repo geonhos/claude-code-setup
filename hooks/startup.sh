@@ -8,7 +8,7 @@ cat << 'EOF'
  ██╔████╔██║  ███████║  ███████╗
  ██║╚██╔╝██║  ██╔══██║  ╚════██║
  ██║ ╚═╝ ██║  ██║  ██║  ███████║
- ╚═╝     ╚═╝  ╚═╝  ╚═╝  ╚══════╝  v2.1.1
+ ╚═╝     ╚═╝  ╚═╝  ╚═╝  ╚══════╝  v2.1.2
   :: Multi-Agent System ::          Powered by Claude Code
 ══════════════════════════════════════════════════════════════════════
   15 Agents  |  32 Skills  |  3 MCP Servers
@@ -40,7 +40,7 @@ cat << 'EOF'
  [Skills] /git_commit /git_pr /brainstorm /test_runner
 ══════════════════════════════════════════════════════════════════════
 
-<multi-agent-system version="2.1.1">
+<multi-agent-system version="2.1.2">
 <agents>
 <pipeline>requirements-analyst, plan-architect, orchestrator</pipeline>
 <execution>frontend-dev, backend-dev, ai-expert, database-expert, devops-engineer, docs-writer, refactoring-expert</execution>

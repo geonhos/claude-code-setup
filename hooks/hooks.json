@@ -10,6 +10,28 @@
           }
         ]
       }
+    ],
+    "SubagentStart": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash -c 'script=$(ls $HOME/.claude/plugins/cache/geonhos-plugins/multi-agent-system/*/hooks/agent-progress.sh 2>/dev/null | tail -1); [ -n \"$script\" ] && bash \"$script\"'"
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash -c 'script=$(ls $HOME/.claude/plugins/cache/geonhos-plugins/multi-agent-system/*/hooks/agent-progress.sh 2>/dev/null | tail -1); [ -n \"$script\" ] && bash \"$script\"'"
+          }
+        ]
+      }
     ]
   }
 }
