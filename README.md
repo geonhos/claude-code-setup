@@ -1,6 +1,6 @@
 # Claude Code Agents & Skills
 
-Claude Code를 위한 멀티에이전트 시스템 플러그인 v2.1.2
+Claude Code를 위한 멀티에이전트 시스템 플러그인 v2.2.0
 
 ## 설치
 
@@ -214,8 +214,10 @@ plugin.json                # 플러그인 매니페스트
 marketplace.json           # 마켓플레이스 정보
 
 hooks/
-├── hooks.json             # SessionStart 훅 설정
-└── startup.sh             # ASCII Art 배너 스크립트
+├── hooks.json               # 훅 이벤트 설정
+├── startup.sh               # SessionStart: ASCII Art 배너
+├── prompt-agent-matcher.sh  # UserPromptSubmit: 동적 에이전트 매칭
+└── agent-progress.sh        # SubagentStart/Stop: 진행 추적
 
 agents/                    # 에이전트 정의 (15개)
 ├── pipeline/              # 워크플로우 에이전트 (3개)
@@ -232,7 +234,6 @@ skills/                    # 스킬 정의 (32개, flat 구조)
 
 # 프로젝트 설정
 .claude/
-├── CLAUDE.md              # 개발 지침 (핵심만, 116줄)
 ├── settings.json          # 프로젝트 설정
 └── protocols/             # 공통 프로토콜
     ├── workflow-detail.md     # 6단계 워크플로우 상세
@@ -283,7 +284,12 @@ debug-specialist (reproduce → hypothesize → test → fix → verify)
 
 ---
 
-## v2.1 주요 변경사항
+## 주요 변경사항
+
+### v2.2.0 - 동적 에이전트 매칭 훅 + CLAUDE.md 제거
+- `UserPromptSubmit` 훅 추가: 매 프롬프트마다 키워드 기반 에이전트 추천 주입
+- `CLAUDE.md` 제거: 정적 컨텍스트를 동적 훅으로 대체 (컨텍스트 압축 생존, 토큰 효율 개선)
+- `hooks/prompt-agent-matcher.sh`: 25ms 이내 실행, 매칭 없으면 무출력
 
 ### v2.1.2 - Skills 로딩 수정
 - `plugin.json`의 `skills` 필드를 배열에서 디렉토리 경로 문자열로 수정 (`"./skills"`)

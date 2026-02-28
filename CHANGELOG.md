@@ -5,6 +5,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.0] - 2026-02-28
+
+### Added
+
+- **UserPromptSubmit 동적 에이전트 매칭 훅** (`hooks/prompt-agent-matcher.sh`)
+  - 매 프롬프트마다 키워드 분석 후 적합한 에이전트/스킬 추천을 컨텍스트에 주입
+  - 14개 에이전트 트리거 패턴 (한국어 + 영어 키워드)
+  - 25ms 이내 실행, 매칭 없으면 무출력 (토큰 낭비 제로)
+  - macOS bash 3.2 호환 (associative array 미사용)
+
+### Removed
+
+- **`.claude/CLAUDE.md` 제거**
+  - 정적 CLAUDE.md의 역할을 동적 훅으로 완전 대체
+  - `SessionStart` 훅: 워크플로우/에이전트 개요 (세션 시작 시)
+  - `UserPromptSubmit` 훅: 에이전트 추천 (매 프롬프트)
+  - `settings.json` deny 규칙: 금지 사항 강제
+  - 장점: 컨텍스트 압축에도 생존, 매 턴 불필요한 토큰 소비 제거
+
+### Changed
+
+- 버전 2.1.2 → 2.2.0 (plugin.json, marketplace.json, startup.sh, README.md)
+
+---
+
 ## [2.1.2] - 2026-02-06
 
 ### Fixed
