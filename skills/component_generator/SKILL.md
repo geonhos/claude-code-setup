@@ -2,6 +2,7 @@
 name: component_generator
 description: Generates React components following MVVM pattern with ViewModel hooks, TypeScript interfaces, and tests.
 model: haiku
+disable-model-invocation: true
 ---
 
 # React Component Generator Skill
