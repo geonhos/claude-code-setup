@@ -11,7 +11,7 @@ cat << 'EOF'
  ╚═╝     ╚═╝  ╚═╝  ╚═╝  ╚══════╝  v2.2.0
   :: Multi-Agent System ::          Powered by Claude Code
 ══════════════════════════════════════════════════════════════════════
-  15 Agents  |  32 Skills  |  3 MCP Servers
+  15 Agents  |  32 Skills  |  4 MCP Servers
 
  [Workflow]
   Requirements → Plan → Validate(>=8) → Orchestrate → Execute → Verify
@@ -36,7 +36,7 @@ cat << 'EOF'
   DB|스키마             → database-expert
   Docker|K8s|배포       → devops-engineer
 
- [MCP] context7, filesystem, memory
+ [MCP] context7, filesystem, playwright
  [Skills] /git_commit /git_pr /brainstorm /test_runner
 ══════════════════════════════════════════════════════════════════════
 
@@ -62,6 +62,6 @@ Docker|K8s|배포→devops-engineer
 refactor|정리→refactoring-expert
 performance|성능→performance-analyst
 </triggers>
-<mcp>context7, filesystem, memory</mcp>
+<mcp>context7, filesystem, playwright</mcp>
 </multi-agent-system>
 EOF
