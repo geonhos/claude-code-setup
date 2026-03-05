@@ -2,6 +2,7 @@
 name: rag_setup
 description: Sets up RAG (Retrieval-Augmented Generation) project with ChromaDB, embeddings, and document processing utilities.
 model: haiku
+disable-model-invocation: true
 ---
 
 # RAG Project Setup Skill

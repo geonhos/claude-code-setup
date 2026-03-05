@@ -2,6 +2,7 @@
 name: docker_setup
 description: Creates Docker and docker-compose configuration for development and production environments.
 model: haiku
+disable-model-invocation: true
 ---
 
 # Docker Setup Skill

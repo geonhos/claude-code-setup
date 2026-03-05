@@ -2,6 +2,7 @@
 name: react_setup
 description: Sets up React/TypeScript project with Vite, Feature-Sliced Design structure, TanStack Query, and essential tooling.
 model: haiku
+disable-model-invocation: true
 ---
 
 # React Project Setup Skill

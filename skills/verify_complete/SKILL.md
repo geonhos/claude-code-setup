@@ -2,6 +2,7 @@
 name: verify_complete
 description: Explicit verification before marking any task complete.
 model: opus
+user-invocable: false
 ---
 
 # Verify Complete Skill

@@ -2,6 +2,7 @@
 name: langchain_setup
 description: Sets up LangChain for LLM applications with RAG pipelines, vector stores, and chain implementations.
 model: haiku
+disable-model-invocation: true
 ---
 
 # LangChain Setup Skill

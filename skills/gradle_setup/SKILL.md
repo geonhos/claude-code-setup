@@ -2,6 +2,7 @@
 name: gradle_setup
 description: Configures Gradle build with multi-module support, dependency management, and common plugins for Java projects.
 model: haiku
+disable-model-invocation: true
 ---
 
 # Gradle Setup Skill

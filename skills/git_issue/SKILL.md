@@ -2,6 +2,8 @@
 name: git_issue
 description: Creates and manages GitHub issues with structured templates. Handles issue creation, searching, and labeling for task tracking.
 model: haiku
+disable-model-invocation: true
+argument-hint: "[title]"
 ---
 
 # Git Issue Skill
