@@ -23,18 +23,7 @@ cat << 'EOF'
   Quality:    code-reviewer, qa-executor, security-analyst,
               performance-analyst, debug-specialist
 
- [Auto Triggers]
-  requirements|요구사항  → requirements-analyst
-  plan|계획|설계        → plan-architect
-  test|테스트|QA        → qa-executor
-  review|리뷰           → code-reviewer
-  security|보안         → security-analyst
-  debug|버그|error      → debug-specialist
-  React|UI|컴포넌트     → frontend-dev
-  API|Spring|백엔드     → backend-dev
-  ML|AI|LLM            → ai-expert
-  DB|스키마             → database-expert
-  Docker|K8s|배포       → devops-engineer
+ [Routing] Agent descriptions → automatic semantic dispatch
 
  [MCP] context7, filesystem, playwright
  [Skills] /git_commit /git_pr /brainstorm /test_runner
@@ -47,21 +36,7 @@ cat << 'EOF'
 <quality>code-reviewer, qa-executor, security-analyst, performance-analyst, debug-specialist</quality>
 </agents>
 <workflow>Requirements→Plan→Validate(≥8)→Orchestrate→Execute→Verify</workflow>
-<triggers>
-requirements|요구사항→requirements-analyst
-plan|계획|설계→plan-architect
-test|테스트|QA→qa-executor
-review|리뷰→code-reviewer
-security|보안→security-analyst
-debug|버그|error→debug-specialist
-React|UI|컴포넌트→frontend-dev
-API|Spring|백엔드→backend-dev
-ML|AI|LLM→ai-expert
-DB|스키마→database-expert
-Docker|K8s|배포→devops-engineer
-refactor|정리→refactoring-expert
-performance|성능→performance-analyst
-</triggers>
+<routing>semantic — agent descriptions drive automatic dispatch</routing>
 <mcp>context7, filesystem, playwright</mcp>
 </multi-agent-system>
 EOF
