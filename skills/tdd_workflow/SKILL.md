@@ -2,6 +2,7 @@
 name: tdd_workflow
 description: Implements Kent Beck's Test-Driven Development workflow. Follows Red-Green-Refactor cycle by writing failing tests first, implementing minimal code to pass, then refactoring. Ensures test coverage and clean code through disciplined TDD practice.
 model: haiku
+disable-model-invocation: true
 ---
 
 # TDD Workflow Skill (Kent Beck Method)

@@ -1,7 +1,7 @@
 ---
 name: task_breakdown
 description: Decompose features into atomic 2-5 minute tasks.
-model: claude-opus-4-5-20250101
+model: opus
 ---
 
 # Task Breakdown Skill

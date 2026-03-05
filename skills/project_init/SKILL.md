@@ -2,6 +2,7 @@
 name: project_init
 description: Creates basic project structure with git initialization, .gitignore, README, and environment setup. Use as the first step for any new project.
 model: haiku
+disable-model-invocation: true
 ---
 
 # Project Initialization Skill

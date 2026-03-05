@@ -2,6 +2,7 @@
 name: git_analyze
 description: Analyzes Git changes with diff summaries and commit history. Provides token-efficient code change analysis and history insights.
 model: haiku
+disable-model-invocation: true
 ---
 
 # Git Analyze Skill

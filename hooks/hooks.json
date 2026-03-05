@@ -1,16 +1,5 @@
 {
   "hooks": {
-    "UserPromptSubmit": [
-      {
-        "matcher": "",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash -c 'script=$(ls $HOME/.claude/plugins/cache/geonhos-plugins/multi-agent-system/*/hooks/prompt-agent-matcher.sh 2>/dev/null | tail -1); [ -n \"$script\" ] && bash \"$script\"'"
-          }
-        ]
-      }
-    ],
     "SessionStart": [
       {
         "matcher": "",

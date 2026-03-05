@@ -2,6 +2,7 @@
 name: python_setup
 description: Sets up Python project structure with virtual environment, dependencies, test framework, and basic working code. Use after project_init for Python projects.
 model: haiku
+disable-model-invocation: true
 ---
 
 # Python Project Setup Skill

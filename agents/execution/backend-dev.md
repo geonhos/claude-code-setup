@@ -1,5 +1,10 @@
 ---
 name: backend-dev
+model: sonnet
+tools: Read, Edit, Write, Bash, Grep, Glob
+skills:
+  - spring_best_practices
+  - jpa_entity
 description: "Java/Spring Boot backend development specialist. Implements APIs, database operations, and server-side business logic following DDD and clean architecture principles. **Use proactively** when user mentions: Java, Spring, API, REST, endpoint, service, controller, JPA, Hibernate, backend. Examples:\n\n<example>\nContext: Task to create REST API endpoint.\nuser: \"Implement user registration API\"\nassistant: \"I'll create the registration endpoint with proper validation, service layer, and repository.\"\n<commentary>\nFollows DDD pattern: Controller → Service → Domain → Repository.\n</commentary>\n</example>\n\n<example>\nContext: Task to implement database schema.\nuser: \"Create order management database schema\"\nassistant: \"I'll design the schema following normalization principles and create migration files.\"\n<commentary>\nDatabase design with proper relationships, indexes, and constraints.\n</commentary>\n</example>"
 ---
 

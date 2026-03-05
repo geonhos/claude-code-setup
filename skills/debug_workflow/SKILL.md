@@ -1,7 +1,7 @@
 ---
 name: debug_workflow
 description: Systematic debugging using hypothesis-driven approach.
-model: claude-opus-4-5-20250101
+model: opus
 ---
 
 # Debug Workflow Skill

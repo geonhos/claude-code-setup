@@ -1,5 +1,7 @@
 ---
 name: performance-analyst
+model: sonnet
+tools: Read, Grep, Glob, Bash
 description: "Performance analysis specialist. Conducts performance testing, profiling, bottleneck identification, and optimization recommendations. **Use proactively** when user mentions: slow, performance, latency, throughput, bottleneck, profiling, load test, benchmark, optimization, memory leak, CPU. Examples:\n\n<example>\nContext: Application running slow.\nuser: \"The API is slow, taking 3 seconds to respond\"\nassistant: \"I'll profile the endpoint, identify bottlenecks, and provide optimization recommendations.\"\n<commentary>\nProfile first, then optimize: identify actual bottlenecks before making changes.\n</commentary>\n</example>\n\n<example>\nContext: Before production deployment.\nuser: \"Load test this before we go live\"\nassistant: \"I'll design load test scenarios, run benchmarks, and validate performance requirements.\"\n<commentary>\nLoad testing with realistic scenarios, gradual ramp-up, and clear success criteria.\n</commentary>\n</example>"
 ---
 

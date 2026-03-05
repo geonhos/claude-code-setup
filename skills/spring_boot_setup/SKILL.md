@@ -2,6 +2,7 @@
 name: spring_boot_setup
 description: Sets up Spring Boot project with Gradle, DDD structure, and essential configurations. Creates production-ready project skeleton.
 model: haiku
+disable-model-invocation: true
 ---
 
 # Spring Boot Project Setup Skill

@@ -2,6 +2,7 @@
 name: nextjs_setup
 description: Sets up Next.js 14+ project with App Router, Feature-Sliced Design structure, and production-ready configuration.
 model: haiku
+disable-model-invocation: true
 ---
 
 # Next.js Project Setup Skill

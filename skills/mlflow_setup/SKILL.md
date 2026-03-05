@@ -2,6 +2,7 @@
 name: mlflow_setup
 description: Sets up MLflow for experiment tracking, model versioning, and artifact management in ML projects.
 model: haiku
+disable-model-invocation: true
 ---
 
 # MLflow Setup Skill

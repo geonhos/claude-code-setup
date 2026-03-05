@@ -2,6 +2,8 @@
 name: git_commit
 description: Analyzes staged changes and generates structured commit messages following [Phase X] format. Includes status check, staging, and commit execution.
 model: haiku
+disable-model-invocation: true
+argument-hint: "[message]"
 ---
 
 # Git Commit Skill
@@ -24,15 +26,18 @@ git diff --cached --name-only
 ### 2. Stage Changes (Optional)
 
 ```bash
-# Stage all
-git add -A
+# Stage specific files (preferred - avoids accidentally staging secrets)
+git add src/api/auth.py tests/test_auth.py
 
-# Stage selectively
+# Stage by directory
 git add src/ tests/
 
-# Interactive staging
+# Stage with patch review
 git add -p
 ```
+
+**IMPORTANT**: Avoid `git add -A` or `git add .` which can accidentally
+stage sensitive files (.env, credentials) or large binaries.
 
 ### 3. Analyze Changes
 
