@@ -1,7 +1,7 @@
 ---
 name: verify_complete
 description: Explicit verification before marking any task complete.
-model: claude-opus-4-5-20250101
+model: opus
 ---
 
 # Verify Complete Skill

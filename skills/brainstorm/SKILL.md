@@ -1,7 +1,7 @@
 ---
 name: brainstorm
 description: Progressive design exploration before implementation commitment.
-model: claude-opus-4-5-20250101
+model: opus
 ---
 
 # Brainstorm Skill
