@@ -5,6 +5,45 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.3.1] - 2026-03-05
+
+### Added
+
+- **Agent frontmatter 강화** (15개 전체)
+  - `model`: pipeline=`inherit`, execution/quality=`sonnet`
+  - `tools`: quality agent는 읽기 전용 (`Read, Grep, Glob, Bash`), execution은 쓰기 포함
+  - `skills`: 관련 스킬 프리로딩 (10개 agent에 적용)
+  - `memory: project`: code-reviewer, security-analyst (cross-session 학습)
+
+- **Playwright MCP 서버** (`.mcp.json`)
+  - `@anthropic-ai/mcp-server-playwright` 추가
+  - 브라우저 자동화, E2E 테스트, 스크린샷 캡처 지원
+
+- **스킬 frontmatter 개선** (32개 전체)
+  - `disable-model-invocation: true`: template/reference 스킬 20개에 적용
+  - `user-invocable: false`: `verify_complete` (내부 전용)
+  - `argument-hint`: git 스킬 4개에 사용 힌트 추가
+  - deprecated 모델 ID (`claude-opus-4-5-20250101`) → alias (`opus`, `haiku`) 교체
+
+- **git_commit 안전성 개선**
+  - `git add -A` / `git add .` 안티패턴 경고 추가
+  - selective staging 권장 가이드
+
+### Removed
+
+- **`hooks/prompt-agent-matcher.sh`** (UserPromptSubmit 키워드 매칭 훅)
+  - Agent description 기반 semantic routing으로 대체
+  - 매 턴 ~150 토큰 context injection 비용 절감
+  - 피드백 루프 버그 원천 차단
+
+### Changed
+
+- 버전 2.2.0 → 2.3.1
+- startup.sh: Auto Triggers 섹션 → semantic routing 안내로 교체
+- MCP 서버 목록: memory → playwright
+
+---
+
 ## [2.2.0] - 2026-02-28
 
 ### Added

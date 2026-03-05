@@ -1,6 +1,6 @@
 # Claude Code Agents & Skills
 
-Claude Code를 위한 멀티에이전트 시스템 플러그인 v2.2.0
+Claude Code를 위한 멀티에이전트 시스템 플러그인 v2.3.1
 
 ## 설치
 
@@ -14,7 +14,7 @@ Claude Code에서 실행:
 설치 완료! 세션 시작 시 자동으로 에이전트와 스킬이 소개됩니다.
 
 ```xml
-<multi-agent-system version="2.1.0">
+<multi-agent-system version="2.3.1">
 <summary>15 agents, 32 skills loaded</summary>
 
 <workflow>
@@ -27,14 +27,9 @@ Claude Code에서 실행:
 <quality>code-reviewer, qa-executor, security-analyst, performance-analyst, debug-specialist</quality>
 </agents>
 
-<auto-triggers>
-requirements|요구사항 → requirements-analyst
-plan|계획|설계 → plan-architect
-test|테스트|QA → qa-executor
-...
-</auto-triggers>
+<routing>semantic — agent descriptions drive automatic dispatch</routing>
 
-<mcp-servers>context7, filesystem, memory</mcp-servers>
+<mcp-servers>context7, filesystem, playwright</mcp-servers>
 </multi-agent-system>
 ```
 
@@ -89,39 +84,39 @@ v2.0에서는 명확한 6단계 워크플로우를 제공합니다:
 
 ### Pipeline (3개)
 
-워크플로우 관리
+워크플로우 관리 — `model: inherit` (호출자 모델 상속)
 
-| Agent | 역할 |
-|-------|------|
-| [`requirements-analyst`](agents/pipeline/requirements-analyst.md) | 요구사항 분석 및 명확화 |
-| [`plan-architect`](agents/pipeline/plan-architect.md) | 실행 계획 수립 + 자체 검증 |
-| [`orchestrator`](agents/pipeline/orchestrator.md) | Plan 기반 병렬 실행 조율 |
+| Agent | 역할 | Skills |
+|-------|------|--------|
+| [`requirements-analyst`](agents/pipeline/requirements-analyst.md) | 요구사항 분석 및 명확화 | brainstorm |
+| [`plan-architect`](agents/pipeline/plan-architect.md) | 실행 계획 수립 + 자체 검증 | task_breakdown |
+| [`orchestrator`](agents/pipeline/orchestrator.md) | Plan 기반 병렬 실행 조율 | — |
 
 ### Execution (7개)
 
-개발 작업 수행
+개발 작업 수행 — `model: sonnet`, 읽기/쓰기 도구 전체 사용
 
-| Agent | 역할 | 기술 스택 |
-|-------|------|-----------|
-| [`backend-dev`](agents/execution/backend-dev.md) | 백엔드 개발 | Java, Spring Boot, DDD |
-| [`frontend-dev`](agents/execution/frontend-dev.md) | 프론트엔드 개발 | React, TypeScript, MVVM |
-| [`ai-expert`](agents/execution/ai-expert.md) | AI/ML 개발 | Python, LLM, RAG |
-| [`database-expert`](agents/execution/database-expert.md) | 데이터베이스 | Schema, Query 최적화 |
-| [`devops-engineer`](agents/execution/devops-engineer.md) | DevOps/인프라 | Docker, K8s, CI/CD |
-| [`refactoring-expert`](agents/execution/refactoring-expert.md) | 리팩토링 | 레거시 개선, 기술부채 |
-| [`docs-writer`](agents/execution/docs-writer.md) | 문서화 | API docs, README |
+| Agent | 역할 | Skills |
+|-------|------|--------|
+| [`backend-dev`](agents/execution/backend-dev.md) | 백엔드 (Java, Spring Boot, DDD) | spring_best_practices, jpa_entity |
+| [`frontend-dev`](agents/execution/frontend-dev.md) | 프론트엔드 (React, TypeScript, MVVM) | react_best_practices, component_generator |
+| [`ai-expert`](agents/execution/ai-expert.md) | AI/ML (Python, LLM, RAG) | python_best_practices, rag_setup |
+| [`database-expert`](agents/execution/database-expert.md) | 데이터베이스 (Schema, Query 최적화) | alembic_migration |
+| [`devops-engineer`](agents/execution/devops-engineer.md) | DevOps/인프라 (Docker, K8s, CI/CD) | docker_setup |
+| [`refactoring-expert`](agents/execution/refactoring-expert.md) | 리팩토링 (레거시 개선, 기술부채) | — |
+| [`docs-writer`](agents/execution/docs-writer.md) | 문서화 (API docs, README) | — |
 
 ### Quality (5개)
 
-품질 보증
+품질 보증 — `model: sonnet`, 읽기 전용 도구 (debug-specialist 제외)
 
-| Agent | 역할 |
-|-------|------|
-| [`code-reviewer`](agents/quality/code-reviewer.md) | 코드/문서 품질 리뷰 |
-| [`qa-executor`](agents/quality/qa-executor.md) | 테스트 계획/실행/분석 통합 |
-| [`security-analyst`](agents/quality/security-analyst.md) | 보안 코드 리뷰, OWASP Top 10 |
-| [`performance-analyst`](agents/quality/performance-analyst.md) | 성능 분석 및 최적화 |
-| [`debug-specialist`](agents/quality/debug-specialist.md) | 체계적 가설 기반 디버깅 |
+| Agent | 역할 | Skills | Memory |
+|-------|------|--------|--------|
+| [`code-reviewer`](agents/quality/code-reviewer.md) | 코드/문서 품질 리뷰 | verify_complete | project |
+| [`qa-executor`](agents/quality/qa-executor.md) | 테스트 계획/실행/분석 통합 | test_runner, coverage_report | — |
+| [`security-analyst`](agents/quality/security-analyst.md) | 보안 코드 리뷰, OWASP Top 10 | — | project |
+| [`performance-analyst`](agents/quality/performance-analyst.md) | 성능 분석 및 최적화 | — | — |
+| [`debug-specialist`](agents/quality/debug-specialist.md) | 체계적 가설 기반 디버깅 | debug_workflow | — |
 
 ---
 
@@ -216,7 +211,6 @@ marketplace.json           # 마켓플레이스 정보
 hooks/
 ├── hooks.json               # 훅 이벤트 설정
 ├── startup.sh               # SessionStart: ASCII Art 배너
-├── prompt-agent-matcher.sh  # UserPromptSubmit: 동적 에이전트 매칭
 └── agent-progress.sh        # SubagentStart/Stop: 진행 추적
 
 agents/                    # 에이전트 정의 (15개)
@@ -286,10 +280,19 @@ debug-specialist (reproduce → hypothesize → test → fix → verify)
 
 ## 주요 변경사항
 
+### v2.3.1 - Agent 스코핑, 스킬 프리로딩, Playwright MCP
+- **Agent frontmatter 강화**: `model`, `tools`, `skills`, `memory` 필드 추가 (15개 전체)
+- **모델 전략**: pipeline=`inherit`, execution/quality=`sonnet`, 고수준 스킬=`opus`
+- **도구 스코핑**: quality agent는 읽기 전용 (`Read, Grep, Glob, Bash`), execution은 쓰기 포함
+- **스킬 프리로딩**: agent `skills` 필드로 관련 스킬 자동 주입 (10개 agent)
+- **Playwright MCP**: 브라우저 자동화 MCP 서버 추가
+- **Semantic routing**: keyword 매칭 hook 제거, agent description 기반 자동 라우팅으로 전환
+- **스킬 frontmatter**: deprecated 모델 ID를 alias로 교체, `disable-model-invocation` 일관 적용
+- **git_commit 안전성**: `git add -A` 안티패턴 경고 추가
+
 ### v2.2.0 - 동적 에이전트 매칭 훅 + CLAUDE.md 제거
-- `UserPromptSubmit` 훅 추가: 매 프롬프트마다 키워드 기반 에이전트 추천 주입
-- `CLAUDE.md` 제거: 정적 컨텍스트를 동적 훅으로 대체 (컨텍스트 압축 생존, 토큰 효율 개선)
-- `hooks/prompt-agent-matcher.sh`: 25ms 이내 실행, 매칭 없으면 무출력
+- `UserPromptSubmit` 훅 추가 (v2.3에서 제거됨)
+- `CLAUDE.md` 제거: 정적 컨텍스트를 동적 훅으로 대체
 
 ### v2.1.2 - Skills 로딩 수정
 - `plugin.json`의 `skills` 필드를 배열에서 디렉토리 경로 문자열로 수정 (`"./skills"`)

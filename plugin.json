@@ -1,7 +1,7 @@
 {
   "name": "multi-agent-system",
   "description": "Multi-agent system v2.3 with scoped agent tools/models, persistent memory, skill preloading, and Playwright MCP",
-  "version": "2.3.0",
+  "version": "2.3.1",
   "author": {
     "name": "geonhos",
     "email": "ghyeom.dev@gmail.com"

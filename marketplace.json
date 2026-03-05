@@ -11,8 +11,8 @@
         "source": "github",
         "repo": "geonhos/claude-code-setup"
       },
-      "description": "Multi-agent system v2.1 with Memory MCP, context optimization, 15 agents + 32 skills, 6-step parallel workflow",
-      "version": "2.1.2",
+      "description": "Multi-agent system v2.3 with scoped agent tools/models, persistent memory, skill preloading, and Playwright MCP",
+      "version": "2.3.1",
       "license": "MIT",
       "keywords": ["multi-agent", "automation", "qa", "devops", "parallel-execution", "workflow"]
     }
