@@ -2,6 +2,7 @@
 name: test_runner
 description: Executes test suites across different frameworks and generates structured results.
 model: haiku
+disable-model-invocation: true
 ---
 
 # Test Runner Skill

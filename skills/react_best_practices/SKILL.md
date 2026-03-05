@@ -2,6 +2,7 @@
 name: react_best_practices
 description: React/Next.js performance optimization guide with 45+ rules across 8 categories
 model: haiku
+disable-model-invocation: true
 ---
 
 # React Best Practices

@@ -2,6 +2,7 @@
 name: coverage_report
 description: Generates and analyzes code coverage reports with gap identification and improvement recommendations.
 model: haiku
+disable-model-invocation: true
 ---
 
 # Coverage Report Skill
