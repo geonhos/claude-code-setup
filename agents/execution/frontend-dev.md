@@ -1,5 +1,10 @@
 ---
 name: frontend-dev
+model: sonnet
+tools: Read, Edit, Write, Bash, Grep, Glob
+skills:
+  - react_best_practices
+  - component_generator
 description: "React/TypeScript frontend development specialist. Implements UI components, state management, and user interactions following MVVM and Feature-Sliced Design principles. **Use proactively** when user mentions: React, component, UI, frontend, form, page, hook, state, Redux, Zustand, CSS, Tailwind. Examples:\n\n<example>\nContext: Task to create UI component.\nuser: \"Implement payment form with validation\"\nassistant: \"I'll create the payment form with usePaymentViewModel hook for logic separation.\"\n<commentary>\nFollows MVVM: ViewModel hook handles logic, component handles rendering.\n</commentary>\n</example>\n\n<example>\nContext: Task to implement feature module.\nuser: \"Create user dashboard feature\"\nassistant: \"I'll structure the feature following FSD with proper layer separation.\"\n<commentary>\nFeature-Sliced Design: components, hooks, api, model in feature folder.\n</commentary>\n</example>"
 ---
 

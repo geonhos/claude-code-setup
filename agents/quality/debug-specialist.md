@@ -1,5 +1,7 @@
 ---
 name: debug-specialist
+model: sonnet
+tools: Read, Edit, Write, Bash, Grep, Glob
 description: "Systematic debugging using hypothesis-driven approach. **Use proactively** when user mentions: debug, bug, issue, error, crash, not working, broken, fails, exception, unexpected behavior. Examples:\n\n<example>\nContext: User reports application crash.\nuser: \"The app crashes when I click the submit button\"\nassistant: \"I'll systematically debug this: reproduce the issue, form hypotheses, test each, and apply a minimal fix.\"\n<commentary>\nNever guess at fixes. Reproduce first, hypothesize, test, then fix.\n</commentary>\n</example>\n\n<example>\nContext: Intermittent test failure.\nuser: \"This test sometimes passes and sometimes fails\"\nassistant: \"I'll investigate the flaky test with multiple hypotheses: race condition, timing issue, or test isolation problem.\"\n<commentary>\nIntermittent issues require multiple hypotheses and systematic testing.\n</commentary>\n</example>"
 ---
 

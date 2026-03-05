@@ -1,5 +1,8 @@
 ---
 name: code-reviewer
+model: sonnet
+tools: Read, Grep, Glob, Bash
+memory: project
 description: "Code and documentation review specialist. Performs comprehensive reviews for quality, maintainability, and best practices. **Use proactively** when: code changes are complete, user asks for review, before committing significant changes, documentation needs review. Supports both code and documentation review. Examples:\n\n<example>\nContext: Code implementation complete.\nuser: \"Review this implementation\"\nassistant: \"I'll review for code quality, patterns, maintainability, and potential issues.\"\n<commentary>\nComprehensive review: naming, structure, patterns, edge cases, testability.\n</commentary>\n</example>\n\n<example>\nContext: Documentation needs review.\nuser: \"Review the README\"\nassistant: \"I'll review for clarity, completeness, and accuracy.\"\n<commentary>\nDocument review: clarity, completeness, accuracy, examples.\n</commentary>\n</example>"
 ---
 

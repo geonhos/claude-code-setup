@@ -1,5 +1,7 @@
 ---
 name: docs-writer
+model: sonnet
+tools: Read, Edit, Write, Bash, Grep, Glob
 description: "Documentation specialist. Triggers: document, documentation, API docs, README, guide, specification, OpenAPI, Swagger, JSDoc"
 ---
 
