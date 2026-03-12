@@ -1,7 +1,7 @@
 {
   "name": "multi-agent-system",
-  "description": "Multi-agent system v2.4 with Skills 2.0 (context fork, allowed-tools, argument-hint), scoped agents, and Playwright MCP",
-  "version": "2.4.0",
+  "description": "Slim multi-agent system v3.0 with core agents, Skills 2.0, and Playwright MCP",
+  "version": "3.0.0",
   "author": {
     "name": "geonhos",
     "email": "ghyeom.dev@gmail.com"
@@ -25,21 +25,12 @@
     "verification"
   ],
   "agents": [
-    "./agents/pipeline/requirements-analyst.md",
     "./agents/pipeline/plan-architect.md",
-    "./agents/pipeline/orchestrator.md",
     "./agents/execution/ai-expert.md",
     "./agents/execution/backend-dev.md",
-    "./agents/execution/database-expert.md",
-    "./agents/execution/devops-engineer.md",
-    "./agents/execution/docs-writer.md",
     "./agents/execution/frontend-dev.md",
-    "./agents/execution/refactoring-expert.md",
     "./agents/quality/code-reviewer.md",
-    "./agents/quality/debug-specialist.md",
-    "./agents/quality/performance-analyst.md",
-    "./agents/quality/qa-executor.md",
-    "./agents/quality/security-analyst.md"
+    "./agents/quality/qa-executor.md"
   ],
   "hooks": "./hooks/hooks.json",
   "skills": "./skills"

@@ -11,8 +11,8 @@
         "source": "github",
         "repo": "geonhos/claude-code-setup"
       },
-      "description": "Multi-agent system v2.4 with Skills 2.0 (context fork, allowed-tools, argument-hint), scoped agents, and Playwright MCP",
-      "version": "2.4.0",
+      "description": "Slim multi-agent system v3.0 with core agents, Skills 2.0, and Playwright MCP",
+      "version": "3.0.0",
       "license": "MIT",
       "keywords": ["multi-agent", "automation", "qa", "devops", "parallel-execution", "workflow"]
     }

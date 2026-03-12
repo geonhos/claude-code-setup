@@ -5,6 +5,43 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.0.0] - 2026-03-12
+
+### Breaking Changes
+
+- **에이전트 대폭 간소화**: 15개 → 6개 (-60%)
+  - 실사용 데이터 분석 기반 (전체 프로젝트 세션 로그 분석)
+  - 유지: plan-architect, backend-dev, frontend-dev, ai-expert, code-reviewer, qa-executor
+  - 삭제: requirements-analyst, orchestrator, database-expert, devops-engineer, docs-writer, refactoring-expert, security-analyst, performance-analyst, debug-specialist
+
+- **스킬 대폭 간소화**: 32개 → 12개 (-63%)
+  - 유지: brainstorm, task_breakdown, verify_complete, debug_workflow, tdd_workflow, test_runner, coverage_report, git_commit, git_pr, react/spring/python_best_practices
+  - 삭제: 20개 setup/template/reference 스킬
+
+- **프로토콜 정리**: 9개 → 1개 (checklists.md만 유지)
+  - 삭제: agent-template, agent-template-light, agent-refactoring-guide, agents-reference, skills-reference, boundary-protocol, workflow-detail, logging
+
+### Added
+
+- **에이전트 라우팅 테이블** (`startup.sh`)
+  - 세션 시작 시 명확한 "상황 → 에이전트" 매핑을 XML로 주입
+  - Claude가 시맨틱 라우팅으로 정확한 에이전트를 선택하도록 지원
+
+- **startup.sh에 `<rules>` 섹션 추가**
+  - 문서 자동 업데이트 규칙 (코드 변경 시 관련 문서 동시 업데이트)
+  - Kent Beck TDD 원칙 (Red → Green → Refactor)
+  - 구조적/행위적 커밋 분리
+  - commit/push 분리 (자동 push 금지)
+
+### Changed
+
+- startup.sh: 슬림 6-에이전트 구조 반영, 라우팅 테이블 + 규칙 추가
+- README.md: 전면 재작성, 철학 섹션 추가
+- git_commit 스킬: "Post-Commit: Push" 섹션 및 "Always push" 규칙 제거 (commit/push 분리)
+- 권위자 best practice 반영 (Kent Beck, Boris Cherny, Shrivu Shankar)
+
+---
+
 ## [2.4.0] - 2026-03-12
 
 ### Added

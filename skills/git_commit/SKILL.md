@@ -184,17 +184,3 @@ git log -1 --format=%s | grep -oE '\[Phase ([0-9]+)\]' | grep -oE '[0-9]+'
 2. **Commit often** - Save progress frequently
 3. **Commit after tests pass** - Never commit broken code
 4. **Clear messages** - Describe what and why
-
----
-
-## Quick Reference
-
-| Action | Command |
-|--------|---------|
-| Status | `git status -s` |
-| Stage all | `git add -A` |
-| Stage file | `git add {file}` |
-| Unstage | `git reset HEAD {file}` |
-| Commit | `git commit -m "msg"` |
-| Amend | `git commit --amend` |
-| Show last | `git log -1` |
