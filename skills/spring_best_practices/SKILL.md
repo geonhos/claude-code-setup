@@ -1,8 +1,7 @@
 ---
 name: spring_best_practices
-description: Spring Boot performance optimization guide with JPA tuning, async processing, and caching strategies
+description: Spring Boot performance optimization guide with JPA tuning, async processing, and caching strategies. Auto-triggers when writing Spring Boot/JPA code or reviewing backend performance.
 model: haiku
-disable-model-invocation: true
 ---
 
 # Spring Boot Best Practices

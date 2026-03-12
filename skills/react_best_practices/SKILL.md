@@ -1,8 +1,7 @@
 ---
 name: react_best_practices
-description: React/Next.js performance optimization guide with 45+ rules across 8 categories
+description: React/Next.js performance optimization guide with 45+ rules across 8 categories. Auto-triggers when writing React/Next.js components or reviewing frontend code.
 model: haiku
-disable-model-invocation: true
 ---
 
 # React Best Practices

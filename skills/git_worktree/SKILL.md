@@ -3,6 +3,7 @@ name: git_worktree
 description: Enable parallel development on multiple branches simultaneously.
 model: haiku
 disable-model-invocation: true
+allowed-tools: Bash, Read, Grep, Glob
 ---
 
 # Git Worktree Skill

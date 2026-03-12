@@ -3,6 +3,7 @@ name: git_pr
 description: Creates and manages Pull Requests with structured templates. Handles PR creation, description formatting, and merge strategies.
 model: haiku
 disable-model-invocation: true
+allowed-tools: Bash, Read, Grep, Glob
 argument-hint: "[base-branch]"
 ---
 

@@ -2,6 +2,9 @@
 name: brainstorm
 description: Progressive design exploration before implementation commitment.
 model: opus
+context: fork
+allowed-tools: Read, Grep, Glob, Bash
+argument-hint: "[topic]"
 ---
 
 # Brainstorm Skill

@@ -5,6 +5,48 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.4.0] - 2026-03-12
+
+### Added
+
+- **Skills 2.0 전면 적용** (32개 스킬)
+  - `context: fork`: `brainstorm`, `debug_workflow`, `task_breakdown` — 격리된 서브에이전트에서 실행, 메인 컨텍스트 보호
+  - `allowed-tools`: 16개 스킬에 도구 제한 적용
+    - Git 스킬 6개: read-only (`Bash, Read, Grep, Glob`)
+    - 워크플로우 스킬 3개: 분석 전용 (`Read, Grep, Glob, Bash`)
+    - Setup 스킬 4개: 쓰기 포함 (`Read, Edit, Write, Bash, Grep, Glob`)
+    - Quality 스킬 3개: read-only
+  - `argument-hint`: 11개 스킬에 자동완성 힌트 추가
+    - `/brainstorm [topic]`, `/debug_workflow [error-description]`, `/task_breakdown [feature]`
+    - `/component_generator [component-name]`, `/project_init [project-name]`, `/jpa_entity [entity-name]`
+    - `/test_runner [test-path]`, `/coverage_report [source-path]`, `/git_analyze [file-or-branch]`
+    - `/tdd_workflow [feature]`
+
+- **startup.sh 동적화**
+  - 에이전트/스킬/MCP 서버 수를 파일시스템에서 자동 계산
+  - 버전을 `plugin.json`에서 자동 읽기
+  - 하드코딩 완전 제거
+
+### Changed
+
+- **Best practices 스킬 자동 참조** (3개)
+  - `react_best_practices`, `spring_best_practices`, `python_best_practices`
+  - `disable-model-invocation: true` 제거 → Claude가 코드 작성 시 자동 트리거
+  - 이전: 사용자가 `/react_best_practices`로 수동 호출해야만 참조
+  - 이후: React/Spring/Python 코드 작성 시 Claude가 자동으로 참조
+
+- **Plans 아카이브 정리**
+  - 완료된 플랜 9개를 `plans/archived/`로 이동
+  - PLAN-002 (agent-enhancement), PLAN-003 (superpowers), PLAN-004 (boundary-definitions)
+  - PLAN-plugin-simplification v1, 고아 파일 2개 (generic-zooming-milner, wobbly-scribbling-diffie)
+
+- **설정 중복 제거**
+  - `.claude/settings.local.json`의 `enabledPlugins` 중복 항목 제거
+
+- 버전 2.3.1 → 2.4.0
+
+---
+
 ## [2.3.1] - 2026-03-05
 
 ### Added

@@ -2,6 +2,9 @@
 name: task_breakdown
 description: Decompose features into atomic 2-5 minute tasks.
 model: opus
+context: fork
+allowed-tools: Read, Grep, Glob, Bash
+argument-hint: "[feature]"
 ---
 
 # Task Breakdown Skill

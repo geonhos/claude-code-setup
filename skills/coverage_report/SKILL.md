@@ -3,6 +3,8 @@ name: coverage_report
 description: Generates and analyzes code coverage reports with gap identification and improvement recommendations.
 model: haiku
 disable-model-invocation: true
+allowed-tools: Bash, Read, Grep, Glob
+argument-hint: "[source-path]"
 ---
 
 # Coverage Report Skill

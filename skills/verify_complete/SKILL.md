@@ -3,6 +3,7 @@ name: verify_complete
 description: Explicit verification before marking any task complete.
 model: opus
 user-invocable: false
+allowed-tools: Read, Grep, Glob, Bash
 ---
 
 # Verify Complete Skill

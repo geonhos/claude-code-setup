@@ -3,6 +3,7 @@ name: git_branch
 description: Manages Git branches with consistent naming conventions. Handles creation, switching, deletion, and cleanup based on issue numbers.
 model: haiku
 disable-model-invocation: true
+allowed-tools: Bash, Read, Grep, Glob
 argument-hint: "[branch-name]"
 ---
 

@@ -1,6 +1,6 @@
 # Claude Code Agents & Skills
 
-Claude Code를 위한 멀티에이전트 시스템 플러그인 v2.3.1
+Claude Code를 위한 멀티에이전트 시스템 플러그인 v2.4.0
 
 ## 설치
 
@@ -14,7 +14,7 @@ Claude Code에서 실행:
 설치 완료! 세션 시작 시 자동으로 에이전트와 스킬이 소개됩니다.
 
 ```xml
-<multi-agent-system version="2.3.1">
+<multi-agent-system version="2.4.0">
 <summary>15 agents, 32 skills loaded</summary>
 
 <workflow>
@@ -280,55 +280,22 @@ debug-specialist (reproduce → hypothesize → test → fix → verify)
 
 ## 주요 변경사항
 
+### v2.4.0 - Skills 2.0 적용 + 프로젝트 정리
+- **Skills 2.0 전면 적용**: `context: fork`, `allowed-tools`, `argument-hint` 등 신규 필드 적용
+- **서브에이전트 격리**: `brainstorm`, `debug_workflow`, `task_breakdown`에 `context: fork` 적용 (메인 컨텍스트 보호)
+- **도구 제한**: 16개 스킬에 `allowed-tools` 적용 (git 스킬은 read-only, 워크플로우 스킬은 분석 전용)
+- **자동완성 힌트**: 11개 스킬에 `argument-hint` 추가 (`/brainstorm [topic]` 등)
+- **Best practices 자동 참조**: `react_best_practices`, `spring_best_practices`, `python_best_practices`에서 `disable-model-invocation` 제거 → Claude가 코드 작성 시 자동 트리거
+- **startup.sh 동적화**: 에이전트/스킬/MCP/버전 수치를 파일시스템에서 자동 계산 (하드코딩 제거)
+- **Plans 정리**: 완료된 플랜 9개 `plans/archived/`로 이동
+- **설정 중복 제거**: `settings.local.json`의 중복 `enabledPlugins` 제거
+
 ### v2.3.1 - Agent 스코핑, 스킬 프리로딩, Playwright MCP
-- **Agent frontmatter 강화**: `model`, `tools`, `skills`, `memory` 필드 추가 (15개 전체)
-- **모델 전략**: pipeline=`inherit`, execution/quality=`sonnet`, 고수준 스킬=`opus`
-- **도구 스코핑**: quality agent는 읽기 전용 (`Read, Grep, Glob, Bash`), execution은 쓰기 포함
-- **스킬 프리로딩**: agent `skills` 필드로 관련 스킬 자동 주입 (10개 agent)
-- **Playwright MCP**: 브라우저 자동화 MCP 서버 추가
-- **Semantic routing**: keyword 매칭 hook 제거, agent description 기반 자동 라우팅으로 전환
-- **스킬 frontmatter**: deprecated 모델 ID를 alias로 교체, `disable-model-invocation` 일관 적용
-- **git_commit 안전성**: `git add -A` 안티패턴 경고 추가
+- Agent frontmatter 강화, 모델/도구/스킬 스코핑, Playwright MCP, Semantic routing
 
 ### v2.2.0 - 동적 에이전트 매칭 훅 + CLAUDE.md 제거
-- `UserPromptSubmit` 훅 추가 (v2.3에서 제거됨)
-- `CLAUDE.md` 제거: 정적 컨텍스트를 동적 훅으로 대체
 
-### v2.1.2 - Skills 로딩 수정
-- `plugin.json`의 `skills` 필드를 배열에서 디렉토리 경로 문자열로 수정 (`"./skills"`)
-- 스킬 디렉토리를 2단계 중첩(`skills/category/skill_name/`)에서 1단계 flat 구조(`skills/skill_name/`)로 변경
-- 5개 SKILL.md 파일의 YAML frontmatter 위치 수정 (파일 최상단으로 이동)
+### v2.0.0 - 간소화 + 6단계 워크플로우
+- 에이전트: 23개 → 15개 (-35%), 6단계 명시적 워크플로우, Plan 자체 검증, 병렬 실행
 
-### v2.1.1 - Hook 안정화 + ASCII Art 배너
-- Hook 경로를 플러그인 캐시 기반 절대경로로 변경 (다른 프로젝트에서도 정상 동작)
-- 스프링부트 스타일 ASCII Art 배너로 시작 화면 개선
-
-### v2.1.0 - 구조화된 Hook
-- 외부 스크립트로 분리 (`hooks/startup.sh`)
-- XML 태그 기반 Claude 인식 개선
-- 전체 자동 트리거 목록 (13개)
-
----
-
-## v2.0 주요 변경사항
-
-### 간소화
-- 에이전트: 23개 → 15개 (-35%)
-- 스킬: 34개 → 32개 (-6%)
-- 외부 의존성 제거 (Gemini CLI 불필요)
-
-### 새로운 기능
-- **6단계 명시적 워크플로우**: 요구사항 → Plan → 검증 → 조율 → 실행 → 검증
-- **Plan 자체 검증**: plan-architect가 자동으로 Plan 검증 (점수 8/10 이상 필요)
-- **병렬 실행**: orchestrator가 의존성 분석 후 병렬 그룹으로 실행
-- **필수 구현 검증**: code-reviewer + qa-executor 자동 실행
-
-### 통합된 에이전트
-- `code-reviewer`: docs-reviewer 기능 통합
-- `qa-executor`: qa-planner + qa-healer 기능 통합
-
-### 삭제된 에이전트
-- `git-ops` → `/git_commit` 스킬 사용
-- `plan-feedback` → plan-architect 자체 검증
-- `brainstorm-facilitator` → `/brainstorm` 스킬
-- `pr-reviewer`, `docs-reviewer`, `qa-planner`, `qa-healer`, `reporter`
+[전체 변경 이력 → CHANGELOG.md](CHANGELOG.md)

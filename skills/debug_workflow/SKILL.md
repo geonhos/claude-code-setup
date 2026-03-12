@@ -2,6 +2,9 @@
 name: debug_workflow
 description: Systematic debugging using hypothesis-driven approach.
 model: opus
+context: fork
+allowed-tools: Read, Edit, Write, Bash, Grep, Glob
+argument-hint: "[error-description]"
 ---
 
 # Debug Workflow Skill

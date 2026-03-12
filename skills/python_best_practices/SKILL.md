@@ -1,8 +1,7 @@
 ---
 name: python_best_practices
-description: Python/FastAPI performance optimization guide with async patterns, database optimization, and caching strategies
+description: Python/FastAPI performance optimization guide with async patterns, database optimization, and caching strategies. Auto-triggers when writing Python/FastAPI code or reviewing backend performance.
 model: haiku
-disable-model-invocation: true
 ---
 
 # Python Best Practices
