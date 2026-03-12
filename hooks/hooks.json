@@ -11,6 +11,17 @@
         ]
       }
     ],
+    "PreCommit": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash -c 'script=$(ls $HOME/.claude/plugins/cache/geonhos-plugins/multi-agent-system/*/hooks/pre-commit.sh 2>/dev/null | tail -1); [ -n \"$script\" ] && bash \"$script\"'"
+          }
+        ]
+      }
+    ],
     "SubagentStart": [
       {
         "matcher": "",

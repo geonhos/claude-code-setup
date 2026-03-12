@@ -33,6 +33,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - 구조적/행위적 커밋 분리
   - commit/push 분리 (자동 push 금지)
 
+- **PreCommit 훅** (`hooks/pre-commit.sh`)
+  - Claude Code가 커밋 시 빌드 + 테스트 자동 실행
+  - 실패 시 커밋 차단
+  - 지원: Java(Gradle/Maven), Python(pytest), Node.js(npm), Go, Rust
+  - 테스트 프레임워크 없는 프로젝트는 통과
+
 ### Changed
 
 - startup.sh: 슬림 6-에이전트 구조 반영, 라우팅 테이블 + 규칙 추가

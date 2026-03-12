@@ -92,7 +92,8 @@ marketplace.json         # 마켓플레이스 정보
 
 hooks/
 ├── hooks.json           # 훅 이벤트 설정
-├── startup.sh           # SessionStart: 배너 + 라우팅 테이블
+├── startup.sh           # SessionStart: 배너 + 라우팅 테이블 + 규칙
+├── pre-commit.sh        # PreCommit: 빌드 + 테스트 강제
 └── agent-progress.sh    # SubagentStart/Stop: 진행 추적
 
 agents/                  # 에이전트 정의 (6개)
