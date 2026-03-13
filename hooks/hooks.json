@@ -11,13 +11,13 @@
         ]
       }
     ],
-    "PreCommit": [
+    "PreToolUse": [
       {
-        "matcher": "",
+        "matcher": "Bash",
         "hooks": [
           {
             "type": "command",
-            "command": "bash -c 'script=$(ls $HOME/.claude/plugins/cache/geonhos-plugins/multi-agent-system/*/hooks/pre-commit.sh 2>/dev/null | tail -1); [ -n \"$script\" ] && bash \"$script\"'"
+            "command": "bash -c 'script=$(ls $HOME/.claude/plugins/cache/geonhos-plugins/multi-agent-system/*/hooks/pre-commit-guard.sh 2>/dev/null | tail -1); [ -n \"$script\" ] && bash \"$script\"'"
           }
         ]
       }

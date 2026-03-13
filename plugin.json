@@ -1,7 +1,7 @@
 {
   "name": "multi-agent-system",
-  "description": "Slim multi-agent system v3.0 with core agents, Skills 2.0, and Playwright MCP",
-  "version": "3.0.0",
+  "description": "Slim multi-agent system v3.0.1 with core agents, Skills 2.0, and doc freshness check",
+  "version": "3.0.1",
   "author": {
     "name": "geonhos",
     "email": "ghyeom.dev@gmail.com"

@@ -1,6 +1,6 @@
 # Claude Code Agents & Skills
 
-Claude Code를 위한 멀티에이전트 시스템 플러그인 v3.0.0
+Claude Code를 위한 멀티에이전트 시스템 플러그인 v3.0.1
 
 ## 설치
 
@@ -56,7 +56,7 @@ Claude Code를 위한 멀티에이전트 시스템 플러그인 v3.0.0
 
 | Skill | 설명 |
 |-------|------|
-| [`/git_commit`](skills/git_commit/SKILL.md) | 구조화된 커밋 메시지 |
+| [`/git_commit`](skills/git_commit/SKILL.md) | 문서 점검 + 구조화된 커밋 메시지 |
 | [`/git_pr`](skills/git_pr/SKILL.md) | PR 생성 + 템플릿 |
 
 ### Best Practices (자동 참조)
@@ -93,7 +93,8 @@ marketplace.json         # 마켓플레이스 정보
 hooks/
 ├── hooks.json           # 훅 이벤트 설정
 ├── startup.sh           # SessionStart: 배너 + 라우팅 테이블 + 규칙
-├── pre-commit.sh        # PreCommit: 빌드 + 테스트 강제
+├── pre-commit.sh        # 빌드 + 테스트 검증 스크립트
+├── pre-commit-guard.sh  # PreToolUse: git commit 감지 → pre-commit.sh 실행
 └── agent-progress.sh    # SubagentStart/Stop: 진행 추적
 
 agents/                  # 에이전트 정의 (6개)
@@ -112,6 +113,11 @@ skills/                  # 스킬 정의 (12개)
 ---
 
 ## 주요 변경사항
+
+### v3.0.1 - 버그 수정 + 문서 점검
+- **PreCommit → PreToolUse**: 지원되지 않던 `PreCommit` hook을 `PreToolUse` + `Bash` matcher로 교체
+- **Playwright MCP 수정**: 존재하지 않던 `@anthropic-ai/mcp-server-playwright` → `@playwright/mcp@latest`
+- **git_commit 스킬**: Documentation Freshness Check 단계 추가 (커밋 전 문서 최신화 점검)
 
 ### v3.0.0 - 실사용 기반 슬림화
 - **에이전트**: 15개 → 6개 (-60%) — 실사용 데이터 기반 미사용 에이전트 삭제

@@ -1,6 +1,6 @@
 ---
 name: git_commit
-description: Analyzes staged changes and generates structured commit messages following [Phase X] format. Includes status check, staging, and commit execution.
+description: Analyzes staged changes, checks documentation freshness, and generates structured commit messages following [Phase X] format. Includes status check, staging, doc update, and commit execution.
 model: haiku
 disable-model-invocation: true
 allowed-tools: Bash, Read, Grep, Glob
@@ -54,7 +54,35 @@ Categorize changed files by section:
 | **Infrastructure** | Dockerfile, docker-compose.yml, .github/ |
 | **Other** | .gitignore, LICENSE, etc. |
 
-### 4. Generate Commit Message
+### 4. Documentation Freshness Check
+
+Before committing, scan for documentation that may be stale due to your code changes.
+
+**Check targets** (if they exist in the project):
+
+```bash
+# Find documentation files in the project
+find . -maxdepth 3 -name "README.md" -o -name "CHANGELOG.md" -o -name "*.md" -path "*/docs/*" 2>/dev/null | head -20
+```
+
+**What to verify:**
+
+| Changed | Check |
+|---------|-------|
+| Public API (endpoints, functions, CLI args) | README usage examples, API docs |
+| Dependencies added/removed | README install section, requirements |
+| Config format changed | README configuration section |
+| File/directory structure changed | README directory tree |
+| New feature or bug fix | CHANGELOG.md (if project uses one) |
+| Function signature or behavior | Docstrings / JSDoc / KDoc in changed files |
+
+**Rules:**
+- Only update docs that **already exist** — do not create new doc files
+- Only update sections that are **actually affected** by the code change
+- If no docs are affected, skip this step entirely
+- Include doc updates in the **same commit** as the code change
+
+### 5. Generate Commit Message
 
 **Format:**
 ```
@@ -74,7 +102,7 @@ Refs #{issue_number}
 - Body: Wrap at 72 characters
 - Use `Closes #N` for final commit, `Refs #N` for intermediate commits
 
-### 5. Execute Commit
+### 6. Execute Commit
 
 ```bash
 git commit -m "$(cat <<'EOF'

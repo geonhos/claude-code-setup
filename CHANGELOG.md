@@ -5,6 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.0.1] - 2026-03-13
+
+### Fixed
+
+- **PreCommit hook 오류 수정**
+  - `PreCommit`은 Claude Code가 지원하지 않는 hook 이벤트 — 플러그인 로드 실패 원인
+  - `PreToolUse` + `matcher: "Bash"`로 교체하여 `git commit` 명령 시에만 빌드/테스트 검증 실행
+  - 새 `pre-commit-guard.sh`: `TOOL_INPUT`에서 `git commit` 여부를 판별, 비커밋 명령은 즉시 통과
+
+- **Playwright MCP 패키지명 수정**
+  - `@anthropic-ai/mcp-server-playwright` (존재하지 않음) → `@playwright/mcp@latest`
+
+### Added
+
+- **git_commit 스킬: Documentation Freshness Check** (4단계 신규)
+  - 커밋 전 코드 변경에 영향받는 문서(README, CHANGELOG, docs/, docstrings)를 자동 점검
+  - 이미 존재하는 문서만 업데이트, 새 문서 생성 안 함
+  - 모든 프로젝트에서 `/git_commit` 사용 시 적용
+
+---
+
 ## [3.0.0] - 2026-03-12
 
 ### Breaking Changes

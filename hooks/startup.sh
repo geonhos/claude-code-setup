@@ -80,7 +80,7 @@ Use the following agents when the situation matches. Each agent runs as an isola
 - Follow Kent Beck TDD: Red (failing test) → Green (minimal implementation) → Refactor (clean up)
 - Separate structural commits (rename, move, extract) from behavioral commits (new feature, bug fix)
 - Commit and push are separate operations — never auto-push after commit
-- PreCommit hook enforces build + test pass — commit is blocked if either fails
+- PreToolUse hook intercepts git commit — build + test must pass before commit proceeds
 </rules>
 
 <mcp>context7, filesystem, playwright</mcp>
