@@ -5,6 +5,67 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.0.0] - 2026-04-06
+
+### Added — Harness Engineering
+
+- **`/ship` 스킬 (핵심 신기능)**
+  - 한 번의 프롬프트로 전체 파이프라인 실행: PLAN → ISSUE → BRANCH → EXECUTE → REVIEW → TEST → PR
+  - 각 스테이지 게이트 제어 (plan score ≥8, critical issues 0, tests all green)
+  - 실패 시 자동 재시도 (최대 2회) 후 사용자에게 보고
+  - `harness/progress.md`로 크로스-세션 진행 추적
+
+- **`/plan` 스킬 (병합)**
+  - `brainstorm` + `task_breakdown` 통합
+  - 접근법 탐색 (최소 3개) → 트레이드오프 매트릭스 → 태스크 분해 → 자체 점수 매기기
+
+- **`/review` 스킬 (신규)**
+  - code-reviewer 에이전트를 스킬로 직접 호출
+  - Critical/Major/Minor/Suggestion 심각도 분류
+
+- **Stop hook 추가**
+  - 작업 완료 시 검증 넛지 (코드 완성도, 테스트, 문서 확인)
+  - 활성 `/ship` 파이프라인 감지 시 파이프라인 완료 여부 확인
+
+- **`harness/` 디렉토리**
+  - `progress.md` — 파이프라인 진행 상태 크로스-세션 추적
+
+### Changed — Skill 리뉴얼
+
+- **스킬 이름 단축** (UX 개선)
+  - `tdd_workflow` → `/tdd`
+  - `debug_workflow` → `/debug`
+  - `git_commit` → `/commit`
+  - `git_pr` → `/pr`
+
+- **스킬 병합** (중복 제거)
+  - `test_runner` + `coverage_report` → `/test`
+  - `brainstorm` + `task_breakdown` → `/plan`
+
+- **startup.sh 업데이트**
+  - 하네스 파이프라인 안내 섹션 추가
+  - Stop hook 규칙 추가
+
+### Removed
+
+- `brainstorm` 스킬 (→ `/plan`으로 병합)
+- `task_breakdown` 스킬 (→ `/plan`으로 병합)
+- `verify_complete` 스킬 (→ `/ship` 파이프라인 내 흡수)
+- `test_runner` 스킬 (→ `/test`로 병합)
+- `coverage_report` 스킬 (→ `/test`로 병합)
+- `git_commit` 스킬 (→ `/commit`으로 이름 변경)
+- `git_pr` 스킬 (→ `/pr`로 이름 변경)
+- `tdd_workflow` 스킬 (→ `/tdd`로 이름 변경)
+- `debug_workflow` 스킬 (→ `/debug`로 이름 변경)
+
+### Inspiration
+
+- [Anthropic Harness Engineering Blog](https://www.anthropic.com/engineering/effective-harnesses-for-long-running-agents) — 진행 추적, 게이트 제어, 단일 기능 세션
+- [disler/claude-code-hooks-mastery](https://github.com/disler/claude-code-hooks-mastery) — Stop hook 패턴
+- [trailofbits/skills](https://github.com/trailofbits/skills) — 보안 중심 스킬 구조
+
+---
+
 ## [3.0.1] - 2026-03-13
 
 ### Fixed

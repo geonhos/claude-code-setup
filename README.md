@@ -1,6 +1,6 @@
 # Claude Code Agents & Skills
 
-Claude Code를 위한 멀티에이전트 시스템 플러그인 v3.0.1
+Claude Code를 위한 멀티에이전트 시스템 플러그인 v4.0.0 — Harness Engineering Edition
 
 ## 설치
 
@@ -11,16 +11,32 @@ Claude Code를 위한 멀티에이전트 시스템 플러그인 v3.0.1
 
 ## 철학
 
-- **덜 만들고, 핵심만 잘 만든다** — 실제 사용 데이터 기반으로 필수 에이전트/스킬만 유지
-- **컨텍스트 관리가 핵심** — 서브에이전트 격리, 명확한 라우팅 테이블
+- **한 번의 프롬프트로 끝낸다** — `/ship`으로 plan → issue → execute → review → test → PR 전체 파이프라인 실행
+- **덜 만들고, 핵심만 잘 만든다** — 6개 에이전트, 11개 스킬, 명확한 라우팅
+- **Harness Engineering** — Anthropic 하네스 패턴 적용: 진행 추적, 자체 검증, 게이트 제어
 - **Kent Beck TDD 원칙 내장** — Red-Green-Refactor 사이클 강제
-- **Plan 먼저, 실행은 나중에** — 복잡한 작업은 plan-architect로 설계 후 실행
+
+---
+
+## /ship — 하네스 파이프라인
+
+**한 번의 프롬프트로 완전한 기능을 배포합니다:**
+
+```
+/ship "JWT 기반 사용자 인증 구현"
+  │
+  ├─ PLAN ──── plan-architect (자동 점수 ≥8)
+  ├─ ISSUE ─── GitHub 이슈 생성
+  ├─ BRANCH ── feature/issue-N-slug 브랜치
+  ├─ EXECUTE ─ 도메인 에이전트 (backend/frontend/ai)
+  ├─ REVIEW ── code-reviewer (Critical 0 필수)
+  ├─ TEST ──── qa-executor (전체 테스트)
+  └─ PR ────── Pull Request 생성
+```
 
 ---
 
 ## Agents (6개)
-
-세션 시작 시 라우팅 테이블이 자동 주입됩니다:
 
 | 상황 | Agent | 역할 |
 |------|-------|------|
@@ -33,31 +49,35 @@ Claude Code를 위한 멀티에이전트 시스템 플러그인 v3.0.1
 
 ---
 
-## Skills (12개)
+## Skills (11개)
 
-### Workflow (자동 트리거)
-
-| Skill | 설명 |
-|-------|------|
-| `brainstorm` | 설계 탐색 — 최소 3개 접근법 비교 (`context: fork`) |
-| `task_breakdown` | 2-5분 단위 atomic 태스크 분해 (`context: fork`) |
-| `verify_complete` | 태스크 완료 전 필수 검증 |
-| `debug_workflow` | 체계적 가설 기반 디버깅 (`context: fork`) |
-
-### Quality (사용자 호출)
+### Harness
 
 | Skill | 설명 |
 |-------|------|
-| [`/tdd_workflow`](skills/tdd_workflow/SKILL.md) | Kent Beck Red-Green-Refactor |
-| [`/test_runner`](skills/test_runner/SKILL.md) | 테스트 실행 + 결과 분석 |
-| [`/coverage_report`](skills/coverage_report/SKILL.md) | 커버리지 분석 + 갭 식별 |
+| [`/ship`](skills/ship/SKILL.md) | **전체 파이프라인** — plan → issue → execute → review → test → PR |
 
-### Git (사용자 호출)
+### Workflow
 
 | Skill | 설명 |
 |-------|------|
-| [`/git_commit`](skills/git_commit/SKILL.md) | 문서 점검 + 구조화된 커밋 메시지 |
-| [`/git_pr`](skills/git_pr/SKILL.md) | PR 생성 + 템플릿 |
+| [`/plan`](skills/plan/SKILL.md) | 접근법 탐색 + 실행 계획 + 점수 매기기 (`context: fork`) |
+| [`/debug`](skills/debug/SKILL.md) | 가설 기반 체계적 디버깅 (`context: fork`) |
+
+### Quality
+
+| Skill | 설명 |
+|-------|------|
+| [`/tdd`](skills/tdd/SKILL.md) | Kent Beck Red-Green-Refactor |
+| [`/test`](skills/test/SKILL.md) | 테스트 실행 + 커버리지 분석 |
+| [`/review`](skills/review/SKILL.md) | 코드 리뷰 (code-reviewer 호출) |
+
+### Git
+
+| Skill | 설명 |
+|-------|------|
+| [`/commit`](skills/commit/SKILL.md) | 문서 점검 + 구조화된 커밋 |
+| [`/pr`](skills/pr/SKILL.md) | PR 생성 + 템플릿 |
 
 ### Best Practices (자동 참조)
 
@@ -71,30 +91,45 @@ Claude Code를 위한 멀티에이전트 시스템 플러그인 v3.0.1
 
 ## 워크플로우
 
+### 수동 (개별 스킬)
 ```
-Plan → Execute → Review → Test
+/plan → /tdd → /review → /test → /commit → /pr
 ```
 
-| 단계 | 담당 | 설명 |
-|------|------|------|
-| Plan | `plan-architect` | 실행 계획 수립, 자체 검증 (score >= 8) |
-| Execute | `backend-dev` / `frontend-dev` / `ai-expert` | 도메인별 구현 |
-| Review | `code-reviewer` | 코드 품질 리뷰 |
-| Test | `qa-executor` | 테스트 실행 + 검증 |
+### 자동 (하네스)
+```
+/ship "feature description"
+  → 전체 파이프라인 자동 실행
+```
+
+---
+
+## Hooks (5 이벤트)
+
+| Hook | 설명 |
+|------|------|
+| `SessionStart` | 배너 + 라우팅 테이블 + 하네스 안내 주입 |
+| `PreToolUse(Bash)` | `git commit` 감지 → 빌드 + 테스트 검증 |
+| `Stop` | 작업 완료 시 검증 넛지 (코드/테스트/문서 확인) |
+| `SubagentStart` | 에이전트 활동 로깅 |
+| `SubagentStop` | 에이전트 완료 + 트랜스크립트 분석 |
 
 ---
 
 ## 디렉토리 구조
 
 ```
-plugin.json              # 플러그인 매니페스트
-marketplace.json         # 마켓플레이스 정보
+plugin.json              # 플러그인 매니페스트 (v4.0.0)
+
+harness/
+└── progress.md          # /ship 파이프라인 진행 추적
 
 hooks/
-├── hooks.json           # 훅 이벤트 설정
-├── startup.sh           # SessionStart: 배너 + 라우팅 테이블 + 규칙
-├── pre-commit.sh        # 빌드 + 테스트 검증 스크립트
-├── pre-commit-guard.sh  # PreToolUse: git commit 감지 → pre-commit.sh 실행
+├── hooks.json           # 훅 이벤트 설정 (5 이벤트)
+├── startup.sh           # SessionStart: 배너 + 라우팅 + 하네스
+├── pre-commit-guard.sh  # PreToolUse: git commit 감지
+├── pre-commit.sh        # 빌드 + 테스트 검증 (7 에코시스템)
+├── stop-verify.sh       # Stop: 작업 완료 검증 넛지
 └── agent-progress.sh    # SubagentStart/Stop: 진행 추적
 
 agents/                  # 에이전트 정의 (6개)
@@ -102,35 +137,31 @@ agents/                  # 에이전트 정의 (6개)
 ├── execution/           # backend-dev, frontend-dev, ai-expert
 └── quality/             # code-reviewer, qa-executor
 
-skills/                  # 스킬 정의 (12개)
-├── brainstorm/          # Workflow
-├── tdd_workflow/        # Quality
-├── git_commit/          # Git
-├── react_best_practices/ # Best Practices
-└── ...
+skills/                  # 스킬 정의 (11개)
+├── ship/                # Harness: 전체 파이프라인
+├── plan/                # Workflow: 설계 + 분해 + 점수
+├── debug/               # Workflow: 가설 기반 디버깅
+├── tdd/                 # Quality: Red-Green-Refactor
+├── test/                # Quality: 테스트 + 커버리지
+├── review/              # Quality: 코드 리뷰
+├── commit/              # Git: 구조화된 커밋
+├── pr/                  # Git: PR 생성
+├── react_best_practices/
+├── spring_best_practices/
+└── python_best_practices/
 ```
 
 ---
 
 ## 주요 변경사항
 
-### v3.0.1 - 버그 수정 + 문서 점검
-- **PreCommit → PreToolUse**: 지원되지 않던 `PreCommit` hook을 `PreToolUse` + `Bash` matcher로 교체
-- **Playwright MCP 수정**: 존재하지 않던 `@anthropic-ai/mcp-server-playwright` → `@playwright/mcp@latest`
-- **git_commit 스킬**: Documentation Freshness Check 단계 추가 (커밋 전 문서 최신화 점검)
-
-### v3.0.0 - 실사용 기반 슬림화
-- **에이전트**: 15개 → 6개 (-60%) — 실사용 데이터 기반 미사용 에이전트 삭제
-- **스킬**: 32개 → 12개 (-63%) — 핵심 워크플로우/품질/Git만 유지
-- **프로토콜**: 9개 → 1개 — 불필요한 레퍼런스 문서 삭제
-- **라우팅 테이블**: startup hook에 명확한 상황→에이전트 매핑 주입
-- 권위자 best practice 반영 (Kent Beck, Boris Cherny, Shrivu Shankar)
-
-### v2.4.0 - Skills 2.0 적용
-- Skills 2.0 전면 적용 (`context: fork`, `allowed-tools`, `argument-hint`)
-
-### v2.3.1 - Agent 스코핑, Playwright MCP
-
-### v2.0.0 - 간소화 + 워크플로우
+### v4.0.0 - Harness Engineering Edition
+- **`/ship` 스킬 신규**: 한 번의 프롬프트로 plan → issue → branch → execute → review → test → PR 전체 파이프라인
+- **스킬 리뉴얼**: 짧은 이름 (`/plan`, `/tdd`, `/test`, `/review`, `/debug`, `/commit`, `/pr`)
+- **스킬 병합**: brainstorm + task_breakdown → `/plan`, test_runner + coverage_report → `/test`
+- **`/review` 스킬 신규**: code-reviewer 에이전트 호출 스킬
+- **Stop hook 추가**: 작업 완료 시 검증 넛지 (코드/테스트/문서 확인)
+- **Harness progress 추적**: `harness/progress.md`로 크로스-세션 파이프라인 상태 추적
+- 참고: Anthropic harness engineering, disler/claude-code-hooks-mastery, trailofbits/skills
 
 [전체 변경 이력 → CHANGELOG.md](CHANGELOG.md)

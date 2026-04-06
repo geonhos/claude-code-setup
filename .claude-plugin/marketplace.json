@@ -11,10 +11,10 @@
         "source": "github",
         "repo": "geonhos/claude-code-setup"
       },
-      "description": "Slim multi-agent system v3.0 with core agents, Skills 2.0, and Playwright MCP",
-      "version": "3.0.0",
+      "description": "Harness-engineered multi-agent system v4.0.0 — /ship one prompt to deliver complete features",
+      "version": "4.0.0",
       "license": "MIT",
-      "keywords": ["multi-agent", "automation", "qa", "devops", "parallel-execution", "workflow"]
+      "keywords": ["multi-agent", "harness-engineering", "ship", "automation", "pipeline", "workflow"]
     }
   ]
 }

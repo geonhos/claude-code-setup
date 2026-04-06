@@ -1,7 +1,7 @@
 {
   "name": "multi-agent-system",
-  "description": "Slim multi-agent system v3.0.1 with core agents, Skills 2.0, and doc freshness check",
-  "version": "3.0.1",
+  "description": "Harness-engineered multi-agent system v4.0.0 — /ship one prompt to deliver complete features",
+  "version": "4.0.0",
   "author": {
     "name": "geonhos",
     "email": "ghyeom.dev@gmail.com"
@@ -11,18 +11,16 @@
   "license": "MIT",
   "keywords": [
     "multi-agent",
+    "harness-engineering",
     "pipeline",
-    "qa",
-    "code-review",
-    "security",
-    "devops",
-    "testing",
-    "documentation",
-    "agents",
+    "ship",
     "automation",
+    "agents",
     "workflow",
-    "parallel-execution",
-    "verification"
+    "tdd",
+    "code-review",
+    "testing",
+    "parallel-execution"
   ],
   "agents": [
     "./agents/pipeline/plan-architect.md",
