@@ -1,33 +1,33 @@
 #!/bin/bash
 #
-# Stop Hook — Verification nudge at end of turn
-# Reminds Claude to verify work completeness before finishing.
+# Stop Hook — verification nudge at end of turn.
 #
-# Inspired by: disler/claude-code-hooks-mastery (Stop hook pattern)
+# Policy: only emit the nudge when this turn actually modified something.
+# Read-only / exploratory turns should not get the "verify tests pass" spam.
+#
+# Active /ship pipeline is a separate case and always emits.
 
-# Check if harness progress file exists and has active work
-CWD="${CWD:-.}"
+CWD="${CWD:-$PWD}"
+cd "$CWD" 2>/dev/null || exit 0
+
+# Active /ship pipeline — always nudge completion
 PROGRESS="${CWD}/harness/progress.md"
-
-if [ -f "$PROGRESS" ]; then
-  # Check for incomplete pipeline stages
-  if grep -q "Status: In Progress" "$PROGRESS" 2>/dev/null; then
+if [ -f "$PROGRESS" ] && grep -q "Status: In Progress" "$PROGRESS" 2>/dev/null; then
     echo "<stop-verification>"
-    echo "Active /ship pipeline detected. Verify:"
-    echo "- All pipeline stages completed"
-    echo "- No skipped stages"
-    echo "- Tests are green"
-    echo "- PR is created"
+    echo "Active /ship pipeline detected. Verify: stages done, tests green, PR created."
     echo "</stop-verification>"
     exit 0
-  fi
 fi
 
-# General verification nudge
+# Otherwise, only nudge if something was actually changed this session
+if ! git rev-parse --git-dir >/dev/null 2>&1; then
+    exit 0
+fi
+
+if git diff --quiet HEAD 2>/dev/null && git diff --cached --quiet 2>/dev/null; then
+    exit 0
+fi
+
 echo "<stop-verification>"
-echo "Before finishing, verify:"
-echo "- Code changes are complete and correct"
-echo "- Tests pass for modified code"
-echo "- No TODO/FIXME left unresolved"
-echo "- Documentation updated if needed"
+echo "Uncommitted changes present. Before finishing: tests pass, docs updated, no stray TODO/FIXME."
 echo "</stop-verification>"

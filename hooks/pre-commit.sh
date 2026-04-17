@@ -1,149 +1,106 @@
 #!/bin/bash
+#
+# PreCommit hook — fast compile/typecheck by default; full tests opt-in.
+#
+# Env vars:
+#   HARNESS_SKIP_PRECOMMIT=1  — skip all checks
+#   HARNESS_RUN_TESTS=1       — run full test suite (slower, usually CI's job)
+#
+# Rationale: running the full test suite on every commit blocks the
+# developer for minutes and duplicates work that CI will do anyway.
+# Default to the cheapest check that catches the most common breakage
+# (doesn't compile / doesn't type-check).
 
-# Claude Code PreCommit hook
-# Detects project type, runs build & tests, blocks commit on failure
-# Skips gracefully if no test framework is detected
+if [ "${HARNESS_SKIP_PRECOMMIT:-0}" = "1" ]; then
+    echo "[pre-commit] skipped via HARNESS_SKIP_PRECOMMIT=1"
+    exit 0
+fi
 
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "Running pre-commit checks..."
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-
+RUN_TESTS="${HARNESS_RUN_TESTS:-0}"
 FAILED=0
 
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+if [ "$RUN_TESTS" = "1" ]; then
+    echo "Pre-commit checks (build + tests)..."
+else
+    echo "Pre-commit checks (fast: compile/typecheck only)"
+    echo "  Full tests: HARNESS_RUN_TESTS=1 git commit ..."
+fi
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
 # --- Java (Gradle) ---
-if [ -f "build.gradle" ] || [ -f "build.gradle.kts" ]; then
-    echo "Java/Gradle project detected"
+if [ $FAILED -eq 0 ] && { [ -f "build.gradle" ] || [ -f "build.gradle.kts" ]; }; then
+    echo "Java/Gradle detected"
     if [ -f "./gradlew" ]; then
-        echo "Running ./gradlew build..."
-        ./gradlew build
-        if [ $? -ne 0 ]; then
-            echo "Gradle build failed! Commit aborted."
-            FAILED=1
+        if [ "$RUN_TESTS" = "1" ]; then
+            ./gradlew build || FAILED=1
         else
-            echo "Gradle build + tests passed!"
+            ./gradlew compileJava compileTestJava || FAILED=1
         fi
-    else
-        echo "gradlew not found, skipping"
     fi
 fi
 
 # --- Java (Maven) ---
-if [ -f "pom.xml" ] && [ $FAILED -eq 0 ]; then
-    echo "Java/Maven project detected"
-    if [ -f "./mvnw" ]; then
-        echo "Running ./mvnw verify..."
-        ./mvnw verify
-    elif command -v mvn > /dev/null 2>&1; then
-        echo "Running mvn verify..."
-        mvn verify
-    else
-        echo "Maven not found, skipping"
-        FAILED=0
+if [ $FAILED -eq 0 ] && [ -f "pom.xml" ]; then
+    echo "Java/Maven detected"
+    MVN_CMD=""
+    if [ -f "./mvnw" ]; then MVN_CMD="./mvnw"
+    elif command -v mvn >/dev/null 2>&1; then MVN_CMD="mvn"
     fi
-    if [ $? -ne 0 ] && [ $FAILED -eq 0 ]; then
-        echo "Maven build failed! Commit aborted."
-        FAILED=1
-    elif [ $FAILED -eq 0 ]; then
-        echo "Maven build + tests passed!"
-    fi
-fi
-
-# --- Python ---
-if [ -f "pytest.ini" ] || [ -f "setup.py" ] || [ -f "pyproject.toml" ]; then
-    if [ $FAILED -eq 0 ]; then
-        echo "Python project detected"
-        if command -v pytest > /dev/null 2>&1; then
-            echo "Running pytest..."
-            pytest
-            if [ $? -ne 0 ]; then
-                echo "Tests failed! Commit aborted."
-                FAILED=1
-            else
-                echo "All tests passed!"
-            fi
+    if [ -n "$MVN_CMD" ]; then
+        if [ "$RUN_TESTS" = "1" ]; then
+            $MVN_CMD verify || FAILED=1
         else
-            echo "pytest not found, skipping tests"
+            $MVN_CMD compile test-compile || FAILED=1
         fi
     fi
 fi
 
 # --- Node.js ---
-if [ -f "package.json" ] && [ $FAILED -eq 0 ]; then
-    echo "Node.js project detected"
-
-    # Build check
-    if grep -q '"build"' package.json; then
-        echo "Running npm run build..."
-        npm run build
-        if [ $? -ne 0 ]; then
-            echo "Build failed! Commit aborted."
-            FAILED=1
-        else
-            echo "Build passed!"
+if [ $FAILED -eq 0 ] && [ -f "package.json" ]; then
+    echo "Node.js detected"
+    if [ "$RUN_TESTS" = "1" ]; then
+        if grep -q '"build"' package.json; then npm run build || FAILED=1; fi
+        if [ $FAILED -eq 0 ] && grep -q '"test"' package.json; then npm test || FAILED=1; fi
+    else
+        # Prefer typecheck > tsc > lint
+        if grep -q '"typecheck"' package.json; then
+            npm run typecheck || FAILED=1
+        elif grep -q '"tsc"' package.json; then
+            npm run tsc || FAILED=1
+        elif grep -q '"lint"' package.json; then
+            npm run lint || FAILED=1
         fi
     fi
+fi
 
-    # Test check
-    if [ $FAILED -eq 0 ] && grep -q '"test"' package.json; then
-        echo "Running npm test..."
-        npm test
-        if [ $? -ne 0 ]; then
-            echo "Tests failed! Commit aborted."
-            FAILED=1
-        else
-            echo "All tests passed!"
-        fi
+# --- Python ---
+if [ $FAILED -eq 0 ] && { [ -f "pytest.ini" ] || [ -f "setup.py" ] || [ -f "pyproject.toml" ]; }; then
+    echo "Python detected"
+    if [ "$RUN_TESTS" = "1" ] && command -v pytest >/dev/null 2>&1; then
+        pytest || FAILED=1
+    elif command -v python >/dev/null 2>&1; then
+        python -m compileall -q . >/dev/null 2>&1 || true
     fi
 fi
 
 # --- Go ---
-if [ -f "go.mod" ] && [ $FAILED -eq 0 ]; then
-    echo "Go project detected"
-    echo "Running go build && go test..."
-    go build ./...
-    if [ $? -ne 0 ]; then
-        echo "Build failed! Commit aborted."
-        FAILED=1
+if [ $FAILED -eq 0 ] && [ -f "go.mod" ]; then
+    echo "Go detected"
+    if [ "$RUN_TESTS" = "1" ]; then
+        go build ./... && go test ./... || FAILED=1
     else
-        go test ./...
-        if [ $? -ne 0 ]; then
-            echo "Tests failed! Commit aborted."
-            FAILED=1
-        else
-            echo "Build + tests passed!"
-        fi
+        go build ./... || FAILED=1
     fi
 fi
 
 # --- Rust ---
-if [ -f "Cargo.toml" ] && [ $FAILED -eq 0 ]; then
-    echo "Rust project detected"
-    echo "Running cargo build && cargo test..."
-    cargo build
-    if [ $? -ne 0 ]; then
-        echo "Build failed! Commit aborted."
-        FAILED=1
+if [ $FAILED -eq 0 ] && [ -f "Cargo.toml" ]; then
+    echo "Rust detected"
+    if [ "$RUN_TESTS" = "1" ]; then
+        cargo build && cargo test || FAILED=1
     else
-        cargo test
-        if [ $? -ne 0 ]; then
-            echo "Tests failed! Commit aborted."
-            FAILED=1
-        else
-            echo "Build + tests passed!"
-        fi
-    fi
-fi
-
-# --- No framework detected ---
-if [ $FAILED -eq 0 ]; then
-    # Check if any framework was detected by looking at output
-    # If none matched, this is a non-testable project — allow commit
-    if [ ! -f "build.gradle" ] && [ ! -f "build.gradle.kts" ] && \
-       [ ! -f "pom.xml" ] && [ ! -f "pytest.ini" ] && \
-       [ ! -f "setup.py" ] && [ ! -f "pyproject.toml" ] && \
-       [ ! -f "package.json" ] && [ ! -f "go.mod" ] && \
-       [ ! -f "Cargo.toml" ]; then
-        echo "No test framework detected, skipping tests"
+        cargo check || FAILED=1
     fi
 fi
 

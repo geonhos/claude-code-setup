@@ -5,6 +5,74 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+> **Entry template (v4.1+):** each behaviour-changing entry SHOULD include
+> `expected:` (what improvement is anticipated) and `verify:` (how the next
+> `/retro` can confirm it actually improved). This gives every change a
+> falsifiable prediction so the learning loop can evaluate it.
+
+## [4.1.0] - 2026-04-17
+
+### Added — Learning Loop
+
+- **`/retro` 스킬 신규** — 주간 회고 (`skills/retro/SKILL.md`)
+  - `logs/feedback-signals.jsonl` + `logs/agent-progress.jsonl` 분석 (기본 7일 윈도우)
+  - `logs/retro-YYYY-WW.md` 리포트 자동 생성
+  - 패턴 ≥3회 · ≥2 세션 조건 만족 시 `memory/_draft/feedback_*.md` 초안 생성
+  - expected: 주간 5분 회고로 반복 실수를 패턴화하여 잡음
+  - verify: 3주 후 /retro의 "Top patterns" 섹션이 줄어드는지 확인
+
+- **`/retro-review` 스킬 신규** — 사람 게이트 (`skills/retro-review/SKILL.md`)
+  - `memory/_draft/` 의 각 draft에 대해 Approve/Reject/Edit/Defer
+  - 승인 시 `memory/feedback_{slug}.md` 로 이동 + `MEMORY.md` 인덱스 업데이트
+  - 결정 기록 → `logs/retro-decisions.jsonl`
+  - expected: 자동 신호가 그대로 memory로 흘러가 시스템이 왜곡되는 걸 차단
+  - verify: 신호 수집이 돌아가는 동안 `memory/` 항목이 사람 승인 없이 늘어나지 않는지 감사
+
+- **`feedback-capture.sh` 훅 신규** — 암묵 bad 신호 자동 포착
+  - `UserPromptSubmit` — 좌절 키워드 (다시, 틀렸, 이상, 아니야, undo, revert, wrong, not what, doesn't work, broken ...)
+  - `PostToolUse(Edit/Write)` — `harness/progress.md` 갱신 후 1시간 이내 재수정 → `post_ship_rework`
+  - `PostToolUse(Bash)` — `git revert` / `git reset --hard` → `strong_bad_git_undo`
+  - `HARNESS_AUTO_FEEDBACK=0` 으로 전체 off
+  - expected: /ship의 실제 품질 신호가 측정 가능해짐
+  - verify: 1주일 후 `logs/feedback-signals.jsonl` 에 의미 있는 카테고리 분포가 찍히는지 확인
+
+- **`memory/_draft/` 디렉토리** — draft 메모 스테이징
+
+### Changed — 기존 훅 · 문서 최적화
+
+- **`startup.sh` 대폭 축소** — 배너는 유지하되 중복 라우팅/스킬/룰 테이블 제거
+  - expected: 세션당 ~1200 tokens 절감 (에이전트 description · 스킬 description에서 이미 노출되는 정보였음)
+  - verify: 사용자 리포트로 컨텍스트 소비 감소 확인 or 다음 /retro에서 회귀 없음
+
+- **`pre-commit.sh` 기본값 변경** — 풀 빌드 + 풀 테스트 → 컴파일/타입체크만
+  - 풀 테스트는 `HARNESS_RUN_TESTS=1 git commit ...` 으로 opt-in
+  - `HARNESS_SKIP_PRECOMMIT=1` 로 완전 skip
+  - expected: 커밋당 평균 1–5분 → 수 초 단축; CI와의 중복 제거
+  - verify: 3주 후 /retro 에서 frustration 신호가 커밋 주변에 몰리는 현상이 감소했는지 확인
+
+- **`pre-commit-guard.sh`** — `$TOOL_INPUT` 환경변수 파싱 → stdin JSON + `jq` 파싱
+  - Claude Code 훅 규약은 stdin JSON 입력이라 이전 구현은 사실상 동작하지 않았음
+  - expected: git commit 감지가 실제 작동
+  - verify: `bash -n`, 실제 commit 시 pre-commit.sh 트리거 로그 확인
+
+- **`stop-verify.sh` 조건부화** — `git diff --quiet` 로 변경 없는 턴에서는 skip
+  - expected: read-only/탐색 턴의 stop 넛지 노이즈 제거
+  - verify: 탐색 세션 로그에서 `<stop-verification>` 출현 빈도 감소
+
+- **`hooks.json` 확장** — `UserPromptSubmit`, `PostToolUse(Edit|Write|Bash)` 이벤트 추가; 모든 훅이 `$CLAUDE_PLUGIN_ROOT` 우선 사용 (fallback 유지)
+
+### Removed
+
+- 루트 `marketplace.json` — `.claude-plugin/marketplace.json` 과 중복된 dead code
+
+### Philosophy
+
+v4.1 은 하네스 자체가 **정적 도구 → 학습하는 시스템**으로 전환하는 첫 버전.
+- **Layer 1 (수집)** · **Layer 2 (분석)** 은 완전 자동
+- **Layer 3 (반영)** 은 `/retro-review` 를 통해 항상 사람 승인
+
+자동 신호가 memory 로 흘러가 시스템이 스스로 변질되는 것을 구조적으로 차단.
+
 ## [4.0.0] - 2026-04-06
 
 ### Added — Harness Engineering

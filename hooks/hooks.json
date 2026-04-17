@@ -6,7 +6,18 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash -c 'script=$(ls $HOME/.claude/plugins/cache/geonhos-plugins/multi-agent-system/*/hooks/startup.sh 2>/dev/null | tail -1); [ -n \"$script\" ] && bash \"$script\"'"
+            "command": "bash -c 'script=\"${CLAUDE_PLUGIN_ROOT:-}/hooks/startup.sh\"; [ -f \"$script\" ] || script=$(ls $HOME/.claude/plugins/cache/geonhos-plugins/multi-agent-system/*/hooks/startup.sh 2>/dev/null | tail -1); [ -n \"$script\" ] && [ -f \"$script\" ] && bash \"$script\"'"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash -c 'script=\"${CLAUDE_PLUGIN_ROOT:-}/hooks/feedback-capture.sh\"; [ -f \"$script\" ] || script=$(ls $HOME/.claude/plugins/cache/geonhos-plugins/multi-agent-system/*/hooks/feedback-capture.sh 2>/dev/null | tail -1); [ -n \"$script\" ] && [ -f \"$script\" ] && bash \"$script\"'"
           }
         ]
       }
@@ -17,7 +28,18 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash -c 'script=$(ls $HOME/.claude/plugins/cache/geonhos-plugins/multi-agent-system/*/hooks/pre-commit-guard.sh 2>/dev/null | tail -1); [ -n \"$script\" ] && bash \"$script\"'"
+            "command": "bash -c 'script=\"${CLAUDE_PLUGIN_ROOT:-}/hooks/pre-commit-guard.sh\"; [ -f \"$script\" ] || script=$(ls $HOME/.claude/plugins/cache/geonhos-plugins/multi-agent-system/*/hooks/pre-commit-guard.sh 2>/dev/null | tail -1); [ -n \"$script\" ] && [ -f \"$script\" ] && bash \"$script\"'"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash -c 'script=\"${CLAUDE_PLUGIN_ROOT:-}/hooks/feedback-capture.sh\"; [ -f \"$script\" ] || script=$(ls $HOME/.claude/plugins/cache/geonhos-plugins/multi-agent-system/*/hooks/feedback-capture.sh 2>/dev/null | tail -1); [ -n \"$script\" ] && [ -f \"$script\" ] && bash \"$script\"'"
           }
         ]
       }
@@ -28,7 +50,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash -c 'script=$(ls $HOME/.claude/plugins/cache/geonhos-plugins/multi-agent-system/*/hooks/stop-verify.sh 2>/dev/null | tail -1); [ -n \"$script\" ] && bash \"$script\"'"
+            "command": "bash -c 'script=\"${CLAUDE_PLUGIN_ROOT:-}/hooks/stop-verify.sh\"; [ -f \"$script\" ] || script=$(ls $HOME/.claude/plugins/cache/geonhos-plugins/multi-agent-system/*/hooks/stop-verify.sh 2>/dev/null | tail -1); [ -n \"$script\" ] && [ -f \"$script\" ] && bash \"$script\"'"
           }
         ]
       }
@@ -39,7 +61,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash -c 'script=$(ls $HOME/.claude/plugins/cache/geonhos-plugins/multi-agent-system/*/hooks/agent-progress.sh 2>/dev/null | tail -1); [ -n \"$script\" ] && bash \"$script\"'"
+            "command": "bash -c 'script=\"${CLAUDE_PLUGIN_ROOT:-}/hooks/agent-progress.sh\"; [ -f \"$script\" ] || script=$(ls $HOME/.claude/plugins/cache/geonhos-plugins/multi-agent-system/*/hooks/agent-progress.sh 2>/dev/null | tail -1); [ -n \"$script\" ] && [ -f \"$script\" ] && bash \"$script\"'"
           }
         ]
       }
@@ -50,7 +72,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash -c 'script=$(ls $HOME/.claude/plugins/cache/geonhos-plugins/multi-agent-system/*/hooks/agent-progress.sh 2>/dev/null | tail -1); [ -n \"$script\" ] && bash \"$script\"'"
+            "command": "bash -c 'script=\"${CLAUDE_PLUGIN_ROOT:-}/hooks/agent-progress.sh\"; [ -f \"$script\" ] || script=$(ls $HOME/.claude/plugins/cache/geonhos-plugins/multi-agent-system/*/hooks/agent-progress.sh 2>/dev/null | tail -1); [ -n \"$script\" ] && [ -f \"$script\" ] && bash \"$script\"'"
           }
         ]
       }

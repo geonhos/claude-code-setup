@@ -1,7 +1,7 @@
 {
   "name": "multi-agent-system",
-  "description": "Harness-engineered multi-agent system v4.0.0 — /ship one prompt to deliver complete features",
-  "version": "4.0.0",
+  "description": "Harness-engineered multi-agent system v4.1.0 — /ship one-prompt delivery + learning loop (/retro, /retro-review)",
+  "version": "4.1.0",
   "author": {
     "name": "geonhos",
     "email": "ghyeom.dev@gmail.com"
@@ -20,7 +20,10 @@
     "tdd",
     "code-review",
     "testing",
-    "parallel-execution"
+    "parallel-execution",
+    "learning-loop",
+    "retro",
+    "feedback-capture"
   ],
   "agents": [
     "./agents/pipeline/plan-architect.md",
