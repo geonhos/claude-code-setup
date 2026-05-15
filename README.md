@@ -22,7 +22,7 @@ Optional but recommended companion plugins (see [Companion plugins](#companion-p
 │  /plan    explore approaches + score (≥8 required)           │
 │  /retro   weekly retrospective from auto-captured signals    │
 │  /retro-review  human gate for retro's draft memos           │
-│  best_practices  auto-trigger stub → delegates to context7   │
+│  best_practices  context-aware stub → delegates to context7  │
 │  7 hooks  startup, feedback capture, pre-commit, stop-verify,│
 │           subagent progress                                  │
 │  6 agents plan-architect, code-reviewer, qa-executor,        │
@@ -130,7 +130,7 @@ For language-specific patterns, every execution agent consults the `best_practic
 | [`/plan`](skills/plan/SKILL.md) | Explore approaches + scored execution plan (kept because the score-gated rubric has no equivalent in surveyed plugins) |
 | [`/retro`](skills/retro/SKILL.md) | Weekly retrospective + draft memo generation |
 | [`/retro-review`](skills/retro-review/SKILL.md) | Human approval gate for retro drafts |
-| `best_practices` (auto) | Auto-triggered stub that calls context7 MCP for current React / Spring / Python guidance |
+| `best_practices` | Context-aware stub (Claude invokes it when relevant, not via formal file-glob trigger) that calls context7 MCP for current React / Spring / Python guidance |
 
 > v5 removed: `/tdd`, `/test`, `/debug`, `/review`, `/commit`, `/pr`, `react_best_practices`, `spring_best_practices`, `python_best_practices`. See [Companion plugins](#companion-plugins-recommended) for replacements.
 
@@ -192,7 +192,7 @@ skills/
 ├── plan/             # scored planning
 ├── retro/            # weekly retro + draft memos
 ├── retro-review/     # human approval gate
-└── best_practices/   # context7-delegating auto-trigger stub
+└── best_practices/   # context7-delegating stub (Claude-invoked)
 
 memory/
 ├── _draft/           # retro-generated drafts (awaiting approval)
@@ -210,8 +210,8 @@ logs/
 
 This is a **breaking** release. Removed skills are not coming back — use the companion plugins documented above.
 
-- **Skills removed (9)**: `/tdd`, `/test`, `/debug`, `/review`, `/commit`, `/pr`, `react_best_practices`, `spring_best_practices`, `python_best_practices`. Total 1,358 lines deleted.
-- **Skill added (1)**: `best_practices` — 48-line auto-trigger stub that delegates to context7 MCP. Replaces ~660 lines of stale curated rules with always-fresh upstream docs.
+- **Skills removed (9)**: `/tdd`, `/test`, `/debug`, `/review`, `/commit`, `/pr`, `react_best_practices`, `spring_best_practices`, `python_best_practices`. 3,027 lines deleted across all SKILL.md, metadata.json, and `rules/` files in those trees.
+- **Skill added (1)**: `best_practices` — 48-line context-aware stub (Claude invokes it when relevant) that delegates to context7 MCP. Replaces 2,476 lines of stale curated rules across the three former `*_best_practices` trees with always-fresh upstream docs.
 - **Agents slimmed**: 6 agents went from 2,171 lines total → 511 lines (76% reduction). Dead frontmatter references (`task_breakdown`, `verify_complete`, `test_runner`, `coverage_report`, `jpa_entity`, `component_generator`, `rag_setup`) removed. Behavior unchanged.
 - **Companion plugin guidance** added to this README.
 - **Hooks, /ship, /plan, /retro, /retro-review** unchanged.

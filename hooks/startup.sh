@@ -11,7 +11,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")/.." 2>/dev/null && pwd)"
 if [ -f "$SCRIPT_DIR/plugin.json" ]; then
   VERSION=$(grep '"version"' "$SCRIPT_DIR/plugin.json" 2>/dev/null | head -1 | sed 's/.*: *"\([^"]*\)".*/\1/')
 else
-  VERSION="4.1.0"
+  VERSION="5.0.0"
 fi
 
 DRAFT_COUNT=0
@@ -37,7 +37,9 @@ cat << EOF
 ══════════════════════════════════════════════════════════════════════
 
 <multi-agent-system version="${VERSION}">
-Pipeline: /ship for full feature delivery. Granular: /plan /tdd /review /test /debug /commit /pr.
+Pipeline: /ship for full feature delivery. Surviving granular skills: /plan, /retro, /retro-review.
+Commodity skills (/tdd, /test, /debug, /review, /commit, /pr) were removed in v5.0.0 — install
+companion plugins (wshobson/agents, anthropics/claude-plugins-official) for replacements; see README.
 Learning loop: /retro (weekly) analyzes signals → /retro-review approves drafts.
 Agents auto-route by description. Signal capture: ${FEEDBACK_STATUS} (HARNESS_AUTO_FEEDBACK=0 to disable).
 EOF

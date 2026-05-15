@@ -16,7 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed (BREAKING)
 
-- **9 commodity skills deleted** (1,358 lines): `/tdd`, `/test`, `/debug`, `/review`, `/commit`, `/pr`, `react_best_practices`, `spring_best_practices`, `python_best_practices`.
+- **9 commodity skills deleted** (3,027 lines across all SKILL.md, metadata.json, and `rules/` files in those trees): `/tdd`, `/test`, `/debug`, `/review`, `/commit`, `/pr`, `react_best_practices`, `spring_best_practices`, `python_best_practices`.
 - Replacements documented in README under "Companion plugins":
   - `/tdd`, `/test`, `/debug` → `wshobson/agents` (`tdd-workflows`, `unit-testing`, `debugging-toolkit`)
   - `/review` → built-in `/review` or `anthropics/claude-plugins-official:code-review`
@@ -28,7 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **`best_practices` skill** (`skills/best_practices/SKILL.md`, 48 lines) — auto-triggers on React/Spring/Python file patterns and instructs Claude to call `mcp__context7__resolve-library-id` + `mcp__context7__query-docs` for fresh upstream docs instead of relying on stale baked-in rules.
+- **`best_practices` skill** (`skills/best_practices/SKILL.md`, 48 lines) — context-aware stub (Claude invokes it when relevant, not via a formal file-glob trigger) that instructs Claude to call `mcp__context7__resolve-library-id` + `mcp__context7__query-docs` for fresh upstream docs instead of relying on stale baked-in rules. Replaces 2,476 lines of curated rules across the three former `*_best_practices` trees.
 - expected: framework guidance stays current automatically; ~660 lines of curated rules retired without losing capability.
 - verify: spot-check a few `/ship` runs that touch React/Spring/Python — does Claude actually consult context7 before writing non-trivial framework code?
 
