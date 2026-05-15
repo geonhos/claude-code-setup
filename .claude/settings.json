@@ -1,5 +1,4 @@
 {
-  "plansDirectory": "./plans",
   "permissions": {
     "deny": [
       "Bash(sudo:*)",
@@ -10,15 +9,17 @@
       "Read(**/*credentials*)"
     ]
   },
+  "enabledPlugins": {
+    "multi-agent-system@geonhos-plugins": true
+  },
   "extraKnownMarketplaces": {
     "geonhos-plugins": {
       "source": {
         "source": "github",
         "repo": "geonhos/claude-code-setup"
-      }
+      },
+      "autoUpdate": true
     }
   },
-  "enabledPlugins": {
-    "multi-agent-system@geonhos-plugins": true
-  }
+  "plansDirectory": "./plans"
 }
