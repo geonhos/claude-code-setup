@@ -11,10 +11,10 @@
         "source": "github",
         "repo": "geonhos/claude-code-setup"
       },
-      "description": "Harness-engineered multi-agent system v4.1.0 — /ship one-prompt delivery + learning loop (/retro, /retro-review)",
-      "version": "4.1.0",
+      "description": "Harness-engineered multi-agent system v5.0.0 — slim agents + /ship pipeline + learning loop, designed to compose with community plugins (anthropics/claude-plugins-official, wshobson/agents).",
+      "version": "5.0.0",
       "license": "MIT",
-      "keywords": ["multi-agent", "harness-engineering", "ship", "automation", "pipeline", "workflow", "learning-loop", "retro"]
+      "keywords": ["multi-agent", "harness-engineering", "ship", "automation", "pipeline", "workflow", "learning-loop", "retro", "context7", "composable"]
     }
   ]
 }

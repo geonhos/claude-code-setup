@@ -1,6 +1,6 @@
 ---
 name: best_practices
-description: "Auto-loads before writing or reviewing React/Next.js, Spring Boot/JPA, or Python/FastAPI code. Delegates to context7 MCP for fresh, version-accurate framework documentation instead of bundling stale rules. Use proactively whenever editing .tsx/.jsx/.ts (React), .java (Spring/JPA), or .py (FastAPI/SQLAlchemy/async) files."
+description: "Use before writing or reviewing React/Next.js, Spring Boot/JPA, or Python/FastAPI code. Delegates to context7 MCP for fresh, version-accurate framework documentation instead of bundling stale rules. **Invoke proactively** whenever you're about to write or modify .tsx/.jsx/.ts (React), .java (Spring/JPA), or .py (FastAPI/SQLAlchemy/async) — call context7 first, then write."
 model: inherit
 allowed-tools: mcp__context7__resolve-library-id, mcp__context7__query-docs, Read
 ---
@@ -9,9 +9,9 @@ allowed-tools: mcp__context7__resolve-library-id, mcp__context7__query-docs, Rea
 
 Replaces the old `react_best_practices`, `spring_best_practices`, and `python_best_practices` skills with a thin stub that pulls **current** documentation from the upstream framework rather than bundling rules that go stale.
 
-## When this fires
+## When to invoke
 
-You should consult this skill **before writing or reviewing** code in these stacks:
+Claude should consult this skill **before writing or reviewing** code in these stacks (decided by Claude based on the active task, not a formal file-glob trigger):
 
 | Stack | File patterns | Look up |
 |-------|---------------|---------|
