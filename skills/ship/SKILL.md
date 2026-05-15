@@ -16,6 +16,21 @@ One prompt. One feature. Fully shipped.
 - User says "ship", "implement", "build", "deliver"
 - Any task that requires plan → code → test → PR
 
+## Composing with Companion Plugins (v5+)
+
+`/ship` runs end-to-end with this plugin alone, but each stage can opt into a community plugin if installed. When choosing, prefer the more specialized tool:
+
+| Stage | Default | Available substitute (if installed) |
+|-------|---------|------------------------------------|
+| EXECUTE — TDD inner loop | `backend-dev` / `frontend-dev` / `ai-expert` agents | `wshobson:tdd-workflows` (`/tdd-cycle`, `/tdd-red`, `/tdd-green`, `/tdd-refactor`) |
+| EXECUTE — debugging a stuck task | retry + delegate back to plan-architect | `wshobson:debugging-toolkit` `/smart-debug` |
+| REVIEW | `code-reviewer` agent | `anthropics:code-review` (richer multi-agent review) — supplement, don't replace |
+| Security pass (post-REVIEW) | not in default pipeline | Built-in `/security-review` — recommended before PR for any auth/data-handling change |
+| TEST | `qa-executor` agent | `wshobson:unit-testing` or `wshobson:performance-testing-review` |
+| COMMIT / PR | inline `git commit` + `gh pr create` | `anthropics:commit-commands` (`/commit`, `/pr-create`) |
+
+Detection: at pipeline start, check which of the above plugins are installed (`claude plugin list --json`). Mention the substitution choice in the stage banner so the user sees what ran.
+
 ## Pipeline Overview
 
 ```
