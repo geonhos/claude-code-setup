@@ -10,6 +10,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > `/retro` can confirm it actually improved). This gives every change a
 > falsifiable prediction so the learning loop can evaluate it.
 
+## [5.0.0] - 2026-05-15
+
+**Harness Slim Edition.** Strip commodity skills, slim every agent, and reposition this plugin as a *harness orchestrator* that composes with community plugins instead of competing with them.
+
+### Removed (BREAKING)
+
+- **9 commodity skills deleted** (3,027 lines across all SKILL.md, metadata.json, and `rules/` files in those trees): `/tdd`, `/test`, `/debug`, `/review`, `/commit`, `/pr`, `react_best_practices`, `spring_best_practices`, `python_best_practices`.
+- Replacements documented in README under "Companion plugins":
+  - `/tdd`, `/test`, `/debug` → `wshobson/agents` (`tdd-workflows`, `unit-testing`, `debugging-toolkit`)
+  - `/review` → built-in `/review` or `anthropics/claude-plugins-official:code-review`
+  - `/commit`, `/pr` → `anthropics/claude-plugins-official:commit-commands` (or built-in commit behavior)
+  - `*_best_practices` → new `best_practices` stub that delegates to context7 MCP
+
+- expected: users get more capable, better-maintained commodity skills; we stop maintaining 1,358 lines of work that the community does better.
+- verify: 3 weeks after release, count `logs/feedback-signals.jsonl` entries citing missing commodity skills. If ≥ 3 sessions report a real gap, revisit.
+
+### Added
+
+- **`best_practices` skill** (`skills/best_practices/SKILL.md`, 48 lines) — context-aware stub (Claude invokes it when relevant, not via a formal file-glob trigger) that instructs Claude to call `mcp__context7__resolve-library-id` + `mcp__context7__query-docs` for fresh upstream docs instead of relying on stale baked-in rules. Replaces 2,476 lines of curated rules across the three former `*_best_practices` trees.
+- expected: framework guidance stays current automatically; ~660 lines of curated rules retired without losing capability.
+- verify: spot-check a few `/ship` runs that touch React/Spring/Python — does Claude actually consult context7 before writing non-trivial framework code?
+
+### Changed
+
+- **All 6 agents slimmed** — 2,171 lines → 511 lines (76% reduction). Behavior unchanged; bloat removed:
+  - Dead frontmatter `skills:` refs removed: `task_breakdown`, `verify_complete`, `test_runner`, `coverage_report`, `jpa_entity`, `component_generator`, `rag_setup`.
+  - Python pseudocode (cycle-detection, complexity-calc functions) replaced with prose.
+  - Long code-example blocks dropped — agents now consult `best_practices` (which queries context7) for current idioms.
+  - References to non-existent agents (`database-expert`, `devops-engineer`, `docs-writer`, `refactoring-expert`, `git-ops`) removed.
+- expected: faster agent invocation (smaller system prompt per spawn), easier maintenance, identical output quality.
+- verify: `/retro` over the next two weeks should not show new failures attributable to missing detail in agent prompts.
+
+- **`plugin.json` description and keywords** rewritten to reflect the composable-harness positioning.
+- **`README.md`** rewritten — adds Companion plugins section, mapping table from removed-v4-skill → recommended replacement, and an explicit note on why `dependencies: [...]` auto-install is not yet declared (upstream `{plugin-name}--v{version}` tag compliance unverified; planned for v5.1).
+
+### Kept (deliberately)
+
+- `/ship`, `/retro`, `/retro-review` — the harness itself, unchanged.
+- `/plan` — kept despite the broader skill cull because none of the surveyed community plugins ship an equivalent score-gated (≥ 8/10) planning skill. This is a real differentiator.
+- All 7 hooks — already trend-aligned, no changes needed.
+
+### Migration notes
+
+- This release breaks anyone calling `/tdd`, `/test`, `/debug`, `/review`, `/commit`, `/pr`, or the three `*_best_practices` skills explicitly. Install the recommended companion plugins from the README before upgrading if your workflow relies on those commands.
+- The 6 agents are still invoked the same way from `/ship` and from direct user prompts. The slim has no API surface change.
+- Hooks and harness state (`harness/progress.md`, `logs/`, `memory/`) carry over with no migration needed.
+
 ## [4.1.0] - 2026-04-17
 
 ### Added — Learning Loop

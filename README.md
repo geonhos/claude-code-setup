@@ -1,233 +1,223 @@
-# Claude Code Agents & Skills
+# multi-agent-system — Claude Code Plugin
 
-Claude Code를 위한 멀티에이전트 시스템 플러그인 v4.1.0 — Harness Engineering Edition (Learning Loop)
+**v5.0.0 — Harness Slim Edition.** A composable harness that orchestrates pipelines (`/ship`), captures feedback signals automatically, and proposes its own improvements via a weekly learning loop. v5 strips the commodity skills (TDD, debug, test, review, commit, PR, best-practices) and delegates them to better-maintained community plugins. What stays is what we do better than anyone else: the pipeline, the learning loop, and 6 slim agents with a 10-point plan-validation gate.
 
-## 설치
+## Install
 
 ```
 /plugin marketplace add geonhos/claude-code-setup
-/plugin add multi-agent-system
+/plugin install multi-agent-system@geonhos-plugins
 ```
 
-## 철학
+Optional but recommended companion plugins (see [Companion plugins](#companion-plugins-recommended)).
 
-- **한 번의 프롬프트로 끝낸다** — `/ship`으로 plan → issue → execute → review → test → PR 전체 파이프라인 실행
-- **덜 만들고, 핵심만 잘 만든다** — 6개 에이전트, 13개 스킬, 명확한 라우팅
-- **학습하는 하네스** — 훅이 자동으로 피드백 신호를 수집하고, `/retro`가 주간 리포트와 draft 메모를 생성하며, `/retro-review`를 통한 사람 승인 뒤에만 시스템이 변경됨
-- **Kent Beck TDD 원칙 내장** — Red-Green-Refactor 사이클 강제
-
----
-
-## /ship — 하네스 파이프라인
+## What you get
 
 ```
-/ship "JWT 기반 사용자 인증 구현"
-  │
-  ├─ PLAN ──── plan-architect (자동 점수 ≥8)
-  ├─ ISSUE ─── GitHub 이슈 생성
-  ├─ BRANCH ── feature/issue-N-slug 브랜치
-  ├─ EXECUTE ─ 도메인 에이전트 (backend/frontend/ai)
-  ├─ REVIEW ── code-reviewer (Critical 0 필수)
-  ├─ TEST ──── qa-executor (전체 테스트)
-  └─ PR ────── Pull Request 생성
+┌──────────────────────────────────────────────────────────────┐
+│  This plugin: harness + pipeline + learning loop             │
+├──────────────────────────────────────────────────────────────┤
+│  /ship    one-prompt: plan → issue → branch → exec → review  │
+│           → test → PR                                        │
+│  /plan    explore approaches + score (≥8 required)           │
+│  /retro   weekly retrospective from auto-captured signals    │
+│  /retro-review  human gate for retro's draft memos           │
+│  best_practices  context-aware stub → delegates to context7  │
+│  7 hooks  startup, feedback capture, pre-commit, stop-verify,│
+│           subagent progress                                  │
+│  6 agents plan-architect, code-reviewer, qa-executor,        │
+│           backend-dev, frontend-dev, ai-expert               │
+└──────────────────────────────────────────────────────────────┘
+            │           │                  │
+            ▼           ▼                  ▼
+        ┌───────┐  ┌────────────┐  ┌──────────────┐
+        │ Claude│  │ anthropics │  │  wshobson    │
+        │  Code │  │  /plugins  │  │  /agents     │
+        │ builtin│ │ /official  │  │              │
+        └───────┘  └────────────┘  └──────────────┘
+        /review,    /code-review,   /tdd-cycle,
+        /security-  /commit, /pr,   /smart-debug,
+        review, ... /context7, ...  /unit-testing, ...
 ```
 
----
+The harness is the orchestrator; commodity work goes to specialized plugins. You install once, and your `/ship` pipeline can call out to the best-of-breed skill for each stage.
 
-## Learning Loop — 하네스의 자기 개선
+## Companion plugins (recommended)
+
+These ship *better* commodity skills than what we removed in v5. Install whichever match your stack:
+
+| Plugin source | Install | Provides |
+|---------------|---------|----------|
+| `anthropics/claude-plugins-official` | `/plugin marketplace add anthropics/claude-plugins-official` then `/plugin install code-review@claude-plugins-official` | `code-review`, `commit-commands`, `context7`, `code-simplifier`, `pr-review-toolkit` |
+| `wshobson/agents` | `/plugin marketplace add wshobson/agents` then `/plugin install tdd-workflows@wshobson-agents` | `tdd-workflows`, `debugging-toolkit`, `unit-testing`, `comprehensive-review`, `git-pr-workflows` |
+| Built into Claude Code | (already installed) | `/review`, `/security-review`, `/simplify`, `/init` |
+
+> **Why not auto-install via `dependencies`?** Claude Code v2.1.110+ supports declaring plugin dependencies that auto-install on user install, but it requires the upstream marketplace to publish `{plugin-name}--v{version}` git tags and the user's root marketplace to whitelist cross-marketplace deps in `allowCrossMarketplaceDependenciesOn`. Both upstreams haven't been verified for tag compliance. We'll add formal `dependencies` declarations in v5.1 once the upstream tagging is confirmed — until then, manual install is the safe path.
+
+### Recommended mapping (what v4 used to do → what to use now)
+
+| v4 skill (removed) | v5 replacement |
+|--------------------|----------------|
+| `/tdd` | `wshobson:tdd-workflows` (`/tdd-cycle`, `/tdd-red`, `/tdd-green`, `/tdd-refactor`) |
+| `/test` | `wshobson:unit-testing`, `wshobson:performance-testing-review` |
+| `/debug` | `wshobson:debugging-toolkit` (`/smart-debug` + `debugger` agent) |
+| `/review` | Built-in `/review` or `anthropics:code-review` |
+| `/commit` | `anthropics:commit-commands` (built-in commit behavior also covers most cases) |
+| `/pr` | `anthropics:commit-commands` `/pr-create` |
+| `react/spring/python_best_practices` | `best_practices` skill (this plugin) — delegates to context7 MCP |
+
+## /ship — the harness pipeline
 
 ```
-[평일]  사용자 ──► /ship 또는 개별 스킬 사용
-           │
-           └──► 훅이 자동 수집:
-                 • UserPromptSubmit 좌절 키워드
-                 • PostToolUse /ship 직후 재수정
-                 • PreToolUse git revert / reset --hard
-                 → logs/feedback-signals.jsonl
+/ship "Add JWT-based user authentication"
+   │
+   ├─ Stage 1: PLAN     plan-architect agent (auto-scored ≥ 8)
+   ├─ Stage 2: ISSUE    gh issue create
+   ├─ Stage 3: BRANCH   feature/issue-N-slug
+   ├─ Stage 4: EXECUTE  domain agents (backend / frontend / ai), parallel where possible
+   ├─ Stage 5: REVIEW   code-reviewer agent (Critical = 0 required)
+   ├─ Stage 6: TEST     qa-executor agent (full suite)
+   └─ Stage 7: PR       gh pr create
+```
 
-[주 1회 자동]  /retro  (또는 /schedule "weekly mon 09:00" /retro)
-                  │
-                  ├──► logs/retro-YYYY-WW.md    리포트
-                  └──► memory/_draft/*.md       draft 메모
+Each stage is a gate. If PLAN scores < 8, the user is asked before continuing; if a Critical review issue lands, the pipeline pauses with a fix list; if tests fail, qa-executor classifies (true failure / test bug / flaky / environment / dependency) and proposes a fix before retry.
 
-[주 1회 수동 5분]  /retro-review
+## Learning loop — the harness improves itself
+
+```
+[ daily ]  user calls /ship or individual skills
+              │
+              └──► hooks auto-capture:
+                    • UserPromptSubmit  → frustration keywords
+                    • PostToolUse        → post-ship rework
+                    • PreToolUse         → git revert / reset --hard
+                    → logs/feedback-signals.jsonl
+
+[ weekly auto ]   /retro  (or /schedule "weekly mon 09:00" /retro)
                      │
-                     └──► 승인/기각/수정/보류
-                          → 승인만 memory/ 로 이동하여 장기 기억화
+                     ├──► logs/retro-YYYY-WW.md      report
+                     └──► memory/_draft/*.md          draft memos
+
+[ weekly manual 5 min ]  /retro-review
+                            │
+                            └──► approve / reject / edit / hold
+                                 → approved memos move to memory/
+                                   and update MEMORY.md
 ```
 
-**중요**: Layer 1(수집) · Layer 2(분석) 자동, **Layer 3(반영)는 반드시 사람**. 승인 없이는 하네스가 스스로 바뀌지 않음.
+Layer 1 (capture) and Layer 2 (analysis) are automatic. **Layer 3 (apply) is always human-gated.** The harness never changes itself without your approval.
 
----
+## Agents (6)
 
-## Agents (6개)
+All slim — average 85 lines each, down from ~340 in v4. Behavior unchanged; noise removed.
 
-| 상황 | Agent | 역할 |
-|------|-------|------|
-| 복잡한 작업, 설계, 아키텍처 | [`plan-architect`](agents/pipeline/plan-architect.md) | 실행 계획 수립 + 자체 검증 (score >= 8) |
-| Java, Spring, API, JPA | [`backend-dev`](agents/execution/backend-dev.md) | Spring Boot DDD, 구현 + 테스트 |
-| React, TypeScript, UI | [`frontend-dev`](agents/execution/frontend-dev.md) | React MVVM, 구현 + 테스트 |
-| Python, ML, AI, LLM, RAG | [`ai-expert`](agents/execution/ai-expert.md) | Python ML/AI, 구현 + 테스트 |
-| 코드 완성, 커밋 전, 리뷰 | [`code-reviewer`](agents/quality/code-reviewer.md) | 품질 리뷰, 수정하지 않음 |
-| 테스트 실행, 실패 분석 | [`qa-executor`](agents/quality/qa-executor.md) | 테스트 실행/분석, 수정 제안 |
+| Trigger | Agent | Role |
+|---------|-------|------|
+| Complex multi-task feature | [`plan-architect`](agents/pipeline/plan-architect.md) | Plan + score (≥ 8 to ship) |
+| Java / Spring / API | [`backend-dev`](agents/execution/backend-dev.md) | DDD + JPA + tests in same commit |
+| React / TS / UI | [`frontend-dev`](agents/execution/frontend-dev.md) | MVVM + FSD + tests in same commit |
+| Python / ML / LLM | [`ai-expert`](agents/execution/ai-expert.md) | ML/LLM with metrics, reproducibility |
+| Code or doc review | [`code-reviewer`](agents/quality/code-reviewer.md) | Severity-tiered findings, no auto-fix |
+| Test execution | [`qa-executor`](agents/quality/qa-executor.md) | Run + classify failures + suggest fixes |
 
----
+For language-specific patterns, every execution agent consults the `best_practices` skill, which queries context7 for current upstream docs — no baked-in stale rules.
 
-## Skills (13개)
+## Skills (5)
 
-### Harness
+| Skill | Description |
+|-------|-------------|
+| [`/ship`](skills/ship/SKILL.md) | Full pipeline harness |
+| [`/plan`](skills/plan/SKILL.md) | Explore approaches + scored execution plan (kept because the score-gated rubric has no equivalent in surveyed plugins) |
+| [`/retro`](skills/retro/SKILL.md) | Weekly retrospective + draft memo generation |
+| [`/retro-review`](skills/retro-review/SKILL.md) | Human approval gate for retro drafts |
+| `best_practices` | Context-aware stub (Claude invokes it when relevant, not via formal file-glob trigger) that calls context7 MCP for current React / Spring / Python guidance |
 
-| Skill | 설명 |
-|-------|------|
-| [`/ship`](skills/ship/SKILL.md) | **전체 파이프라인** — plan → issue → execute → review → test → PR |
+> v5 removed: `/tdd`, `/test`, `/debug`, `/review`, `/commit`, `/pr`, `react_best_practices`, `spring_best_practices`, `python_best_practices`. See [Companion plugins](#companion-plugins-recommended) for replacements.
 
-### Learning Loop (신규)
+## Workflow guide ("3-file rule")
 
-| Skill | 설명 |
-|-------|------|
-| [`/retro`](skills/retro/SKILL.md) | 주간 회고 — feedback-signals.jsonl 분석 + 리포트 + draft 메모 생성 |
-| [`/retro-review`](skills/retro-review/SKILL.md) | draft 메모를 승인/기각/수정/보류 (사람 게이트) |
+| Files touched | Recommended flow |
+|---------------|------------------|
+| 1–2 | Direct work → `git commit` (pre-commit hook auto-validates) |
+| 3–5 | `/plan` → approve → implement (TDD via `/tdd-cycle` from wshobson) → commit |
+| 6+ or cross-domain | `/ship "..."` (full pipeline) |
 
-### Workflow
+## Hooks (7)
 
-| Skill | 설명 |
-|-------|------|
-| [`/plan`](skills/plan/SKILL.md) | 접근법 탐색 + 실행 계획 + 점수 매기기 |
-| [`/debug`](skills/debug/SKILL.md) | 가설 기반 체계적 디버깅 |
+| Hook | Purpose |
+|------|---------|
+| `SessionStart` | Slim banner + pending draft-memo count |
+| `UserPromptSubmit` | Frustration keyword → `feedback-signals.jsonl` |
+| `PreToolUse(Bash)` | Detect `git commit` → run `pre-commit.sh` (compile/typecheck by default) |
+| `PostToolUse(Edit/Write/Bash)` | Post-ship rework / `git revert` detection → `feedback-signals.jsonl` |
+| `Stop` | Conditional verification nudge (only if changes present) |
+| `SubagentStart` | Agent activity logging |
+| `SubagentStop` | Agent completion + transcript analysis → `agent-progress.jsonl` |
 
-### Quality
+### Environment variables (kill switches)
 
-| Skill | 설명 |
-|-------|------|
-| [`/tdd`](skills/tdd/SKILL.md) | Kent Beck Red-Green-Refactor |
-| [`/test`](skills/test/SKILL.md) | 테스트 실행 + 커버리지 분석 |
-| [`/review`](skills/review/SKILL.md) | 코드 리뷰 (code-reviewer 호출) |
+| Variable | Default | Effect |
+|----------|---------|--------|
+| `HARNESS_AUTO_FEEDBACK` | `1` | `0` = disable all signal capture |
+| `HARNESS_SKIP_PRECOMMIT` | `0` | `1` = skip pre-commit validation entirely |
+| `HARNESS_RUN_TESTS` | `0` | `1` = run full tests on pre-commit (default is compile-only) |
 
-### Git
-
-| Skill | 설명 |
-|-------|------|
-| [`/commit`](skills/commit/SKILL.md) | 문서 점검 + 구조화된 커밋 |
-| [`/pr`](skills/pr/SKILL.md) | PR 생성 + 템플릿 |
-
-### Best Practices (자동 참조)
-
-| Skill | 설명 |
-|-------|------|
-| `react_best_practices` | React/Next.js 코드 작성 시 자동 로드 |
-| `spring_best_practices` | Spring Boot/JPA 코드 작성 시 자동 로드 |
-| `python_best_practices` | Python/FastAPI 코드 작성 시 자동 로드 |
-
----
-
-## 워크플로우 가이드 ("3파일 룰")
-
-건드릴 파일 수로 선택:
-
-| 파일 수 | 권장 플로우 |
-|---------|-------------|
-| 1–2 파일 | 직접 작업 → `git commit` (pre-commit 훅 자동 검증) |
-| 3–5 파일 | `/plan` → 승인 → `/tdd` (핵심 경로) → `/commit` |
-| 6+ 파일 또는 크로스 도메인 | `/ship "..."` (풀 파이프라인) |
-
-### 조합 패턴
-
-| 패턴 | 시나리오 | 순서 |
-|------|---------|------|
-| A | 대형 기능 | `/plan` → `/tdd` (task별) → `/review` → `/commit` → `/pr` |
-| B | 빠른 버그픽스 | `/debug` → `/tdd` (재현 테스트) → `/commit` |
-| C | 원샷 배포 | `/ship "feature"` |
-| D | 하네스 자기 개선 | `/retro-review` → 스킬 수정 → CHANGELOG (expected/verify) |
-
-### 안티패턴
-
-- ❌ 오타 수정에 `/ship`  → ✅ 직접 수정 + `git commit`
-- ❌ `/plan` 생략 후 `/ship`  → ✅ 복잡한 기능은 `/plan` 먼저
-- ❌ `/retro` 결과 자동 반영  → ✅ 반드시 `/retro-review` 거쳐라
-
----
-
-## Hooks (7 이벤트)
-
-| Hook | 설명 |
-|------|------|
-| `SessionStart` | slim 배너 + 대기 중 draft 메모 수 알림 |
-| `UserPromptSubmit` | 좌절 키워드 탐지 → feedback-signals.jsonl |
-| `PreToolUse(Bash)` | `git commit` 감지 → pre-commit.sh 실행 (기본: compile only) |
-| `PostToolUse(Edit/Write/Bash)` | post-ship 재수정 / git revert 탐지 → feedback-signals.jsonl |
-| `Stop` | 변경 사항 있을 때만 검증 넛지 (read-only 턴 skip) |
-| `SubagentStart` | 에이전트 활동 로깅 |
-| `SubagentStop` | 에이전트 완료 + 트랜스크립트 분석 → agent-progress.jsonl |
-
-### 환경 변수 (Kill Switches)
-
-| 변수 | 기본 | 효과 |
-|------|------|------|
-| `HARNESS_AUTO_FEEDBACK` | `1` | `0` = 신호 수집 전체 off |
-| `HARNESS_SKIP_PRECOMMIT` | `0` | `1` = pre-commit 검증 완전 skip |
-| `HARNESS_RUN_TESTS` | `0` | `1` = pre-commit 시 풀 테스트 실행 (기본은 compile only) |
-
----
-
-## 디렉토리 구조
+## Directory layout
 
 ```
-plugin.json              # 플러그인 매니페스트 (v4.1.0)
+plugin.json               # manifest (v5.0.0)
+
+.claude-plugin/
+└── marketplace.json      # marketplace entry
 
 harness/
-└── progress.md          # /ship 파이프라인 진행 추적
+└── progress.md           # /ship cross-session state
 
 hooks/
-├── hooks.json           # 훅 이벤트 설정 (7 이벤트)
-├── startup.sh           # SessionStart: slim 배너 + draft 알림
-├── feedback-capture.sh  # UserPromptSubmit + PostToolUse: 암묵 신호
-├── pre-commit-guard.sh  # PreToolUse: git commit stdin 파싱
-├── pre-commit.sh        # 빠른 검증 (기본 compile only, HARNESS_RUN_TESTS=1로 풀 테스트)
-├── stop-verify.sh       # Stop: 변경이 있을 때만 넛지
-└── agent-progress.sh    # SubagentStart/Stop: 진행 추적
+├── hooks.json
+├── startup.sh
+├── feedback-capture.sh
+├── pre-commit-guard.sh
+├── pre-commit.sh
+├── stop-verify.sh
+└── agent-progress.sh
 
-agents/                  # 에이전트 정의 (6개)
-├── pipeline/            # plan-architect
-├── execution/           # backend-dev, frontend-dev, ai-expert
-└── quality/             # code-reviewer, qa-executor
+agents/
+├── pipeline/plan-architect.md
+├── execution/{backend-dev,frontend-dev,ai-expert}.md
+└── quality/{code-reviewer,qa-executor}.md
 
-skills/                  # 스킬 정의 (13개)
-├── ship/                # Harness: 전체 파이프라인
-├── retro/               # Learning: 주간 회고 + draft 생성
-├── retro-review/        # Learning: draft 승인 게이트
-├── plan/ debug/         # Workflow
-├── tdd/ test/ review/   # Quality
-├── commit/ pr/          # Git
-└── {react|spring|python}_best_practices/
+skills/
+├── ship/             # harness pipeline
+├── plan/             # scored planning
+├── retro/            # weekly retro + draft memos
+├── retro-review/     # human approval gate
+└── best_practices/   # context7-delegating stub (Claude-invoked)
 
 memory/
-├── _draft/              # /retro가 생성하는 draft 메모 (승인 대기)
-└── MEMORY.md            # 승인된 메모 인덱스
+├── _draft/           # retro-generated drafts (awaiting approval)
+└── MEMORY.md         # approved memo index
 
 logs/
-├── feedback-signals.jsonl   # 암묵 bad 신호
-├── agent-progress.jsonl     # 에이전트 활동
+├── feedback-signals.jsonl
+├── agent-progress.jsonl
 ├── agent-progress-summary.md
-├── retro-YYYY-WW.md         # /retro 주간 리포트
-└── retro-decisions.jsonl    # /retro-review 결정 기록
+├── retro-YYYY-WW.md
+└── retro-decisions.jsonl
 ```
 
----
+## What changed in v5.0.0
 
-## 주요 변경사항
+This is a **breaking** release. Removed skills are not coming back — use the companion plugins documented above.
 
-### v4.1.0 - Learning Loop
-- **`/retro`, `/retro-review` 스킬 신규** — 주간 회고 + 사람 승인 게이트
-- **feedback-capture.sh 훅 신규** — 좌절 키워드, post-ship 재수정, git revert 자동 포착
-- **startup.sh 대폭 축소** — 중복 라우팅 테이블 제거 (세션당 ~1200 토큰 절감)
-- **pre-commit 기본값 변경** — 풀 빌드/테스트 → compile/typecheck only (HARNESS_RUN_TESTS=1로 opt-in)
-- **pre-commit-guard.sh stdin 수정** — `$TOOL_INPUT` env var → stdin JSON (이전에 훅이 작동 안 했음)
-- **stop-verify.sh 조건부화** — git diff 없으면 skip
-- **hooks 경로 `$CLAUDE_PLUGIN_ROOT` 사용** — 표준화
-- **duplicate marketplace.json 제거** — 루트 파일 dead code 정리
+- **Skills removed (9)**: `/tdd`, `/test`, `/debug`, `/review`, `/commit`, `/pr`, `react_best_practices`, `spring_best_practices`, `python_best_practices`. 3,027 lines deleted across all SKILL.md, metadata.json, and `rules/` files in those trees.
+- **Skill added (1)**: `best_practices` — 48-line context-aware stub (Claude invokes it when relevant) that delegates to context7 MCP. Replaces 2,476 lines of stale curated rules across the three former `*_best_practices` trees with always-fresh upstream docs.
+- **Agents slimmed**: 6 agents went from 2,171 lines total → 511 lines (76% reduction). Dead frontmatter references (`task_breakdown`, `verify_complete`, `test_runner`, `coverage_report`, `jpa_entity`, `component_generator`, `rag_setup`) removed. Behavior unchanged.
+- **Companion plugin guidance** added to this README.
+- **Hooks, /ship, /plan, /retro, /retro-review** unchanged.
 
-### v4.0.0 - Harness Engineering Edition
-- `/ship` 스킬 신규, 하네스 파이프라인 도입
-- Stop hook 추가, harness/progress.md 추적
+See [CHANGELOG.md](CHANGELOG.md) for full history.
 
-[전체 변경 이력 → CHANGELOG.md](CHANGELOG.md)
+## License
+
+MIT
