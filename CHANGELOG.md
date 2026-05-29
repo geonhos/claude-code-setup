@@ -10,6 +10,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > `/retro` can confirm it actually improved). This gives every change a
 > falsifiable prediction so the learning loop can evaluate it.
 
+## [6.0.0] - 2026-05-29
+
+**Harness Conductor Edition.** v5 delegated the *commodity skills*; v6 delegates the *doing*. Native Claude Code now plans, implements, and verifies well on its own — so the plugin stops shipping bundled domain agents and repositions as a thin **conductor** whose only job is to drive native CC through *enforced gates* and feed a self-improving learning loop. The value is no longer "we have agents" — it's "the discipline is enforced, not optional."
+
+### Removed (BREAKING)
+
+- **All 6 bundled agents deleted** (`plan-architect`, `backend-dev`, `frontend-dev`, `ai-expert`, `code-reviewer`, `qa-executor`; ~511 lines) and the `agents` array dropped from `plugin.json`. Their roles fold into native Claude Code and existing skills:
+  - `plan-architect` → the `/plan` skill (the scored rubric lives there already).
+  - `code-reviewer` → built-in `/review` (or `anthropics:code-review`); the `/ship` REVIEW gate calls it.
+  - `qa-executor` → the `pre-commit` hook + native test runs; the `/ship` TEST gate enforces green.
+  - `backend-dev` / `frontend-dev` / `ai-expert` → native Claude Code (TodoWrite + native subagents) and companion plugins.
+- expected: smaller install, no stale bundled-agent prompts to maintain, and implementation quality tracks native CC (which improves on its own cadence) rather than our frozen prompts.
+- verify: `/retro` over 3 weeks — count `feedback-signals.jsonl` entries attributable to "weaker implementation than v5 agents gave." If ≥ 3 sessions show a real regression, reconsider re-bundling a specialist.
+
+### Changed
+
+- **`/ship` rewritten as a thin conductor** (315 → 106 lines). Same gate sequence (PLAN score ≥8 → BRANCH → IMPLEMENT → REVIEW Critical=0 → TEST green → PR), but every stage now runs via native CC / built-in skills / companion plugins instead of bundled agents. The gates — not the agents — are the product.
+- expected: identical or better shipped-feature quality (native CC + companion plugins are at least as capable as the frozen bundled agents), with less prompt surface to maintain and gate discipline unchanged.
+- verify: `/retro` over the next 2 weeks — do `feedback-signals.jsonl` rework/frustration entries on `/ship` runs rise vs. the v5 baseline? If post-ship rework on `/ship` features increases by a meaningful margin, the delegation regressed implementation quality and a specialist should be re-bundled.
+- **`/plan` de-agented** — task schema drops the `agent:` field, the score rubric swaps the "Agent Assignment" criterion for "Scope / Right-sizing" (still /10), and the "never assign to a non-existent agent" rule becomes "tasks are implementation-agnostic."
+- **`/retro`** — "agent health" generalized to "subagent health" (native subagents, companion agents, `/ship` itself); deleted-agent examples replaced with gate-oriented ones.
+- **`startup.sh` banner** — "Multi-Agent System" tagline → "Harness Conductor"; removed the "agents auto-route" line; reframed `/ship` as a gated conductor.
+- **`plugin.json` / `marketplace.json` / `README.md`** rewritten for the conductor positioning.
+
+### Kept (deliberately)
+
+- `/ship` (thin), `/plan` (scored gate), `/retro`, `/retro-review`, `best_practices` (context7), all 7 hooks — the harness and its enforcement layer.
+- Plugin **name** `multi-agent-system` retained for install-path stability (`hooks.json` fallback paths hardcode it). The name is now a slight misnomer (zero bundled agents); a rename is deferred to avoid breaking existing installs.
+
+### Migration notes
+
+- Anyone who spawned `backend-dev` / `frontend-dev` / `ai-expert` / `code-reviewer` / `qa-executor` / `plan-architect` **directly** must switch to native CC, `/review`, or a companion plugin — those agent names no longer resolve.
+- `/ship`, `/plan`, `/retro`, `/retro-review` are invoked exactly as before; only `/ship`'s internals changed.
+- Hooks and harness state (`harness/progress.md`, `logs/`, `memory/`) carry over with no migration.
+
 ## [5.0.0] - 2026-05-15
 
 **Harness Slim Edition.** Strip commodity skills, slim every agent, and reposition this plugin as a *harness orchestrator* that composes with community plugins instead of competing with them.
