@@ -1,7 +1,7 @@
 {
   "name": "multi-agent-system",
-  "description": "Harness-engineered multi-agent system v5.0.0 — slim agents + /ship pipeline + learning loop, designed to compose with community plugins (anthropics/claude-plugins-official, wshobson/agents) instead of duplicating their work.",
-  "version": "5.0.0",
+  "description": "Harness conductor v6.0.0 — a thin /ship pipeline that drives native Claude Code through enforced gates (plan score ≥8, clean review, green tests) plus a self-improving learning loop. Implementation and verification are delegated to native Claude Code and community plugins; the harness only orchestrates and gates.",
+  "version": "6.0.0",
   "author": {
     "name": "geonhos",
     "email": "ghyeom.dev@gmail.com"
@@ -10,26 +10,17 @@
   "repository": "https://github.com/geonhos/claude-code-setup",
   "license": "MIT",
   "keywords": [
-    "multi-agent",
     "harness-engineering",
     "pipeline",
     "ship",
+    "gates",
     "automation",
-    "agents",
     "workflow",
     "learning-loop",
     "retro",
     "feedback-capture",
     "context7",
     "composable"
-  ],
-  "agents": [
-    "./agents/pipeline/plan-architect.md",
-    "./agents/execution/ai-expert.md",
-    "./agents/execution/backend-dev.md",
-    "./agents/execution/frontend-dev.md",
-    "./agents/quality/code-reviewer.md",
-    "./agents/quality/qa-executor.md"
   ],
   "hooks": "./hooks/hooks.json",
   "skills": "./skills"

@@ -1,6 +1,8 @@
 # multi-agent-system — Claude Code Plugin
 
-**v5.0.0 — Harness Slim Edition.** A composable harness that orchestrates pipelines (`/ship`), captures feedback signals automatically, and proposes its own improvements via a weekly learning loop. v5 strips the commodity skills (TDD, debug, test, review, commit, PR, best-practices) and delegates them to better-maintained community plugins. What stays is what we do better than anyone else: the pipeline, the learning loop, and 6 slim agents with a 10-point plan-validation gate.
+**v6.0.0 — Harness Conductor Edition.** A thin harness that drives native Claude Code through *enforced gates* and improves itself via a weekly learning loop. v5 stopped competing on commodity *skills*; v6 stops competing on *implementation* — native Claude Code now plans, codes, and verifies well on its own. So this plugin no longer ships bundled domain agents. What remains is the part native CC doesn't give you: a one-prompt pipeline where the discipline (a scored plan, a clean review, green tests) is **enforced rather than optional**, plus a self-improving feedback loop.
+
+> The product is no longer "we have agents." It's "the gates are enforced, and the harness learns from your sessions."
 
 ## Install
 
@@ -9,78 +11,54 @@
 /plugin install multi-agent-system@geonhos-plugins
 ```
 
-Optional but recommended companion plugins (see [Companion plugins](#companion-plugins-recommended)).
+Companion plugins are optional but recommended (see [Companion plugins](#companion-plugins-recommended)).
 
 ## What you get
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
-│  This plugin: harness + pipeline + learning loop             │
+│  This plugin: a gated conductor + a learning loop            │
 ├──────────────────────────────────────────────────────────────┤
-│  /ship    one-prompt: plan → issue → branch → exec → review  │
-│           → test → PR                                        │
+│  /ship    one-prompt pipeline. Thin conductor — drives       │
+│           native CC through gates:                           │
+│           plan ≥8 → branch → implement → review → test → PR  │
 │  /plan    explore approaches + score (≥8 required)           │
 │  /retro   weekly retrospective from auto-captured signals    │
 │  /retro-review  human gate for retro's draft memos           │
 │  best_practices  context-aware stub → delegates to context7  │
 │  7 hooks  startup, feedback capture, pre-commit, stop-verify,│
 │           subagent progress                                  │
-│  6 agents plan-architect, code-reviewer, qa-executor,        │
-│           backend-dev, frontend-dev, ai-expert               │
+│  0 agents implementation/verification is delegated, not      │
+│           bundled                                            │
 └──────────────────────────────────────────────────────────────┘
-            │           │                  │
-            ▼           ▼                  ▼
-        ┌───────┐  ┌────────────┐  ┌──────────────┐
-        │ Claude│  │ anthropics │  │  wshobson    │
-        │  Code │  │  /plugins  │  │  /agents     │
-        │ builtin│ │ /official  │  │              │
-        └───────┘  └────────────┘  └──────────────┘
-        /review,    /code-review,   /tdd-cycle,
-        /security-  /commit, /pr,   /smart-debug,
-        review, ... /context7, ...  /unit-testing, ...
+        │                    │                  │
+        ▼                    ▼                  ▼
+   ┌──────────┐      ┌────────────┐    ┌──────────────┐
+   │  native  │      │ anthropics │    │  wshobson    │
+   │  Claude  │      │  /plugins  │    │  /agents     │
+   │   Code   │      │ /official  │    │              │
+   └──────────┘      └────────────┘    └──────────────┘
+   plan mode,         /code-review,     /tdd-cycle,
+   subagents,         /commit, /pr,     /smart-debug,
+   /review, hooks     /context7, ...    /unit-testing, ...
 ```
 
-The harness is the orchestrator; commodity work goes to specialized plugins. You install once, and your `/ship` pipeline can call out to the best-of-breed skill for each stage.
+The harness sequences and **gates**; the actual work goes to native Claude Code and best-of-breed plugins. You install once, and `/ship` enforces the same discipline on every feature regardless of which tools run each stage.
 
-## Companion plugins (recommended)
-
-These ship *better* commodity skills than what we removed in v5. Install whichever match your stack:
-
-| Plugin source | Install | Provides |
-|---------------|---------|----------|
-| `anthropics/claude-plugins-official` | `/plugin marketplace add anthropics/claude-plugins-official` then `/plugin install code-review@claude-plugins-official` | `code-review`, `commit-commands`, `context7`, `code-simplifier`, `pr-review-toolkit` |
-| `wshobson/agents` | `/plugin marketplace add wshobson/agents` then `/plugin install tdd-workflows@wshobson-agents` | `tdd-workflows`, `debugging-toolkit`, `unit-testing`, `comprehensive-review`, `git-pr-workflows` |
-| Built into Claude Code | (already installed) | `/review`, `/security-review`, `/simplify`, `/init` |
-
-> **Why not auto-install via `dependencies`?** Claude Code v2.1.110+ supports declaring plugin dependencies that auto-install on user install, but it requires the upstream marketplace to publish `{plugin-name}--v{version}` git tags and the user's root marketplace to whitelist cross-marketplace deps in `allowCrossMarketplaceDependenciesOn`. Both upstreams haven't been verified for tag compliance. We'll add formal `dependencies` declarations in v5.1 once the upstream tagging is confirmed — until then, manual install is the safe path.
-
-### Recommended mapping (what v4 used to do → what to use now)
-
-| v4 skill (removed) | v5 replacement |
-|--------------------|----------------|
-| `/tdd` | `wshobson:tdd-workflows` (`/tdd-cycle`, `/tdd-red`, `/tdd-green`, `/tdd-refactor`) |
-| `/test` | `wshobson:unit-testing`, `wshobson:performance-testing-review` |
-| `/debug` | `wshobson:debugging-toolkit` (`/smart-debug` + `debugger` agent) |
-| `/review` | Built-in `/review` or `anthropics:code-review` |
-| `/commit` | `anthropics:commit-commands` (built-in commit behavior also covers most cases) |
-| `/pr` | `anthropics:commit-commands` `/pr-create` |
-| `react/spring/python_best_practices` | `best_practices` skill (this plugin) — delegates to context7 MCP |
-
-## /ship — the harness pipeline
+## /ship — the gated conductor
 
 ```
 /ship "Add JWT-based user authentication"
    │
-   ├─ Stage 1: PLAN     plan-architect agent (auto-scored ≥ 8)
-   ├─ Stage 2: ISSUE    gh issue create
-   ├─ Stage 3: BRANCH   feature/issue-N-slug
-   ├─ Stage 4: EXECUTE  domain agents (backend / frontend / ai), parallel where possible
-   ├─ Stage 5: REVIEW   code-reviewer agent (Critical = 0 required)
-   ├─ Stage 6: TEST     qa-executor agent (full suite)
-   └─ Stage 7: PR       gh pr create
+   ├─ 1 PLAN      /plan skill                       [GATE: score ≥ 8]
+   ├─ 2 BRANCH    git checkout -b feature/...
+   ├─ 3 IMPLEMENT native CC (TodoWrite + subagents)
+   ├─ 4 REVIEW    built-in /review (+ /security-review)  [GATE: Critical = 0]
+   ├─ 5 TEST      full suite via pre-commit / native     [GATE: all green]
+   └─ 6 PR        gh pr create
 ```
 
-Each stage is a gate. If PLAN scores < 8, the user is asked before continuing; if a Critical review issue lands, the pipeline pauses with a fix list; if tests fail, qa-executor classifies (true failure / test bug / flaky / environment / dependency) and proposes a fix before retry.
+Each stage is a gate. PLAN must score ≥ 8 (else it iterates, then asks you). REVIEW must land zero Critical findings (else it fixes and re-reviews, max 2 cycles). TEST must be all green (failures are classified — true failure / test bug / flaky / environment — then fixed and re-run). **`/ship` no longer implements with bundled agents** — it drives native Claude Code and calls out to companion plugins per stage when installed.
 
 ## Learning loop — the harness improves itself
 
@@ -107,40 +85,45 @@ Each stage is a gate. If PLAN scores < 8, the user is asked before continuing; i
 
 Layer 1 (capture) and Layer 2 (analysis) are automatic. **Layer 3 (apply) is always human-gated.** The harness never changes itself without your approval.
 
-## Agents (6)
+## Companion plugins (recommended)
 
-All slim — average 85 lines each, down from ~340 in v4. Behavior unchanged; noise removed.
+Since v5, commodity skills live in better-maintained community plugins. v6 goes further and delegates *implementation* too. Install whichever match your stack — `/ship` will use them per stage when present:
 
-| Trigger | Agent | Role |
-|---------|-------|------|
-| Complex multi-task feature | [`plan-architect`](agents/pipeline/plan-architect.md) | Plan + score (≥ 8 to ship) |
-| Java / Spring / API | [`backend-dev`](agents/execution/backend-dev.md) | DDD + JPA + tests in same commit |
-| React / TS / UI | [`frontend-dev`](agents/execution/frontend-dev.md) | MVVM + FSD + tests in same commit |
-| Python / ML / LLM | [`ai-expert`](agents/execution/ai-expert.md) | ML/LLM with metrics, reproducibility |
-| Code or doc review | [`code-reviewer`](agents/quality/code-reviewer.md) | Severity-tiered findings, no auto-fix |
-| Test execution | [`qa-executor`](agents/quality/qa-executor.md) | Run + classify failures + suggest fixes |
+| Plugin source | Install | Provides |
+|---------------|---------|----------|
+| `anthropics/claude-plugins-official` | `/plugin marketplace add anthropics/claude-plugins-official` then `/plugin install code-review@claude-plugins-official` | `code-review`, `commit-commands`, `context7`, `code-simplifier`, `pr-review-toolkit` |
+| `wshobson/agents` | `/plugin marketplace add wshobson/agents` then `/plugin install tdd-workflows@wshobson-agents` | `tdd-workflows`, `debugging-toolkit`, `unit-testing`, `comprehensive-review`, `git-pr-workflows` |
+| Built into Claude Code | (already installed) | `/review`, `/security-review`, `/simplify`, `/init`, plan mode, native subagents |
 
-For language-specific patterns, every execution agent consults the `best_practices` skill, which queries context7 for current upstream docs — no baked-in stale rules.
+> **Why not auto-install via `dependencies`?** Claude Code supports declaring plugin dependencies that auto-install, but it requires the upstream marketplace to publish `{plugin-name}--v{version}` git tags and the root marketplace to whitelist cross-marketplace deps. Both upstreams aren't verified for tag compliance, so manual install stays the safe path for now.
+
+### What used to be bundled → what to use now
+
+| Was bundled (≤ v5) | v6 replacement |
+|--------------------|----------------|
+| `backend-dev` / `frontend-dev` / `ai-expert` agents | native Claude Code (plan mode + subagents); `wshobson:tdd-workflows` for a TDD loop |
+| `code-reviewer` agent | built-in `/review` or `anthropics:code-review` |
+| `qa-executor` agent | `pre-commit` hook + native test run; `wshobson:unit-testing` |
+| `plan-architect` agent | the `/plan` skill (the scored rubric was always there) |
+| `/tdd` `/test` `/debug` `/review` `/commit` `/pr` (removed in v5) | see the companion table above |
 
 ## Skills (5)
 
 | Skill | Description |
 |-------|-------------|
-| [`/ship`](skills/ship/SKILL.md) | Full pipeline harness |
-| [`/plan`](skills/plan/SKILL.md) | Explore approaches + scored execution plan (kept because the score-gated rubric has no equivalent in surveyed plugins) |
+| [`/ship`](skills/ship/SKILL.md) | Thin conductor — drives native CC through enforced gates |
+| [`/plan`](skills/plan/SKILL.md) | Explore approaches + scored execution plan (score-gated rubric has no equivalent in surveyed plugins) |
 | [`/retro`](skills/retro/SKILL.md) | Weekly retrospective + draft memo generation |
 | [`/retro-review`](skills/retro-review/SKILL.md) | Human approval gate for retro drafts |
-| `best_practices` | Context-aware stub (Claude invokes it when relevant, not via formal file-glob trigger) that calls context7 MCP for current React / Spring / Python guidance |
-
-> v5 removed: `/tdd`, `/test`, `/debug`, `/review`, `/commit`, `/pr`, `react_best_practices`, `spring_best_practices`, `python_best_practices`. See [Companion plugins](#companion-plugins-recommended) for replacements.
+| `best_practices` | Context-aware stub (Claude invokes it when relevant) that calls context7 MCP for current React / Spring / Python guidance |
 
 ## Workflow guide ("3-file rule")
 
 | Files touched | Recommended flow |
 |---------------|------------------|
 | 1–2 | Direct work → `git commit` (pre-commit hook auto-validates) |
-| 3–5 | `/plan` → approve → implement (TDD via `/tdd-cycle` from wshobson) → commit |
-| 6+ or cross-domain | `/ship "..."` (full pipeline) |
+| 3–5 | `/plan` → approve → implement → commit |
+| 6+ or cross-domain | `/ship "..."` (full gated pipeline) |
 
 ## Hooks (7)
 
@@ -150,9 +133,9 @@ For language-specific patterns, every execution agent consults the `best_practic
 | `UserPromptSubmit` | Frustration keyword → `feedback-signals.jsonl` |
 | `PreToolUse(Bash)` | Detect `git commit` → run `pre-commit.sh` (compile/typecheck by default) |
 | `PostToolUse(Edit/Write/Bash)` | Post-ship rework / `git revert` detection → `feedback-signals.jsonl` |
-| `Stop` | Conditional verification nudge (only if changes present) |
-| `SubagentStart` | Agent activity logging |
-| `SubagentStop` | Agent completion + transcript analysis → `agent-progress.jsonl` |
+| `Stop` | Conditional verification nudge (only if changes present, or an active `/ship`) |
+| `SubagentStart` | Subagent activity logging → `agent-progress.jsonl` |
+| `SubagentStop` | Subagent completion + transcript analysis → `agent-progress.jsonl` |
 
 ### Environment variables (kill switches)
 
@@ -165,7 +148,7 @@ For language-specific patterns, every execution agent consults the `best_practic
 ## Directory layout
 
 ```
-plugin.json               # manifest (v5.0.0)
+plugin.json               # manifest (v6.0.0, no agents array)
 
 .claude-plugin/
 └── marketplace.json      # marketplace entry
@@ -182,13 +165,8 @@ hooks/
 ├── stop-verify.sh
 └── agent-progress.sh
 
-agents/
-├── pipeline/plan-architect.md
-├── execution/{backend-dev,frontend-dev,ai-expert}.md
-└── quality/{code-reviewer,qa-executor}.md
-
 skills/
-├── ship/             # harness pipeline
+├── ship/             # gated conductor
 ├── plan/             # scored planning
 ├── retro/            # weekly retro + draft memos
 ├── retro-review/     # human approval gate
@@ -206,15 +184,15 @@ logs/
 └── retro-decisions.jsonl
 ```
 
-## What changed in v5.0.0
+## What changed in v6.0.0
 
-This is a **breaking** release. Removed skills are not coming back — use the companion plugins documented above.
+**Breaking.** v6 delegates *implementation*, not just commodity skills.
 
-- **Skills removed (9)**: `/tdd`, `/test`, `/debug`, `/review`, `/commit`, `/pr`, `react_best_practices`, `spring_best_practices`, `python_best_practices`. 3,027 lines deleted across all SKILL.md, metadata.json, and `rules/` files in those trees.
-- **Skill added (1)**: `best_practices` — 48-line context-aware stub (Claude invokes it when relevant) that delegates to context7 MCP. Replaces 2,476 lines of stale curated rules across the three former `*_best_practices` trees with always-fresh upstream docs.
-- **Agents slimmed**: 6 agents went from 2,171 lines total → 511 lines (76% reduction). Dead frontmatter references (`task_breakdown`, `verify_complete`, `test_runner`, `coverage_report`, `jpa_entity`, `component_generator`, `rag_setup`) removed. Behavior unchanged.
-- **Companion plugin guidance** added to this README.
-- **Hooks, /ship, /plan, /retro, /retro-review** unchanged.
+- **All 6 bundled agents removed** (`plan-architect`, `backend-dev`, `frontend-dev`, `ai-expert`, `code-reviewer`, `qa-executor`); the `agents` array is gone from `plugin.json`. Roles fold into `/plan`, built-in `/review`, the `pre-commit` hook, and native Claude Code.
+- **`/ship` rewritten** as a 106-line thin conductor (was 315). Same enforced gate sequence; bundled agents replaced by native CC + companion plugins per stage.
+- **`/plan` de-agented**; rubric swaps "Agent Assignment" → "Scope / Right-sizing".
+- **`/retro`, `startup.sh` banner, manifests, README** updated for the conductor positioning.
+- Plugin **name kept** (`multi-agent-system`) for install-path stability despite being a slight misnomer now.
 
 See [CHANGELOG.md](CHANGELOG.md) for full history.
 

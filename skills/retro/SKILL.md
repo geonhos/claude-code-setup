@@ -51,15 +51,16 @@ Bucket by `signal`:
 
 Per bucket: count, unique sessions, top 3 detail snippets.
 
-### 3. Agent health metrics
+### 3. Subagent health metrics
 
-Read `logs/agent-progress.jsonl`. For each agent:
+Read `logs/agent-progress.jsonl`. For each subagent type that ran (native CC
+subagents, companion-plugin agents, or `/ship` itself):
 - Total runs in window
 - Median & max duration
 - Avg tool count
 - Outlier runs (duration > 2× median, or tool_count > 2× avg)
 
-Flag an agent if its retry rate (same agent spawned >1× in one session) is high.
+Flag a subagent type if its retry rate (same type spawned >1× in one session) is high.
 
 ### 4. Pattern detection
 
@@ -68,8 +69,8 @@ has **≥3 occurrences across ≥2 sessions** in the window.
 
 Examples of patterns worth drafting memos for:
 - "Rework keeps hitting `src/auth/*.ts`" → candidate best-practice rule
-- "code-reviewer never flags N+1 on Spring code" → update to agent instructions
-- "frustration keyword right after plan-architect output" → plan quality issue
+- "`/ship` REVIEW gate keeps missing N+1 on Spring code" → memo to run `/review` with a perf lens on JPA changes
+- "frustration keyword right after the `/plan` score gate" → plan-quality issue worth a rubric memo
 
 ### 5. Write the retro report
 

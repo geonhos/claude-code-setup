@@ -1,315 +1,106 @@
 ---
 name: ship
-description: "Full pipeline harness: one prompt to ship a complete feature. Runs plan → score → issue → branch → execute → review → test → PR automatically."
+description: "One-prompt feature delivery. A thin conductor that drives native Claude Code through enforced gates: plan (score ≥8) → branch → implement → review (Critical=0) → test (green) → PR. Delegates the doing to native CC; the harness only sequences and gates."
 model: opus
-allowed-tools: Agent, Bash, Read, Write, Edit, Grep, Glob
+allowed-tools: Bash, Read, Write, Edit, Grep, Glob, Skill, Agent, TodoWrite
 argument-hint: "[feature description]"
 ---
 
-# Ship — Full Pipeline Harness
+# Ship — Gated Pipeline Conductor
 
-One prompt. One feature. Fully shipped.
+One prompt. One feature. Fully shipped — with every gate enforced.
+
+`/ship` does **not** implement features with custom agents. It is a thin
+conductor: it sequences native Claude Code work and the surviving harness
+gates so the discipline (a scored plan, a clean review, green tests) is
+*enforced* rather than left to memory. The "doing" is native CC; the harness
+only orchestrates and gates.
 
 ## When to Use
 
-- User describes a feature, bug fix, or refactor to implement end-to-end
-- User says "ship", "implement", "build", "deliver"
-- Any task that requires plan → code → test → PR
+- A feature, fix, or refactor that should go plan → code → review → test → PR
+- User says "ship", "deliver", "build end-to-end"
+- 6+ files or cross-domain work (smaller work: just implement directly)
 
-## Composing with Companion Plugins (v5+)
+## Delegation map (what runs each stage)
 
-`/ship` runs end-to-end with this plugin alone, but each stage can opt into a community plugin if installed. When choosing, prefer the more specialized tool:
+| Stage | Runs via | Companion substitute (if installed) |
+|-------|----------|-------------------------------------|
+| IMPLEMENT | native Claude Code (TodoWrite + edits, native subagents for parallel work) | `wshobson:tdd-workflows` for a TDD inner loop |
+| REVIEW | built-in `/review` | `anthropics:code-review` (richer) — supplement, don't replace |
+| Security pass | built-in `/security-review` (run for any auth/data-handling change) | — |
+| TEST | pre-commit hook + native test run | `wshobson:unit-testing` |
+| COMMIT / PR | inline `git` + `gh` | `anthropics:commit-commands` |
 
-| Stage | Default | Available substitute (if installed) |
-|-------|---------|------------------------------------|
-| EXECUTE — TDD inner loop | `backend-dev` / `frontend-dev` / `ai-expert` agents | `wshobson:tdd-workflows` (`/tdd-cycle`, `/tdd-red`, `/tdd-green`, `/tdd-refactor`) |
-| EXECUTE — debugging a stuck task | retry + delegate back to plan-architect | `wshobson:debugging-toolkit` `/smart-debug` |
-| REVIEW | `code-reviewer` agent | `anthropics:code-review` (richer multi-agent review) — supplement, don't replace |
-| Security pass (post-REVIEW) | not in default pipeline | Built-in `/security-review` — recommended before PR for any auth/data-handling change |
-| TEST | `qa-executor` agent | `wshobson:unit-testing` or `wshobson:performance-testing-review` |
-| COMMIT / PR | inline `git commit` + `gh pr create` | `anthropics:commit-commands` (`/commit`, `/pr-create`) |
-
-Detection: at pipeline start, check which of the above plugins are installed (`claude plugin list --json`). Mention the substitution choice in the stage banner so the user sees what ran.
-
-## Pipeline Overview
+## Pipeline
 
 ```
-/ship "Add user authentication with JWT"
-  │
-  ├─ Stage 1: PLAN ──────── plan-architect agent (auto-scored ≥8)
-  ├─ Stage 2: ISSUE ─────── gh issue create
-  ├─ Stage 3: BRANCH ────── git checkout -b feature/issue-N-slug
-  ├─ Stage 4: EXECUTE ───── domain agents (backend/frontend/ai)
-  ├─ Stage 5: REVIEW ────── code-reviewer agent
-  ├─ Stage 6: TEST ──────── qa-executor agent
-  ├─ Stage 7: PR ─────────── gh pr create
-  └─ Stage 8: PROGRESS ──── update harness/progress.md
+/ship "Add JWT authentication"
+  ├─ 1 PLAN    → /plan gate (score ≥8)        [GATE]
+  ├─ 2 BRANCH  → git checkout -b feature/...
+  ├─ 3 IMPLEMENT → native CC, commit per logical group
+  ├─ 4 REVIEW  → /review, fix Criticals       [GATE: Critical=0]
+  ├─ 5 TEST    → run suite, fix true failures  [GATE: all green]
+  └─ 6 PR      → gh pr create
 ```
 
-## Pipeline Execution
+### 1. PLAN — `[GATE]`
+Invoke the `/plan` skill. It explores approaches, decomposes into verifiable
+tasks, and self-scores. **Gate: score ≥ 8.** If it still scores < 8 after 2
+iterations, STOP and ask the user for clarification. Record the score; it goes
+in the PR body.
 
-### Stage 1: PLAN
-
-Spawn `plan-architect` agent to create an execution plan.
-
-**Instructions for plan-architect:**
-1. Analyze the feature requirement
-2. Decompose into atomic tasks (2-5 min each)
-3. Assign each task to the appropriate agent (backend-dev, frontend-dev, ai-expert)
-4. Map dependencies and parallel groups
-5. Self-validate with score ≥ 8/10
-6. If score < 8, iterate and fix issues automatically
-
-**Expected output:** Validated execution plan with tasks, agents, dependencies, and score.
-
-**Gate:** Plan must score ≥ 8. If after 2 attempts it still fails, STOP and ask the user for clarification.
-
-```
-[ PLAN ] Feature: {description}
-         Score: {N}/10 ✅
-         Tasks: {count} | Agents: {list}
-         Complexity: {simple|moderate|complex}
-```
-
-### Stage 2: ISSUE
-
-Create a GitHub/GitLab issue from the validated plan.
-
+### 2. BRANCH
 ```bash
-# Detect remote platform
-REMOTE_URL=$(git remote get-url origin 2>/dev/null)
-
-# GitHub
-gh issue create \
-  --title "feat: {feature-slug}" \
-  --body "$(cat <<'EOF'
-## Description
-{feature description from user prompt}
-
-## Execution Plan
-- Complexity: {level}
-- Tasks: {count}
-- Agents: {agent list}
-
-## Tasks
-{task list from plan with checkboxes}
-
-## Acceptance Criteria
-{from plan validation}
-EOF
-)"
+SLUG=$(echo "{feature}" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g; s/--*/-/g' | head -c 40)
+git checkout -b "feature/${SLUG}"
 ```
+If `gh` is available, create a tracking issue first and name the branch
+`feature/issue-N-${SLUG}`. If not, skip the issue and proceed.
 
-**Gate:** Issue must be created successfully. Capture issue number.
+### 3. IMPLEMENT
+Work the plan natively — TodoWrite for task tracking, direct edits, and native
+subagents (the `Agent` tool) for independent parallel tasks. Write tests
+alongside code. **Commit after each logical group** so the pre-commit hook
+validates incrementally (`Refs #N` if an issue exists). No custom domain agents.
 
-```
-[ ISSUE ] Created #{issue_number}: {title}
-```
+### 4. REVIEW — `[GATE: Critical = 0]`
+Run the built-in `/review` skill (or `anthropics:code-review` if installed)
+over `git diff main...HEAD`. For any auth/data-handling change, also run
+`/security-review`. **Gate: zero Critical findings.** Fix Criticals and
+re-review; max 2 cycles, then pause and report.
 
-### Stage 3: BRANCH
+### 5. TEST — `[GATE: all green]`
+Run the full test suite (auto-detect framework). **Gate: all pass.** On
+failure, classify (true failure / test bug / flaky / environment) and fix true
+failures + test bugs; re-run, max 2 cycles, then pause and report.
 
-Create a feature branch linked to the issue.
-
+### 6. PR
 ```bash
-# Slugify feature name
-SLUG=$(echo "{feature}" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | sed 's/--*/-/g' | head -c 40)
-BRANCH="feature/issue-${ISSUE_NUMBER}-${SLUG}"
-
-git checkout -b "$BRANCH"
-```
-
-```
-[ BRANCH ] Created: {branch_name}
-```
-
-### Stage 4: EXECUTE
-
-For each task in the plan (respecting dependency order and parallel groups):
-
-1. **Route to agent** based on plan assignment:
-   - Java/Spring/API → `backend-dev` agent
-   - React/TypeScript/UI → `frontend-dev` agent
-   - Python/ML/AI → `ai-expert` agent
-
-2. **Agent implements:**
-   - Write code
-   - Write tests (TDD: test first, then implementation)
-   - Verify acceptance criteria
-
-3. **Commit after each logical group:**
-   ```bash
-   git add {specific files}
-   git commit -m "feat(scope): {task description}
-
-   Refs #{issue_number}"
-   ```
-
-**Parallel execution:** When tasks in the same parallel group have no cross-dependencies, spawn multiple agents simultaneously using the Agent tool.
-
-**Progress tracking per task:**
-```
-[ EXEC ] Task {id}: {description}
-         Agent: {agent_name}
-         Status: ✅ Complete | ❌ Failed | ⏳ In Progress
-```
-
-**Gate:** All tasks must pass their acceptance criteria. If a task fails:
-1. Analyze the failure
-2. Attempt auto-fix (max 2 retries)
-3. If still failing, report to user and pause
-
-### Stage 5: REVIEW
-
-Spawn `code-reviewer` agent to review ALL changes since branch creation.
-
-```bash
-# Show all changes for review
-git diff main...HEAD
-```
-
-**Review criteria:**
-- Critical (blocks ship): security vulnerabilities, data loss risks, broken logic
-- Major (should fix): performance issues, missing error handling, bad patterns
-- Minor (nice to fix): naming, style, minor optimizations
-
-**Gate:** Zero critical issues. If critical issues found:
-1. Auto-fix critical issues
-2. Re-run review
-3. Max 2 fix-review cycles
-
-```
-[ REVIEW ] Critical: {0} | Major: {N} | Minor: {N}
-           Status: ✅ Approved | ❌ Blocked
-```
-
-### Stage 6: TEST
-
-Spawn `qa-executor` agent to run the full test suite.
-
-**Test execution:**
-1. Auto-detect test framework
-2. Run full test suite (not just new tests)
-3. Analyze any failures
-4. Generate coverage report for changed files
-
-**Gate:** All tests must pass. If failures:
-1. Categorize: True Failure vs Test Bug vs Flaky vs Environment
-2. Fix True Failures and Test Bugs
-3. Re-run tests
-4. Max 2 fix-test cycles
-
-```
-[ TEST ] Passed: {N} | Failed: {N} | Skipped: {N}
-         Coverage: {X}% (changed files)
-         Status: ✅ All Green | ❌ Failures
-```
-
-### Stage 7: PR
-
-Create a pull request with full context.
-
-```bash
-# Push branch
-git push -u origin "$BRANCH"
-
-# Create PR
-gh pr create \
-  --title "feat: {feature description}" \
-  --body "$(cat <<'EOF'
+git push -u origin "$(git branch --show-current)"
+gh pr create --title "feat: {feature}" --body "$(cat <<'EOF'
 ## Summary
-{1-3 bullet points from plan}
+{1-3 bullets}
 
-## Changes
-{file-by-file summary from commits}
+## Plan
+- Score: {N}/10
 
-## Execution Plan
-- Plan Score: {N}/10
-- Tasks Completed: {completed}/{total}
-- Agents Used: {list}
-
-## Test Results
-- Tests: {passed}/{total} passing
-- Coverage: {X}% on changed files
-
-## Review Status
-- Critical Issues: 0
-- Major Issues: {N} (addressed)
-
-Closes #{issue_number}
-
-## Test Plan
-{verification steps from plan}
+## Review / Test
+- Review: Critical 0
+- Tests: {passed}/{total} ✅
 EOF
 )"
 ```
+Never merge the PR — the user decides when.
 
-```
-[ PR ] Created #{pr_number}: {title}
-       URL: {pr_url}
-       Closes #{issue_number}
-```
-
-### Stage 8: PROGRESS
-
-Update the harness progress file for cross-session tracking.
-
-Write to `harness/progress.md`:
-```markdown
-# Ship Progress
-
-## Latest: {feature name}
-- **Status**: Shipped
-- **Issue**: #{issue_number}
-- **PR**: #{pr_number}
-- **Branch**: {branch}
-- **Plan Score**: {N}/10
-- **Tasks**: {completed}/{total}
-- **Tests**: {passed}/{total}
-- **Date**: {YYYY-MM-DD}
-```
-
-## Final Output
-
-After all stages complete, display a summary:
-
-```
-══════════════════════════════════════════════════════
-  SHIP COMPLETE
-══════════════════════════════════════════════════════
-  Feature : {description}
-  Issue   : #{issue_number}
-  PR      : #{pr_number} → {pr_url}
-  Branch  : {branch_name}
-  Plan    : {score}/10 | {task_count} tasks
-  Tests   : {passed}/{total} ✅
-  Review  : Approved ✅
-══════════════════════════════════════════════════════
-```
-
-## Error Handling
-
-| Stage | Failure | Action |
-|-------|---------|--------|
-| PLAN | Score < 8 after 2 tries | Ask user for clarification |
-| ISSUE | gh not authenticated | Prompt user to run `! gh auth login` |
-| EXECUTE | Task fails after 2 retries | Pause, report to user |
-| REVIEW | Critical issues after 2 fixes | Pause, report to user |
-| TEST | Failures after 2 fix cycles | Pause, report to user |
-| PR | Push rejected | Check branch protection, report |
-
-## Pipeline Interruption
-
-If the pipeline is interrupted mid-execution:
-1. Check `harness/progress.md` for last completed stage
-2. Resume from the next stage
-3. Do not re-execute completed stages
+## Progress marker
+Write a one-line status to `harness/progress.md` as stages complete
+(`Status: In Progress` while running, `Status: Shipped` at the end). The Stop
+hook uses this to nudge completion of an active pipeline; on resume, continue
+from the last completed stage.
 
 ## Rules
-
-- NEVER skip any stage (even for "simple" features)
-- NEVER auto-push without creating PR first
-- NEVER merge the PR (user decides when to merge)
-- ALWAYS commit after each logical task group
-- ALWAYS run full test suite, not just new tests
-- ALWAYS create issue before branching
-- If `gh` CLI is not available, skip ISSUE and PR stages but complete all others
+- NEVER skip a gate (plan score, review, tests) — that enforcement *is* the value.
+- NEVER auto-push without creating a PR; NEVER merge the PR.
+- ALWAYS commit per logical group so pre-commit validates incrementally.
+- If `gh` is unavailable, skip ISSUE/PR but run every other stage and gate.

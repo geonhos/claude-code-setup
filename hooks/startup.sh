@@ -11,7 +11,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")/.." 2>/dev/null && pwd)"
 if [ -f "$SCRIPT_DIR/plugin.json" ]; then
   VERSION=$(grep '"version"' "$SCRIPT_DIR/plugin.json" 2>/dev/null | head -1 | sed 's/.*: *"\([^"]*\)".*/\1/')
 else
-  VERSION="5.0.0"
+  VERSION="6.0.0"
 fi
 
 DRAFT_COUNT=0
@@ -33,15 +33,17 @@ cat << EOF
  ██║╚██╔╝██║  ██╔══██║  ╚════██║
  ██║ ╚═╝ ██║  ██║  ██║  ███████║
  ╚═╝     ╚═╝  ╚═╝  ╚═╝  ╚══════╝  v${VERSION}
-  :: Multi-Agent System ::    Harness Engineering Edition (Learning Loop)
+  :: Harness Conductor ::    Gated pipeline + learning loop
 ══════════════════════════════════════════════════════════════════════
 
 <multi-agent-system version="${VERSION}">
-Pipeline: /ship for full feature delivery. Surviving granular skills: /plan, /retro, /retro-review.
-Commodity skills (/tdd, /test, /debug, /review, /commit, /pr) were removed in v5.0.0 — install
-companion plugins (wshobson/agents, anthropics/claude-plugins-official) for replacements; see README.
+/ship: thin conductor — drives native Claude Code through enforced gates
+(plan score ≥8 → branch → implement → /review Critical=0 → tests green → PR).
+Implementation & verification are delegated to native CC + companion plugins
+(wshobson/agents, anthropics/claude-plugins-official); the harness only gates.
+Granular skills: /plan (scored), /retro, /retro-review, best_practices (context7).
 Learning loop: /retro (weekly) analyzes signals → /retro-review approves drafts.
-Agents auto-route by description. Signal capture: ${FEEDBACK_STATUS} (HARNESS_AUTO_FEEDBACK=0 to disable).
+Signal capture: ${FEEDBACK_STATUS} (HARNESS_AUTO_FEEDBACK=0 to disable).
 EOF
 
 if [ "$DRAFT_COUNT" -gt 0 ]; then

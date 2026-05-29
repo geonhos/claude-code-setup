@@ -66,7 +66,6 @@ Break the selected approach into atomic tasks.
 - id: T-{seq}
   type: CREATE | MODIFY | DELETE | REFACTOR | TEST | CONFIG | DOC
   file: {path}
-  agent: backend-dev | frontend-dev | ai-expert
   description: {what to do}
   depends_on: [T-{N}]  # or []
   acceptance:
@@ -74,6 +73,10 @@ Break the selected approach into atomic tasks.
     - {criterion 2}
   verify: {command to verify}
 ```
+
+Tasks are implementation-agnostic: they describe *what* and *how to verify*,
+not *which agent*. Execution is native Claude Code (and any installed companion
+plugins) — `/plan` no longer routes tasks to bundled agents.
 
 **Parallel groups:** Group independent tasks for concurrent execution:
 ```yaml
@@ -91,7 +94,7 @@ Rate the plan on 5 criteria (2 points each, total 10):
 |----------|-------|------|-------|
 | Completeness | All requirements covered | Minor gaps | Major missing |
 | Dependencies | Correct, no cycles | Minor issues | Cycles/errors |
-| Agent Assignment | Optimal | Acceptable | Wrong agent |
+| Scope / Right-sizing | All tasks atomic (single concern, verifiable) | A few oversized | Many vague/monolithic |
 | Feasibility | All executable | Some unclear | Many unclear |
 | Testability | All have criteria | Most have | None have |
 
@@ -110,7 +113,6 @@ Rate the plan on 5 criteria (2 points each, total 10):
 ## Overview
 - Complexity: {simple | moderate | complex}
 - Tasks: {N}
-- Agents: {list}
 - Parallel Groups: {N}
 
 ## Validation
@@ -120,10 +122,10 @@ Rate the plan on 5 criteria (2 points each, total 10):
 ## Tasks
 
 ### Group 1 (parallel)
-| ID | Type | Agent | File | Description |
-|----|------|-------|------|-------------|
-| T-001 | CREATE | backend-dev | src/auth/handler.py | Login handler |
-| T-002 | CREATE | backend-dev | tests/test_auth.py | Auth tests |
+| ID | Type | File | Description | Verify |
+|----|------|------|-------------|--------|
+| T-001 | CREATE | src/auth/handler.py | Login handler | unit test green |
+| T-002 | CREATE | tests/test_auth.py | Auth tests | pytest passes |
 
 ### Group 2 (after Group 1)
 ...
@@ -145,4 +147,4 @@ Save plan to `./plans/PLAN-{ID}_{slug}.md`.
 - NEVER proceed without user confirmation on approach
 - NEVER create a plan with score < 8
 - NEVER write implementation code (plan only)
-- NEVER assign tasks to agents that don't exist (backend-dev, frontend-dev, ai-expert only)
+- NEVER tie a task to a specific bundled agent — tasks are implementation-agnostic; execution is native Claude Code

@@ -40,7 +40,7 @@ Before committing changes:
   ruff check .           # Python
   npm run lint           # Node.js
   ```
-- [ ] Code review requested (`code-reviewer` agent)
+- [ ] Code review run (built-in `/review`, or `anthropics:code-review` if installed)
 - [ ] No sensitive data in changes
   ```bash
   git diff --staged | grep -i "password\|secret\|key\|token"
@@ -116,10 +116,10 @@ Before creating PR:
 
 ### Mandatory (Always Required)
 
-| Gate | Agent | Criteria |
-|------|-------|----------|
-| Code Review | `code-reviewer` | 0 Critical issues |
-| Test Pass | `qa-executor` | All tests pass |
+| Gate | Runs via | Criteria |
+|------|----------|----------|
+| Code Review | built-in `/review` | 0 Critical issues |
+| Test Pass | `pre-commit` hook + native test run | All tests pass |
 
 ### Conditional (When Applicable)
 
