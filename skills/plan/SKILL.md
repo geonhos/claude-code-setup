@@ -1,6 +1,6 @@
 ---
 name: plan
-description: "Explore approaches, evaluate tradeoffs, then produce a scored execution plan with task dependencies and agent assignments."
+description: "Explore approaches, evaluate tradeoffs, then produce a scored execution plan with verifiable, implementation-agnostic tasks and dependencies."
 model: opus
 context: fork
 allowed-tools: Read, Grep, Glob, Bash
