@@ -80,72 +80,83 @@ writable() {
   return 1
 }
 
-# mask_quotes -> reads a command on stdin and prints it with the contents of
-# '...' and "..." removed (quotes kept), scanning left to right like the shell
-# so quote characters inside the other quote kind, and backslash escapes, are
-# handled. Newlines inside quotes are dropped; newlines outside are kept.
-# Exits 1 on an unterminated quote.
-mask_quotes() {
+# split_segments -> reads a command on stdin, scans it left to right like the
+# shell (single quotes, double quotes, backslash escapes), and prints one line
+# per command segment: "<masked><TAB><raw>". <masked> is the segment with the
+# contents of every '...' / "..." removed (quote chars kept); <raw> is the
+# segment text as written. Segments end at unquoted ; & | (so && and ||) and
+# newlines. Exits 1 on an unquoted < or > or an unterminated quote.
+# Input must not contain tabs (callers normalize them to spaces).
+split_segments() {
   awk '
-    BEGIN { st = 0 }   # 0 = unquoted, 1 = single, 2 = double
+    function flush() { if (m != "" || r != "") print m "\t" r; m = ""; r = "" }
+    BEGIN { st = 0; bad = 0; m = ""; r = "" }   # st: 0 unquoted, 1 single, 2 double
     {
-      line = $0; out = ""; n = length(line); esc = 0
+      line = $0; n = length(line)
       for (i = 1; i <= n; i++) {
         c = substr(line, i, 1)
         if (st == 0) {
-          if (c == "\\") { out = out c substr(line, i + 1, 1); i++ }
-          else if (c == "\047") { out = out c; st = 1 }
-          else if (c == "\"") { out = out c; st = 2 }
-          else out = out c
+          if (c == "\\") { c = c substr(line, i + 1, 1); i++; m = m c; r = r c }
+          else if (c == ";" || c == "&" || c == "|") flush()
+          else if (c == "<" || c == ">") bad = 1
+          else {
+            m = m c; r = r c
+            if (c == "\047") st = 1
+            else if (c == "\"") st = 2
+          }
         } else if (st == 1) {
-          if (c == "\047") { out = out c; st = 0 }
+          r = r c
+          if (c == "\047") { m = m c; st = 0 }
         } else {
-          if (c == "\\") i++
-          else if (c == "\"") { out = out c; st = 0 }
+          r = r c
+          if (c == "\\") { r = r substr(line, i + 1, 1); i++ }
+          else if (c == "\"") { m = m c; st = 0 }
         }
       }
-      printf "%s", out
-      if (st == 0) printf "\n"
+      if (st == 0) flush(); else r = r " "
     }
-    END { if (st != 0) exit 1 }
+    END { flush(); if (st != 0 || bad) exit 1 }
   '
 }
 
 # bash_ok COMMAND -> 0 when every segment of the command is on the allowlist
 bash_ok() {
-  local cmd=$1 masked stripped segs seg n=0
+  local cmd=$1 segs seg raw norm n=0 tab
+  tab=$(printf '\t')
   [ -n "$cmd" ] || return 1
-  # command substitution is checked on the raw command, quotes included
+  cmd=$(printf '%s' "$cmd" | tr '\t' ' ')
+  # raw-command checks, quotes included: command / process substitution,
+  # ANSI-C and locale quoting, here-strings
   case "$cmd" in
-    *'$('*|*'`'*) return 1 ;;
+    *'$('*|*'`'*|*"\$'"*|*'$"'*|*'<('*|*'>('*|*'<<<'*) return 1 ;;
   esac
-  masked=$(printf '%s\n' "$cmd" | mask_quotes) || return 1
-  # tolerate stderr->stdout redirects, reject any other redirect
-  stripped=$(printf '%s' "$masked" | sed 's/2>&1//g')
-  case "$stripped" in
-    *'>'*|*'<'*) return 1 ;;
-  esac
-  # split on ; & | (covers && and ||), one segment per line. Done outside the
-  # heredoc below: an unquoted heredoc would eat the sed backslash-newlines.
-  segs=$(printf '%s' "$stripped" | sed 's/&/\
-/g; s/;/\
-/g; s/|/\
-/g')
-  while IFS= read -r seg; do
+  # tolerate stderr->stdout redirects; split_segments rejects any other
+  segs=$(printf '%s\n' "$cmd" | sed 's/2>&1//g' | split_segments) || return 1
+  while IFS="$tab" read -r seg raw; do
     seg=$(printf '%s' "$seg" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')
+    raw=$(printf '%s' "$raw" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')
     [ -n "$seg" ] || continue
     n=$((n + 1))
     # reject '..' path components (but not git ranges like main...HEAD)
     printf ' %s ' "$seg" | grep -Eq '[ /=]\.\.([ /]|$)' && return 1
     case "$seg" in
       jq|jq\ *)
-        # jq reads files: only as a pipe consumer, with a single filter arg
+        # jq reads files: only as a pipe consumer, single filter arg, no
+        # file flags, no paths, no unquoted expansions or globs
         [ "$n" -gt 1 ] || return 1
-        case "$seg" in */*) return 1 ;; esac
+        case "$raw" in */*|*..*) return 1 ;; esac
+        case "$seg" in *[\$\{\}\*\?\[\]~\\]*) return 1 ;; esac
+        printf ' %s ' "$seg" | grep -Eq -- ' -[A-Za-z]*[fL][A-Za-z]* | --(from-file|rawfile|slurpfile|args|jsonargs)[ =]' && return 1
         printf '%s' "$seg" | grep -Eq '^jq( --?[A-Za-z-]+)*( [^ -][^ ]*)?$' || return 1
         continue ;;
+      cat\ *|ls|ls\ *)
+        # these never need quoting or expansion here
+        case "$seg" in *[\"\'\$\{\}\*\?\[\]~\\]*|*..*) return 1 ;; esac ;;
       git\ *)
-        printf ' %s ' "$seg" | grep -Eq -- '--output| -[odDmM] ' && return 1 ;;
+        # flag checks on the raw text with quoting removed ("-D" == -D)
+        norm=$(printf ' %s ' "$raw" | tr -d "\"'\\\\")
+        case "$norm" in *:*) return 1 ;; esac
+        printf '%s' "$norm" | grep -Eq -- '--(output|patch|delete|move|copy)| -[odDmMcCp][A-Za-z]* ' && return 1 ;;
     esac
     printf '%s' "$seg" | grep -Eq \
       '^(harness( .*)?|herdr( .*)?|gh( .*)?|git status( .*)?|git log( .*)?|git diff --stat( .*)?|git branch( .*)?|git show --stat( .*)?|cat \.harness(/[^ ]*)?|ls( -[A-Za-z]+)*( (\.harness|docs)(/[^ ]*)?)?)$' \
@@ -166,7 +177,7 @@ case "$TOOL" in
   Grep)
     readable "$(field path)" || deny "$MSG_READ" ;;
   Glob)
-    case "$(field pattern)" in *..*) deny "$MSG_READ" ;; esac
+    case "$(field pattern)" in *..*|/*|'~'*) deny "$MSG_READ" ;; esac
     readable "$(field path)" || deny "$MSG_READ" ;;
   Agent|Workflow)
     deny "$MSG_AGENT" ;;

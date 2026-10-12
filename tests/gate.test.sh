@@ -153,5 +153,59 @@ expect allow $C "cwd trailing slash"      "$(jq -n -c '{tool_name:"Write",tool_i
 expect deny  $C "Read tilde"              "$(tool Read '{"file_path":"~/secret.md"}')"
 expect deny  $C "Glob pattern dotdot"     "$(tool Glob '{"pattern":"../src/**","path":"docs"}')"
 
+# --- review round 2 --------------------------------------------------------
+# bcmd COMMAND -> Bash hook payload with COMMAND as tool_input.command
+bcmd() { tool Bash "$(printf '%s' "$1" | jq -Rs '{command:.}')"; }
+TAB=$(printf '\t')
+# A. raw-command checks
+expect deny  $C "bash ansi-c quote"       "$(bcmd "harness \$'\\'' ; rm -rf src #'")"
+expect deny  $C "bash locale quote"       "$(bcmd 'harness $"x" ; rm -rf src')"
+expect deny  $C "bash tab separator"      "$(bcmd "cat .harness/x${TAB}src/a.ts")"
+expect deny  $C "bash proc subst <("     "$(bcmd 'cat <(ls src)')"
+expect deny  $C "bash proc subst >("     "$(bcmd 'harness status >(cat)')"
+expect deny  $C "bash here-string"        "$(bcmd 'jq . <<< x')"
+# B. file-reading segments: no quotes / expansions / globs
+expect deny  $C "bash cat dq dotdot"      "$(bcmd 'cat .harness/"../src/a.ts"')"
+expect deny  $C "bash cat sq dotdot"      "$(bcmd "cat .harness/'..'/src/a.ts")"
+expect deny  $C "bash ls dq dotdot"       "$(bcmd 'ls docs/".."/src')"
+expect deny  $C "bash cat brace"          "$(bcmd 'cat .harness/{,../src/a.ts}')"
+expect deny  $C "bash cat param exp"      "$(bcmd 'cat .harness/${X:-../src/a.ts}')"
+expect deny  $C "bash cat ?"              "$(bcmd 'cat .harness/.?/src/a.ts')"
+expect deny  $C "bash cat *"              "$(bcmd 'cat .harness/*')"
+expect deny  $C "bash cat \$HOME"         "$(bcmd 'cat .harness/$HOME')"
+expect deny  $C "bash cat backslash"      "$(bcmd 'cat .harness/\.\./src/a.ts')"
+expect allow $C "bash cat report 2"       "$(bcmd 'cat .harness/reports/analyst.md')"
+expect allow $C "bash ls -la docs 2"      "$(bcmd 'ls -la docs/superpowers')"
+# C. jq file-reading flags; quoted filter still fine
+expect deny  $C "bash jq -f quoted path"  "$(bcmd 'herdr x | jq -f "src/a.ts"')"
+expect deny  $C "bash jq --rawfile path"  "$(bcmd 'herdr x | jq --rawfile a src/a.ts .')"
+expect deny  $C "bash jq -f"              "$(bcmd 'herdr x | jq -f a.jq')"
+expect deny  $C "bash jq -rf"             "$(bcmd 'herdr x | jq -rf a.jq')"
+expect deny  $C "bash jq --rawfile"       "$(bcmd 'herdr x | jq --rawfile a a.ts .')"
+expect deny  $C "bash jq --slurpfile"     "$(bcmd 'herdr x | jq --slurpfile a a.json')"
+expect deny  $C "bash jq -L"              "$(bcmd 'herdr x | jq -L lib .')"
+expect deny  $C "bash jq --args"          "$(bcmd 'herdr x | jq --args . a')"
+expect deny  $C "bash jq quoted slash"    "$(bcmd 'herdr x | jq "./a"')"
+expect deny  $C "bash jq glob"            "$(bcmd 'herdr x | jq *')"
+expect allow $C "bash jq quoted filter"   "$(bcmd "herdr agent list | jq -r '.result.agents[].pane_id'")"
+# D. git
+expect deny  $C "bash git show path"      "$(bcmd 'git show --stat HEAD:src/a.ts')"
+expect deny  $C "bash git show qpath"     "$(bcmd 'git show --stat "HEAD:src/a.ts"')"
+expect deny  $C "bash git log -p"         "$(bcmd 'git log -p')"
+expect deny  $C "bash git log --patch"    "$(bcmd 'git log --patch')"
+expect deny  $C "bash git diff --stat -p" "$(bcmd 'git diff --stat -p')"
+expect deny  $C "bash git branch -Df"     "$(bcmd 'git branch -Df main')"
+expect deny  $C "bash git branch qD"      "$(bcmd 'git branch "-D" main')"
+expect deny  $C "bash git branch --delete" "$(bcmd 'git branch --delete main')"
+expect deny  $C "bash git branch -c"      "$(bcmd 'git branch -c x y')"
+expect deny  $C "bash git branch --move"  "$(bcmd 'git branch --move x y')"
+expect allow $C "bash git show --stat 2"  "$(bcmd 'git show --stat HEAD')"
+expect allow $C "bash git log -5 2"       "$(bcmd 'git log --oneline -5')"
+expect allow $C "bash git diff range 2"   "$(bcmd 'git diff --stat main...HEAD')"
+expect allow $C "bash git status short"   "$(bcmd 'git status --short')"
+# E. Glob absolute / home pattern
+expect deny  $C "Glob pattern abs"        "$(tool Glob '{"pattern":"/repo/src/**","path":"docs"}')"
+expect deny  $C "Glob pattern tilde"      "$(tool Glob '{"pattern":"~/x/**","path":"docs"}')"
+
 echo "PASS $pass / FAIL $fail"
 [ "$fail" -eq 0 ]
