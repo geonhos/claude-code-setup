@@ -78,6 +78,16 @@ always get `worker` because `harness spawn` exports it in the pane shell
 before starting Claude. A human who wants an unrestricted manual session
 runs `HARNESS_ROLE=worker claude`.
 
+Per-project opt-out: a project that should not be gated sets the variable
+in its own settings, and the hook sees it like any other environment value:
+
+```json
+{ "env": { "HARNESS_ROLE": "worker" } }
+```
+
+The conductor must run inside a herdr pane. Outside herdr the gate is still
+active but `harness` refuses to run, so Fable can do nothing but talk.
+
 ## Requirement 1 — Fable token economy
 
 Token cost is driven by what enters Fable's context, so the design works in
