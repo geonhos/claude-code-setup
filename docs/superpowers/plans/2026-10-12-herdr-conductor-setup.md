@@ -381,7 +381,7 @@ exit 0
 
 Notes for the implementer:
 - `jq` is allowed in the Bash allowlist so the conductor can post-process `herdr ... | jq` output. It is read-only.
-- The `sed` newline substitution uses a literal backslash-newline because bash 3.2 `sed` on macOS does not understand `\n` in the replacement.
+- The `sed` newline substitution uses a literal backslash-newline because macOS `sed` does not understand `\n` in the replacement. Do **not** place that `sed` inside an unquoted heredoc (`<<EOF ... $(...)`): an unquoted heredoc treats backslash-newline as a line continuation and removes it before `sed` runs, so the split silently stops working. Run the split into a variable first (`segs=$(... | sed '...')`) and feed `$segs` to the heredoc. (Found and fixed during implementation.)
 - `ls` pattern: zero or more flag groups, then an optional single `.harness...` or `docs...` argument. Bare `ls` (no argument) is allowed: it lists top-level names only, which the conductor needs to orient itself. `ls src` is denied because the argument group only accepts `.harness` or `docs` prefixes. Confirm with the `bash ls src` deny case.
 
 - [ ] **Step 2: Make it executable and run the tests**
