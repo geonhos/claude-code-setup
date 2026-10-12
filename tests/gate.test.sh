@@ -115,5 +115,43 @@ expect allow $C "MCP tool"                "$(tool mcp__context7__query-docs '{"q
 expect allow $C "garbage input"           'not json at all'
 expect allow $C "missing tool_name"       '{"tool_input":{}}'
 
+# --- review fixes ----------------------------------------------------------
+# 1. single & is a command separator
+expect deny  $C "bash single &"           "$(tool Bash '{"command":"git status & npm test"}')"
+expect deny  $C "bash single & nospace"   "$(tool Bash '{"command":"harness status &rm -rf src"}')"
+# 2. .. escapes in bash args
+expect deny  $C "bash cat dotdot"         "$(tool Bash '{"command":"cat .harness/../src/a.ts"}')"
+expect deny  $C "bash ls dotdot"          "$(tool Bash '{"command":"ls docs/../src"}')"
+expect deny  $C "bash ls .harnessx"       "$(tool Bash '{"command":"ls .harnessx"}')"
+expect allow $C "bash ls .harness/reports" "$(tool Bash '{"command":"ls .harness/reports"}')"
+expect allow $C "bash ls docs bare"       "$(tool Bash '{"command":"ls docs"}')"
+# 3. jq only on piped input, no file args
+expect allow $C "bash jq piped"           "$(tool Bash '{"command":"herdr agent list | jq .result"}')"
+expect allow $C "bash jq piped quoted"    "$(tool Bash '{"command":"herdr agent list | jq -r '"'"'.result.agents[].pane_id'"'"'"}')"
+expect deny  $C "bash jq first"           "$(tool Bash '{"command":"jq . src/secret.json"}')"
+expect deny  $C "bash jq piped file"      "$(tool Bash '{"command":"herdr agent list | jq -r . src/a.ts"}')"
+expect deny  $C "bash jq piped qfile"     "$(tool Bash '{"command":"herdr agent list | jq -r . \"src/a.ts\""}')"
+# 4. git write escapes
+expect deny  $C "bash git log --output"   "$(tool Bash '{"command":"git log --output=src/a.ts"}')"
+expect deny  $C "bash git diff --output"  "$(tool Bash '{"command":"git diff --stat --output=x"}')"
+expect deny  $C "bash git branch -D"      "$(tool Bash '{"command":"git branch -D main"}')"
+expect deny  $C "bash git branch -m"      "$(tool Bash '{"command":"git branch -m x"}')"
+expect allow $C "bash git branch show"    "$(tool Bash '{"command":"git branch --show-current"}')"
+expect allow $C "bash git log -5"         "$(tool Bash '{"command":"git log --oneline -5"}')"
+# 5. quoted args are masked before splitting
+expect allow $C "bash quoted ;"           "$(tool Bash '{"command":"harness ask analyst \"fix a; b\""}')"
+expect allow $C "bash quoted >"           "$(tool Bash '{"command":"harness ask analyst \"is a > b?\""}')"
+expect allow $C "bash squoted &&"         "$(tool Bash '{"command":"harness ask implementer '"'"'run x && y'"'"'"}')"
+expect deny  $C "bash quoted subshell"    "$(tool Bash '{"command":"harness ask analyst \"$(cat src/a.ts)\""}')"
+expect deny  $C "bash quoted cat dotdot"  "$(tool Bash '{"command":"cat \".harness/../src/a.ts\""}')"
+expect deny  $C "bash quote confusion"    "$(tool Bash '{"command":"harness '"'"'a\"'"'"' ; rm -rf src ; echo '"'"'\"'"'"'"}')"
+expect deny  $C "bash escaped quotes"     "$(tool Bash '{"command":"harness \\\" ; rm -rf src ; echo \\\""}')"
+expect deny  $C "bash unterminated quote" "$(tool Bash '{"command":"harness \"abc"}')"
+expect deny  $C "bash newline separator"  "$(tool Bash '{"command":"git status\nrm -rf src"}')"
+# 6. cwd trailing slash, ~ paths, Glob pattern ..
+expect allow $C "cwd trailing slash"      "$(jq -n -c '{tool_name:"Write",tool_input:{file_path:"/repo/docs/a.md",content:"x"},cwd:"/repo/"}')"
+expect deny  $C "Read tilde"              "$(tool Read '{"file_path":"~/secret.md"}')"
+expect deny  $C "Glob pattern dotdot"     "$(tool Glob '{"pattern":"../src/**","path":"docs"}')"
+
 echo "PASS $pass / FAIL $fail"
 [ "$fail" -eq 0 ]
