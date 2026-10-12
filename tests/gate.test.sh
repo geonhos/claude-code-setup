@@ -207,5 +207,11 @@ expect allow $C "bash git status short"   "$(bcmd 'git status --short')"
 expect deny  $C "Glob pattern abs"        "$(tool Glob '{"pattern":"/repo/src/**","path":"docs"}')"
 expect deny  $C "Glob pattern tilde"      "$(tool Glob '{"pattern":"~/x/**","path":"docs"}')"
 
+# --- git -u / -U / --unified ---------------------------------------------
+expect deny  $C "bash git log -u"         "$(bcmd 'git log -u')"
+expect deny  $C "bash git log -U3"        "$(bcmd 'git log -U3')"
+expect deny  $C "bash git diff --unified" "$(bcmd 'git diff --stat --unified=3')"
+expect allow $C "bash git log -5 3"       "$(bcmd 'git log --oneline -5')"
+
 echo "PASS $pass / FAIL $fail"
 [ "$fail" -eq 0 ]

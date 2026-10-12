@@ -156,7 +156,7 @@ bash_ok() {
         # flag checks on the raw text with quoting removed ("-D" == -D)
         norm=$(printf ' %s ' "$raw" | tr -d "\"'\\\\")
         case "$norm" in *:*) return 1 ;; esac
-        printf '%s' "$norm" | grep -Eq -- '--(output|patch|delete|move|copy)| -[odDmMcCp][A-Za-z]* ' && return 1 ;;
+        printf '%s' "$norm" | grep -Eq -- '--(output|patch|delete|move|copy|unified)| -[odDmMcCpuU][A-Za-z0-9]* ' && return 1 ;;
     esac
     printf '%s' "$seg" | grep -Eq \
       '^(harness( .*)?|herdr( .*)?|gh( .*)?|git status( .*)?|git log( .*)?|git diff --stat( .*)?|git branch( .*)?|git show --stat( .*)?|cat \.harness(/[^ ]*)?|ls( -[A-Za-z]+)*( (\.harness|docs)(/[^ ]*)?)?)$' \
