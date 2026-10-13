@@ -38,23 +38,34 @@ Run `./install.sh --test` to execute the test suites.
    call and tells it which worker to use.
 3. It runs `harness ask <worker> "<instruction>"`. A sibling pane opens with
    a Claude worker; when the worker finishes, its report
-   (`.harness/reports/<worker>.md`, ≤ 40 lines) is printed back.
+   (`.harness/reports/<worker>.md`, ≤ 40 lines) is printed back. The
+   installer raises the Bash tool timeout (`BASH_DEFAULT_TIMEOUT_MS=600000`)
+   so a long worker task does not get cut off.
 4. You watch workers in their panes; the conductor only sees reports.
 
 ```
 harness spawn  <agent> [--direction right|down]
 harness ask    <agent> "<instruction>" [--timeout MS]   # exit 2 blocked · 3 no report · 4 still working
+harness report <agent>                                   # print existing report, or exit 3
 harness status
 harness close  <agent>
 ```
 
 ## What the conductor may do directly
 
-`harness`, `herdr`, `gh`, `jq` (as a pipe consumer only), read-only `git`
-(`status`, `log`, `diff --stat`, `branch`, `show --stat`; no patch, output or
-delete flags), `cat`/`ls` under `.harness/` and `docs/` (no quotes, globs or
-`$` in their arguments), and writing Markdown under `docs/`. Everything else
+`harness`, `gh` (except `gh api` and `gh pr diff`), read-only `herdr`
+(`status`, `pane list|get|layout`, `agent list|get|wait`), `jq` (as a pipe
+consumer only), read-only `git` (`status`, `log`, `diff --stat`, `branch`,
+`show --stat`; no patch, output or delete flags), bare `ls`, `cat`/`ls` under
+`.harness/` and `docs/` (no quotes, globs or `$` in their arguments), and
+writing Markdown under `docs/` and anything under `.harness/`. Everything else
 is denied with a reason naming the worker to use.
+
+## Known limits
+
+The gate covers the built-in file/shell tools, `Monitor`, and the `filesystem`
+MCP server. Other MCP servers that read files are not gated. `gh` can still
+fetch remote file contents through commands not listed above.
 
 ## Opt out
 

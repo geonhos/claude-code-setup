@@ -50,12 +50,14 @@ claude-code-setup/
 `install.sh` does, idempotently:
 
 - `ln -sf` each `claude/agents/*.md` into `~/.claude/agents/`.
-- `ln -sf bin/harness` into a `PATH` dir (`/usr/local/bin` or `~/.local/bin`,
-  whichever exists and is writable; prints which).
+- `ln -sf bin/harness` into a `PATH` dir (`~/.local/bin`; warns if it is not on
+  PATH).
 - Merge into `~/.claude/settings.json` with `jq` (backup first):
   - `hooks.PreToolUse` entry → `conductor-gate.sh` (matcher
     `Edit|Write|NotebookEdit|Read|Grep|Glob|Bash|Agent|Workflow`).
   - `promptCacheTtl: "1h"`, `subagentPromptCacheTtl: "1h"`.
+  - Merge `env.BASH_DEFAULT_TIMEOUT_MS=600000` and `env.BASH_MAX_TIMEOUT_MS=1800000`
+    so `harness ask` is not killed by the Bash tool's 2-minute default.
   Existing keys and other hooks are preserved. The hook entry is identified
   by its command path so re-running does not duplicate it.
 - Append `@<repo>/claude/CLAUDE.conductor.md` to `~/.claude/CLAUDE.md` if the
@@ -137,7 +139,8 @@ Decisions use the current JSON contract:
 | `Edit`, `Write`, `NotebookEdit` | allow if `file_path` is under `docs/` and ends in `.md`, or is under `.harness/`. Else deny. |
 | `Read`, `Grep`, `Glob` | allow if path is under `.harness/`, under `docs/`, or ends in `.md`. Else deny. (`Grep`/`Glob` use `path`; missing path = cwd = deny.) |
 | `Agent`, `Workflow` | deny. |
-| `Bash` | allow if the command matches one of: `harness ...`, `herdr ...`, `gh ...`, `git status`, `git log ...`, `git diff --stat ...`, `git branch ...`, `git show --stat ...`, `cat .harness/...`, `ls .harness...`, `ls docs...`. Compound commands (`;`, `&&`, `\|`, `>`) are allowed only if every segment matches. Else deny. `jq` only as a non-first pipeline segment with no file arguments; `cat`/`ls` arguments may not contain quotes, `$`, braces, globs, `~` or `..`; git may not use patch/output/delete/move/copy/unified/raw/check options; unquoted `#` is denied. |
+| `Bash` | allow if the command matches one of: `harness ...`, read-only `herdr` (status, pane list|get|layout, agent list|get|wait), `gh ...` (except `gh api`, `gh pr diff`), `git status`, `git log ...`, `git diff --stat ...`, `git branch ...`, `git show --stat ...`, `cat .harness/...`, `ls .harness...`, `ls docs...`. Compound commands (`;`, `&&`, `\|`, `>`) are allowed only if every segment matches. Else deny. `jq` only as a non-first pipeline segment with no file arguments; `cat`/`ls` arguments may not contain quotes, `$`, braces, globs, `~` or `..`; git may not use patch/output/delete/move/copy/unified/raw/check options; unquoted `#` is denied. |
+| `Monitor`, `mcp__filesystem__*` | `Monitor` deny; filesystem MCP read tools follow the Read rule, write tools the Write rule. |
 | anything else | allow (MCP tools, Skill, TodoWrite, AskUserQuestion, etc.) |
 
 Path checks are prefix checks after normalising to repo-relative form (strip
@@ -166,6 +169,7 @@ Bash, bash-3.2 compatible (no `declare -A`; see memory note). Requires
 ```
 harness spawn  <agent> [--direction right|down]
 harness ask    <agent> "<instruction>" [--timeout MS]
+harness report <agent>
 harness status
 harness close  <agent>
 ```
@@ -179,7 +183,7 @@ harness close  <agent>
   2. Record `<agent> <pane>` in `.harness/panes`.
   3. `herdr agent start <agent> --kind claude --pane <id> -- --agent <agent>`.
   4. On failure, print the pane screen (60 lines), close the pane, unregister it, and exit 1.
-- `ask`: `spawn` if needed. Remove any stale `.harness/reports/<agent>.md`.
+- `ask`: refuses with exit 4 when the worker is already `working`. `spawn` if needed. Remove any stale `.harness/reports/<agent>.md`.
   Submit `herdr agent prompt <agent> "<instruction>" --wait --timeout <MS>`
   (default 600000). On settled state:
   - `idle`/`done`: if the report file exists, `cat` it to stdout and exit 0.
@@ -189,6 +193,7 @@ harness close  <agent>
     the conductor can ask the user what to answer.
   - `agent_prompt_stalled` / `timeout`: print `agent get` + 60 lines of
     output and exit 4. Do not resubmit.
+- `report <agent>`: prints the existing report or exits 3.
 - `status`: `herdr agent list` filtered to the three agent names, one line
   each with state and pane.
 - `close <agent>`: `herdr pane close` on the pane hosting that agent.

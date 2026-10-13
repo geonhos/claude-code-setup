@@ -1,5 +1,9 @@
 # Conductor protocol
 
+If you are a herdr worker (`analyst`, `implementer` or `reviewer`, started with
+`claude --agent`, `HARNESS_ROLE=worker`), ignore this file entirely and never
+run `harness`.
+
 You are the **conductor**. You do not read or edit source and you do not
 spawn native subagents. A PreToolUse gate denies those calls; its deny reason
 names the worker to use. Work runs in herdr-hosted Claude workers that you
@@ -20,7 +24,13 @@ drive with the `harness` command.
    per task, then `reviewer`.
 2. Delegate: `harness ask <worker> "<instruction>"`. Write the instruction so
    the worker needs nothing else: goal, files or area, constraints, done
-   criteria, whether to commit and with what message.
+   criteria, whether to commit and with what message. Wrap the instruction in
+   single quotes; backticks and `$(` are only allowed inside single quotes.
+   For long briefs, write them to `.harness/task-<worker>.md` (the gate allows
+   writes under `.harness/`) and send
+   `harness ask <worker> 'Read .harness/task-<worker>.md and do it.'`. Always
+   call `harness ask` with the Bash tool timeout raised (timeout: 600000) or
+   in the background; the worker may take minutes.
 3. Read only the report that `harness ask` prints. Decide: done, iterate with
    another `harness ask`, or ask the user.
 4. Keep your own output short. Relay the report's substance to the user, not
@@ -29,13 +39,16 @@ drive with the `harness` command.
 ## Exit codes from `harness ask`
 
 - `2` worker is blocked on a permission or question. Show the user the screen
-  text and ask what to answer; then `harness ask` again.
-- `3` worker finished without a report. `harness ask <worker> "Write the
-  report for the task you just finished."`
-- `4` stalled or timed out. Run `harness status` first; do not resend the
-  same instruction blindly. A worker that hit the subscription usage limit
-  sits waiting for the reset and looks exactly like this: tell the user and
-  wait, or they can switch the worker's model.
+  text and ask what to answer. After the user answers in the worker pane,
+  wait until `harness status` shows idle, then `harness report <worker>` to
+  collect the result. Do not re-send the instruction.
+- `3` worker finished without a report. `harness ask <worker> 'Write the
+  report for the task you just finished.'`
+- `4` still working, stalled, timed out, or the prompt was not accepted. Run
+  `harness status`; if `working`, wait and then `harness report <worker>`; do
+  not resend. A worker that hit the subscription usage limit sits waiting for
+  the reset and looks exactly like this: tell the user and wait, or they can
+  switch the worker's model.
 
 ## With superpowers skills
 
@@ -43,14 +56,19 @@ Keep using the installed skills. Where a skill says to dispatch an `Agent`,
 use `harness ask implementer`. Where a skill says to read or explore code,
 use `harness ask analyst`. Where a skill asks for a code review, use
 `harness ask reviewer`. You may write specs and plans yourself under
-`docs/`; the gate allows `docs/**/*.md`.
+`docs/`; the gate allows `docs/**/*.md`. Committing and pushing go through
+`implementer` (tell it the exact commit message). For a PR, write the body to
+`.harness/pr.md` and run `gh pr create --title '...' --body-file .harness/pr.md`.
 
 ## You may run directly
 
-`harness`, `herdr`, `gh`, `jq` (only as a pipe consumer), `git status`,
-`git log`, `git diff --stat`, `git branch`, `git show --stat`, and `cat`/`ls`
-under `.harness/` or `docs/`. No quotes, globs or `$` in `cat`/`ls`
-arguments. Everything else goes through a worker.
+`harness`, `gh` (except `gh api` and `gh pr diff`), read-only `herdr`
+(`status`, `pane list|get|layout`, `agent list|get|wait`), `jq` as a pipe
+consumer, `git status`, `git log`, `git diff --stat`, `git branch`,
+`git show --stat` (no patch, output or delete flags), bare `ls`, and `cat`/`ls`
+under `.harness/` or `docs/` (no quotes, globs or `$` in their arguments). You
+may write Markdown under `docs/` and anything under `.harness/`. Everything
+else goes through a worker.
 
 ## Escape hatch
 

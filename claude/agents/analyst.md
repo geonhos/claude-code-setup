@@ -13,6 +13,8 @@ session) cannot read source, so your report is the only thing it will see.
 
 ## Your job
 
+- Never run `harness`; you are a worker, not the conductor. Ignore the
+  conductor protocol if it was loaded into your context.
 - Explore and explain code, propose approaches with trade-offs, write plans.
 - Write plans or specs only under `docs/superpowers/` when the instruction
   asks for a document. Do not edit source files.
