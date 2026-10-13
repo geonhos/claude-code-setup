@@ -120,9 +120,80 @@ split_segments() {
   '
 }
 
-# bash_ok COMMAND -> 0 when every segment of the command is on the allowlist
+# --- Bash allow/deny lists ---------------------------------------------------
+# Each piece below is one alternative; they are joined with | into one regex.
+
+# Commands the conductor may run (matched against a whole masked segment).
+BASH_ALLOW='harness( .*)?'                                        # delegation CLI
+BASH_ALLOW="$BASH_ALLOW|"'herdr( .*)?'                            # pane / agent control
+BASH_ALLOW="$BASH_ALLOW|"'gh( .*)?'                               # GitHub CLI
+BASH_ALLOW="$BASH_ALLOW|"'git status( .*)?'                       # read-only git ...
+BASH_ALLOW="$BASH_ALLOW|"'git log( .*)?'
+BASH_ALLOW="$BASH_ALLOW|"'git diff --stat( .*)?'                  # ... summaries only
+BASH_ALLOW="$BASH_ALLOW|"'git branch( .*)?'
+BASH_ALLOW="$BASH_ALLOW|"'git show --stat( .*)?'
+BASH_ALLOW="$BASH_ALLOW|"'cat (\.harness|docs)(/[^ ]*)?'          # reports and docs
+BASH_ALLOW="$BASH_ALLOW|"'ls( -[A-Za-z]+)*( (\.harness|docs)(/[^ ]*)?)?' # top level, reports, docs
+BASH_ALLOW="^($BASH_ALLOW)\$"
+
+# git long options that are denied anywhere in a git segment.
+GIT_DENY_LONG='output'                                            # writes files
+GIT_DENY_LONG="$GIT_DENY_LONG|delete|move|copy"                   # mutates branches
+GIT_DENY_LONG="$GIT_DENY_LONG|patch|unified|cc|binary|remerge-diff|dd|diff-merges|raw|check" # prints diff content
+
+# Initials of git short-flag groups that are denied (e.g. -D, -Df, -U3):
+#   o = --output (writes files)
+#   d D m M c C = branch delete / move / copy (mutates branches)
+#   p u U = patch / unified context (prints diff content)
+GIT_DENY_SHORT='odDmMcCpuU'
+
+GIT_DENY="--($GIT_DENY_LONG)| -[$GIT_DENY_SHORT][A-Za-z0-9]* "
+
+# jq options that read files or take extra positional arguments.
+JQ_DENY=' -[A-Za-z]*[fL][A-Za-z]* | --(from-file|rawfile|slurpfile|args|jsonargs)[ =]'
+
+# has_expansion TEXT -> 0 when TEXT contains a character that the shell would
+# expand or glob ($ { } * ? [ ] ~ \)
+has_expansion() {
+  case "$1" in
+    *[\$\{\}\*\?\[\]~\\]*) return 0 ;;
+  esac
+  return 1
+}
+
+# jq_segment_ok N MASKED RAW -> 0 when a jq segment is safe: not the first
+# segment (so it reads piped input), a single filter argument, no file flags,
+# no paths, no env access, no unquoted expansions or globs
+jq_segment_ok() {
+  [ "$1" -gt 1 ] || return 1
+  case "$3" in */*|*..*|*env*|*ENV*) return 1 ;; esac
+  has_expansion "$2" && return 1
+  printf ' %s ' "$2" | grep -Eq -- "$JQ_DENY" && return 1
+  printf '%s' "$2" | grep -Eq '^jq( --?[A-Za-z-]+)*( [^ -][^ ]*)?$'
+}
+
+# git_segment_ok RAW -> 0 when a git segment uses no denied option and no
+# rev:path (flag checks run on the raw text with quoting removed: "-D" == -D)
+git_segment_ok() {
+  local norm
+  norm=$(printf ' %s ' "$1" | tr -d "\"'\\\\")
+  case "$norm" in *:*) return 1 ;; esac
+  printf '%s' "$norm" | grep -Eq -- "$GIT_DENY" && return 1
+  return 0
+}
+
+# cat_ls_segment_ok MASKED -> 0 when a cat / ls segment needs no quoting,
+# expansion or parent-directory access
+cat_ls_segment_ok() {
+  case "$1" in *[\"\']*|*..*) return 1 ;; esac
+  has_expansion "$1" && return 1
+  return 0
+}
+
+# bash_ok COMMAND -> 0 when the command has at least one segment and every
+# segment is on the allowlist
 bash_ok() {
-  local cmd=$1 segs seg raw norm n=0 tab
+  local cmd=$1 segs seg raw n=0 tab
   tab=$(printf '\t')
   [ -n "$cmd" ] || return 1
   cmd=$(printf '%s' "$cmd" | tr '\t' ' ')
@@ -143,31 +214,15 @@ bash_ok() {
     # reject '..' path components (but not git ranges like main...HEAD)
     printf ' %s ' "$seg" | grep -Eq '[ /=]\.\.([ /]|$)' && return 1
     case "$seg" in
-      jq|jq\ *)
-        # jq reads files: only as a pipe consumer, single filter arg, no
-        # file flags, no paths, no unquoted expansions or globs
-        [ "$n" -gt 1 ] || return 1
-        case "$raw" in */*|*..*|*env*|*ENV*) return 1 ;; esac
-        case "$seg" in *[\$\{\}\*\?\[\]~\\]*) return 1 ;; esac
-        printf ' %s ' "$seg" | grep -Eq -- ' -[A-Za-z]*[fL][A-Za-z]* | --(from-file|rawfile|slurpfile|args|jsonargs)[ =]' && return 1
-        printf '%s' "$seg" | grep -Eq '^jq( --?[A-Za-z-]+)*( [^ -][^ ]*)?$' || return 1
-        continue ;;
-      cat\ *|ls|ls\ *)
-        # these never need quoting or expansion here
-        case "$seg" in *[\"\'\$\{\}\*\?\[\]~\\]*|*..*) return 1 ;; esac ;;
-      git\ *)
-        # flag checks on the raw text with quoting removed ("-D" == -D)
-        norm=$(printf ' %s ' "$raw" | tr -d "\"'\\\\")
-        case "$norm" in *:*) return 1 ;; esac
-        printf '%s' "$norm" | grep -Eq -- '--(output|patch|delete|move|copy|unified|cc|binary|remerge-diff|dd|diff-merges|raw|check)| -[odDmMcCpuU][A-Za-z0-9]* ' && return 1 ;;
+      jq|jq\ *)       jq_segment_ok "$n" "$seg" "$raw" || return 1; continue ;;
+      git\ *)         git_segment_ok "$raw" || return 1 ;;
+      cat\ *|ls|ls\ *) cat_ls_segment_ok "$seg" || return 1 ;;
     esac
-    printf '%s' "$seg" | grep -Eq \
-      '^(harness( .*)?|herdr( .*)?|gh( .*)?|git status( .*)?|git log( .*)?|git diff --stat( .*)?|git branch( .*)?|git show --stat( .*)?|cat (\.harness|docs)(/[^ ]*)?|ls( -[A-Za-z]+)*( (\.harness|docs)(/[^ ]*)?)?)$' \
-      || return 1
+    printf '%s' "$seg" | grep -Eq "$BASH_ALLOW" || return 1
   done <<EOF
 $segs
 EOF
-  return 0
+  [ "$n" -gt 0 ]
 }
 
 case "$TOOL" in
