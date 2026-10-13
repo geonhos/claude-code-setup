@@ -27,6 +27,7 @@ mkdir -p "$CLAUDE_DIR"
 cat > "$CLAUDE_DIR/settings.json" <<'EOF'
 {
   "model": "fable",
+  "agent": "something",
   "env": { "FOO": "bar" },
   "permissions": { "defaultMode": "auto" },
   "hooks": {
@@ -60,11 +61,13 @@ check "BASH_MAX_TIMEOUT_MS" [ "$(jq -r .env.BASH_MAX_TIMEOUT_MS "$S")" = 1800000
 check "env.FOO preserved" [ "$(jq -r .env.FOO "$S")" = bar ]
 check "backup created" ls "$CLAUDE_DIR"/settings.json.bak.* >/dev/null 2>&1
 
-for a in analyst implementer reviewer; do
+check "agent set to conductor" [ "$(jq -r .agent "$S")" = conductor ]
+
+for a in analyst conductor implementer reviewer; do
   check "agent symlink $a" [ "$(readlink "$CLAUDE_DIR/agents/$a.md")" = "$REPO/claude/agents/$a.md" ]
 done
 check "harness symlink" [ "$(readlink "$BIN_DIR/harness")" = "$REPO/bin/harness" ]
-check "CLAUDE.md import line" grep -qxF "@$REPO/claude/CLAUDE.conductor.md" "$CLAUDE_DIR/CLAUDE.md"
+check "CLAUDE.md not created" [ ! -e "$CLAUDE_DIR/CLAUDE.md" ]
 check "global gitignore has .harness/" grep -qx '.harness/' "$GIT_IGNORE"
 check "global gitignore keeps old lines" grep -qx 'node_modules/' "$GIT_IGNORE"
 
@@ -74,7 +77,8 @@ check "second run rc" [ "$RC" -eq 0 ]
 check "env still preserved after rerun" [ "$(jq -c '.env' "$S")" = '{"FOO":"bar","BASH_DEFAULT_TIMEOUT_MS":"600000","BASH_MAX_TIMEOUT_MS":"1800000"}' ]
 check "gate hook still once" [ "$(jq --arg g "$GATE" '[.hooks.PreToolUse[] | select(.hooks[] | .command==$g)] | length' "$S")" -eq 1 ]
 check "other hook still once" [ "$(jq '[.hooks.PreToolUse[] | select(.hooks[] | .command=="/opt/other-hook.sh")] | length' "$S")" -eq 1 ]
-check "import line once" [ "$(grep -cxF "@$REPO/claude/CLAUDE.conductor.md" "$CLAUDE_DIR/CLAUDE.md")" -eq 1 ]
+check "agent still conductor after rerun" [ "$(jq -r .agent "$S")" = conductor ]
+check "CLAUDE.md still absent after rerun" [ ! -e "$CLAUDE_DIR/CLAUDE.md" ]
 check "gitignore line once" [ "$(grep -cx '.harness/' "$GIT_IGNORE")" -eq 1 ]
 # fresh HOME with no settings.json at all
 T2=$(newdir fresh)

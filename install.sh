@@ -1,5 +1,7 @@
 #!/bin/bash
-# install.sh — wire this repo into ~/.claude as the conductor setup.
+# install.sh — wire this repo into ~/.claude as the conductor setup:
+# agent symlinks, the harness CLI, and settings.json (gate hook, cache TTLs,
+# Bash timeouts, and the `agent` key that makes `conductor` the default role).
 # Idempotent. Re-run after pulling changes.
 #
 #   ./install.sh          install
@@ -14,7 +16,6 @@ BIN_DIR=${BIN_DIR:-$HOME/.local/bin}
 GIT_IGNORE=${GIT_IGNORE:-${XDG_CONFIG_HOME:-$HOME/.config}/git/ignore}
 SETTINGS="$CLAUDE_DIR/settings.json"
 GATE="$REPO/claude/hooks/conductor-gate.sh"
-IMPORT_LINE="@$REPO/claude/CLAUDE.conductor.md"
 MATCHER="Edit|Write|NotebookEdit|Read|Grep|Glob|Bash|Agent|Workflow|Monitor|mcp__filesystem__.*"
 
 die() { echo "install: $*" >&2; exit 1; }
@@ -69,13 +70,14 @@ case ":$PATH:" in
   *) echo "warning: $BIN_DIR is not on PATH; add it so the conductor can run 'harness'" >&2 ;;
 esac
 
-# 3. settings.json: cache TTLs + exactly one gate hook entry
+# 3. settings.json: default agent + cache TTLs + exactly one gate hook entry
 bak="$SETTINGS.bak.$(date +%Y%m%d%H%M%S)"
 cp "$SETTINGS" "$bak"
 tmp=$(mktemp)
 trap 'rm -f "$tmp"' EXIT
 jq --arg gate "$GATE" --arg matcher "$MATCHER" '
-  .promptCacheTtl = "1h"
+  .agent = "conductor"
+  | .promptCacheTtl = "1h"
   | .subagentPromptCacheTtl = "1h"
   | .env //= {}
   | .env.BASH_DEFAULT_TIMEOUT_MS = "600000"
@@ -88,11 +90,7 @@ jq --arg gate "$GATE" --arg matcher "$MATCHER" '
 ' "$SETTINGS" > "$tmp"
 cat "$tmp" > "$SETTINGS" || die "failed to write $SETTINGS; restore from $bak"
 
-# 4. CLAUDE.md import
-touch "$CLAUDE_DIR/CLAUDE.md"
-grep -qxF "$IMPORT_LINE" "$CLAUDE_DIR/CLAUDE.md" || printf '\n%s\n' "$IMPORT_LINE" >> "$CLAUDE_DIR/CLAUDE.md"
-
-# 5. global gitignore
+# 4. global gitignore
 mkdir -p "$(dirname "$GIT_IGNORE")"
 touch "$GIT_IGNORE"
 if ! grep -qxF '.harness/' "$GIT_IGNORE"; then
@@ -106,7 +104,7 @@ installed:
   agents         $CLAUDE_DIR/agents/ ($(cd "$REPO/claude/agents" && ls *.md | tr '\n' ' '))
   harness        $BIN_DIR/harness
   settings       $SETTINGS (backup: $bak)
-  CLAUDE.md      $IMPORT_LINE
+  agent          settings.agent = conductor (workers override with --agent <name>)
   cache TTL      promptCacheTtl=1h subagentPromptCacheTtl=1h
   bash timeouts  env.BASH_DEFAULT_TIMEOUT_MS=600000 env.BASH_MAX_TIMEOUT_MS=1800000
   gitignore      $GIT_IGNORE (+ .harness/)

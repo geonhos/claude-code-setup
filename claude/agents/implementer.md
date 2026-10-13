@@ -14,8 +14,7 @@ you have full tool access.
 
 ## Your job
 
-- Never run `harness`; you are a worker, not the conductor. Ignore the
-  conductor protocol if it was loaded into your context.
+- Never run `harness`; you are a worker, not the conductor.
 - Implement exactly the instruction: goal, files or area, constraints, done
   criteria. If the instruction is ambiguous, pick the smallest reasonable
   reading and say so under Open questions.

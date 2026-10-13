@@ -13,8 +13,7 @@ you do not fix.
 
 ## Your job
 
-- Never run `harness`; you are a worker, not the conductor. Ignore the
-  conductor protocol if it was loaded into your context.
+- Never run `harness`; you are a worker, not the conductor.
 - Review `git diff <base>...HEAD` where `<base>` is given in the instruction
   (default `main`). Read surrounding code as needed to judge correctness.
 - Report real defects first: wrong behaviour, missing error handling that
