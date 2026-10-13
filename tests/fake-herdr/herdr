@@ -1,0 +1,60 @@
+#!/bin/bash
+# Fake `herdr` for tests/harness.test.sh. Not a real client.
+# State:  $FAKE_DIR/live.<agent>   exists => agent is live; content = agent_status
+#         $FAKE_DIR/split_fail      exists => `pane split` fails
+#         $FAKE_DIR/start_fail      exists => `agent start` fails
+#         $FAKE_PROMPT_HOOK         shell snippet run when `agent prompt` is called
+set -u
+: "${FAKE_DIR:?FAKE_DIR must be set}"
+: "${FAKE_LOG:?FAKE_LOG must be set}"
+printf '%s\n' "$*" >> "$FAKE_LOG"
+
+sub="${1:-} ${2:-}"
+case "$sub" in
+  "pane layout")
+    echo '{"id":"cli:pane:layout","result":{"layout":{"panes":[{"pane_id":"w1:p1","rect":{"width":162,"height":45}}]},"type":"pane_layout"}}'
+    ;;
+  "pane split")
+    if [ -f "$FAKE_DIR/split_fail" ]; then
+      echo '{"error":{"code":"pane_not_found"}}' >&2; exit 1
+    fi
+    echo '{"id":"cli:pane:split","result":{"pane":{"pane_id":"w1:p2"}},"type":"pane_split"}'
+    ;;
+  "pane close")
+    echo '{"id":"cli:pane:close","result":{},"type":"pane_close"}'
+    ;;
+  "agent get")
+    name=$3
+    if [ -f "$FAKE_DIR/live.$name" ]; then
+      status=$(cat "$FAKE_DIR/live.$name")
+      printf '{"id":"cli:agent:get","result":{"agent":{"agent":"claude","agent_status":"%s","pane_id":"w1:p2"}},"type":"agent_info"}\n' "$status"
+    else
+      echo '{"error":{"code":"agent_not_found"}}' >&2; exit 1
+    fi
+    ;;
+  "agent start")
+    name=$3
+    if [ -f "$FAKE_DIR/start_fail" ]; then
+      echo '{"error":{"code":"agent_not_ready"}}' >&2; exit 1
+    fi
+    echo idle > "$FAKE_DIR/live.$name"
+    echo '{"id":"cli:agent:start","result":{},"type":"agent_start"}'
+    ;;
+  "agent prompt")
+    name=$3
+    if [ "$(cat "$FAKE_DIR/live.$name" 2>/dev/null)" = blocked ]; then
+      echo '{"error":{"code":"agent_blocked"}}' >&2; exit 1
+    fi
+    if [ -n "${FAKE_PROMPT_HOOK:-}" ]; then
+      /bin/bash -c "$FAKE_PROMPT_HOOK"
+    fi
+    echo '{"id":"cli:agent:prompt","result":{},"type":"agent_prompt"}'
+    ;;
+  "agent read")
+    echo "fake screen line 1"
+    echo "fake screen line 2"
+    ;;
+  *)
+    echo "fake herdr: unhandled '$*'" >&2; exit 1
+    ;;
+esac
