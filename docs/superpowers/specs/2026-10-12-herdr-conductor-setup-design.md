@@ -54,7 +54,7 @@ claude-code-setup/
   PATH).
 - Merge into `~/.claude/settings.json` with `jq` (backup first):
   - `hooks.PreToolUse` entry → `conductor-gate.sh` (matcher
-    `Edit|Write|NotebookEdit|Read|Grep|Glob|Bash|Agent|Workflow`).
+    `Edit|Write|NotebookEdit|Read|Grep|Glob|Bash|Agent|Workflow|Monitor|mcp__filesystem__.*`).
   - `promptCacheTtl: "1h"`, `subagentPromptCacheTtl: "1h"`.
   - Merge `env.BASH_DEFAULT_TIMEOUT_MS=600000` and `env.BASH_MAX_TIMEOUT_MS=1800000`
     so `harness ask` is not killed by the Bash tool's 2-minute default.
@@ -137,7 +137,7 @@ Decisions use the current JSON contract:
 | Tool | Conductor rule |
 |------|----------------|
 | `Edit`, `Write`, `NotebookEdit` | allow if `file_path` is under `docs/` and ends in `.md`, or is under `.harness/`. Else deny. |
-| `Read`, `Grep`, `Glob` | allow if path is under `.harness/`, under `docs/`, or ends in `.md`. Else deny. (`Grep`/`Glob` use `path`; missing path = cwd = deny.) |
+| `Read`, `Grep`, `Glob` | allow if path is under `.harness/`, under `docs/`, or ends in `.md`. Else deny. (`Grep`/`Glob` use `path`; missing path = deny, except `Glob` whose `pattern` starts with `docs/` or `.harness/`.) |
 | `Agent`, `Workflow` | deny. |
 | `Bash` | allow if the command matches one of: `harness ...`, read-only `herdr` (status, pane list|get|layout, agent list|get|wait), `gh ...` (except `gh api`, `gh pr diff`), `git status`, `git log ...`, `git diff --stat ...`, `git branch ...`, `git show --stat ...`, `cat .harness/...`, `ls .harness...`, `ls docs...`. Compound commands (`;`, `&&`, `\|`, `>`) are allowed only if every segment matches. Else deny. `jq` only as a non-first pipeline segment with no file arguments; `cat`/`ls` arguments may not contain quotes, `$`, braces, globs, `~` or `..`; git may not use patch/output/delete/move/copy/unified/raw/check options; unquoted `#` is denied. |
 | `Monitor`, `mcp__filesystem__*` | `Monitor` deny; filesystem MCP read tools follow the Read rule, write tools the Write rule. |

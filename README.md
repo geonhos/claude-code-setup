@@ -54,7 +54,8 @@ harness close  <agent>
 ## What the conductor may do directly
 
 `harness`, `gh` (except `gh api` and `gh pr diff`), read-only `herdr`
-(`status`, `pane list|get|layout`, `agent list|get|wait`), `jq` (as a pipe
+(`status`, `pane list|get|layout|current`, `agent list|get|wait|explain`,
+`workspace list`, `tab list`), `jq` (as a pipe
 consumer only), read-only `git` (`status`, `log`, `diff --stat`, `branch`,
 `show --stat`; no patch, output or delete flags), bare `ls`, `cat`/`ls` under
 `.harness/` and `docs/` (no quotes, globs or `$` in their arguments), and
@@ -64,8 +65,11 @@ is denied with a reason naming the worker to use.
 ## Known limits
 
 The gate covers the built-in file/shell tools, `Monitor`, and the `filesystem`
-MCP server. Other MCP servers that read files are not gated. `gh` can still
-fetch remote file contents through commands not listed above.
+MCP server. Other MCP servers that read files are not gated. `gh api`,
+`gh pr diff`, `gh alias` and `gh extension` are denied, but a global flag
+before the subcommand (`gh -R o/r api ...`) is not caught, and `gh pr
+checkout` can switch the branch. Instructions to workers must use single
+quotes if they contain backticks or `$(`.
 
 ## Opt out
 

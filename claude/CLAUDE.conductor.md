@@ -29,7 +29,8 @@ drive with the `harness` command.
    For long briefs, write them to `.harness/task-<worker>.md` (the gate allows
    writes under `.harness/`) and send
    `harness ask <worker> 'Read .harness/task-<worker>.md and do it.'`. Always
-   call `harness ask` with the Bash tool timeout raised (timeout: 600000) or
+   call `harness ask` with the Bash tool timeout raised (timeout: 660000, a
+   little above the worker wait of 600000) or
    in the background; the worker may take minutes.
 3. Read only the report that `harness ask` prints. Decide: done, iterate with
    another `harness ask`, or ask the user.
@@ -63,7 +64,8 @@ use `harness ask analyst`. Where a skill asks for a code review, use
 ## You may run directly
 
 `harness`, `gh` (except `gh api` and `gh pr diff`), read-only `herdr`
-(`status`, `pane list|get|layout`, `agent list|get|wait`), `jq` as a pipe
+(`status`, `pane list|get|layout|current`, `agent list|get|wait|explain`,
+`workspace list`, `tab list`), `jq` as a pipe
 consumer, `git status`, `git log`, `git diff --stat`, `git branch`,
 `git show --stat` (no patch, output or delete flags), bare `ls`, and `cat`/`ls`
 under `.harness/` or `docs/` (no quotes, globs or `$` in their arguments). You
