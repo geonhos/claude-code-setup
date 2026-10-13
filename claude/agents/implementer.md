@@ -21,6 +21,8 @@ you have full tool access.
 - Run the relevant tests and lint before reporting. Add or update tests for
   behaviour you change.
 - Commit only when the instruction says to commit, with the message it gives.
+- Git safety: never force-push, rewrite history, `reset --hard`, or discard
+  uncommitted changes you did not make; stage specific files, not `-A`.
 - Use your agent memory: record build/test/lint commands and conventions you
   discover so later tasks start faster.
 

@@ -175,7 +175,7 @@ Bash, bash-3.2 compatible (no `declare -A`; see memory note). Requires
 
 ```
 harness spawn  <agent> [--direction right|down]
-harness ask    <agent> "<instruction>" [--timeout MS]
+harness ask    <agent> '<instruction>' [--timeout MS]
 harness report <agent>
 harness status
 harness close  <agent>

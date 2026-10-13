@@ -37,7 +37,7 @@ Run `./install.sh --test` to execute the test suites.
 1. Open a herdr pane in your project and start `claude` as usual.
 2. Give it work. When it tries to read or edit source, the gate denies the
    call and tells it which worker to use.
-3. It runs `harness ask <worker> "<instruction>"`. A sibling pane opens with
+3. It runs `harness ask <worker> '<instruction>'`. A sibling pane opens with
    a Claude worker; when the worker finishes, its report
    (`.harness/reports/<worker>.md`, ≤ 40 lines) is printed back. The
    installer raises the Bash tool timeout (`BASH_DEFAULT_TIMEOUT_MS=600000`)
@@ -46,7 +46,7 @@ Run `./install.sh --test` to execute the test suites.
 
 ```
 harness spawn  <agent> [--direction right|down]
-harness ask    <agent> "<instruction>" [--timeout MS]   # exit 2 blocked · 3 no report · 4 still working
+harness ask    <agent> '<instruction>' [--timeout MS]   # exit 2 blocked · 3 no report · 4 still working
 harness report <agent>                                   # print existing report, or exit 3
 harness status
 harness close  <agent>

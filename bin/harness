@@ -3,7 +3,7 @@
 # Spec: docs/superpowers/specs/2026-10-12-herdr-conductor-setup-design.md
 #
 #   harness spawn  <agent> [--direction right|down]
-#   harness ask    <agent> "<instruction>" [--timeout MS]
+#   harness ask    <agent> '<instruction>' [--timeout MS]
 #   harness report <agent>
 #   harness status
 #   harness close  <agent>
@@ -29,7 +29,7 @@ usage() {
   cat >&2 <<EOF
 usage:
   harness spawn  <agent> [--direction right|down]
-  harness ask    <agent> "<instruction>" [--timeout MS]
+  harness ask    <agent> '<instruction>' [--timeout MS]
   harness report <agent>
   harness status
   harness close  <agent>

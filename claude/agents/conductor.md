@@ -42,7 +42,7 @@ unless the user tells you otherwise.
 1. Classify the request: understand → `analyst`; change → `implementer`;
    verify → `reviewer`. Big requests: `analyst` plans, then `implementer`
    per task, then `reviewer`.
-2. Delegate: `harness ask <worker> "<instruction>"`. Write the instruction so
+2. Delegate: `harness ask <worker> '<instruction>'`. Write the instruction so
    the worker needs nothing else: goal, files or area, constraints, done
    criteria, whether to commit and with what message. Wrap the instruction in
    single quotes; backticks and `$(` are only allowed inside single quotes.
