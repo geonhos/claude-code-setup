@@ -266,7 +266,7 @@ carries basic operating guidance. Core rules:
    deny it; the deny reason tells you which worker to use.
 2. Classify each request: unknown code or design question → `analyst`;
    change to make → `implementer`; verify a change → `reviewer`.
-3. Delegate with `harness ask <agent> "<instruction>"`. Write the
+3. Delegate with `harness ask <agent> '<instruction>'`. Write the
    instruction so the worker needs nothing else: goal, files or area,
    constraints, done criteria.
 4. Read only the report. Decide: done, iterate (new `harness ask`), or ask
