@@ -7,9 +7,12 @@ FAKE_BIN="$HERE/fake-herdr"
 pass=0
 fail=0
 
-# fresh WORK FAKE_DIR per case
+# fresh WORK FAKE_DIR per case; all of them removed on exit
+WORKS=""
+trap 'cd / && for d in $WORKS; do rm -rf "$d"; done' EXIT
 setup() {
   WORK=$(mktemp -d)
+  WORKS="$WORKS $WORK"
   export FAKE_DIR="$WORK/fake"
   export FAKE_LOG="$WORK/herdr.log"
   mkdir -p "$FAKE_DIR"
@@ -29,13 +32,15 @@ check() { # check LABEL CONDITION...
   local label=$1; shift
   if "$@"; then pass=$((pass + 1)); else fail=$((fail + 1)); echo "FAIL [$label]: $OUT"; fi
 }
-logged() { grep -q -- "$1" "$FAKE_LOG"; }
+# FAKE_LOG holds `printf %q` of each argv: match literally (spaces inside an
+# argument appear as "\ ").
+logged() { grep -qF -- "$1" "$FAKE_LOG"; }
 not_grep() { ! grep -q -- "$1" "$2" 2>/dev/null; }
-not_logged() { ! grep -q -- "$1" "$FAKE_LOG"; }
+not_logged() { ! grep -qF -- "$1" "$FAKE_LOG"; }
 
 # --- preconditions -----------------------------------------------------------
 setup
-OUT=$(PATH="$FAKE_BIN:$PATH" /bin/bash "$HARNESS" status 2>&1); RC=$?
+OUT=$(env -u HERDR_ENV PATH="$FAKE_BIN:$PATH" /bin/bash "$HARNESS" status 2>&1); RC=$?
 check "refuses outside herdr" [ "$RC" -eq 1 ]
 check "refuses outside herdr: message" grep -q "herdr pane" <<<"$OUT"
 
@@ -116,8 +121,36 @@ export FAKE_PROMPT_HOOK="mkdir -p $WORK/.harness/reports && printf '# analyst re
 run ask analyst "Describe the repo"
 check "ask rc" [ "$RC" -eq 0 ]
 check "ask spawns first" logged "agent start analyst"
-check "ask prompts with wait" logged "agent prompt analyst Describe the repo --wait --timeout 600000"
+check "ask prompts with wait" logged "agent prompt analyst Describe\\ the\\ repo --wait --timeout 600000"
 check "ask prints report" grep -q "status: done" <<<"$OUT"
+OUT=$(HERDR_ENV=1 HERDR_PANE_ID=w1:p1 PATH="$FAKE_BIN:$PATH" $GUARD /bin/bash "$HARNESS" ask analyst "again" 2>/dev/null); RC=$?
+check "ask stdout is exactly the report" [ "$OUT" = "$(printf '# analyst report\nstatus: done')" ]
+
+# --- ask: dash-leading instruction stays positional ------------------------------
+setup
+export FAKE_PROMPT_HOOK="mkdir -p $WORK/.harness/reports && echo ok > $WORK/.harness/reports/analyst.md"
+run ask analyst "--not-a-flag text"
+check "dash text rc" [ "$RC" -eq 0 ]
+check "dash text is prompt's third arg" logged "agent prompt analyst --not-a-flag\\ text --wait"
+
+# --- ask: --timeout validation ----------------------------------------------------
+setup
+run ask analyst "x" --timeout abc
+check "ask --timeout abc rc" [ "$RC" -eq 1 ]
+check "ask --timeout abc: no prompt" not_logged "agent prompt"
+
+setup
+run ask analyst "x" --timeout 0
+check "ask --timeout 0 rc" [ "$RC" -eq 1 ]
+
+# --- ask: prompt rejected outright -------------------------------------------------
+setup
+echo idle > "$FAKE_DIR/live.analyst"
+touch "$FAKE_DIR/prompt_fail"
+run ask analyst "x"
+check "prompt rejected rc" [ "$RC" -eq 4 ]
+check "prompt rejected message" grep -q "not accepted" <<<"$OUT"
+check "prompt rejected: herdr error shown" grep -q "socket_unavailable" <<<"$OUT"
 
 # --- ask: reuse + custom timeout + stale report removed --------------------------
 setup
@@ -136,6 +169,8 @@ run ask analyst "x"
 check "blocked before rc" [ "$RC" -eq 2 ]
 check "blocked before: no prompt sent" not_logged "agent prompt"
 check "blocked before: screen" grep -q "fake screen line" <<<"$OUT"
+OUT=$(HERDR_ENV=1 HERDR_PANE_ID=w1:p1 PATH="$FAKE_BIN:$PATH" $GUARD /bin/bash "$HARNESS" ask analyst "x" 2>/dev/null); RC=$?
+check "blocked: screen on stdout" grep -q "fake screen line" <<<"$OUT"
 
 # --- ask: blocked after prompt ----------------------------------------------------
 setup
@@ -168,6 +203,8 @@ export FAKE_PROMPT_HOOK="rm -f $FAKE_DIR/live.analyst"
 run ask analyst "x"
 check "vanished rc" [ "$RC" -eq 4 ]
 check "vanished reports unknown status" grep -q "status is 'unknown'" <<<"$OUT"
+check "vanished: agent get diagnostic" grep -q "agent not found" <<<"$OUT"
+check "vanished: pane screen still shown" grep -q "fake screen line" <<<"$OUT"
 
 # --- ask: missing instruction ------------------------------------------------------
 setup

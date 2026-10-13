@@ -3,13 +3,15 @@
 # State:  $FAKE_DIR/live.<agent>   exists => agent is live; content = agent_status
 #         $FAKE_DIR/split_fail      exists => `pane split` fails
 #         $FAKE_DIR/start_fail      exists => `agent start` fails
+#         $FAKE_DIR/prompt_fail     exists => `agent prompt` is rejected (socket_unavailable)
 #         $FAKE_DIR/layout          optional "WIDTH HEIGHT" for `pane layout` (default 162 45)
 #         $FAKE_DIR/pane.<agent>    pane id recorded by `agent start --pane` (default w1:p2)
 #         $FAKE_PROMPT_HOOK         shell snippet run when `agent prompt` is called
 set -u
 : "${FAKE_DIR:?FAKE_DIR must be set}"
 : "${FAKE_LOG:?FAKE_LOG must be set}"
-printf '%s\n' "$*" >> "$FAKE_LOG"
+# %q keeps argument boundaries visible: "a b" is logged as a\ b
+{ printf '%q ' "$@"; printf '\n'; } >> "$FAKE_LOG"
 
 sub="${1:-} ${2:-}"
 case "$sub" in
@@ -53,6 +55,9 @@ case "$sub" in
     ;;
   "agent prompt")
     name=$3
+    if [ -f "$FAKE_DIR/prompt_fail" ]; then
+      echo '{"error":{"code":"socket_unavailable"}}' >&2; exit 1
+    fi
     if [ "$(cat "$FAKE_DIR/live.$name" 2>/dev/null)" = blocked ]; then
       echo '{"error":{"code":"agent_blocked"}}' >&2; exit 1
     fi
@@ -61,7 +66,14 @@ case "$sub" in
     fi
     echo '{"id":"cli:agent:prompt","result":{},"type":"agent_prompt"}'
     ;;
-  "agent read"|"pane read")
+  "agent read")
+    if [ ! -f "$FAKE_DIR/live.$3" ]; then
+      echo '{"error":{"code":"agent_not_found"}}' >&2; exit 1
+    fi
+    echo "fake screen line 1"
+    echo "fake screen line 2"
+    ;;
+  "pane read")
     echo "fake screen line 1"
     echo "fake screen line 2"
     ;;

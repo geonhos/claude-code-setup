@@ -8,13 +8,17 @@
 #   harness close  <agent>
 #
 # Exit codes for `ask`: 0 report printed · 1 usage/setup error · 2 worker blocked
-#                       3 worker finished without a report · 4 worker still working
+#                       3 worker finished without a report
+#                       4 worker still working / unknown, or prompt not accepted
+# Output of `ask`: stdout = report on exit 0; screen text on 2/3/4;
+#                  diagnostics on stderr.
 set -u
 
 AGENTS="analyst implementer reviewer"
 REPORT_DIR=".harness/reports"
 PANES_FILE=".harness/panes"
 DEFAULT_TIMEOUT=600000
+TAB=$(printf '\t')
 
 usage() {
   cat >&2 <<EOF
@@ -40,8 +44,17 @@ valid_agent() {
 }
 
 agent_json()   { herdr agent get "$1" 2>/dev/null; }
-agent_live()   { agent_json "$1" >/dev/null; }
 agent_pane()   { agent_json "$1" | jq -r '.result.agent.pane_id // empty'; }
+
+# agent_fields <agent> — one `agent get`, prints "status<TAB>pane".
+# Prints "unknown<TAB>-" and returns 1 when the agent is not live.
+agent_fields() {
+  local j f
+  j=$(agent_json "$1") || { printf 'unknown\t-\n'; return 1; }
+  f=$(printf '%s' "$j" | jq -r '[(.result.agent.agent_status // "unknown"), (.result.agent.pane_id // "-")] | @tsv' 2>/dev/null)
+  [ -n "$f" ] || f=$(printf 'unknown\t-')
+  printf '%s\n' "$f"
+}
 agent_status() {
   local st
   st=$(agent_json "$1" | jq -r '.result.agent.agent_status // "unknown"' 2>/dev/null)
@@ -49,24 +62,36 @@ agent_status() {
   echo "$st"
 }
 
-# show_screen <agent>       — screen of a live agent
-# show_pane_screen <pane>   — screen of a pane with no live agent in it
-show_screen() {
-  echo "--- $1 screen (last 60 lines) ---"
-  herdr agent read "$1" --source recent-unwrapped --lines 60 2>/dev/null
-  echo "--- end ---"
-}
+# show_pane_screen <pane> — screen text of a pane (works whether or not an
+# agent is still live in it)
 show_pane_screen() {
   echo "--- $1 screen (last 60 lines) ---"
   herdr pane read "$1" --source recent-unwrapped --lines 60 2>/dev/null
   echo "--- end ---"
 }
 
+# show_agent_diag <agent> — raw `agent get` JSON (or "agent not found") on stderr
+show_agent_diag() {
+  local j
+  if j=$(agent_json "$1"); then
+    echo "harness: agent get $1: $j" >&2
+  else
+    echo "harness: agent get $1: agent not found" >&2
+  fi
+}
+
 # unregister <agent> <pane> — drop that line from the pane registry
 unregister() {
+  local tmp rc
   [ -f "$PANES_FILE" ] || return 0
-  grep -v "^$1 $2\$" "$PANES_FILE" > "$PANES_FILE.tmp" || true
-  mv "$PANES_FILE.tmp" "$PANES_FILE"
+  tmp=$(mktemp "$PANES_FILE.XXXXXX") || die "cannot create temp file next to $PANES_FILE"
+  grep -Fxv -- "$1 $2" "$PANES_FILE" > "$tmp"
+  rc=$?
+  if [ "$rc" -gt 1 ]; then
+    rm -f "$tmp"
+    die "cannot rewrite $PANES_FILE"
+  fi
+  mv "$tmp" "$PANES_FILE"
 }
 
 # Terminal cells are roughly twice as tall as wide; a pane is "wide" when
@@ -100,8 +125,9 @@ cmd_spawn() {
     esac
   done
 
-  if agent_live "$agent"; then
-    agent_pane "$agent"
+  local fields
+  if fields=$(agent_fields "$agent"); then
+    printf '%s\n' "${fields#*$TAB}"
     return 0
   fi
 
@@ -137,12 +163,14 @@ cmd_ask() {
     case "$1" in
       --timeout)
         [ $# -ge 2 ] || usage
+        case "$2" in ''|*[!0-9]*|0) usage ;; esac
         timeout=$2; shift 2 ;;
       *) usage ;;
     esac
   done
 
-  cmd_spawn "$agent" >/dev/null || exit 1
+  local pane
+  pane=$(cmd_spawn "$agent") || exit 1
 
   local report="$REPORT_DIR/$agent.md"
   mkdir -p "$REPORT_DIR"
@@ -150,12 +178,16 @@ cmd_ask() {
 
   if [ "$(agent_status "$agent")" = blocked ]; then
     echo "harness: $agent is blocked on a prompt; answer it before sending work." >&2
-    show_screen "$agent"
+    show_pane_screen "$pane"
     exit 2
   fi
 
-  local out
+  # The instruction goes in herdr's positional text slot, which is what keeps
+  # dash-leading text from being parsed as an option. Do not add `--`: real
+  # herdr rejects it.
+  local out prompt_failed=0
   if ! out=$(herdr agent prompt "$agent" "$text" --wait --timeout "$timeout" 2>&1); then
+    prompt_failed=1
     echo "harness: prompt did not settle: $out" >&2
   fi
 
@@ -164,29 +196,35 @@ cmd_ask() {
   case "$st" in
     blocked)
       echo "harness: $agent is blocked (needs an answer)." >&2
-      show_screen "$agent"
+      show_pane_screen "$pane"
       exit 2 ;;
     idle|done)
       if [ -f "$report" ]; then
         cat "$report"
         exit 0
       fi
+      if [ "$prompt_failed" = 1 ]; then
+        echo "harness: prompt was not accepted by herdr: $out" >&2
+        show_agent_diag "$agent"
+        show_pane_screen "$pane"
+        exit 4
+      fi
       echo "harness: $agent finished but wrote no report at $report" >&2
-      show_screen "$agent"
+      show_pane_screen "$pane"
       exit 3 ;;
     *)
       echo "harness: $agent status is '$st' (still working or unknown); check 'harness status' before re-prompting." >&2
-      show_screen "$agent"
+      show_agent_diag "$agent"
+      show_pane_screen "$pane"
       exit 4 ;;
   esac
 }
 
 cmd_status() {
-  local a st pane
+  local a fields
   for a in $AGENTS; do
-    if agent_live "$a"; then
-      st=$(agent_status "$a"); pane=$(agent_pane "$a")
-      printf '%-12s %-8s %s\n' "$a" "$st" "$pane"
+    if fields=$(agent_fields "$a"); then
+      printf '%-12s %-8s %s\n' "$a" "${fields%%$TAB*}" "${fields#*$TAB}"
     else
       printf '%-12s %s\n' "$a" "-"
     fi
@@ -199,7 +237,7 @@ cmd_close() {
   valid_agent "$agent"
   pane=$(agent_pane "$agent")
   [ -n "$pane" ] || die "$agent is not running"
-  grep -q "^$agent $pane\$" "$PANES_FILE" 2>/dev/null \
+  grep -Fxq -- "$agent $pane" "$PANES_FILE" 2>/dev/null \
     || die "pane $pane was not created by harness; close it yourself"
   herdr pane close "$pane" >/dev/null || die "pane close failed for $pane"
   unregister "$agent" "$pane"
