@@ -85,7 +85,8 @@ writable() {
 # per command segment: "<masked><TAB><raw>". <masked> is the segment with the
 # contents of every '...' / "..." removed (quote chars kept); <raw> is the
 # segment text as written. Segments end at unquoted ; & | (so && and ||) and
-# newlines. Exits 1 on an unquoted < or > or an unterminated quote.
+# newlines. Exits 1 on an unquoted < > or # (comments could hide quotes from
+# this scanner) or an unterminated quote.
 # Input must not contain tabs (callers normalize them to spaces).
 split_segments() {
   awk '
@@ -98,7 +99,7 @@ split_segments() {
         if (st == 0) {
           if (c == "\\") { c = c substr(line, i + 1, 1); i++; m = m c; r = r c }
           else if (c == ";" || c == "&" || c == "|") flush()
-          else if (c == "<" || c == ">") bad = 1
+          else if (c == "<" || c == ">" || c == "#") bad = 1
           else {
             m = m c; r = r c
             if (c == "\047") st = 1
@@ -130,8 +131,10 @@ bash_ok() {
   case "$cmd" in
     *'$('*|*'`'*|*"\$'"*|*'$"'*|*'<('*|*'>('*|*'<<<'*) return 1 ;;
   esac
-  # tolerate stderr->stdout redirects; split_segments rejects any other
-  segs=$(printf '%s\n' "$cmd" | sed 's/2>&1//g' | split_segments) || return 1
+  # tolerate a standalone 2>&1 word; split_segments rejects any other redirect
+  segs=$(printf '%s\n' "$cmd" \
+    | sed -E 's/(^|[[:space:]])2>&1([[:space:];&|]|$)/\1\2/g' \
+    | split_segments) || return 1
   while IFS="$tab" read -r seg raw; do
     seg=$(printf '%s' "$seg" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')
     raw=$(printf '%s' "$raw" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')
@@ -144,7 +147,7 @@ bash_ok() {
         # jq reads files: only as a pipe consumer, single filter arg, no
         # file flags, no paths, no unquoted expansions or globs
         [ "$n" -gt 1 ] || return 1
-        case "$raw" in */*|*..*) return 1 ;; esac
+        case "$raw" in */*|*..*|*env*|*ENV*) return 1 ;; esac
         case "$seg" in *[\$\{\}\*\?\[\]~\\]*) return 1 ;; esac
         printf ' %s ' "$seg" | grep -Eq -- ' -[A-Za-z]*[fL][A-Za-z]* | --(from-file|rawfile|slurpfile|args|jsonargs)[ =]' && return 1
         printf '%s' "$seg" | grep -Eq '^jq( --?[A-Za-z-]+)*( [^ -][^ ]*)?$' || return 1
@@ -156,7 +159,7 @@ bash_ok() {
         # flag checks on the raw text with quoting removed ("-D" == -D)
         norm=$(printf ' %s ' "$raw" | tr -d "\"'\\\\")
         case "$norm" in *:*) return 1 ;; esac
-        printf '%s' "$norm" | grep -Eq -- '--(output|patch|delete|move|copy|unified)| -[odDmMcCpuU][A-Za-z0-9]* ' && return 1 ;;
+        printf '%s' "$norm" | grep -Eq -- '--(output|patch|delete|move|copy|unified|cc|binary|remerge-diff|dd|diff-merges|raw)| -[odDmMcCpuU][A-Za-z0-9]* ' && return 1 ;;
     esac
     printf '%s' "$seg" | grep -Eq \
       '^(harness( .*)?|herdr( .*)?|gh( .*)?|git status( .*)?|git log( .*)?|git diff --stat( .*)?|git branch( .*)?|git show --stat( .*)?|cat \.harness(/[^ ]*)?|ls( -[A-Za-z]+)*( (\.harness|docs)(/[^ ]*)?)?)$' \

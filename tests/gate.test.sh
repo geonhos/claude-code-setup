@@ -213,5 +213,29 @@ expect deny  $C "bash git log -U3"        "$(bcmd 'git log -U3')"
 expect deny  $C "bash git diff --unified" "$(bcmd 'git diff --stat --unified=3')"
 expect allow $C "bash git log -5 3"       "$(bcmd 'git log --oneline -5')"
 
+# --- review round 3 --------------------------------------------------------
+# 1. unquoted # (comments) is denied
+expect deny  $C "bash comment quote"      "$(tool Bash '{"command":"harness x #'"'"'\necho PWNED #'"'"'"}')"
+expect deny  $C "bash comment ;"          "$(bcmd 'harness x # ; rm -rf src')"
+expect allow $C "bash quoted #"           "$(bcmd 'harness ask analyst "see issue #12"')"
+# 2. 2>&1 only as a standalone word
+expect deny  $C "bash 2>&1 glued file"    "$(bcmd 'cat .harness/x2>&1src')"
+expect deny  $C "bash 2>&1 glued tail"    "$(bcmd 'harness status 2>&1x')"
+expect allow $C "bash 2>&1 end"           "$(bcmd 'herdr agent get analyst 2>&1')"
+expect allow $C "bash 2>&1 pipe"          "$(bcmd 'herdr agent get analyst 2>&1 | jq .result')"
+# 3. git diff-content options
+expect deny  $C "bash git log --cc"       "$(bcmd 'git log --cc')"
+expect deny  $C "bash git log --binary"   "$(bcmd 'git log --binary')"
+expect deny  $C "bash git log --remerge"  "$(bcmd 'git log --remerge-diff')"
+expect deny  $C "bash git log --raw"      "$(bcmd 'git log --raw')"
+expect deny  $C "bash git log --dd"       "$(bcmd 'git log --dd')"
+expect deny  $C "bash git log diff-merges" "$(bcmd 'git log --diff-merges=on')"
+expect allow $C "bash git log -5 4"       "$(bcmd 'git log --oneline -5')"
+expect allow $C "bash git log --stat"     "$(bcmd 'git log --stat')"
+# 4. jq env leak
+expect deny  $C "bash jq env"             "$(bcmd 'herdr x | jq -n env')"
+expect deny  $C "bash jq \$ENV"          "$(bcmd "herdr x | jq -n '\$ENV'")"
+expect allow $C "bash jq quoted filter 2" "$(bcmd "herdr agent list | jq -r '.result.agents[].pane_id'")"
+
 echo "PASS $pass / FAIL $fail"
 [ "$fail" -eq 0 ]
