@@ -78,17 +78,22 @@ operating guidance.
 
 ## Opt out
 
-- Per project: `{ "env": { "HARNESS_ROLE": "worker" } }` in that project's
-  `.claude/settings.json`.
-- One session: `HARNESS_ROLE=worker claude`.
+- Per project: `{ "agent": "solo", "env": { "HARNESS_ROLE": "worker" } }` in
+  that project's `.claude/settings.json` (project settings override the
+  user-level `agent`).
+- One session: `HARNESS_ROLE=worker claude --agent solo`.
+
+`HARNESS_ROLE=worker claude` alone only turns the gate off; the session still
+runs the conductor agent.
 
 ## Layout
 
 ```
 bin/harness                      herdr wrapper CLI
 claude/hooks/conductor-gate.sh   PreToolUse gate
-claude/agents/*.md               worker definitions (model, memory, cacheTtl, report contract)
+claude/agents/{analyst,implementer,reviewer}.md  worker definitions (model, memory, cacheTtl, report contract)
 claude/agents/conductor.md       conductor system prompt (settings.agent)
+claude/agents/solo.md            escape-hatch agent (empty body = default prompt)
 install.sh                       installer (--test runs tests/)
 tests/                           gate, harness (against tests/fake-herdr), install
 docs/superpowers/                spec and plan

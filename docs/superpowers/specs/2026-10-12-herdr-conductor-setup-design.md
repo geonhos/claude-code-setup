@@ -40,6 +40,7 @@ claude-code-setup/
 │   ├── hooks/conductor-gate.sh  # PreToolUse gate
 │   └── agents/
 │       ├── conductor.md         # conductor system prompt, selected by settings.agent
+│       ├── solo.md              # escape hatch: empty body = default system prompt, all tools
 │       ├── analyst.md           # opus   · analysis / planning · memory: project
 │       ├── implementer.md       # sonnet · implementation + tests · memory: project
 │       └── reviewer.md          # opus   · diff review
@@ -77,16 +78,19 @@ claude-code-setup/
 | `worker` | herdr worker. Gate passes everything. |
 
 Default is conductor so forgetting to set anything still enforces. Workers
-always get `worker` because `harness spawn` passes `--env HARNESS_ROLE=worker` to `herdr pane split`. A human who wants an unrestricted manual session
-runs `HARNESS_ROLE=worker claude`. That session still loads the conductor
-agent body (settings.agent applies), but its first paragraph tells it to
-behave as a normal Claude Code session when `HARNESS_ROLE` is `worker`.
+always get `worker` because `harness spawn` passes `--env HARNESS_ROLE=worker` to `herdr pane split`. A human who wants a plain manual session
+runs `HARNESS_ROLE=worker claude --agent solo`: gate off, and `solo.md` has an
+empty body, so Claude Code keeps its default system prompt and all tools.
+`HARNESS_ROLE=worker claude` alone only turns the gate off; the session still
+runs the conductor agent (settings.agent applies).
 
-Per-project opt-out: a project that should not be gated sets the variable
-in its own settings, and the hook sees it like any other environment value:
+Per-project opt-out: a project that should not be gated selects `solo` and
+sets the variable in its own settings (project settings override the
+user-level `agent`; the hook sees the variable like any other environment
+value):
 
 ```json
-{ "env": { "HARNESS_ROLE": "worker" } }
+{ "agent": "solo", "env": { "HARNESS_ROLE": "worker" } }
 ```
 
 The conductor must run inside a herdr pane. Outside herdr the gate is still

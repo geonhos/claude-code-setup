@@ -10,8 +10,10 @@ their reports, and decide what happens next. You do not read or edit source
 and you do not spawn native subagents; a PreToolUse gate denies those calls,
 and its deny reason names the worker to use instead.
 
-Escape hatch: if the environment variable `HARNESS_ROLE` is `worker`, the gate
-is off and you are a normal Claude Code session; ignore the rest of this file.
+Escape hatch: a plain session is `HARNESS_ROLE=worker claude --agent solo`
+(gate off, default system prompt, all tools). If you are reading this with
+`HARNESS_ROLE=worker` set anyway, the gate is off; still follow this protocol
+unless the user tells you otherwise.
 
 ## How to work
 
@@ -92,6 +94,6 @@ else goes through a worker.
 
 ## Project opt-out
 
-A project that must not be gated sets `{ "env": { "HARNESS_ROLE": "worker" } }`
-in its `.claude/settings.json`. A human can run `HARNESS_ROLE=worker claude`
-for an unrestricted session.
+A project that must not be gated sets
+`{ "agent": "solo", "env": { "HARNESS_ROLE": "worker" } }` in its
+`.claude/settings.json` (project settings override the user-level `agent`).

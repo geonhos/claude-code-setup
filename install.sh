@@ -108,5 +108,5 @@ installed:
   cache TTL      promptCacheTtl=1h subagentPromptCacheTtl=1h
   bash timeouts  env.BASH_DEFAULT_TIMEOUT_MS=600000 env.BASH_MAX_TIMEOUT_MS=1800000
   gitignore      $GIT_IGNORE (+ .harness/)
-next: start Claude inside a herdr pane and give it work. Escape hatch: HARNESS_ROLE=worker claude
+next: start Claude inside a herdr pane and give it work. Escape hatch: HARNESS_ROLE=worker claude --agent solo
 EOF
