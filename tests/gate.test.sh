@@ -7,14 +7,38 @@ CWD=/repo
 pass=0
 fail=0
 
-# decision ROLE JSON -> prints allow|deny
+# run_gate ROLE JSON -> prints the gate's stdout; returns the gate's exit code
+run_gate() {
+  printf '%s' "$2" | HARNESS_ROLE="$1" /bin/bash "$GATE" 2>/dev/null
+}
+
+# decision ROLE JSON -> prints allow|deny, or exit=<rc> when the gate exits
+# non-zero (the hook must always exit 0)
 decision() {
-  local out
-  out=$(printf '%s' "$2" | HARNESS_ROLE="$1" /bin/bash "$GATE" 2>/dev/null)
-  if [ -z "$out" ]; then
+  local out rc
+  out=$(run_gate "$1" "$2")
+  rc=$?
+  if [ "$rc" -ne 0 ]; then
+    echo "exit=$rc"
+  elif [ -z "$out" ]; then
     echo allow
   else
     printf '%s' "$out" | jq -r '.hookSpecificOutput.permissionDecision'
+  fi
+}
+
+# subject JSON -> the payload's command or file path, for FAIL messages
+subject() {
+  printf '%s' "$1" | jq -r '.tool_input.command // .tool_input.file_path // .tool_input.path // empty' 2>/dev/null
+}
+
+# report OK LABEL EXPECTED GOT JSON
+report() {
+  if [ "$1" = ok ]; then
+    pass=$((pass + 1))
+  else
+    fail=$((fail + 1))
+    echo "FAIL [$2]: expected $3, got $4 -- input: $(subject "$5")"
   fi
 }
 
@@ -22,12 +46,26 @@ decision() {
 expect() {
   local got
   got=$(decision "$2" "$4")
-  if [ "$got" = "$1" ]; then
-    pass=$((pass + 1))
-  else
-    fail=$((fail + 1))
-    echo "FAIL [$3]: expected $1, got $got"
-  fi
+  if [ "$got" = "$1" ]; then report ok "$3" "$1" "$got" "$4"
+  else report bad "$3" "$1" "$got" "$4"; fi
+}
+
+# expect_reason PREFIX LABEL JSON -> conductor deny whose reason starts with PREFIX
+expect_reason() {
+  local got
+  got=$(run_gate conductor "$3" | jq -r '.hookSpecificOutput.permissionDecisionReason // empty' 2>/dev/null)
+  case "$got" in
+    "$1"*) report ok "$2" "$1..." "$got" "$3" ;;
+    *)     report bad "$2" "$1..." "$got" "$3" ;;
+  esac
+}
+
+# expect_event LABEL JSON -> conductor deny carries hookEventName PreToolUse
+expect_event() {
+  local got
+  got=$(run_gate conductor "$2" | jq -r '.hookSpecificOutput.hookEventName // empty' 2>/dev/null)
+  if [ "$got" = PreToolUse ]; then report ok "$1" PreToolUse "$got" "$2"
+  else report bad "$1" PreToolUse "$got" "$2"; fi
 }
 
 # tool NAME INPUT_JSON -> full hook payload
@@ -236,6 +274,17 @@ expect allow $C "bash git log --stat"     "$(bcmd 'git log --stat')"
 expect deny  $C "bash jq env"             "$(bcmd 'herdr x | jq -n env')"
 expect deny  $C "bash jq \$ENV"          "$(bcmd "herdr x | jq -n '\$ENV'")"
 expect allow $C "bash jq quoted filter 2" "$(bcmd "herdr agent list | jq -r '.result.agents[].pane_id'")"
+
+# --- quality review --------------------------------------------------------
+expect allow $C "bash cat docs"           "$(bcmd 'cat docs/superpowers/specs/x.md')"
+expect deny  $C "bash cat docs dotdot"    "$(bcmd 'cat docs/../src/a.ts')"
+expect deny  $C "bash git log --check"    "$(bcmd 'git log --check')"
+expect deny  $C "bash git diff --check"   "$(bcmd 'git diff --stat --check')"
+expect_reason "Conductor cannot edit"   "reason: write" "$(tool Write '{"file_path":"src/a.ts","content":"x"}')"
+expect_reason "Conductor does not read" "reason: read"  "$(tool Read '{"file_path":"src/a.ts"}')"
+expect_reason "Native subagents"        "reason: agent" "$(tool Agent '{"prompt":"x"}')"
+expect_reason "Conductor shell"         "reason: bash"  "$(bcmd 'npm test')"
+expect_event "event name"                               "$(bcmd 'npm test')"
 
 echo "PASS $pass / FAIL $fail"
 [ "$fail" -eq 0 ]
