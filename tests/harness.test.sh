@@ -206,6 +206,37 @@ check "vanished reports unknown status" grep -q "status is 'unknown'" <<<"$OUT"
 check "vanished: agent get diagnostic" grep -q "agent not found" <<<"$OUT"
 check "vanished: pane screen still shown" grep -q "fake screen line" <<<"$OUT"
 
+# --- ask: worker still busy with a previous instruction ---------------------------
+setup
+echo working > "$FAKE_DIR/live.analyst"
+mkdir -p .harness/reports && echo "PENDING" > .harness/reports/analyst.md
+run ask analyst "second"
+check "busy rc" [ "$RC" -eq 4 ]
+check "busy: no prompt sent" not_logged "agent prompt"
+check "busy: report untouched" [ "$(cat "$WORK/.harness/reports/analyst.md")" = "PENDING" ]
+check "busy: points to harness report" grep -q "harness report analyst" <<<"$OUT"
+OUT=$(HERDR_ENV=1 HERDR_PANE_ID=w1:p1 PATH="$FAKE_BIN:$PATH" $GUARD /bin/bash "$HARNESS" ask analyst "second" 2>/dev/null); RC=$?
+check "busy: screen on stdout" grep -q "fake screen line" <<<"$OUT"
+
+# --- report ------------------------------------------------------------------------
+setup
+mkdir -p .harness/reports && printf 'R1\nR2\n' > .harness/reports/reviewer.md
+run report reviewer
+check "report rc" [ "$RC" -eq 0 ]
+check "report prints file" [ "$OUT" = "$(printf 'R1\nR2')" ]
+check "report: no herdr calls" [ ! -s "$FAKE_LOG" ]
+
+setup
+run report reviewer
+check "report missing rc" [ "$RC" -eq 3 ]
+check "report missing message" grep -q "no report for reviewer" <<<"$OUT"
+
+run report bogus
+check "report unknown agent rc" [ "$RC" -eq 1 ]
+
+run
+check "usage lists report" grep -q "harness report" <<<"$OUT"
+
 # --- ask: missing instruction ------------------------------------------------------
 setup
 run ask analyst

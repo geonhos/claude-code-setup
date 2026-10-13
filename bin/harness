@@ -4,12 +4,17 @@
 #
 #   harness spawn  <agent> [--direction right|down]
 #   harness ask    <agent> "<instruction>" [--timeout MS]
+#   harness report <agent>
 #   harness status
 #   harness close  <agent>
 #
 # Exit codes for `ask`: 0 report printed · 1 usage/setup error · 2 worker blocked
 #                       3 worker finished without a report
-#                       4 worker still working / unknown, or prompt not accepted
+#                       4 worker still working / unknown (including busy with a
+#                         previous instruction: nothing sent), or prompt not
+#                         accepted
+# `report` prints .harness/reports/<agent>.md without touching herdr:
+#   exit 0 printed · 3 no report yet.
 # Output of `ask`: stdout = report on exit 0; screen text on 2/3/4;
 #                  diagnostics on stderr.
 set -u
@@ -25,6 +30,7 @@ usage() {
 usage:
   harness spawn  <agent> [--direction right|down]
   harness ask    <agent> "<instruction>" [--timeout MS]
+  harness report <agent>
   harness status
   harness close  <agent>
 agents: $AGENTS
@@ -173,6 +179,15 @@ cmd_ask() {
   pane=$(cmd_spawn "$agent") || exit 1
 
   local report="$REPORT_DIR/$agent.md"
+
+  # A worker still busy with a previous instruction (e.g. the caller's own
+  # timeout fired) keeps its pending report; do not prompt it again.
+  if [ "$(agent_status "$agent")" = working ]; then
+    echo "harness: $agent is still working on the previous instruction; wait (harness status) then collect with: harness report $agent" >&2
+    show_pane_screen "$pane"
+    exit 4
+  fi
+
   mkdir -p "$REPORT_DIR"
   rm -f "$report"
 
@@ -220,6 +235,19 @@ cmd_ask() {
   esac
 }
 
+cmd_report() {
+  local agent=${1:-}
+  [ -n "$agent" ] || usage
+  valid_agent "$agent"
+  local report="$REPORT_DIR/$agent.md"
+  if [ -f "$report" ]; then
+    cat "$report"
+    exit 0
+  fi
+  echo "harness: no report for $agent at $report" >&2
+  exit 3
+}
+
 cmd_status() {
   local a fields
   for a in $AGENTS; do
@@ -251,6 +279,7 @@ need herdr
 case "${1:-}" in
   spawn)  shift; cmd_spawn "$@" ;;
   ask)    shift; cmd_ask "$@" ;;
+  report) shift; cmd_report "$@" ;;
   status) cmd_status ;;
   close)  shift; cmd_close "$@" ;;
   *)      usage ;;
