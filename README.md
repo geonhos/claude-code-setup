@@ -25,9 +25,10 @@ cd ~/workspace/claude-code-setup
 `install.sh` is idempotent. It symlinks `claude/agents/*.md` into
 `~/.claude/agents/`, links `bin/harness` into `~/.local/bin`, merges one
 PreToolUse hook and `promptCacheTtl`/`subagentPromptCacheTtl: 1h` into
-`~/.claude/settings.json` (backup kept), appends an `@import` line to
-`~/.claude/CLAUDE.md`, adds `.harness/` to the global gitignore, and runs
-`herdr integration install claude`.
+`~/.claude/settings.json` (backup kept), sets `agent: conductor` in
+`~/.claude/settings.json` so every plain `claude` session starts as the
+conductor (workers override it with `--agent <name>`), adds `.harness/` to
+the global gitignore, and runs `herdr integration install claude`.
 
 Run `./install.sh --test` to execute the test suites.
 
@@ -71,6 +72,10 @@ before the subcommand (`gh -R o/r api ...`) is not caught, and `gh pr
 checkout` can switch the branch. Instructions to workers must use single
 quotes if they contain backticks or `$(`.
 
+The conductor agent's body replaces Claude Code's default system prompt (that
+is how `--agent` works), so the conductor relies on this file for its
+operating guidance.
+
 ## Opt out
 
 - Per project: `{ "env": { "HARNESS_ROLE": "worker" } }` in that project's
@@ -83,7 +88,7 @@ quotes if they contain backticks or `$(`.
 bin/harness                      herdr wrapper CLI
 claude/hooks/conductor-gate.sh   PreToolUse gate
 claude/agents/*.md               worker definitions (model, memory, cacheTtl, report contract)
-claude/CLAUDE.conductor.md       conductor protocol (imported into ~/.claude/CLAUDE.md)
+claude/agents/conductor.md       conductor system prompt (settings.agent)
 install.sh                       installer (--test runs tests/)
 tests/                           gate, harness (against tests/fake-herdr), install
 docs/superpowers/                spec and plan

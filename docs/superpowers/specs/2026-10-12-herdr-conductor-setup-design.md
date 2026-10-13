@@ -37,9 +37,9 @@ claude-code-setup/
 ├── install.sh                   # symlinks + settings.json merge (jq) + herdr integration install claude
 ├── bin/harness                  # herdr wrapper CLI: spawn / ask / status / close
 ├── claude/
-│   ├── CLAUDE.conductor.md      # conductor protocol, @imported from ~/.claude/CLAUDE.md
 │   ├── hooks/conductor-gate.sh  # PreToolUse gate
 │   └── agents/
+│       ├── conductor.md         # conductor system prompt, selected by settings.agent
 │       ├── analyst.md           # opus   · analysis / planning · memory: project
 │       ├── implementer.md       # sonnet · implementation + tests · memory: project
 │       └── reviewer.md          # opus   · diff review
@@ -60,8 +60,9 @@ claude-code-setup/
     so `harness ask` is not killed by the Bash tool's 2-minute default.
   Existing keys and other hooks are preserved. The hook entry is identified
   by its command path so re-running does not duplicate it.
-- Append `@<repo>/claude/CLAUDE.conductor.md` to `~/.claude/CLAUDE.md` if the
-  line is absent.
+- Merge `agent: "conductor"` into settings so plain `claude` sessions start as
+  the conductor; `claude --agent <worker>` (used by `harness spawn`) overrides
+  it.
 - Run `herdr integration install claude` so herdr reads Claude Code lifecycle
   state (idle / working / blocked / done) from a hook instead of heuristics.
 - Add `.harness/` to `~/.config/git/ignore` (global gitignore) if absent.
@@ -77,7 +78,9 @@ claude-code-setup/
 
 Default is conductor so forgetting to set anything still enforces. Workers
 always get `worker` because `harness spawn` passes `--env HARNESS_ROLE=worker` to `herdr pane split`. A human who wants an unrestricted manual session
-runs `HARNESS_ROLE=worker claude`.
+runs `HARNESS_ROLE=worker claude`. That session still loads the conductor
+agent body (settings.agent applies), but its first paragraph tells it to
+behave as a normal Claude Code session when `HARNESS_ROLE` is `worker`.
 
 Per-project opt-out: a project that should not be gated sets the variable
 in its own settings, and the hook sees it like any other environment value:
@@ -103,7 +106,7 @@ context growth per delegated task is bounded and predictable.
 - On a subscription plan the main conversation already has a 1h TTL. The
   settings still set `promptCacheTtl: "1h"` and `subagentPromptCacheTtl: "1h"`
   so behaviour does not change if the account moves to API billing.
-- `CLAUDE.conductor.md` contains only static text. Nothing in it changes
+- `agents/conductor.md` contains only static text. Nothing in it changes
   during a session, so the system-prompt prefix stays cache-stable.
 - The gate's deny reasons are fixed strings per rule (no timestamps, no
   paths echoed back) for the same reason.
@@ -250,9 +253,10 @@ Per-agent additions:
   instruction, default `main`). Report findings with severity
   Critical/Major/Minor and file:line. Does not fix.
 
-### Conductor protocol (`claude/CLAUDE.conductor.md`)
+### Conductor agent (`claude/agents/conductor.md`)
 
-Short, static. Core rules:
+Short, static. The body replaces the default system prompt, so it also
+carries basic operating guidance. Core rules:
 
 1. You are the conductor. You do not read or edit source. The gate will
    deny it; the deny reason tells you which worker to use.
