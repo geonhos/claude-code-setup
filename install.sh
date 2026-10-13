@@ -33,30 +33,33 @@ if [ "${SKIP_HERDR_INTEGRATION:-0}" != 1 ]; then
   need herdr
 fi
 
-# 0. validate before touching anything
+# 0. validate before modifying anything
 mkdir -p "$CLAUDE_DIR"
 [ -f "$SETTINGS" ] || echo '{}' > "$SETTINGS"
-jq empty "$SETTINGS" >/dev/null 2>&1 || die "$SETTINGS is not valid JSON; fix it before installing"
-jq -e 'type == "object"' "$SETTINGS" >/dev/null 2>&1 || die "$SETTINGS is not a JSON object; fix it before installing"
+jq -e . "$SETTINGS" >/dev/null 2>&1 || die "$SETTINGS is not valid JSON; fix it before installing"
+jq -se 'length == 1 and (.[0] | type == "object")' "$SETTINGS" >/dev/null 2>&1 \
+  || die "$SETTINGS is not a JSON object (or holds more than one value); fix it before installing"
 
 # 1. herdr's Claude integration first: it may rewrite settings.json itself,
 #    and our merge below must see the result.
 if [ "${SKIP_HERDR_INTEGRATION:-0}" != 1 ]; then
-  if herdr integration install claude >/dev/null 2>&1; then
+  if herdr_out=$(herdr integration install claude 2>&1); then
     echo "herdr: claude integration installed"
   else
     echo "warning: 'herdr integration install claude' failed; agent state detection falls back to heuristics" >&2
+    echo "$herdr_out" >&2
   fi
 fi
 
 # 2. agents + harness symlinks
 mkdir -p "$CLAUDE_DIR/agents" "$BIN_DIR"
 for f in "$REPO"/claude/agents/*.md; do
+  [ -e "$f" ] || continue
   dest="$CLAUDE_DIR/agents/$(basename "$f")"
-  if [ -e "$dest" ] && [ ! -L "$dest" ]; then
-    bak="$dest.bak.$(date +%Y%m%d%H%M%S)"
-    mv "$dest" "$bak"
-    echo "warning: $dest existed and was backed up to $bak" >&2
+  if { [ -e "$dest" ] || [ -L "$dest" ]; } && [ "$(readlink "$dest" || true)" != "$f" ]; then
+    abak="$dest.bak.$(date +%Y%m%d%H%M%S)"
+    mv "$dest" "$abak"
+    echo "warning: $dest existed and was backed up to $abak" >&2
   fi
   ln -sfn "$f" "$dest"
 done
@@ -67,7 +70,8 @@ case ":$PATH:" in
 esac
 
 # 3. settings.json: cache TTLs + exactly one gate hook entry
-cp "$SETTINGS" "$SETTINGS.bak.$(date +%Y%m%d%H%M%S)"
+bak="$SETTINGS.bak.$(date +%Y%m%d%H%M%S)"
+cp "$SETTINGS" "$bak"
 tmp=$(mktemp)
 trap 'rm -f "$tmp"' EXIT
 jq --arg gate "$GATE" --arg matcher "$MATCHER" '
@@ -75,10 +79,11 @@ jq --arg gate "$GATE" --arg matcher "$MATCHER" '
   | .subagentPromptCacheTtl = "1h"
   | .hooks //= {}
   | .hooks.PreToolUse //= []
-  | .hooks.PreToolUse |= (map(.hooks |= ((. // []) | map(select(.command != $gate)))) | map(select((.hooks | length) > 0)))
+  # strip our gate from every entry; drop entries left empty; re-append one canonical entry
+  | .hooks.PreToolUse |= map(if any(.hooks[]?; .command == $gate) then (.hooks |= map(select(.command != $gate))) | select((.hooks | length) > 0) else . end)
   | .hooks.PreToolUse += [{matcher: $matcher, hooks: [{type: "command", command: $gate}]}]
 ' "$SETTINGS" > "$tmp"
-cat "$tmp" > "$SETTINGS" && rm -f "$tmp"
+cat "$tmp" > "$SETTINGS" || die "failed to write $SETTINGS; restore from $bak"
 
 # 4. CLAUDE.md import
 touch "$CLAUDE_DIR/CLAUDE.md"
@@ -97,6 +102,7 @@ installed:
   gate hook      $GATE  (matcher: $MATCHER)
   agents         $CLAUDE_DIR/agents/ ($(cd "$REPO/claude/agents" && ls *.md | tr '\n' ' '))
   harness        $BIN_DIR/harness
+  settings       $SETTINGS (backup: $bak)
   CLAUDE.md      $IMPORT_LINE
   cache TTL      promptCacheTtl=1h subagentPromptCacheTtl=1h
   gitignore      $GIT_IGNORE (+ .harness/)

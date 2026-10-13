@@ -5,9 +5,22 @@ HERE=$(cd "$(dirname "$0")" && pwd)
 REPO=$(cd "$HERE/.." && pwd)
 pass=0
 fail=0
-check() { local label=$1; shift; if "$@"; then pass=$((pass + 1)); else fail=$((fail + 1)); echo "FAIL [$label]"; fi; }
+check() { local label=$1; shift; if "$@"; then pass=$((pass + 1)); else fail=$((fail + 1)); echo "FAIL [$label]" >&2; fi; }
 
-T=$(mktemp -d)
+ROOT=$(mktemp -d)
+trap 'rm -rf "$ROOT"' EXIT
+newdir() { mkdir -p "$ROOT/$1" && echo "$ROOT/$1"; }
+
+# install_in DIR: run install.sh with every target under DIR; sets RC, output in DIR/out.txt
+install_in() {
+  local d=$1
+  CLAUDE_DIR="$d/claude" BIN_DIR="$d/bin" GIT_IGNORE="$d/gitignore" /bin/bash "$REPO/install.sh" >"$d/out.txt" 2>&1
+  RC=$?
+  if [ "$RC" -ne 0 ]; then cat "$d/out.txt"; fi
+  return 0
+}
+
+T=$(newdir main)
 export CLAUDE_DIR="$T/claude" BIN_DIR="$T/bin" GIT_IGNORE="$T/gitignore" SKIP_HERDR_INTEGRATION=1
 mkdir -p "$CLAUDE_DIR"
 # pre-existing settings that must survive
@@ -25,7 +38,7 @@ cat > "$CLAUDE_DIR/settings.json" <<'EOF'
 EOF
 printf 'node_modules/\n' > "$GIT_IGNORE"
 
-run_install() { /bin/bash "$REPO/install.sh" >"$T/out.txt" 2>&1; RC=$?; }
+run_install() { install_in "$T"; }
 
 run_install
 check "first run rc" [ "$RC" -eq 0 ]
@@ -58,54 +71,78 @@ check "gate hook still once" [ "$(jq --arg g "$GATE" '[.hooks.PreToolUse[] | sel
 check "other hook still once" [ "$(jq '[.hooks.PreToolUse[] | select(.hooks[] | .command=="/opt/other-hook.sh")] | length' "$S")" -eq 1 ]
 check "import line once" [ "$(grep -cxF "@$REPO/claude/CLAUDE.conductor.md" "$CLAUDE_DIR/CLAUDE.md")" -eq 1 ]
 check "gitignore line once" [ "$(grep -cx '.harness/' "$GIT_IGNORE")" -eq 1 ]
-
 # fresh HOME with no settings.json at all
-T2=$(mktemp -d)
-CLAUDE_DIR="$T2/claude" BIN_DIR="$T2/bin" GIT_IGNORE="$T2/gitignore" /bin/bash "$REPO/install.sh" >/dev/null 2>&1
-check "fresh install rc" [ $? -eq 0 ]
+T2=$(newdir fresh)
+install_in "$T2"
+check "fresh install rc" [ "$RC" -eq 0 ]
 check "fresh settings created" jq -e '.hooks.PreToolUse | length == 1' "$T2/claude/settings.json" >/dev/null
 
-# invalid settings.json must abort without touching it
-T3=$(mktemp -d); mkdir -p "$T3/claude"; printf '{not json' > "$T3/claude/settings.json"
-CLAUDE_DIR="$T3/claude" BIN_DIR="$T3/bin" GIT_IGNORE="$T3/gitignore" /bin/bash "$REPO/install.sh" >"$T3/out.txt" 2>&1
-check "invalid settings rc" [ $? -ne 0 ]
-check "invalid settings untouched" [ "$(cat "$T3/claude/settings.json")" = '{not json' ]
-check "invalid settings message" grep -q "not valid JSON" "$T3/out.txt"
+# invalid settings must abort without side effects
+assert_untouched() { # DIR ORIGINAL_CONTENT
+  check "$1 settings untouched" [ "$(cat "$2/claude/settings.json")" = "$3" ]
+  check "$1 no bin dir" [ ! -e "$2/bin" ]
+  check "$1 no backup" [ -z "$(ls "$2"/claude/settings.json.bak.* 2>/dev/null)" ]
+  check "$1 no gitignore" [ ! -e "$2/gitignore" ]
+  check "$1 no CLAUDE.md" [ ! -e "$2/claude/CLAUDE.md" ]
+  check "$1 no agents dir" [ ! -e "$2/claude/agents" ]
+}
+for case in 'badjson|{not json|not valid JSON' 'array|[]|not a JSON object' 'concat|{"a":1}{"b":2}|not a JSON object'; do
+  name=${case%%|*}; rest=${case#*|}; content=${rest%|*}; msg=${rest##*|}
+  D=$(newdir "$name"); mkdir -p "$D/claude"; printf '%s' "$content" > "$D/claude/settings.json"
+  install_in "$D" >/dev/null
+  check "$name rc" [ "$RC" -ne 0 ]
+  check "$name message" grep -q "$msg" "$D/out.txt"
+  assert_untouched "$name" "$D" "$content"
+done
 
 # co-located hook: gate and another command in one entry
-T4=$(mktemp -d); mkdir -p "$T4/claude"
+T4=$(newdir coloc); mkdir -p "$T4/claude"
 jq -n --arg g "$GATE" '{hooks:{PreToolUse:[{matcher:"Bash",hooks:[{type:"command",command:$g},{type:"command",command:"/opt/keep.sh"}]}]}}' > "$T4/claude/settings.json"
-CLAUDE_DIR="$T4/claude" BIN_DIR="$T4/bin" GIT_IGNORE="$T4/gitignore" /bin/bash "$REPO/install.sh" >/dev/null 2>&1
-check "colocated rc" [ $? -eq 0 ]
+install_in "$T4"
+check "colocated rc" [ "$RC" -eq 0 ]
 check "colocated other hook kept" [ "$(jq '[.hooks.PreToolUse[].hooks[] | select(.command=="/opt/keep.sh")] | length' "$T4/claude/settings.json")" -eq 1 ]
 check "colocated gate once" [ "$(jq --arg g "$GATE" '[.hooks.PreToolUse[].hooks[] | select(.command==$g)] | length' "$T4/claude/settings.json")" -eq 1 ]
 
+# unrelated empty-hooks entry survives; stale gate entry with other matcher is replaced
+T9=$(newdir stale); mkdir -p "$T9/claude"
+jq -n --arg g "$GATE" '{hooks:{PreToolUse:[{matcher:"X",hooks:[]},{matcher:"Old",hooks:[{type:"command",command:$g}]}]}}' > "$T9/claude/settings.json"
+install_in "$T9"
+check "stale rc" [ "$RC" -eq 0 ]
+check "empty-hooks entry survives" jq -e '.hooks.PreToolUse[] | select(.matcher=="X" and (.hooks|length)==0)' "$T9/claude/settings.json" >/dev/null
+check "stale gate replaced once" [ "$(jq --arg g "$GATE" '[.hooks.PreToolUse[] | select(any(.hooks[]?; .command==$g))] | length' "$T9/claude/settings.json")" -eq 1 ]
+check "stale matcher updated" jq -e '[.hooks.PreToolUse[] | select(.matcher=="Old")] | length == 0' "$T9/claude/settings.json" >/dev/null
+
 # gitignore without trailing newline
-T5=$(mktemp -d); printf 'node_modules/' > "$T5/gitignore"
-CLAUDE_DIR="$T5/claude" BIN_DIR="$T5/bin" GIT_IGNORE="$T5/gitignore" /bin/bash "$REPO/install.sh" >/dev/null 2>&1
+T5=$(newdir nonl); printf 'node_modules/' > "$T5/gitignore"
+install_in "$T5"
 check "no-newline gitignore lines" [ "$(cat "$T5/gitignore")" = "$(printf 'node_modules/\n.harness/')" ]
 
 # symlinked settings.json stays a symlink
-T6=$(mktemp -d); mkdir -p "$T6/claude" "$T6/real"; echo '{"model":"x"}' > "$T6/real/settings.json"
+T6=$(newdir symlink); mkdir -p "$T6/claude" "$T6/real"; echo '{"model":"x"}' > "$T6/real/settings.json"
 ln -s "$T6/real/settings.json" "$T6/claude/settings.json"
-CLAUDE_DIR="$T6/claude" BIN_DIR="$T6/bin" GIT_IGNORE="$T6/gitignore" /bin/bash "$REPO/install.sh" >/dev/null 2>&1
+install_in "$T6"
 check "settings still symlink" [ -L "$T6/claude/settings.json" ]
 check "symlink target updated" jq -e --arg g "$GATE" '.model=="x" and (.hooks.PreToolUse[0].hooks[0].command==$g)' "$T6/real/settings.json" >/dev/null
 
 # user's own agent file is backed up, not clobbered
-T7=$(mktemp -d); mkdir -p "$T7/claude/agents"; printf 'mine' > "$T7/claude/agents/analyst.md"
-CLAUDE_DIR="$T7/claude" BIN_DIR="$T7/bin" GIT_IGNORE="$T7/gitignore" /bin/bash "$REPO/install.sh" >"$T7/out.txt" 2>&1
+T7=$(newdir agentfile); mkdir -p "$T7/claude/agents"; printf 'mine' > "$T7/claude/agents/analyst.md"
+install_in "$T7"
 check "agent now symlink" [ -L "$T7/claude/agents/analyst.md" ]
 check "agent backup content" [ "$(cat "$T7"/claude/agents/analyst.md.bak.* 2>/dev/null)" = mine ]
 check "agent backup message" grep -q "backed up" "$T7/out.txt"
 
-# top-level non-object settings
-T8=$(mktemp -d); mkdir -p "$T8/claude"; printf '[]' > "$T8/claude/settings.json"
-CLAUDE_DIR="$T8/claude" BIN_DIR="$T8/bin" GIT_IGNORE="$T8/gitignore" /bin/bash "$REPO/install.sh" >"$T8/out.txt" 2>&1
-check "array settings rc" [ $? -ne 0 ]
-check "array settings untouched" [ "$(cat "$T8/claude/settings.json")" = '[]' ]
-check "array settings message" grep -q "not a JSON object" "$T8/out.txt"
-check "array settings no agents dir" [ ! -e "$T8/claude/agents" ]
+# a symlink pointing elsewhere is also backed up and relinked
+T10=$(newdir agentlink); mkdir -p "$T10/claude/agents"; ln -s /nonexistent/elsewhere.md "$T10/claude/agents/reviewer.md"
+install_in "$T10"
+check "foreign symlink relinked" [ "$(readlink "$T10/claude/agents/reviewer.md")" = "$REPO/claude/agents/reviewer.md" ]
+check "foreign symlink backed up" [ -L "$(ls "$T10"/claude/agents/reviewer.md.bak.* 2>/dev/null | head -1)" ]
+
+# a failed write must fail loudly
+T11=$(newdir rofile); mkdir -p "$T11/claude"; echo '{}' > "$T11/claude/settings.json"; chmod 444 "$T11/claude/settings.json"
+install_in "$T11" >/dev/null
+check "write failure rc" [ "$RC" -ne 0 ]
+check "write failure message" grep -q "failed to write" "$T11/out.txt"
+check "write failure no success banner" [ -z "$(grep '^installed:' "$T11/out.txt")" ]
 
 echo "PASS $pass / FAIL $fail"
 [ "$fail" -eq 0 ]
