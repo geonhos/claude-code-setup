@@ -1,0 +1,286 @@
+#!/bin/bash
+# harness — conductor-side wrapper around herdr for named Claude workers.
+# Spec: docs/superpowers/specs/2026-10-12-herdr-conductor-setup-design.md
+#
+#   harness spawn  <agent> [--direction right|down]
+#   harness ask    <agent> '<instruction>' [--timeout MS]
+#   harness report <agent>
+#   harness status
+#   harness close  <agent>
+#
+# Exit codes for `ask`: 0 report printed · 1 usage/setup error · 2 worker blocked
+#                       3 worker finished without a report
+#                       4 worker still working / unknown (including busy with a
+#                         previous instruction: nothing sent), or prompt not
+#                         accepted
+# `report` prints .harness/reports/<agent>.md without touching herdr:
+#   exit 0 printed · 3 no report yet.
+# Output of `ask`: stdout = report on exit 0; screen text on 2/3/4;
+#                  diagnostics on stderr.
+set -u
+
+AGENTS="analyst implementer reviewer"
+REPORT_DIR=".harness/reports"
+PANES_FILE=".harness/panes"
+DEFAULT_TIMEOUT=600000
+TAB=$(printf '\t')
+
+usage() {
+  cat >&2 <<EOF
+usage:
+  harness spawn  <agent> [--direction right|down]
+  harness ask    <agent> '<instruction>' [--timeout MS]
+  harness report <agent>
+  harness status
+  harness close  <agent>
+agents: $AGENTS
+EOF
+  exit 1
+}
+
+die() { echo "harness: $*" >&2; exit 1; }
+
+need() { command -v "$1" >/dev/null 2>&1 || die "$1 not found on PATH"; }
+
+valid_agent() {
+  case " $AGENTS " in
+    *" $1 "*) return 0 ;;
+  esac
+  die "unknown agent '$1' (expected one of: $AGENTS)"
+}
+
+agent_json()   { herdr agent get "$1" 2>/dev/null; }
+agent_pane()   { agent_json "$1" | jq -r '.result.agent.pane_id // empty'; }
+
+# agent_fields <agent> — one `agent get`, prints "status<TAB>pane".
+# Prints "unknown<TAB>-" and returns 1 when the agent is not live.
+agent_fields() {
+  local j f
+  j=$(agent_json "$1") || { printf 'unknown\t-\n'; return 1; }
+  f=$(printf '%s' "$j" | jq -r '[(.result.agent.agent_status // "unknown"), (.result.agent.pane_id // "-")] | @tsv' 2>/dev/null)
+  [ -n "$f" ] || f=$(printf 'unknown\t-')
+  printf '%s\n' "$f"
+}
+agent_status() {
+  local st
+  st=$(agent_json "$1" | jq -r '.result.agent.agent_status // "unknown"' 2>/dev/null)
+  [ -n "$st" ] || st=unknown
+  echo "$st"
+}
+
+# show_pane_screen <pane> — screen text of a pane (works whether or not an
+# agent is still live in it)
+show_pane_screen() {
+  echo "--- $1 screen (last 60 lines) ---"
+  herdr pane read "$1" --source recent-unwrapped --lines 60 2>/dev/null
+  echo "--- end ---"
+}
+
+# show_agent_diag <agent> — raw `agent get` JSON (or "agent not found") on stderr
+show_agent_diag() {
+  local j
+  if j=$(agent_json "$1"); then
+    echo "harness: agent get $1: $j" >&2
+  else
+    echo "harness: agent get $1: agent not found" >&2
+  fi
+}
+
+# unregister <agent> <pane> — drop that line from the pane registry
+unregister() {
+  local tmp rc
+  [ -f "$PANES_FILE" ] || return 0
+  tmp=$(mktemp "$PANES_FILE.XXXXXX") || die "cannot create temp file next to $PANES_FILE"
+  grep -Fxv -- "$1 $2" "$PANES_FILE" > "$tmp"
+  rc=$?
+  if [ "$rc" -gt 1 ]; then
+    rm -f "$tmp"
+    die "cannot rewrite $PANES_FILE"
+  fi
+  mv "$tmp" "$PANES_FILE"
+}
+
+# Terminal cells are roughly twice as tall as wide; a pane is "wide" when
+# width >= 2.2 * height. Wide -> split right, otherwise down.
+# Without HERDR_PANE_ID there is no pane to measure: default to right.
+pick_direction() {
+  local layout w h
+  [ -n "${HERDR_PANE_ID:-}" ] || { echo right; return; }
+  layout=$(herdr pane layout --pane "${HERDR_PANE_ID:-}" 2>/dev/null) || { echo right; return; }
+  w=$(printf '%s' "$layout" | jq -r --arg p "${HERDR_PANE_ID:-}" '.result.layout.panes[] | select(.pane_id==$p) | .rect.width' 2>/dev/null)
+  h=$(printf '%s' "$layout" | jq -r --arg p "${HERDR_PANE_ID:-}" '.result.layout.panes[] | select(.pane_id==$p) | .rect.height' 2>/dev/null)
+  if [ -n "$w" ] && [ -n "$h" ] && [ "$w" -ge $((h * 22 / 10)) ]; then
+    echo right
+  else
+    echo down
+  fi
+}
+
+cmd_spawn() {
+  local agent=${1:-} dir=""
+  [ -n "$agent" ] || usage
+  valid_agent "$agent"
+  shift
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --direction)
+        [ $# -ge 2 ] || usage
+        case "$2" in right|down) dir=$2 ;; *) usage ;; esac
+        shift 2 ;;
+      *) usage ;;
+    esac
+  done
+
+  local fields
+  if fields=$(agent_fields "$agent"); then
+    printf '%s\n' "${fields#*$TAB}"
+    return 0
+  fi
+
+  [ -n "$dir" ] || dir=$(pick_direction)
+
+  local out pane
+  if ! out=$(herdr pane split --current --direction "$dir" --cwd "$PWD" --env HARNESS_ROLE=worker --no-focus 2>&1); then
+    die "pane split failed: $out"
+  fi
+  pane=$(printf '%s' "$out" | jq -r '.result.pane.pane_id // empty' 2>/dev/null)
+  [ -n "$pane" ] || die "pane split returned no pane id: $out"
+
+  mkdir -p "$(dirname "$PANES_FILE")"
+  printf '%s %s\n' "$agent" "$pane" >> "$PANES_FILE"
+
+  if ! out=$(herdr agent start "$agent" --kind claude --pane "$pane" -- --agent "$agent" 2>&1); then
+    echo "harness: agent start failed for $agent in $pane: $out" >&2
+    show_pane_screen "$pane" >&2
+    herdr pane close "$pane" >/dev/null 2>&1 \
+      || echo "harness: could not close orphan pane $pane" >&2
+    unregister "$agent" "$pane"
+    exit 1
+  fi
+  echo "$pane"
+}
+
+cmd_ask() {
+  local agent=${1:-} text=${2:-} timeout=$DEFAULT_TIMEOUT
+  [ -n "$agent" ] && [ -n "$text" ] || usage
+  valid_agent "$agent"
+  shift 2
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --timeout)
+        [ $# -ge 2 ] || usage
+        case "$2" in ''|*[!0-9]*|0) usage ;; esac
+        timeout=$2; shift 2 ;;
+      *) usage ;;
+    esac
+  done
+
+  local pane
+  pane=$(cmd_spawn "$agent") || exit 1
+
+  local report="$REPORT_DIR/$agent.md"
+
+  # A worker still busy with a previous instruction (e.g. the caller's own
+  # timeout fired) keeps its pending report; do not prompt it again.
+  if [ "$(agent_status "$agent")" = working ]; then
+    echo "harness: $agent is still working on the previous instruction; wait (harness status) then collect with: harness report $agent" >&2
+    show_pane_screen "$pane"
+    exit 4
+  fi
+
+  mkdir -p "$REPORT_DIR"
+  rm -f "$report"
+
+  if [ "$(agent_status "$agent")" = blocked ]; then
+    echo "harness: $agent is blocked on a prompt; answer it before sending work." >&2
+    show_pane_screen "$pane"
+    exit 2
+  fi
+
+  # The instruction goes in herdr's positional text slot, which is what keeps
+  # dash-leading text from being parsed as an option. Do not add `--`: real
+  # herdr rejects it.
+  local out prompt_failed=0
+  if ! out=$(herdr agent prompt "$agent" "$text" --wait --timeout "$timeout" 2>&1); then
+    prompt_failed=1
+    echo "harness: prompt did not settle: $out" >&2
+  fi
+
+  local st
+  st=$(agent_status "$agent")
+  case "$st" in
+    blocked)
+      echo "harness: $agent is blocked (needs an answer)." >&2
+      show_pane_screen "$pane"
+      exit 2 ;;
+    idle|done)
+      if [ -f "$report" ]; then
+        cat "$report"
+        exit 0
+      fi
+      if [ "$prompt_failed" = 1 ]; then
+        echo "harness: prompt was not accepted by herdr: $out" >&2
+        show_agent_diag "$agent"
+        show_pane_screen "$pane"
+        exit 4
+      fi
+      echo "harness: $agent finished but wrote no report at $report" >&2
+      show_pane_screen "$pane"
+      exit 3 ;;
+    *)
+      echo "harness: $agent status is '$st' (still working or unknown); check 'harness status' before re-prompting." >&2
+      show_agent_diag "$agent"
+      show_pane_screen "$pane"
+      exit 4 ;;
+  esac
+}
+
+cmd_report() {
+  local agent=${1:-}
+  [ -n "$agent" ] || usage
+  valid_agent "$agent"
+  local report="$REPORT_DIR/$agent.md"
+  if [ -f "$report" ]; then
+    cat "$report"
+    exit 0
+  fi
+  echo "harness: no report for $agent at $report" >&2
+  exit 3
+}
+
+cmd_status() {
+  local a fields
+  for a in $AGENTS; do
+    if fields=$(agent_fields "$a"); then
+      printf '%-12s %-8s %s\n' "$a" "${fields%%$TAB*}" "${fields#*$TAB}"
+    else
+      printf '%-12s %s\n' "$a" "-"
+    fi
+  done
+}
+
+cmd_close() {
+  local agent=${1:-} pane
+  [ -n "$agent" ] || usage
+  valid_agent "$agent"
+  pane=$(agent_pane "$agent")
+  [ -n "$pane" ] || die "$agent is not running"
+  grep -Fxq -- "$agent $pane" "$PANES_FILE" 2>/dev/null \
+    || die "pane $pane was not created by harness; close it yourself"
+  herdr pane close "$pane" >/dev/null || die "pane close failed for $pane"
+  unregister "$agent" "$pane"
+  echo "closed $agent ($pane)"
+}
+
+need jq
+need herdr
+[ "${HERDR_ENV:-}" = 1 ] || die "run Claude inside a herdr pane (HERDR_ENV is not 1)"
+
+case "${1:-}" in
+  spawn)  shift; cmd_spawn "$@" ;;
+  ask)    shift; cmd_ask "$@" ;;
+  report) shift; cmd_report "$@" ;;
+  status) cmd_status ;;
+  close)  shift; cmd_close "$@" ;;
+  *)      usage ;;
+esac
