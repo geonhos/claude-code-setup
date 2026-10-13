@@ -27,6 +27,7 @@ mkdir -p "$CLAUDE_DIR"
 cat > "$CLAUDE_DIR/settings.json" <<'EOF'
 {
   "model": "fable",
+  "env": { "FOO": "bar" },
   "permissions": { "defaultMode": "auto" },
   "hooks": {
     "PreToolUse": [
@@ -51,9 +52,12 @@ check "defaultMode preserved" [ "$(jq -r .permissions.defaultMode "$S")" = auto 
 check "other PreToolUse hook preserved" jq -e '.hooks.PreToolUse[] | select(.hooks[0].command=="/opt/other-hook.sh")' "$S" >/dev/null
 check "Stop hook preserved" jq -e '.hooks.Stop[0].hooks[0].command=="/opt/stop.sh"' "$S" >/dev/null
 check "gate hook added once" [ "$(jq --arg g "$GATE" '[.hooks.PreToolUse[] | select(.hooks[] | .command==$g)] | length' "$S")" -eq 1 ]
-check "gate matcher" jq -e --arg g "$GATE" '.hooks.PreToolUse[] | select(.hooks[] | .command==$g) | .matcher=="Edit|Write|NotebookEdit|Read|Grep|Glob|Bash|Agent|Workflow"' "$S" >/dev/null
+check "gate matcher" jq -e --arg g "$GATE" '.hooks.PreToolUse[] | select(.hooks[] | .command==$g) | .matcher=="Edit|Write|NotebookEdit|Read|Grep|Glob|Bash|Agent|Workflow|Monitor|mcp__filesystem__.*"' "$S" >/dev/null
 check "promptCacheTtl" [ "$(jq -r .promptCacheTtl "$S")" = 1h ]
 check "subagentPromptCacheTtl" [ "$(jq -r .subagentPromptCacheTtl "$S")" = 1h ]
+check "BASH_DEFAULT_TIMEOUT_MS" [ "$(jq -r .env.BASH_DEFAULT_TIMEOUT_MS "$S")" = 600000 ]
+check "BASH_MAX_TIMEOUT_MS" [ "$(jq -r .env.BASH_MAX_TIMEOUT_MS "$S")" = 1800000 ]
+check "env.FOO preserved" [ "$(jq -r .env.FOO "$S")" = bar ]
 check "backup created" ls "$CLAUDE_DIR"/settings.json.bak.* >/dev/null 2>&1
 
 for a in analyst implementer reviewer; do
@@ -67,6 +71,7 @@ check "global gitignore keeps old lines" grep -qx 'node_modules/' "$GIT_IGNORE"
 # second run: idempotent
 run_install
 check "second run rc" [ "$RC" -eq 0 ]
+check "env still preserved after rerun" [ "$(jq -c '.env' "$S")" = '{"FOO":"bar","BASH_DEFAULT_TIMEOUT_MS":"600000","BASH_MAX_TIMEOUT_MS":"1800000"}' ]
 check "gate hook still once" [ "$(jq --arg g "$GATE" '[.hooks.PreToolUse[] | select(.hooks[] | .command==$g)] | length' "$S")" -eq 1 ]
 check "other hook still once" [ "$(jq '[.hooks.PreToolUse[] | select(.hooks[] | .command=="/opt/other-hook.sh")] | length' "$S")" -eq 1 ]
 check "import line once" [ "$(grep -cxF "@$REPO/claude/CLAUDE.conductor.md" "$CLAUDE_DIR/CLAUDE.md")" -eq 1 ]

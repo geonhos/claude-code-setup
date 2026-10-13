@@ -15,7 +15,7 @@ GIT_IGNORE=${GIT_IGNORE:-${XDG_CONFIG_HOME:-$HOME/.config}/git/ignore}
 SETTINGS="$CLAUDE_DIR/settings.json"
 GATE="$REPO/claude/hooks/conductor-gate.sh"
 IMPORT_LINE="@$REPO/claude/CLAUDE.conductor.md"
-MATCHER="Edit|Write|NotebookEdit|Read|Grep|Glob|Bash|Agent|Workflow"
+MATCHER="Edit|Write|NotebookEdit|Read|Grep|Glob|Bash|Agent|Workflow|Monitor|mcp__filesystem__.*"
 
 die() { echo "install: $*" >&2; exit 1; }
 need() { command -v "$1" >/dev/null 2>&1 || die "$1 is required but not on PATH"; }
@@ -77,6 +77,9 @@ trap 'rm -f "$tmp"' EXIT
 jq --arg gate "$GATE" --arg matcher "$MATCHER" '
   .promptCacheTtl = "1h"
   | .subagentPromptCacheTtl = "1h"
+  | .env //= {}
+  | .env.BASH_DEFAULT_TIMEOUT_MS = "600000"
+  | .env.BASH_MAX_TIMEOUT_MS = "1800000"
   | .hooks //= {}
   | .hooks.PreToolUse //= []
   # strip our gate from every entry; drop entries left empty; re-append one canonical entry
@@ -105,6 +108,7 @@ installed:
   settings       $SETTINGS (backup: $bak)
   CLAUDE.md      $IMPORT_LINE
   cache TTL      promptCacheTtl=1h subagentPromptCacheTtl=1h
+  bash timeouts  env.BASH_DEFAULT_TIMEOUT_MS=600000 env.BASH_MAX_TIMEOUT_MS=1800000
   gitignore      $GIT_IGNORE (+ .harness/)
 next: start Claude inside a herdr pane and give it work. Escape hatch: HARNESS_ROLE=worker claude
 EOF
