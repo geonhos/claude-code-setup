@@ -32,7 +32,7 @@ CWD=${CWD%/}
 MSG_WRITE="Conductor cannot edit source. Delegate: harness ask implementer '<instruction>'. Direct writes are allowed only under docs/**/*.md and .harness/."
 MSG_READ="Conductor does not read source. Delegate: harness ask analyst '<question>' and read its report. Direct reads are allowed only under .harness/, docs/, and *.md files."
 MSG_AGENT="Native subagents inherit the Fable model. Use harness ask <analyst|implementer|reviewer> '<instruction>' instead."
-MSG_BASH="Conductor shell is limited to: harness, herdr, gh, read-only git (status / log / diff --stat / branch / show --stat), cat or ls under .harness/ and docs/. Delegate command execution: harness ask implementer '<command and goal>'."
+MSG_BASH="Conductor shell is limited to: harness; gh (except api / pr diff / alias / extension); herdr read-only (status, pane/agent list|get|layout|wait); read-only git (status / log / diff --stat / branch / show --stat); cat or ls under .harness/ and docs/; jq as a pipe consumer. Delegate command execution: harness ask implementer '<command and goal>'."
 
 deny() {
   jq -n --arg r "$1" \
@@ -85,8 +85,11 @@ writable() {
 # per command segment: "<masked><TAB><raw>". <masked> is the segment with the
 # contents of every '...' / "..." removed (quote chars kept); <raw> is the
 # segment text as written. Segments end at unquoted ; & | (so && and ||) and
-# newlines. Exits 1 on an unquoted < > or # (comments could hide quotes from
-# this scanner) or an unterminated quote.
+# newlines. Exits 1 on an unterminated quote; on an unquoted < > or # (comments
+# could hide quotes from this scanner); on an unquoted $' or $" (ANSI-C /
+# locale quoting); and on ` or $( unquoted or inside double quotes (command
+# substitution; inside single quotes they are literal). Process substitution
+# and here-strings are covered by the unquoted < > rule.
 # Input must not contain tabs (callers normalize them to spaces).
 split_segments() {
   awk '
@@ -95,11 +98,12 @@ split_segments() {
     {
       line = $0; n = length(line)
       for (i = 1; i <= n; i++) {
-        c = substr(line, i, 1)
+        c = substr(line, i, 1); nx = substr(line, i + 1, 1)
         if (st == 0) {
           if (c == "\\") { c = c substr(line, i + 1, 1); i++; m = m c; r = r c }
           else if (c == ";" || c == "&" || c == "|") flush()
-          else if (c == "<" || c == ">" || c == "#") bad = 1
+          else if (c == "<" || c == ">" || c == "#" || c == "`") bad = 1
+          else if (c == "$" && (nx == "(" || nx == "\047" || nx == "\"")) bad = 1
           else {
             m = m c; r = r c
             if (c == "\047") st = 1
@@ -112,6 +116,7 @@ split_segments() {
           r = r c
           if (c == "\\") { r = r substr(line, i + 1, 1); i++ }
           else if (c == "\"") { m = m c; st = 0 }
+          else if (c == "`" || (c == "$" && nx == "(")) bad = 1
         }
       }
       if (st == 0) flush(); else r = r " "
@@ -125,8 +130,11 @@ split_segments() {
 
 # Commands the conductor may run (matched against a whole masked segment).
 BASH_ALLOW='harness( .*)?'                                        # delegation CLI
-BASH_ALLOW="$BASH_ALLOW|"'herdr( .*)?'                            # pane / agent control
-BASH_ALLOW="$BASH_ALLOW|"'gh( .*)?'                               # GitHub CLI
+BASH_ALLOW="$BASH_ALLOW|"'herdr status( .*)?'                     # herdr, read-only state ...
+BASH_ALLOW="$BASH_ALLOW|"'herdr pane (list|get|layout|current)( .*)?'
+BASH_ALLOW="$BASH_ALLOW|"'herdr agent (list|get|wait|explain)( .*)?'
+BASH_ALLOW="$BASH_ALLOW|"'herdr (workspace|tab) list( .*)?'
+BASH_ALLOW="$BASH_ALLOW|"'gh( .*)?'                               # GitHub CLI (see gh_segment_ok)
 BASH_ALLOW="$BASH_ALLOW|"'git status( .*)?'                       # read-only git ...
 BASH_ALLOW="$BASH_ALLOW|"'git log( .*)?'
 BASH_ALLOW="$BASH_ALLOW|"'git diff --stat( .*)?'                  # ... summaries only
@@ -182,6 +190,16 @@ git_segment_ok() {
   return 0
 }
 
+# gh_segment_ok RAW -> 0 unless the gh subcommand prints source into context
+# (api, pr diff) or defines new commands (alias, extension). Checked on the raw
+# text with quoting removed and spaces squeezed ("api" == api).
+gh_segment_ok() {
+  case "$(printf '%s ' "$1" | tr -d "\"'\\\\" | tr -s ' ')" in
+    'gh api '*|'gh pr diff '*|'gh alias '*|'gh extension '*|'gh ext '*) return 1 ;;
+  esac
+  return 0
+}
+
 # cat_ls_segment_ok MASKED -> 0 when a cat / ls segment needs no quoting,
 # expansion or parent-directory access
 cat_ls_segment_ok() {
@@ -197,11 +215,6 @@ bash_ok() {
   tab=$(printf '\t')
   [ -n "$cmd" ] || return 1
   cmd=$(printf '%s' "$cmd" | tr '\t' ' ')
-  # raw-command checks, quotes included: command / process substitution,
-  # ANSI-C and locale quoting, here-strings
-  case "$cmd" in
-    *'$('*|*'`'*|*"\$'"*|*'$"'*|*'<('*|*'>('*|*'<<<'*) return 1 ;;
-  esac
   # tolerate a standalone 2>&1 word; split_segments rejects any other redirect
   segs=$(printf '%s\n' "$cmd" \
     | sed -E 's/(^|[[:space:]])2>&1([[:space:];&|]|$)/\1\2/g' \
@@ -216,6 +229,7 @@ bash_ok() {
     case "$seg" in
       jq|jq\ *)       jq_segment_ok "$n" "$seg" "$raw" || return 1; continue ;;
       git\ *)         git_segment_ok "$raw" || return 1 ;;
+      gh\ *)          gh_segment_ok "$raw" || return 1 ;;
       cat\ *|ls|ls\ *) cat_ls_segment_ok "$seg" || return 1 ;;
     esac
     printf '%s' "$seg" | grep -Eq "$BASH_ALLOW" || return 1
@@ -235,12 +249,41 @@ case "$TOOL" in
   Grep)
     readable "$(field path)" || deny "$MSG_READ" ;;
   Glob)
-    case "$(field pattern)" in *..*|/*|'~'*) deny "$MSG_READ" ;; esac
-    readable "$(field path)" || deny "$MSG_READ" ;;
+    PATTERN=$(field pattern)
+    case "$PATTERN" in *..*|/*|'~'*) deny "$MSG_READ" ;; esac
+    GPATH=$(field path)
+    if [ -z "$GPATH" ]; then
+      # no path: the pattern itself must stay under .harness/ or docs/
+      case "$PATTERN" in docs/*|.harness/*) ;; *) deny "$MSG_READ" ;; esac
+    else
+      readable "$GPATH" || deny "$MSG_READ"
+    fi ;;
   Agent|Workflow)
     deny "$MSG_AGENT" ;;
   Bash)
     bash_ok "$(field command)" || deny "$MSG_BASH" ;;
+  Monitor)
+    deny "$MSG_BASH" ;;
+  mcp__filesystem__read_text_file|mcp__filesystem__read_file|\
+  mcp__filesystem__search_files|mcp__filesystem__list_directory|\
+  mcp__filesystem__list_directory_with_sizes|mcp__filesystem__directory_tree|\
+  mcp__filesystem__get_file_info|mcp__filesystem__read_media_file)
+    readable "$(field path)" || deny "$MSG_READ" ;;
+  mcp__filesystem__read_multiple_files)
+    # every path must be readable; an empty list is denied
+    PATHS=$(printf '%s' "$INPUT" | jq -r '.tool_input.paths[]? // empty' 2>/dev/null)
+    [ -n "$PATHS" ] || deny "$MSG_READ"
+    while IFS= read -r P; do
+      readable "$P" || deny "$MSG_READ"
+    done <<EOF
+$PATHS
+EOF
+    ;;
+  mcp__filesystem__write_file|mcp__filesystem__edit_file|\
+  mcp__filesystem__create_directory)
+    writable "$(field path)" || deny "$MSG_WRITE" ;;
+  mcp__filesystem__move_file)
+    writable "$(field source)" && writable "$(field destination)" || deny "$MSG_WRITE" ;;
 esac
 
 exit 0
