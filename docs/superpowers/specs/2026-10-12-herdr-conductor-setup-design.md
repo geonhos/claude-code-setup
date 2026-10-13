@@ -74,8 +74,7 @@ claude-code-setup/
 | `worker` | herdr worker. Gate passes everything. |
 
 Default is conductor so forgetting to set anything still enforces. Workers
-always get `worker` because `harness spawn` exports it in the pane shell
-before starting Claude. A human who wants an unrestricted manual session
+always get `worker` because `harness spawn` passes `--env HARNESS_ROLE=worker` to `herdr pane split`. A human who wants an unrestricted manual session
 runs `HARNESS_ROLE=worker claude`.
 
 Per-project opt-out: a project that should not be gated sets the variable
@@ -138,7 +137,7 @@ Decisions use the current JSON contract:
 | `Edit`, `Write`, `NotebookEdit` | allow if `file_path` is under `docs/` and ends in `.md`, or is under `.harness/`. Else deny. |
 | `Read`, `Grep`, `Glob` | allow if path is under `.harness/`, under `docs/`, or ends in `.md`. Else deny. (`Grep`/`Glob` use `path`; missing path = cwd = deny.) |
 | `Agent`, `Workflow` | deny. |
-| `Bash` | allow if the command matches one of: `harness ...`, `herdr ...`, `gh ...`, `git status`, `git log ...`, `git diff --stat ...`, `git branch ...`, `git show --stat ...`, `cat .harness/...`, `ls .harness...`, `ls docs...`. Compound commands (`;`, `&&`, `\|`, `>`) are allowed only if every segment matches. Else deny. |
+| `Bash` | allow if the command matches one of: `harness ...`, `herdr ...`, `gh ...`, `git status`, `git log ...`, `git diff --stat ...`, `git branch ...`, `git show --stat ...`, `cat .harness/...`, `ls .harness...`, `ls docs...`. Compound commands (`;`, `&&`, `\|`, `>`) are allowed only if every segment matches. Else deny. `jq` only as a non-first pipeline segment with no file arguments; `cat`/`ls` arguments may not contain quotes, `$`, braces, globs, `~` or `..`; git may not use patch/output/delete/move/copy/unified/raw/check options; unquoted `#` is denied. |
 | anything else | allow (MCP tools, Skill, TodoWrite, AskUserQuestion, etc.) |
 
 Path checks are prefix checks after normalising to repo-relative form (strip
@@ -174,12 +173,12 @@ harness close  <agent>
 - `spawn`: if a live agent named `<agent>` exists, print its pane id and
   exit 0. Otherwise read `herdr pane layout --pane "$HERDR_PANE_ID"`; wide
   pane → `--direction right`, else `down` (user flag overrides). Then:
-  1. `herdr pane split --current --direction <d> --cwd "$PWD" --no-focus`
-     → new pane id from `.result.pane.pane_id`.
-  2. `herdr pane run <id> "export HARNESS_ROLE=worker"` and wait for the
-     prompt to return.
+  1. `herdr pane split --current --direction <d> --cwd "$PWD" --env HARNESS_ROLE=worker --no-focus`
+     → new pane id from `.result.pane.pane_id`. `--env` sets the variable on
+     the pane shell, so Claude started there inherits it.
+  2. Record `<agent> <pane>` in `.harness/panes`.
   3. `herdr agent start <agent> --kind claude --pane <id> -- --agent <agent>`.
-  4. On `agent_not_ready`, print `herdr agent read` (60 lines) and exit 1.
+  4. On failure, print the pane screen (60 lines), close the pane, unregister it, and exit 1.
 - `ask`: `spawn` if needed. Remove any stale `.harness/reports/<agent>.md`.
   Submit `herdr agent prompt <agent> "<instruction>" --wait --timeout <MS>`
   (default 600000). On settled state:
