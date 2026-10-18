@@ -166,12 +166,21 @@ cmd_spawn() {
   echo "$pane"
 }
 
-# verify_tool ARGS... — run harness-verify (on PATH, or next to this script)
+# verify_tool ARGS... — run harness-verify from PATH (installed by ./install.sh)
 verify_tool() {
-  local v
-  v=$(command -v harness-verify 2>/dev/null) || v="$(dirname "$0")/harness-verify"
-  [ -x "$v" ] || return 1
-  "$v" "$@"
+  command -v harness-verify >/dev/null 2>&1 || return 1
+  harness-verify "$@"
+}
+
+# restore_interrupted <agent> <report> — implementer only: the Stop hook hides the
+# report as <report>.pending while it verifies. If the hook was killed, only the
+# .pending file is left: restore it and exit 5 (callers checked the agent is idle).
+restore_interrupted() {
+  [ "$1" = implementer ] && [ ! -f "$2" ] && [ -f "$2.pending" ] || return 0
+  mv -f "$2.pending" "$2"
+  cat "$2"
+  echo "verify: INTERRUPTED"
+  exit 5
 }
 
 # finish_report <agent> <report> <pane> — print the report and exit with the
@@ -216,6 +225,10 @@ cmd_ask() {
       *) usage ;;
     esac
   done
+
+  if [ "$agent" = implementer ] && ! command -v harness-verify >/dev/null 2>&1; then
+    die "harness-verify not found on PATH; run ./install.sh (the implementer's checks would silently not run)"
+  fi
 
   local pane
   pane=$(cmd_spawn "$agent") || exit 1
@@ -263,6 +276,7 @@ cmd_ask() {
       show_pane_screen "$pane"
       exit 2 ;;
     idle|done)
+      restore_interrupted "$agent" "$report"
       if [ -f "$report" ]; then
         finish_report "$agent" "$report" "$pane"
       fi
@@ -293,6 +307,7 @@ cmd_report() {
     echo "harness: $agent is still working; wait for it to finish (harness status), then run: harness report $agent" >&2
     exit 4
   fi
+  restore_interrupted "$agent" "$report"
   if [ -f "$report" ]; then
     finish_report "$agent" "$report" "${fields#*$TAB}"
   fi

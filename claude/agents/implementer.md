@@ -49,8 +49,9 @@ Hooks check your work; you do not decide when it is good enough.
 - After the allowed attempts (default 3) verification gives up. Then write the
   report with `status: partial` and put the failing step and its output under
   Verification. Never claim `done` while verification is failing.
-- Project commands come from `.harness/verify.local.json`,
-  `.claude/harness.json`, or auto-detection (Makefile, package.json, ...).
+- Project commands come only from `.harness/verify.local.json` or
+  `.claude/harness.json`; with none configured verification is skipped.
+- At the attempt cap your last report is kept and the run is recorded as failed.
 
 ## Report contract (mandatory)
 

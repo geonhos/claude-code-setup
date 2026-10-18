@@ -40,7 +40,7 @@ reason_grep() { printf '%s' "$OUT" | jq -r .reason | grep "$@"; }
 not_reason_grep() { ! reason_grep "$@"; }
 result() { jq -r ".$1" "$R/.harness/verify/implementer.json" 2>/dev/null; }
 
-# --- detect ----------------------------------------------------------------------
+# --- detect: explicit config only, no auto-detection ---------------------------------
 newrepo
 hv detect
 check "detect empty rc" [ "$RC" -eq 0 ]
@@ -48,77 +48,44 @@ check "detect empty format null" [ "$(det .format)" = null ]
 check "detect empty lint null" [ "$(det .lint)" = null ]
 check "detect empty test null" [ "$(det .test)" = null ]
 check "detect default maxAttempts" [ "$(det .maxAttempts)" = 3 ]
+OUT=$(cd "$R" && /bin/bash "$VERIFY" detect 2>&1 >/dev/null </dev/null)
+check "detect unconfigured: stderr names config location" grep -q '.claude/harness.json' <<<"$OUT"
 
+# project-type files are ignored
 newrepo
 printf 'fmt:\n\ttrue\nlint:\n\ttrue\ntest:\n\ttrue\n' > "$R/Makefile"
-check "detect make format" [ "$(det .format)" = "make fmt" ]
-check "detect make lint" [ "$(det .lint)" = "make lint" ]
-check "detect make test" [ "$(det .test)" = "make test" ]
-
-newrepo
-printf 'format:\n\ttrue\n' > "$R/Makefile"
-check "detect make format target" [ "$(det .format)" = "make format" ]
-check "detect make only existing targets" [ "$(det .test)" = null ]
-
-newrepo
 echo '{"scripts":{"format":"x","lint":"y","test":"z"}}' > "$R/package.json"
-check "detect npm lint" [ "$(det .lint)" = "npm run lint" ]
-check "detect npm test" [ "$(det .test)" = "npm run test" ]
-touch "$R/pnpm-lock.yaml"
-check "detect pnpm" [ "$(det .test)" = "pnpm run test" ]
-rm "$R/pnpm-lock.yaml"; touch "$R/yarn.lock"
-check "detect yarn" [ "$(det .format)" = "yarn run format" ]
-rm "$R/yarn.lock"; touch "$R/bun.lockb"
-check "detect bun" [ "$(det .lint)" = "bun run lint" ]
+printf '[tool.ruff]\n[tool.pytest.ini_options]\n' > "$R/pyproject.toml"
+echo '[package]' > "$R/Cargo.toml"; echo 'module x' > "$R/go.mod"
+printf '#!/bin/bash\n# --test\n' > "$R/install.sh"; chmod +x "$R/install.sh"
+check "no autodetect format" [ "$(det .format)" = null ]
+check "no autodetect lint" [ "$(det .lint)" = null ]
+check "no autodetect test" [ "$(det .test)" = null ]
+OUT=$(cd "$R" && /bin/bash "$VERIFY" detect 2>&1 >/dev/null </dev/null)
+check "detect autodetect-files: still hints at config" grep -q '.claude/harness.json' <<<"$OUT"
 
+# configured: no hint on stderr
 newrepo
-echo '{"scripts":{"test":"z"}}' > "$R/package.json"
-printf 'lint:\n\ttrue\n' > "$R/Makefile"
-check "detect makefile before package.json (lint)" [ "$(det .lint)" = "make lint" ]
-check "detect package.json fills missing key" [ "$(det .test)" = "npm run test" ]
+cfg '{"test":"x"}'
+OUT=$(cd "$R" && /bin/bash "$VERIFY" detect 2>&1 >/dev/null </dev/null)
+check "detect configured: silent stderr" [ -z "$OUT" ]
 
+# --- precedence: local > project ----------------------------------------------------
 newrepo
-printf '[tool.ruff]\nline-length = 100\n[tool.pytest.ini_options]\n' > "$R/pyproject.toml"
-check "detect ruff format" [ "$(det .format)" = "ruff format {files}" ]
-check "detect ruff lint" [ "$(det .lint)" = "ruff check {files}" ]
-check "detect pytest" [ "$(det .test)" = pytest ]
-
-newrepo
-printf '[package]\nname="x"\n' > "$R/Cargo.toml"
-check "detect cargo format" [ "$(det .format)" = "cargo fmt" ]
-check "detect cargo lint" [ "$(det .lint)" = "cargo clippy -- -D warnings" ]
-check "detect cargo test" [ "$(det .test)" = "cargo test" ]
-
-newrepo
-printf 'module x\n' > "$R/go.mod"
-check "detect go format" [ "$(det .format)" = "gofmt -w {files}" ]
-check "detect go lint" [ "$(det .lint)" = "go vet ./..." ]
-check "detect go test" [ "$(det .test)" = "go test ./..." ]
-
-newrepo
-printf '#!/bin/bash\n[ "$1" = --test ]\n' > "$R/install.sh"; chmod +x "$R/install.sh"
-check "detect install.sh test" [ "$(det .test)" = "./install.sh --test" ]
-check "detect install.sh no lint" [ "$(det .lint)" = null ]
-printf '#!/bin/bash\ntrue\n' > "$R/install.sh"
-check "detect install.sh without --test" [ "$(det .test)" = null ]
-
-# --- precedence: local > project > detect -------------------------------------------
-newrepo
-printf 'test:\n\ttrue\nlint:\n\ttrue\n' > "$R/Makefile"
 cfg '{"test":"project-test","maxAttempts":5}'
-check "project beats detect" [ "$(det .test)" = project-test ]
-check "detect fills keys absent in project" [ "$(det .lint)" = "make lint" ]
+check "project test" [ "$(det .test)" = project-test ]
+check "key absent everywhere is null" [ "$(det .lint)" = null ]
 check "project maxAttempts" [ "$(det .maxAttempts)" = 5 ]
 lcfg '{"test":"local-test"}'
 check "local beats project" [ "$(det .test)" = local-test ]
 check "project still used when local lacks key" [ "$(det .maxAttempts)" = 5 ]
-lcfg '{"lint":null}'
-check "null disables a step" [ "$(det .lint)" = null ]
+lcfg '{"test":null}'
+check "null disables a step" [ "$(det .test)" = null ]
 cfg '{"app":{"start":"npm run dev","url":"http://localhost:3000"}}'
 check "app passes through" [ "$(det .app.url)" = "http://localhost:3000" ]
 cfg 'not json'
 rm "$R/.harness/verify.local.json"
-check "invalid config ignored" [ "$(det .test)" = "make test" ]
+check "invalid config ignored" [ "$(det .test)" = null ]
 
 # --- run -----------------------------------------------------------------------------
 newrepo
@@ -208,7 +175,7 @@ check "stop attempts 2" [ "$(result attempts)" = 2 ]
 echo report > "$R/.harness/reports/implementer.md"
 hvin "$(stopjson)" stop
 check "stop cap allows" [ -z "$OUT" ]
-check "stop cap deletes report" [ ! -e "$R/.harness/reports/implementer.md" ]
+check "stop cap keeps report" [ -e "$R/.harness/reports/implementer.md" ]
 check "stop cap leaves no pending" [ ! -e "$R/.harness/reports/implementer.md.pending" ]
 check "stop cap records fail" [ "$(result status)" = fail ]
 check "stop cap attempts stay" [ "$(result attempts)" = 2 ]
@@ -316,29 +283,36 @@ check "run empty list: lint not run" [ ! -e "$R/files.out" ]
 OUT=$(cd "$R" && /bin/bash "$VERIFY" run all --base feat 2>&1 >/dev/null </dev/null)
 check "run empty list: says so on stderr" grep -qi 'no changed files' <<<"$OUT"
 
-# auto-detected {files} commands filter by extension; explicit ones do not
-newrepo
-printf '[tool.ruff]\n' > "$R/pyproject.toml"
-echo a > "$R/a.py"; echo b > "$R/b.md"
-JB=$(mktemp -d); printf '#!/bin/sh\nprintf "%%s\\n" "$@" > "%s/ruff.args"\n' "$JB" > "$JB/ruff"; chmod +x "$JB/ruff"
-OUT=$(cd "$R" && PATH="$JB:$PATH" /bin/bash "$VERIFY" run lint 2>&1 </dev/null); RC=$?
-check "pyproject lint only .py" grep -qx a.py "$JB/ruff.args"
-check "pyproject lint skips non-.py" not_grep -q b.md "$JB/ruff.args"
-rm -rf "$JB"
+# {files} is never filtered by extension
 newrepo
 echo a > "$R/a.py"; echo b > "$R/b.md"
 cfg '{"lint":"printf \"%s\\n\" {files} > files.out"}'
 hv run lint
 check "explicit lint unfiltered" grep -qx b.md "$R/files.out"
+check "explicit lint all files" grep -qx a.py "$R/files.out"
+
+# --base: unresolvable ref -> exit 2; main missing -> master -> error
 newrepo
-echo a > "$R/a.go"; echo b > "$R/b.md"; echo 'module x' > "$R/go.mod"
-JB=$(mktemp -d); printf '#!/bin/sh\nprintf "%%s\\n" "$@" > "%s/gofmt.args"\n' "$JB" > "$JB/gofmt"; chmod +x "$JB/gofmt"
-hvin "$(postjson Write "$R/b.md")" format
-OUT=$(cd "$R" && printf '%s' "$(postjson Write "$R/b.md")" | PATH="$JB:$PATH" /bin/bash "$VERIFY" format 2>&1)
-check "go format skips non-.go" [ ! -e "$JB/gofmt.args" ]
-OUT=$(cd "$R" && printf '%s' "$(postjson Write "$R/a.go")" | PATH="$JB:$PATH" /bin/bash "$VERIFY" format 2>&1)
-check "go format runs on .go" grep -qx a.go "$JB/gofmt.args"
-rm -rf "$JB"
+cfg '{"test":"echo test-ran"}'
+( cd "$R" && git branch -M master )
+hv run all
+check "run default base falls back to master" [ "$RC" -eq 0 ]
+hv run all --base nosuchref
+check "run bad --base exits 2" [ "$RC" -eq 2 ]
+OUT=$(cd "$R" && /bin/bash "$VERIFY" run all --base nosuchref 2>&1 >/dev/null </dev/null)
+check "run bad --base names ref" grep -q nosuchref <<<"$OUT"
+( cd "$R" && git branch -M trunk )
+hv run all
+check "run no main/master exits 2" [ "$RC" -eq 2 ]
+
+# stop with an interrupted hook leaves .pending (harness handles it); nothing configured -> skipped
+newrepo
+hv baseline; echo c > "$R/new.txt"
+mkdir -p "$R/.harness/reports"; echo rep > "$R/.harness/reports/implementer.md"
+hvin "$(stopjson)" stop
+check "stop nothing configured: allows" [ -z "$OUT" ]
+check "stop nothing configured: skipped" [ "$(result status)" = skipped ]
+check "stop nothing configured: report kept" [ -e "$R/.harness/reports/implementer.md" ]
 
 # stop: not a git repo -> skipped, allowed
 N=$((N + 1)); R="$ROOT/nogit$N"; mkdir -p "$R"

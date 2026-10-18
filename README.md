@@ -63,16 +63,20 @@ loop through hooks in `claude/agents/implementer.md`: a `PostToolUse` hook
 formats each edited file and feeds back per-file lint errors, and a `Stop`
 hook runs lint and tests over the changes and sends the worker back with the
 failing output (up to `maxAttempts`, default 3; the report is hidden while
-verifying and deleted on failure). `harness ask implementer` records a baseline first and exits **5**
+verifying and deleted on each failed attempt; at the cap it is kept). `harness ask implementer` (which needs `harness-verify` installed by
+`./install.sh`, else exit 1) records a baseline first and exits **5**
 (report plus a `verify: FAIL (<step>, <n> attempts)` line) when verification
 gave up (`harness report` applies the same checks). The reviewer runs `harness-verify run all [--base <ref>]` (files changed versus
 the merge base with `main`, plus uncommitted ones), smoke-checks the app if
 configured, and ends its report with `VERDICT: PASS` or `VERDICT: FAIL`
 (FAIL → exit 5; missing → exit 3).
 
-Commands per project, first hit wins per key: `.harness/verify.local.json`,
-`.claude/harness.json`, then auto-detect (Makefile, package.json, pyproject,
-Cargo.toml, go.mod, `install.sh --test`):
+Commands come only from explicit config, first hit wins per key:
+`.harness/verify.local.json`, then `.claude/harness.json`. There is no
+language or project-type detection; a missing key skips that step and no
+config at all means `skipped` (the Stop hook allows). The conductor must run
+in the directory that holds `.claude/harness.json` (the root is the cwd, not
+the git toplevel). This repo uses `{"test": "./install.sh --test"}`.
 
 ```json
 { "format": "prettier --write {files}", "lint": "eslint {files}", "test": "npm test",

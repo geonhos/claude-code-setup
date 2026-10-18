@@ -24,7 +24,7 @@ setup() {
 # run ARGS... -> sets OUT, RC  (killed by SIGALRM after 5s so a hang fails fast)
 GUARD="perl -e alarm(5);exec(@ARGV)"
 run() {
-  OUT=$(HERDR_ENV=1 HERDR_PANE_ID=w1:p1 PATH="$FAKE_BIN:$PATH" $GUARD /bin/bash "$HARNESS" "$@" 2>&1)
+  OUT=$(HERDR_ENV=1 HERDR_PANE_ID=w1:p1 PATH="$FAKE_BIN:$HERE/../bin:$PATH" $GUARD /bin/bash "$HARNESS" "$@" 2>&1)
   RC=$?
 }
 
@@ -382,6 +382,43 @@ mkdir -p .harness/verify; echo '{"status":"fail","attempts":3,"step":"test","tai
 export FAKE_PROMPT_HOOK="mkdir -p $WORK/.harness/reports; printf '# r\nstatus: done\n' > $WORK/.harness/reports/implementer.md"
 run ask implementer "do it"
 check "non-git: stale verify fail cleared" [ "$RC" -eq 0 ]
+
+# --- implementer: harness-verify missing is loud ------------------------------------
+setup
+echo idle > "$FAKE_DIR/live.implementer"
+NB=$(mktemp -d); ln -s "$(command -v jq)" "$NB/jq"
+OUT=$(HERDR_ENV=1 HERDR_PANE_ID=w1:p1 PATH="$FAKE_BIN:$NB:/usr/bin:/bin" $GUARD /bin/bash "$HARNESS" ask implementer "x" 2>&1); RC=$?
+check "no harness-verify: exit 1" [ "$RC" -eq 1 ]
+check "no harness-verify: names install.sh" grep -q "install.sh" <<<"$OUT"
+check "no harness-verify: nothing prompted" not_logged "agent prompt"
+OUT=$(HERDR_ENV=1 HERDR_PANE_ID=w1:p1 PATH="$FAKE_BIN:$NB:/usr/bin:/bin" $GUARD /bin/bash "$HARNESS" ask analyst "x" 2>&1); RC=$?
+check "no harness-verify: analyst unaffected" not_grep "harness-verify not found" <(printf "%s" "$OUT")
+rm -rf "$NB"
+
+# --- implementer: hook killed mid-run leaves only .pending ----------------------------
+setup; gitwork
+echo idle > "$FAKE_DIR/live.implementer"
+export FAKE_PROMPT_HOOK="mkdir -p $WORK/.harness/reports; printf '# r\nstatus: done\n' > $WORK/.harness/reports/implementer.md.pending"
+run ask implementer "do it"
+check "interrupted ask: exit 5" [ "$RC" -eq 5 ]
+check "interrupted ask: INTERRUPTED line" grep -qx "verify: INTERRUPTED" <<<"$OUT"
+check "interrupted ask: report restored" [ -f "$WORK/.harness/reports/implementer.md" ]
+check "interrupted ask: pending gone" [ ! -e "$WORK/.harness/reports/implementer.md.pending" ]
+unset FAKE_PROMPT_HOOK
+
+setup
+echo idle > "$FAKE_DIR/live.implementer"
+mkdir -p .harness/reports; echo '# r' > .harness/reports/implementer.md.pending
+run report implementer
+check "interrupted report: exit 5" [ "$RC" -eq 5 ]
+check "interrupted report: INTERRUPTED line" grep -qx "verify: INTERRUPTED" <<<"$OUT"
+
+setup
+echo working > "$FAKE_DIR/live.implementer"
+mkdir -p .harness/reports; echo '# r' > .harness/reports/implementer.md.pending
+run report implementer
+check "pending while working: exit 4" [ "$RC" -eq 4 ]
+check "pending while working: not restored" [ -e "$WORK/.harness/reports/implementer.md.pending" ]
 
 echo "PASS $pass / FAIL $fail"
 [ "$fail" -eq 0 ]

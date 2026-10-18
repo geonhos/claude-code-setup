@@ -41,18 +41,18 @@ harness-verify run [lint|test|all]    # manual / reviewer; exit 0 pass, 1 fail
 harness-verify baseline               # record start state (called by harness ask)
 ```
 
-**Config resolution** (first hit wins, per key):
+**Config resolution** (first hit wins, per key). Explicit configuration
+only; there is no language or project-type auto-detection (decision
+2026-10-18: nothing in the harness may depend on a specific language):
 
 1. `.harness/verify.local.json` (personal, gitignored via `.harness/`)
 2. `.claude/harness.json` (project, committed)
-3. Auto-detect, in order: `Makefile` targets (`fmt|format`, `lint`, `test`)
-   → `package.json` scripts (`format`, `lint`, `test`; runner from lockfile:
-   pnpm/yarn/bun/npm) → `pyproject.toml` (ruff format / ruff check / pytest
-   when configured) → `Cargo.toml` (cargo fmt / clippy / test) → `go.mod`
-   (gofmt -w / go vet ./... / go test ./...) → executable `install.sh` that
-   supports `--test` (test only).
-4. Nothing found → that step is skipped; `stop` allows and records
-   `"status":"skipped"`.
+3. Neither file sets the key → that step is skipped; with no steps at all,
+   `stop` allows and records `"status":"skipped"`, and the implementer
+   report says verification was skipped.
+
+This repo commits `.claude/harness.json` with `{"test": "./install.sh --test"}`.
+`.claude/agent-memory/` stays untracked (repo `.gitignore`).
 
 Schema:
 
@@ -143,11 +143,11 @@ Symlink `bin/harness-verify` next to `bin/harness`. No settings.json change
 
 ## Testing
 
-- `tests/verify.test.sh` (bash 3.2, temp git repos): detection for each
-  project type and precedence (local > project > detect); `{files}`
+- `tests/verify.test.sh` (bash 3.2, temp git repos): config precedence
+  (local > project), missing/partial config → skipped steps; `{files}`
   expansion with spaces in names; `format` hook JSON on lint failure; `stop`:
   unchanged → skipped/allow, pass → allow, fail → block JSON + report
-  deleted + attempts++, cap → allow + fail recorded; `baseline` resets.
+  deleted + attempts++, cap → allow + fail recorded + report kept; `baseline` resets.
 - `tests/harness.test.sh` (fake herdr): implementer with verify fail →
   exit 5 and `verify: FAIL` line; reviewer `VERDICT: FAIL` → 5,
   `VERDICT: PASS` → 0, missing → 3; baseline called before prompt.
