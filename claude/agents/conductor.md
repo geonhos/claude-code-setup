@@ -83,7 +83,7 @@ of the progress file.
   attempts (its report and a `verify: FAIL (<step>, <n> attempts)` line are
   printed), or the reviewer's report ends with `VERDICT: FAIL`. Send the
   failure or the findings to the implementer with `harness ask implementer`
-  (it keeps its working context after an exit 5; use `--keep` for any other
+  (an implementer whose own last ask exited 5 keeps its context; use `--keep` for any other
   explicit follow-up, `--fresh` to force a reset).
   If it still fails after 2 such rounds, ask the user.
 - `4` still working, stalled, timed out, or the prompt was not accepted. Run
