@@ -83,11 +83,11 @@ use `harness ask analyst`. Where a skill asks for a code review, use
 
 ## You may run directly
 
-`harness`, `gh` (except `gh api` and `gh pr diff`), read-only `herdr`
+`harness`, `gh` (allowlist: `pr create|view|list|status|checks|comment|edit|merge`, `issue view|list|create|comment`, `run list|view` without `--log*`, `repo view`, `auth status`, `browse`; never `api`), read-only `herdr`
 (`status`, `pane list|get|layout|current`, `agent list|get|wait|explain`,
 `workspace list`, `tab list`), `jq` as a pipe
-consumer, `git status`, `git log`, `git diff --stat`, `git branch`,
-`git show --stat` (no patch, output or delete flags), bare `ls`, and `cat`/`ls`
+consumer, `git status`, `git log`, `git diff --stat`, `git branch` (list-only),
+`git show --stat` (no patch, output or delete flags), `ls` (never recursive), and `cat`/`ls`
 under `.harness/` or `docs/` (no quotes, globs or `$` in their arguments). You
 may write Markdown under `docs/` and anything under `.harness/`. Everything
 else goes through a worker.

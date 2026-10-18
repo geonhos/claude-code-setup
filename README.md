@@ -54,11 +54,10 @@ harness close  <agent>
 
 ## What the conductor may do directly
 
-`harness`, `gh` (except `gh api` and `gh pr diff`), read-only `herdr`
+`harness`, `gh` (allowlist: `pr create|view|list|status|checks|comment|edit|merge`, `issue view|list|create|comment`, `run list|view` without `--log*`, `repo view`, `auth status`, `browse`; never `api`), read-only `herdr`
 (`status`, `pane list|get|layout|current`, `agent list|get|wait|explain`,
 `workspace list`, `tab list`), `jq` (as a pipe
-consumer only), read-only `git` (`status`, `log`, `diff --stat`, `branch`,
-`show --stat`; no patch, output or delete flags), bare `ls`, `cat`/`ls` under
+consumer only), read-only `git` (`status`, `log`, `diff --stat`, `branch` (list-only), `show --stat`; no patch, output or delete flags), `ls` (never recursive), `cat`/`ls` under
 `.harness/` and `docs/` (no quotes, globs or `$` in their arguments), and
 writing Markdown under `docs/` and anything under `.harness/`. Everything else
 is denied with a reason naming the worker to use.
@@ -66,10 +65,9 @@ is denied with a reason naming the worker to use.
 ## Known limits
 
 The gate covers the built-in file/shell tools, `Monitor`, and the `filesystem`
-MCP server. Other MCP servers that read files are not gated. `gh api`,
-`gh pr diff`, `gh alias` and `gh extension` are denied, but a global flag
-before the subcommand (`gh -R o/r api ...`) is not caught, and `gh pr
-checkout` can switch the branch. Instructions to workers must use single
+MCP server. Other MCP servers that read files are not gated. File-tool
+paths are checked again after symlink resolution. Without `jq` the gate
+denies everything (fail closed) unless `HARNESS_ROLE=worker`. Instructions to workers must use single
 quotes if they contain backticks or `$(`.
 
 The conductor agent's body replaces Claude Code's default system prompt (that
