@@ -451,6 +451,25 @@ expect allow $C "gh auth status -h"         "$(bcmd 'gh auth status -h github.co
 expect allow $C "Write docs v1..2.md"       "$(tool Write '{"file_path":"docs/v1..2.md","content":"x"}')"
 expect deny  $C "Write docs/../x.md"        "$(tool Write '{"file_path":"docs/../x.md","content":"x"}')"
 
+
+# --- round 3 -------------------------------------------------------------------
+expect deny  $C "\$ git log IFS brace"      "$(bcmd 'git log -1${=IFS}-p')"
+expect deny  $C "\$ git log IFS"            "$(bcmd 'git log -1$IFS-p')"
+expect deny  $C "\$ git branch IFS"         "$(bcmd 'git branch --sort=refname${IFS}newbr')"
+expect deny  $C "\$ gh body IFS -F"         "$(bcmd 'gh pr comment 1 --body x${=IFS}-F${=IFS}install.sh')"
+expect deny  $C "\$ gh merge IFS -d"        "$(bcmd 'gh pr merge 1 --squash${=IFS}-d')"
+expect deny  $C "\$ gh dq var"              "$(bcmd 'gh pr view "$X"')"
+expect deny  $C "\$ harness dq var"         "$(bcmd 'harness ask analyst "cost $5"')"
+expect deny  $C "\$ after sq in dq"         "$(bcmd "harness ask a \"it's \$X\"")"
+expect allow $C "\$ harness single-quoted"  "$(bcmd "harness ask analyst 'cost is \$5 and \$(x) here'")"
+expect allow $C "git log oneline"           "$(bcmd 'git log --oneline -5')"
+expect deny  $C "gh merge --delete-branch=" "$(bcmd 'gh pr merge 1 --delete-branch=true')"
+expect deny  $C "gh show-token=true"        "$(bcmd 'gh auth status --show-token=true')"
+expect deny  $C "gh recover source"         "$(bcmd 'gh pr create --recover src/a.sh')"
+expect deny  $C "gh recover= source"        "$(bcmd 'gh issue create --recover=src/a.sh')"
+expect deny  $C "gh quoted recover"         "$(bcmd 'gh pr create "--recover" src/a.sh')"
+expect allow $C "gh recover .harness"       "$(bcmd 'gh pr create --recover .harness/r.json')"
+
 # --- other tools pass through ----------------------------------------------
 expect allow $C "Skill"                   "$(tool Skill '{"skill":"x"}')"
 expect allow $C "TodoWrite"               "$(tool TodoWrite '{"todos":[]}')"

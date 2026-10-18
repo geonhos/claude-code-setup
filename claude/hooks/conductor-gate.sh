@@ -318,8 +318,8 @@ gh_segment_ok() {
   for tok in "$@"; do
     if [ "$want" -eq 1 ]; then want=0; bodyfile_ok "$tok" || return 1; continue; fi
     case "$tok" in
-      --body-file) mflag=$((mflag + 1)); want=1 ;;
-      --body-file=*) mflag=$((mflag + 1)); bodyfile_ok "${tok#*=}" || return 1 ;;
+      --body-file|--recover) mflag=$((mflag + 1)); want=1 ;;
+      --body-file=*|--recover=*) mflag=$((mflag + 1)); bodyfile_ok "${tok#*=}" || return 1 ;;
       --*) ;;
       -*F*) mflag=$((mflag + 1)); v=${tok#*F}
             if [ -n "$v" ]; then bodyfile_ok "$v" || return 1; else want=1; fi ;;
@@ -334,10 +334,10 @@ gh_segment_ok() {
   set +f
   for tok in "$@"; do
     case "$tok" in
-      --body-file|--body-file=*) nflag=$((nflag + 1)) ;;
+      --body-file|--body-file=*|--recover|--recover=*) nflag=$((nflag + 1)) ;;
       --log*)          [ "$group $sub" != 'run view' ] || return 1 ;;
-      --delete-branch) [ "$group $sub" != 'pr merge' ] || return 1 ;;
-      --show-token)    [ "$group $sub" != 'auth status' ] || return 1 ;;
+      --delete-branch|--delete-branch=*) [ "$group $sub" != 'pr merge' ] || return 1 ;;
+      --show-token|--show-token=*) [ "$group $sub" != 'auth status' ] || return 1 ;;
       --*) ;;
       -*F*) nflag=$((nflag + 1)) ;;
     esac
@@ -369,6 +369,23 @@ git_branch_ok() {
     esac
   done
   return 0
+}
+
+# has_unquoted_dollar RAW -> 0 when RAW has a $ outside single quotes (double
+# quotes still expand; a backslash-escaped $ is literal)
+has_unquoted_dollar() {
+  printf '%s\n' "$1" | awk '
+    BEGIN { st = 0; hit = 0 }   # st: 0 unquoted, 1 single, 2 double
+    { n = length($0)
+      for (i = 1; i <= n; i++) {
+        c = substr($0, i, 1)
+        if (st == 1) { if (c == "\047") st = 0 }
+        else if (c == "\\") i++
+        else if (c == "$") hit = 1
+        else if (st == 0 && c == "\047") st = 1
+        else if (c == "\"") st = (st == 0 ? 2 : 0)
+      } }
+    END { exit hit ? 0 : 1 }'
 }
 
 # cat_ls_segment_ok MASKED -> 0 when a cat / ls segment needs no quoting,
@@ -419,6 +436,8 @@ bash_ok() {
     raw=$(printf '%s' "$raw" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')
     [ -n "$seg" ] || continue
     n=$((n + 1))
+    # no parameter expansion outside single quotes, in any command
+    has_unquoted_dollar "$raw" && return 1
     # reject '..' path components (but not git ranges like main...HEAD)
     printf ' %s ' "$seg" | grep -Eq '[ /=]\.\.([ /]|$)' && return 1
     case "$seg" in

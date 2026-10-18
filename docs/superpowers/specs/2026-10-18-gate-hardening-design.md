@@ -36,15 +36,21 @@ Additional rules:
   the gate's tokenization identical to gh's. `api` is denied by the allowlist
   (not a listed group); the word may appear in titles and bodies.
 - `gh run view` with `--log*` → deny. `gh pr merge` with `-d`/`--delete-branch`
-  (incl. short clusters such as `-sd`) → deny. `gh auth status` with
-  `-t`/`--show-token` → deny.
-- `--body-file`/`-F` (also `--body-file=x`, `-Fx`, clusters like `-dF`): the
+  (incl. `--delete-branch=x` and short clusters such as `-sd`) → deny.
+  `gh auth status` with `-t`/`--show-token`/`--show-token=x` → deny.
+- `--body-file`/`-F`/`--recover` (also `--body-file=x`, `-Fx`, clusters like `-dF`): the
   value must be a plain, unquoted path that passes the symlink-resolved check
   and lies under `.harness/` or `docs/`; `-` (stdin) → deny. A flag that is
   quoted (`"--body-file"`) → deny.
 - Accepted: `gh pr create` may push the current branch implicitly.
 - Anything not listed (including `gist`, `repo clone`, `pr checkout`,
   `pr diff`, `run download`, `release`, `search`, `alias`, `extension`) → deny.
+
+### 1a. No `$` expansion in any Bash segment
+
+A `$` that is not inside single quotes (including inside double quotes) →
+deny, for every command. This stops word-splitting tricks such as
+`git log -1${=IFS}-p`. A backslash-escaped `$` is literal and allowed.
 
 ### 2. `git branch` is list-only
 
@@ -89,6 +95,13 @@ If `jq` is not on `PATH` and the role is not `worker`, emit a deny with the
 fixed reason `Conductor gate requires jq. Install jq, or run a worker session.`
 The JSON must be emitted without `jq` (static `printf`). Unparseable stdin
 keeps the current fail-open behaviour (allow + one stderr line).
+
+## Known limitations
+
+- Prose false-denies: a quoted title/body that contains `$`, or an option-like
+  word (`-d`, `-t`, `--log…`) in an unquoted position, may be denied.
+- `Glob` patterns with a symlinked directory in the middle of the pattern
+  (after a glob character) are not resolved; only the static prefix is.
 
 ## Non-goals
 
