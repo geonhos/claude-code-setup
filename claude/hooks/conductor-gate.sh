@@ -378,21 +378,27 @@ git_branch_ok() {
 # Single-quoted text is literal. Double-quoted text may not contain $ ` \ or !.
 unquoted_text_ok() {
   printf '%s\n' "$1" | LC_ALL=C awk '
-    BEGIN { st = 0; bad = 0; ws = 1 }   # st: 0 unquoted, 1 single, 2 double; ws: at word start
+    BEGIN { st = 0; bad = 0; ws = 1 }   # st: 0 unquoted, 1 single, 2 double; ws: still at word start
     { n = length($0)
       for (i = 1; i <= n; i++) {
         c = substr($0, i, 1)
-        if (st == 1) { if (c == "\047") st = 0 }
+        if (st == 1) { if (c == "\047") st = 0; else ws = 0 }
         else if (st == 2) {
           if (c == "\"") st = 0
-          else if (c == "$" || c == "`" || c == "\\" || c == "!") bad = 1
-        } else if (c == " ") { ws = 1; continue }
-        else if (c == "\047") st = 1
+          else {
+            ws = 0
+            if (c == "$" || c == "`" || c == "\\" || c == "!") bad = 1
+          }
+        } else if (c == " ") ws = 1
+        else if (c == "\047") st = 1            # quotes alone do not end word start
         else if (c == "\"") st = 2
-        else if (c ~ /[A-Za-z0-9._\/@%+,:-]/) { }
-        else if (c == "=" && !ws) { }
+        else if (c == "\\") {                   # only \'"'"', \" and "\ " are literal
+          nx = substr($0, i + 1, 1)
+          if (nx == "\047" || nx == "\"" || nx == " ") { i++; ws = 0 } else bad = 1
+        }
+        else if (c ~ /[A-Za-z0-9._\/@%+,:-]/) ws = 0
+        else if (c == "=" && !ws) ws = 0
         else bad = 1
-        ws = 0
       } }
     END { exit (bad || st != 0) ? 1 : 0 }'
 }

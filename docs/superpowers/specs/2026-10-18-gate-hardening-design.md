@@ -50,7 +50,9 @@ Additional rules:
 
 The segment is scanned quote-aware, before any per-command rule. Outside quotes
 only `A-Z a-z 0-9 . _ / @ % + , : - =` and spaces are allowed, and a word may
-not start with `=` (zsh `=cmd`) or `~`. Anything else (`{ } ( ) [ ] * ? ! ^ ~
+not start with `=` (zsh `=cmd`) or `~`; empty quote pairs do not end word
+start. A backslash is allowed only before `'`, `"` or a space (so the
+`don'\''t` idiom works). Anything else (`{ } ( ) [ ] * ? ! ^ ~
 # \ < > $`, backtick, tab, newline) → deny. This covers brace expansion, globs,
 zsh glob qualifiers, `=(cmd)`, word splitting via `${IFS}`, and escapes in one
 rule. Single-quoted text is literal and unrestricted. Double-quoted text may
@@ -104,10 +106,12 @@ keeps the current fail-open behaviour (allow + one stderr line).
 
 ## Known limitations
 
-- Prose false-denies: a double-quoted title/body that contains `$`, backtick, `\\` or `!`, or an option-like
+- Prose false-denies: a double-quoted title/body that contains `$`, backtick, `\` or `!`, or an option-like
   word (`-d`, `-t`, `--log…`) in an unquoted position, may be denied.
 - `Glob` patterns with a symlinked directory in the middle of the pattern
   (after a glob character) are not resolved; only the static prefix is.
+- Unquoted `~` and `^` (e.g. `HEAD~1`, `HEAD^`, `HEAD@{1}`) are denied; quote
+  them, e.g. single-quoted `HEAD~1`.
 
 ## Non-goals
 

@@ -490,7 +490,7 @@ expect deny  $C "al dq bang"                "$(bcmd 'harness ask x "hi!"')"
 expect deny  $C "al dq backslash"           "$(bcmd 'harness ask x "a\\nb"')"
 expect deny  $C "al unquoted bang"          "$(bcmd 'harness ask x hi!')"
 expect deny  $C "al unquoted caret"         "$(bcmd 'harness ask x a^b')"
-expect deny  $C "al unquoted backslash"     "$(bcmd 'harness ask x a\ b')"
+expect allow $C "al unquoted backslash space"     "$(bcmd 'harness ask x a\ b')"
 expect allow $C "al harness read task"      "$(bcmd "harness ask implementer 'Read .harness/task-implementer.md and do it.'")"
 expect allow $C "al harness sq specials"    "$(bcmd "harness ask x 'a {b} (c) *d* \$e'")"
 expect allow $C "al gh create paren title"  "$(bcmd "gh pr create --title 'fix: x (y)' --body-file .harness/pr.md")"
@@ -498,6 +498,22 @@ expect allow $C "al git diff range"         "$(bcmd 'git diff --stat main...HEAD
 expect allow $C "al two segs"               "$(bcmd 'harness status; herdr agent get reviewer')"
 expect allow $C "al 2>&1"                   "$(bcmd 'harness report implementer 2>&1')"
 expect allow $C "al dq plain"               "$(bcmd 'harness ask x "plain words, fine (really) {ok}"')"
+
+
+# --- round 5 --------------------------------------------------------------------
+expect allow $C "r5 escaped apostrophe idiom" "$(bcmd "harness ask analyst 'please review; don'\\''t fix'")"
+expect allow $C "r5 backslash dquote"         "$(bcmd 'harness ask x a\"b')"
+expect allow $C "r5 backslash space"          "$(bcmd 'harness ask x a\ b')"
+expect deny  $C "r5 backslash letter"         "$(bcmd 'harness ask x a\nb')"
+expect deny  $C "r5 backslash dollar"         "$(bcmd 'harness ask x a\$b')"
+expect deny  $C "r5 trailing backslash"       "$(bcmd 'harness ask x a\')"
+expect deny  $C "r5 empty sq then ="          "$(bcmd "harness ask x ''=ls")"
+expect deny  $C "r5 empty dq then ="          "$(bcmd 'harness ask x ""=ls')"
+expect deny  $C "r5 empty quotes then ="      "$(bcmd "harness ask x ''\"\"=ls")"
+expect deny  $C "r5 empty sq then ~"          "$(bcmd "harness ask x ''~")"
+expect allow $C "r5 quoted word then ="       "$(bcmd "harness ask x 'a'=b")"
+expect allow $C "r5 mid-word ="               "$(bcmd 'harness ask x a=b')"
+expect allow $C "r5 quoted tilde"             "$(bcmd "git log -1 'HEAD~1'")"
 
 # --- other tools pass through ----------------------------------------------
 expect allow $C "Skill"                   "$(tool Skill '{"skill":"x"}')"
