@@ -1,0 +1,18 @@
+flowchart LR
+  subgraph repo["repo"]
+    RA["claude/agents/*.md"]
+    RB["bin/harness, bin/harness-verify"]
+    RG["claude/hooks/conductor-gate.sh"]
+    RR["claude/hooks/conductor-resume.sh"]
+  end
+  HI["herdr integration install claude<br/>(runs first)"]
+  A2["~/.claude/agents/*.md<br/>symlinks, foreign files backed up"]
+  B2["~/.local/bin/harness, harness-verify<br/>symlinks"]
+  ST["~/.claude/settings.json (backup .bak.ts)<br/>agent = conductor<br/>promptCacheTtl, subagentPromptCacheTtl = 1h<br/>env BASH_DEFAULT/MAX_TIMEOUT_MS<br/>hooks.PreToolUse: one gate entry<br/>hooks.SessionStart: one resume entry"]
+  GI["~/.config/git/ignore<br/>+ .harness/"]
+  RA -- "ln -sfn" --> A2
+  RB -- "ln -sfn" --> B2
+  RG -- "jq merge (path)" --> ST
+  RR -- "jq merge (path)" --> ST
+  HI --> ST
+  repo -. "./install.sh" .-> GI

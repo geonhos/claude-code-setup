@@ -1,0 +1,18 @@
+flowchart LR
+  cond["Conductor session"]
+  workers["analyst / implementer / reviewer panes"]
+  hcli["harness CLI"]
+  subgraph claudehome["~/.claude"]
+    set[("settings.json<br/>agent, hooks, env, TTLs")]
+    hooks["hooks: conductor-gate.sh<br/>conductor-resume.sh"]
+    agents[("agents/*.md")]
+  end
+  prog[("progress.md")]
+
+  set -. "configures" .-> cond
+  agents -. "claude --agent: prompt + hooks" .-> workers
+  cond -- "PreToolUse hook JSON" --> hooks
+  hooks -- "deny JSON / allow" --> cond
+  prog -- "read by" --> hooks
+  hooks -- "SessionStart: progress.md" --> cond
+  hcli -. "starts with --agent X" .-> workers

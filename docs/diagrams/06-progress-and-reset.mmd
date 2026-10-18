@@ -1,0 +1,17 @@
+flowchart TD
+  ASK["any harness ask ends<br/>(any exit, incl. signal)"] --> LOGF["log/YYYYmmdd-HHMMSS-agent.md<br/>instruction, brief task-*.md, report or screen"]
+  LOGF --> ROT1{"progress.jsonl &gt; 1 MB?"}
+  ROT1 -- yes --> GZ["roll to progress.jsonl.ts.gz"] --> JL
+  ROT1 -- no --> JL["append jsonl: ts agent session instr exit verify<br/>dur head_before/after ctx_before/after status summary report_sha"]
+  JL --> ROT2["rotate logs: keep newest 200, drop &gt; 14 days"]
+  ROT2 --> MD["regenerate progress.md ≤ 60 lines<br/>goal, last 15 asks, newest open questions, workers + ctx"]
+  LATE["leftover report at next ask"] --> LA["log/…-late.md + jsonl exit null, late true"] --> MD
+  MD --> RES["SessionStart hook (startup|clear|compact)<br/>conductor only, adds progress.md as additionalContext"]
+  RES --> COND["Conductor resumes"]
+  TX[("~/.claude/projects/enc-cwd/session.jsonl<br/>last main-thread assistant usage")] --> CTX["ctx = input + cache_creation + cache_read"]
+  CTX --> JL
+  CTX --> RS{"reset before ask?<br/>live and not --keep"}
+  RS -- "implementer: always<br/>analyst/reviewer: ctx &gt; 120000 or --fresh" --> LE{"last ask exit 0?<br/>(reviewer also 5) or --fresh"}
+  LE -- no --> KEEP(["keep context"])
+  LE -- yes --> CLR["/clear, poll for new session id + idle"]
+  CLR -- timeout --> RSP["close pane + respawn"]

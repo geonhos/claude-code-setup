@@ -3,6 +3,7 @@
 A user-level Claude Code setup where the main session (Fable) is a
 **conductor**: it reads only worker reports and delegates all analysis and
 implementation to Claude workers running in [herdr](https://herdr.dev) panes.
+Architecture diagrams: [docs/architecture.md](docs/architecture.md).
 
 Why: Fable tokens are expensive. The conductor never loads source into its
 context, and workers (`analyst` opus · `implementer` sonnet · `reviewer`

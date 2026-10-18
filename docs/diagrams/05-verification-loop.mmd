@@ -1,0 +1,29 @@
+flowchart TD
+  CFG["config per key, first hit wins:<br/>.harness/verify.local.json → .claude/harness.json<br/>(no detection; null/missing key = step skipped; maxAttempts default 3)"]
+  subgraph impl["implementer (frontmatter hooks)"]
+    E["Edit / Write / MultiEdit"] --> PT["PostToolUse: harness-verify format<br/>format file, lint {files} on it"]
+    PT -- "lint fails" --> FB["decision: block + lint output<br/>(feedback, edit already done)"]
+    PT -- ok --> E
+    FB --> E
+    ST["Stop: harness-verify stop"] --> NG{"git repo?"}
+    NG -- no --> PASS0([allow stop])
+    NG -- yes --> SAME{"state id = baseline?"}
+    SAME -- yes --> SK(["result skipped, allow"])
+    SAME -- no --> HIDE["hide report → .pending"] --> LT{"lint then test<br/>over changed files"}
+    LT -- pass --> OKR(["restore report<br/>result pass or skipped"])
+    LT -- fail --> CAP{"attempts &lt; max?"}
+    CAP -- yes --> BLK["attempts+1, delete .pending<br/>result fail, decision: block + tail 40"]
+    BLK --> E
+    CAP -- no --> GIVE(["restore report, result fail, allow stop"])
+  end
+  subgraph rev["reviewer"]
+    RR["harness-verify run all --base ref<br/>(merge-base main, else master)"] --> RX{"exit"}
+    RX -- "0 pass / 1 fail / 2 bad base" --> VD["report ends VERDICT: PASS|FAIL"]
+  end
+  CFG -.-> PT & LT & RR
+  OKR & GIVE --> MAP{"harness ask maps"}
+  VD --> MAP
+  MAP -- "implementer.json status fail" --> X5([exit 5 + verify: FAIL line])
+  MAP -- "VERDICT: FAIL" --> X5
+  MAP -- "reviewer, no VERDICT last line" --> X3([exit 3])
+  MAP -- otherwise --> X0([exit 0])
