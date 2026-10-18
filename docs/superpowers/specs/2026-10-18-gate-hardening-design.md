@@ -29,16 +29,26 @@ allowlist. A `gh` segment is allowed only when its subcommand pair is listed:
 
 Additional rules:
 
-- Global flags (`-R`/`--repo <x>`, `--hostname <x>`) may precede the group;
-  the parser skips them and their value before matching.
-- The token `api` anywhere in the segment → deny.
-- `gh run view` with `--log` or `--log-failed` → deny.
+- Global flags (`-R`/`--repo <x>`, `--hostname <x>`, and `--repo=x` forms) may
+  precede the group; the parser skips them and their value before matching.
+- Global flags, group and subcommand are read from the quote-masked segment and
+  must be plain tokens (no quote or backslash); otherwise → deny. This keeps
+  the gate's tokenization identical to gh's. `api` is denied by the allowlist
+  (not a listed group); the word may appear in titles and bodies.
+- `gh run view` with `--log*` → deny. `gh pr merge` with `-d`/`--delete-branch`
+  (incl. short clusters such as `-sd`) → deny. `gh auth status` with
+  `-t`/`--show-token` → deny.
+- `--body-file`/`-F` (also `--body-file=x`, `-Fx`, clusters like `-dF`): the
+  value must be a plain, unquoted path that passes the symlink-resolved check
+  and lies under `.harness/` or `docs/`; `-` (stdin) → deny. A flag that is
+  quoted (`"--body-file"`) → deny.
+- Accepted: `gh pr create` may push the current branch implicitly.
 - Anything not listed (including `gist`, `repo clone`, `pr checkout`,
   `pr diff`, `run download`, `release`, `search`, `alias`, `extension`) → deny.
 
 ### 2. `git branch` is list-only
 
-Allowed: bare `git branch`, and the options `-a`, `-r`, `-v`, `-vv`,
+Any quote or backslash in the segment → deny. Allowed: bare `git branch`, and the options `-a`, `-r`, `-v`, `-vv`,
 `--list`, `--all`, `--remotes`, `--show-current`, `--merged`, `--no-merged`,
 `--contains`, `--no-contains`, `--points-at`, `--sort=<k>`. (`--format` is
 not allowed; output shaping is unnecessary.) A positional argument is
@@ -51,7 +61,8 @@ option (`-f`, `-d`, `-D`, `-m`, `-M`, `-c`, `-C`, `-u`, `--force`,
 ### 3. `ls` without recursion
 
 `-R`, `--recursive`, and any short-option cluster containing `R` (e.g. `-laR`)
-→ deny. Applies to bare `ls` and to `ls` under `.harness/`/`docs/`.
+→ deny. Applies to bare `ls` and to `ls` under `.harness/`/`docs/`. `ls` path
+arguments are symlink-resolved like `cat` arguments.
 
 ### 4. Symlink-resolved path checks
 
@@ -62,6 +73,11 @@ real location and re-apply the same rule to the resolved repo-relative path.
 - Resolution must work on macOS `/bin/bash` 3.2 without GNU coreutils:
   `cd -P` + `pwd -P` for the directory part, plus a bounded `readlink` loop
   (max 16 hops) for a symlinked final component.
+- Also applied to `cat` and `ls` path arguments in Bash, to a `Glob` `path`,
+  and to the static directory prefix of a `Glob` pattern (up to the first glob
+  character, relative to `path` when given).
+- A `..` check on the unresolved tail matches whole path segments only
+  (`docs/v1..2.md` is fine).
 - A path that does not exist yet (a new file under `docs/` or `.harness/`)
   resolves via its nearest existing ancestor directory.
 - Resolved path outside `cwd`, or a loop/hop limit hit → deny with the
@@ -85,7 +101,7 @@ keeps the current fail-open behaviour (allow + one stderr line).
 
 TDD in `tests/gate.test.sh` (bash 3.2):
 
-- New deny cases, written first and seen failing: `gh run view 1 --log`,
+- New deny cases, written first and seen failing: `gh run view 1 --log`, quoted/escaped-space `-R` desync (`gh -R "u#x pr view" pr diff 1`), `git branch --sort="refname --list" newbr`, `gh pr comment --body-file <source>`, `gh pr merge -d`, `gh auth status --show-token`,
   `gh run view 1 --log-failed`, `gh gist view x`, `gh repo clone o/r`,
   `gh pr checkout 1`, `gh -R o/r api repos`, `gh --repo o/r pr diff 1`,
   `gh search code foo`, `gh release download v1`, `git branch tmpx`,
@@ -96,8 +112,7 @@ TDD in `tests/gate.test.sh` (bash 3.2):
 - Regression allow cases: `gh pr create --title 't' --body-file .harness/pr.md`,
   `gh -R o/r pr view 1`, `gh pr list`, `gh run view 1`, `gh run list`,
   `gh issue view 3`, `gh auth status`, `git branch`, `git branch -a`,
-  `git branch --list 'feat*'` (if quoting allowed by existing rules, else
-  `git branch --list feat`), `git branch --contains HEAD`, `ls`, `ls -la docs`,
+  `git branch --list feat`, `git branch --contains HEAD`, `ls`, `ls -la docs`,
   Write of a new file `docs/x.md`, Read of a real `docs/*.md`.
 - `./install.sh --test` passes in full.
 

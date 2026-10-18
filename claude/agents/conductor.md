@@ -83,7 +83,7 @@ use `harness ask analyst`. Where a skill asks for a code review, use
 
 ## You may run directly
 
-`harness`, `gh` (allowlist: `pr create|view|list|status|checks|comment|edit|merge`, `issue view|list|create|comment`, `run list|view` without `--log*`, `repo view`, `auth status`, `browse`; never `api`), read-only `herdr`
+`harness`, `gh` (allowlist: `pr create|view|list|status|checks|comment|edit|merge`, `issue view|list|create|comment`, `run list|view` without `--log*`, `repo view`, `auth status`, `browse`; never `api`; `--body-file` only from `.harness/` or `docs/`; no `pr merge -d`, no `auth status --show-token`), read-only `herdr`
 (`status`, `pane list|get|layout|current`, `agent list|get|wait|explain`,
 `workspace list`, `tab list`), `jq` as a pipe
 consumer, `git status`, `git log`, `git diff --stat`, `git branch` (list-only),

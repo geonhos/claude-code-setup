@@ -96,7 +96,7 @@ physical() {
       case "$t" in /*) p=$t$tail ;; *) p=$par/$t$tail ;; esac
       continue
     fi
-    case "$tail" in *..*) return 1 ;; esac
+    case "$tail" in */..|*/../*) return 1 ;; esac
     if [ -d "$ex" ]; then
       par=$(cd -P "$ex" 2>/dev/null && pwd -P) || return 1
       if [ "$par" = / ]; then printf '%s' "$tail"; else printf '%s' "$par$tail"; fi
@@ -254,57 +254,110 @@ git_segment_ok() {
   return 0
 }
 
-# gh_segment_ok RAW -> 0 only for allowlisted gh subcommands (see the spec):
-# pr create|view|list|status|checks|comment|edit|merge, issue view|list|create|
-# comment, run list|view (no --log*), repo view, auth status, browse. Global
-# flags -R/--repo/--hostname (and their --x=y forms) may precede the group.
-# The token api anywhere denies. Checked on the raw text with quoting removed.
+# plain_tok TOKEN -> 0 when TOKEN has no quote or backslash
+plain_tok() {
+  case "$1" in *[\"\'\\]*) return 1 ;; esac
+  return 0
+}
+
+# bodyfile_ok VALUE -> 0 when a gh --body-file / -F value is a path that stays
+# (symlinks resolved) under .harness/ or docs/. "-" (stdin) is denied.
+bodyfile_ok() {
+  local v=$1 p
+  [ -n "$v" ] && [ "$v" != - ] || return 1
+  plain_tok "$v" || return 1
+  has_expansion "$v" && return 1
+  p=$(rel "$v") || return 1
+  p=$(physrel "$v") || return 1
+  case "$p" in .harness/*|docs/*) return 0 ;; esac
+  return 1
+}
+
+# gh_segment_ok MASKED RAW -> 0 only for allowlisted gh subcommands (spec 1):
+# pr create|view|list|status|checks|comment|edit|merge (merge without -d),
+# issue view|list|create|comment, run list|view (no --log*), repo view,
+# auth status (no --show-token), browse. Global flags -R/--repo/--hostname (and
+# --x=y) may precede the group. Everything up to and including the subcommand
+# is read from the MASKED segment and must be plain unquoted tokens, so quoting
+# cannot make this parser disagree with gh. --body-file/-F values must be
+# plain paths under .harness/ or docs/. Flag checks on the rest of the segment
+# use the raw text with quoting removed, so "--log" == --log.
 gh_segment_ok() {
-  local norm tok group="" sub="" skip=0 rest=""
-  norm=$(printf '%s ' "$1" | tr -d "\"'\\\\" | tr -s ' ')
+  local norm tok group sub nflag=0 mflag=0 want=0 v
+  norm=$(printf '%s ' "$2" | tr -d "\"'\\\\" | tr -s ' ')
   set -f
-  set -- $norm
+  set -- $1
   set +f
-  [ "${1:-}" = gh ] || return 1
-  shift
-  for tok in "$@"; do
-    [ "$tok" != api ] || return 1
-  done
+  shift   # "gh"
   while [ $# -gt 0 ]; do
+    plain_tok "$1" || return 1
     case "$1" in
-      -R|--repo|--hostname) [ $# -ge 2 ] || return 1; shift 2 ;;
+      -R|--repo|--hostname) [ $# -ge 2 ] || return 1; plain_tok "$2" || return 1; shift 2 ;;
       --repo=*|--hostname=*) shift ;;
       -*) return 1 ;;
       *) break ;;
     esac
   done
-  group=${1:-}; sub=${2:-}
-  [ -n "$group" ] || return 1
-  case "$group" in
-    browse) return 0 ;;
-  esac
-  [ -n "$sub" ] || return 1
+  [ $# -ge 1 ] || return 1
+  group=$1; sub=-
+  shift
+  if [ "$group" != browse ]; then
+    [ $# -ge 1 ] || return 1
+    sub=$1
+    shift
+    plain_tok "$sub" || return 1
+  fi
   case "$group $sub" in
     'pr create'|'pr view'|'pr list'|'pr status'|'pr checks'|'pr comment'|'pr edit'|'pr merge') ;;
     'issue view'|'issue list'|'issue create'|'issue comment') ;;
-    'run list'|'run view')
-      shift 2
-      for tok in "$@"; do
-        case "$tok" in --log*) return 1 ;; esac
-      done ;;
-    'repo view'|'auth status') ;;
+    'run list'|'run view'|'repo view'|'auth status'|'browse -') ;;
     *) return 1 ;;
   esac
+  # --body-file / -F values (also --body-file=x, -Fx, clusters like -dF): read
+  # from the masked tail, must be plain paths under .harness/ or docs/
+  for tok in "$@"; do
+    if [ "$want" -eq 1 ]; then want=0; bodyfile_ok "$tok" || return 1; continue; fi
+    case "$tok" in
+      --body-file) mflag=$((mflag + 1)); want=1 ;;
+      --body-file=*) mflag=$((mflag + 1)); bodyfile_ok "${tok#*=}" || return 1 ;;
+      --*) ;;
+      -*F*) mflag=$((mflag + 1)); v=${tok#*F}
+            if [ -n "$v" ]; then bodyfile_ok "$v" || return 1; else want=1; fi ;;
+    esac
+  done
+  [ "$want" -eq 0 ] || return 1
+  # quote-stripped view: a flag that only appears once quotes are removed
+  # ("--body-file") must not slip past the check above, and the per-command
+  # flag denials apply to it
+  set -f
+  set -- $norm
+  set +f
+  for tok in "$@"; do
+    case "$tok" in
+      --body-file|--body-file=*) nflag=$((nflag + 1)) ;;
+      --log*)          [ "$group $sub" != 'run view' ] || return 1 ;;
+      --delete-branch) [ "$group $sub" != 'pr merge' ] || return 1 ;;
+      --show-token)    [ "$group $sub" != 'auth status' ] || return 1 ;;
+      --*) ;;
+      -*F*) nflag=$((nflag + 1)) ;;
+    esac
+    case "$tok" in
+      --*) ;;
+      -*d*) [ "$group $sub" != 'pr merge' ] || return 1 ;;
+      -*t*) [ "$group $sub" != 'auth status' ] || return 1 ;;
+    esac
+  done
+  [ "$nflag" -le "$mflag" ] || return 1
   return 0
 }
 
-# git_branch_ok RAW -> 0 when `git branch ...` only lists (spec 2). RAW is the
-# segment with quoting removed.
+# git_branch_ok RAW -> 0 when `git branch ...` only lists (spec 2). Any quote
+# or backslash denies, so token splitting cannot disagree with git.
 git_branch_ok() {
-  local norm tok listing=0
-  norm=$(printf '%s ' "$1" | tr -d "\"'\\\\" | tr -s ' ')
+  local tok listing=0
+  plain_tok "$1" || return 1
   set -f
-  set -- $norm
+  set -- $1
   set +f
   shift 2   # git branch
   for tok in "$@"; do
@@ -335,6 +388,9 @@ cat_ls_segment_ok() {
           --r*) return 1 ;;            # --recursive (and abbreviations)
           --*) ;;
           -*R*) return 1 ;;            # -R, -laR, ...
+          -*) ;;
+          *)  p=$(physrel "$tok") || return 1   # symlink-resolved path argument
+              case "$p" in .harness|.harness/*|docs|docs/*) ;; *) return 1 ;; esac ;;
         esac
       done ;;
     cat)
@@ -369,7 +425,7 @@ bash_ok() {
       jq|jq\ *)       jq_segment_ok "$n" "$seg" "$raw" || return 1; continue ;;
       git\ *)         git_segment_ok "$raw" || return 1
                       case "$seg" in git\ branch|git\ branch\ *) git_branch_ok "$raw" || return 1 ;; esac ;;
-      gh|gh\ *)       gh_segment_ok "$raw" || return 1 ;;
+      gh|gh\ *)       gh_segment_ok "$seg" "$raw" || return 1 ;;
       cat\ *|ls|ls\ *) cat_ls_segment_ok "$seg" || return 1 ;;
     esac
     printf '%s' "$seg" | grep -Eq "$BASH_ALLOW" || return 1
@@ -395,9 +451,19 @@ case "$TOOL" in
     if [ -z "$GPATH" ]; then
       # no path: the pattern itself must stay under .harness/ or docs/
       case "$PATTERN" in docs/*|.harness/*) ;; *) deny "$MSG_READ" ;; esac
+      GBASE=$CWD
     else
       readable "$GPATH" || deny "$MSG_READ"
-    fi ;;
+      GBASE=$GPATH
+      case "$GBASE" in /*) ;; *) GBASE=$CWD/$GBASE ;; esac
+    fi
+    # resolve the pattern's static directory prefix (up to the first glob char)
+    GPRE=${PATTERN%%[\*\?\[\{]*}
+    if [ "$GPRE" = "$PATTERN" ]; then GDIR=$PATTERN
+    else case "$GPRE" in */*) GDIR=${GPRE%/*} ;; *) GDIR="" ;; esac
+    fi
+    GP=$(physrel "$GBASE${GDIR:+/$GDIR}") || deny "$MSG_READ"
+    case "$GP" in .harness|.harness/*|docs|docs/*) ;; *) deny "$MSG_READ" ;; esac ;;
   Agent|Workflow)
     deny "$MSG_AGENT" ;;
   Bash)
