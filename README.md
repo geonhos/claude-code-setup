@@ -46,19 +46,81 @@ Run `./install.sh --test` to execute the test suites.
 
 ```
 harness spawn  <agent> [--direction right|down]
-harness ask    <agent> '<instruction>' [--timeout MS]   # exit 2 blocked · 3 no report · 4 still working
-harness report <agent>                                   # print existing report, or exit 3
+harness ask    <agent> '<instruction>' [--timeout MS] [--fresh|--keep]   # exit 2 blocked · 3 no report · 4 still working · 5 verification failed
+harness report <agent>                                   # print existing report (same exit codes as ask), 3 none, 4 still working
 harness status
 harness close  <agent>
 ```
 
+## Progress log and context reset
+
+Every `harness ask` (any exit code) writes `.harness/log/<ts>-<agent>.md`
+(instruction, brief file contents, report or screen tail) and appends one JSON
+line to `.harness/progress.jsonl` (ts, agent, session, instr, exit, verify,
+dur_s, head_before/after, ctx_before/after, status, summary), then regenerates
+`.harness/progress.md` (≤ 60 lines: goal, last 15 asks, open questions,
+worker state). Write a one-paragraph `.harness/goal.md` to set the goal line.
+Logging problems only warn on stderr; they never change an ask's result.
+
+A `SessionStart` hook (`claude/hooks/conductor-resume.sh`, matcher
+`startup|clear|compact`, installed by `install.sh`) injects `progress.md`
+into the conductor's context; it stays silent for workers.
+
+Rotation after each ask: newest 200 logs kept, logs older than 14 days
+deleted, `progress.jsonl` over 1 MB rolled to `progress.jsonl.<ts>.gz`.
+Knobs: `HARNESS_LOG_KEEP`, `HARNESS_LOG_DAYS`, `HARNESS_JSONL_MAX` (bytes).
+
+Before an ask, a live worker's context is cleared with `/clear` (waits for a
+new session id; if that does not happen within 10 s the pane is closed and
+respawned): the implementer always, analyst/reviewer when their context
+exceeds `HARNESS_CTX_RESET` tokens (default 120000) or with `--fresh`.
+`--keep` skips the clear for one ask. Freshly spawned workers are never
+cleared. Panes get `CLAUDE_CODE_AUTO_COMPACT_WINDOW=160000` as a late safety
+net. `harness status` shows a `ctx` column (tokens read from the transcript
+under `~/.claude/projects`, `-` when unknown; override the directory with
+`HARNESS_PROJECTS_DIR`). Live probe: `/clear` keeps the `--agent` prompt and
+settles in under a second.
+
+## Verification loop
+
+`.harness/` (reports, panes, verify state) lives in the directory where the
+conductor runs; workers and hooks use that same directory (the hook `cwd`),
+not the git toplevel.
+
+The implementer does not judge its own work. `harness-verify` runs inside its
+loop through hooks in `claude/agents/implementer.md`: a `PostToolUse` hook
+formats each edited file and feeds back per-file lint errors, and a `Stop`
+hook runs lint and tests over the changes and sends the worker back with the
+failing output (up to `maxAttempts`, default 3; the report is hidden while
+verifying and deleted on each failed attempt; at the cap it is kept). `harness ask implementer` (which needs `harness-verify` installed by
+`./install.sh`, else exit 1) records a baseline first and exits **5**
+(report plus a `verify: FAIL (<step>, <n> attempts)` line) when verification
+gave up (`harness report` applies the same checks). The reviewer runs `harness-verify run all [--base <ref>]` (files changed versus
+the merge base with `main`, plus uncommitted ones), smoke-checks the app if
+configured, and ends its report with `VERDICT: PASS` or `VERDICT: FAIL`
+(FAIL → exit 5; missing → exit 3).
+
+Commands come only from explicit config, first hit wins per key:
+`.harness/verify.local.json`, then `.claude/harness.json`. There is no
+language or project-type detection; a missing key skips that step and no
+config at all means `skipped` (the Stop hook allows). The conductor must run
+in the directory that holds `.claude/harness.json` (the root is the cwd, not
+the git toplevel). This repo uses `{"test": "./install.sh --test"}`.
+
+```json
+{ "format": "prettier --write {files}", "lint": "eslint {files}", "test": "npm test",
+  "app": { "start": "npm run dev", "url": "http://localhost:3000" }, "maxAttempts": 3 }
+```
+
+`null` disables a step; `harness-verify detect` prints what was resolved.
+It never blocks a worker when jq, git, or a config is missing.
+
 ## What the conductor may do directly
 
-`harness`, `gh` (except `gh api` and `gh pr diff`), read-only `herdr`
+`harness`, `gh` (allowlist: `pr create|view|list|status|checks|comment|edit|merge`, `issue view|list|create|comment`, `run list|view` without `--log*`, `repo view`, `auth status`, `browse`; never `api`; `--body-file` only from `.harness/` or `docs/`; no `pr merge -d`, no `auth status --show-token`), read-only `herdr`
 (`status`, `pane list|get|layout|current`, `agent list|get|wait|explain`,
 `workspace list`, `tab list`), `jq` (as a pipe
-consumer only), read-only `git` (`status`, `log`, `diff --stat`, `branch`,
-`show --stat`; no patch, output or delete flags), bare `ls`, `cat`/`ls` under
+consumer only), read-only `git` (`status`, `log`, `diff --stat`, `branch` (list-only), `show --stat`; no patch, output or delete flags), `ls` (never recursive), `cat`/`ls` under
 `.harness/` and `docs/` (no quotes, globs or `$` in their arguments), and
 writing Markdown under `docs/` and anything under `.harness/`. Everything else
 is denied with a reason naming the worker to use.
@@ -66,10 +128,9 @@ is denied with a reason naming the worker to use.
 ## Known limits
 
 The gate covers the built-in file/shell tools, `Monitor`, and the `filesystem`
-MCP server. Other MCP servers that read files are not gated. `gh api`,
-`gh pr diff`, `gh alias` and `gh extension` are denied, but a global flag
-before the subcommand (`gh -R o/r api ...`) is not caught, and `gh pr
-checkout` can switch the branch. Instructions to workers must use single
+MCP server. Other MCP servers that read files are not gated. File-tool
+paths are checked again after symlink resolution. Without `jq` the gate
+denies everything (fail closed) unless `HARNESS_ROLE=worker`. Instructions to workers must use single
 quotes if they contain backticks or `$(`.
 
 The conductor agent's body replaces Claude Code's default system prompt (that
@@ -90,11 +151,13 @@ runs the conductor agent.
 
 ```
 bin/harness                      herdr wrapper CLI
+bin/harness-verify               format/lint/test checks used by worker hooks
 claude/hooks/conductor-gate.sh   PreToolUse gate
+claude/hooks/conductor-resume.sh SessionStart hook: injects .harness/progress.md
 claude/agents/{analyst,implementer,reviewer}.md  worker definitions (model, memory, cacheTtl, report contract)
 claude/agents/conductor.md       conductor system prompt (settings.agent)
 claude/agents/solo.md            escape-hatch agent (empty body = default prompt)
 install.sh                       installer (--test runs tests/)
-tests/                           gate, harness (against tests/fake-herdr), install
+tests/                           gate, harness (against tests/fake-herdr), verify, progress, install
 docs/superpowers/                spec and plan
 ```

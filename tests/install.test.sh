@@ -34,7 +34,8 @@ cat > "$CLAUDE_DIR/settings.json" <<'EOF'
     "PreToolUse": [
       { "matcher": "Bash", "hooks": [ { "type": "command", "command": "/opt/other-hook.sh" } ] }
     ],
-    "Stop": [ { "matcher": "", "hooks": [ { "type": "command", "command": "/opt/stop.sh" } ] } ]
+    "Stop": [ { "matcher": "", "hooks": [ { "type": "command", "command": "/opt/stop.sh" } ] } ],
+    "SessionStart": [ { "matcher": "startup", "hooks": [ { "type": "command", "command": "/opt/session.sh" } ] } ]
   }
 }
 EOF
@@ -67,6 +68,7 @@ for a in analyst implementer reviewer conductor solo; do
   check "agent symlink $a" [ "$(readlink "$CLAUDE_DIR/agents/$a.md")" = "$REPO/claude/agents/$a.md" ]
 done
 check "harness symlink" [ "$(readlink "$BIN_DIR/harness")" = "$REPO/bin/harness" ]
+check "harness-verify symlink" [ "$(readlink "$BIN_DIR/harness-verify")" = "$REPO/bin/harness-verify" ]
 check "CLAUDE.md not created" [ ! -e "$CLAUDE_DIR/CLAUDE.md" ]
 check "global gitignore has .harness/" grep -qx '.harness/' "$GIT_IGNORE"
 check "global gitignore keeps old lines" grep -qx 'node_modules/' "$GIT_IGNORE"
@@ -152,6 +154,38 @@ install_in "$T11" >/dev/null
 check "write failure rc" [ "$RC" -ne 0 ]
 check "write failure message" grep -q "failed to write" "$T11/out.txt"
 check "write failure no success banner" [ -z "$(grep '^installed:' "$T11/out.txt")" ]
+
+# --- SessionStart resume hook ----------------------------------------------------------------
+RESUME="$REPO/claude/hooks/conductor-resume.sh"
+check "resume hook executable" [ -x "$RESUME" ]
+check "resume hook added once" [ "$(jq --arg r "$RESUME" '[.hooks.SessionStart[]? | select(any(.hooks[]?; .command==$r))] | length' "$S")" -eq 1 ]
+check "resume hook matcher" jq -e --arg r "$RESUME" '.hooks.SessionStart[] | select(any(.hooks[]?; .command==$r)) | .matcher=="startup|clear|compact"' "$S" >/dev/null
+check "resume hook type command" jq -e --arg r "$RESUME" '.hooks.SessionStart[] | select(any(.hooks[]?; .command==$r)) | .hooks[0].type=="command"' "$S" >/dev/null
+check "other SessionStart hooks preserved" jq -e '[.hooks.SessionStart[]? | select(any(.hooks[]?; .command=="/opt/session.sh"))] | length == 1' "$S" >/dev/null
+
+HW=$(newdir hookwork); mkdir -p "$HW/.harness"
+printf '# Progress — x (main)\nGoal: g\n' > "$HW/.harness/progress.md"
+OUT=$(cd "$HW" && HARNESS_ROLE=worker /bin/bash "$RESUME" </dev/null 2>&1); RC=$?
+check "resume hook silent for workers" [ -z "$OUT" ]
+check "resume hook worker rc" [ "$RC" -eq 0 ]
+HE=$(newdir hookempty)
+OUT=$(cd "$HE" && env -u HARNESS_ROLE /bin/bash "$RESUME" </dev/null 2>&1); RC=$?
+check "resume hook silent without progress.md" [ -z "$OUT" ]
+check "resume hook missing-file rc" [ "$RC" -eq 0 ]
+OUT=$(cd "$HW" && env -u HARNESS_ROLE /bin/bash "$RESUME" </dev/null 2>/dev/null); RC=$?
+check "resume hook rc" [ "$RC" -eq 0 ]
+check "resume hook event name" [ "$(printf '%s' "$OUT" | jq -r .hookSpecificOutput.hookEventName)" = SessionStart ]
+check "resume hook prefix line" printf '%s' "$OUT" | jq -r .hookSpecificOutput.additionalContext | head -1 | grep -qx 'Harness progress (resume from here; verify with harness status)'
+check "resume hook has file content" printf '%s' "$OUT" | jq -r .hookSpecificOutput.additionalContext | grep -qx 'Goal: g'
+OUT=$(cd "$HE" && printf '{"cwd":"%s","source":"clear"}' "$HW" | env -u HARNESS_ROLE /bin/bash "$RESUME" 2>/dev/null)
+check "resume hook uses stdin cwd" printf '%s' "$OUT" | jq -e .hookSpecificOutput.additionalContext >/dev/null
+OUT=$(cd "$HW" && env -u HARNESS_ROLE PATH=/usr/bin:/bin /bin/bash "$RESUME" </dev/null 2>&1); RC=$?
+check "resume hook works with no jq on PATH (rc 0)" [ "$RC" -eq 0 ]
+
+# second run: idempotent resume hook
+install_in "$T"
+check "resume hook still once after rerun" [ "$(jq --arg r "$RESUME" '[.hooks.SessionStart[]? | select(any(.hooks[]?; .command==$r))] | length' "$S")" -eq 1 ]
+check "other SessionStart still once" [ "$(jq '[.hooks.SessionStart[]? | select(any(.hooks[]?; .command=="/opt/session.sh"))] | length' "$S")" -eq 1 ]
 
 echo "PASS $pass / FAIL $fail"
 [ "$fail" -eq 0 ]

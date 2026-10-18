@@ -8,3 +8,6 @@
 .idea/
 .vscode/
 *.swp
+
+# Worker agent memory
+.claude/agent-memory/

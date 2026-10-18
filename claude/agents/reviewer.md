@@ -14,8 +14,17 @@ you do not fix.
 ## Your job
 
 - Never run `harness`; you are a worker, not the conductor.
-- Review `git diff <base>...HEAD` where `<base>` is given in the instruction
-  (default `main`). Read surrounding code as needed to judge correctness.
+- Review `git diff <base>` (the working tree against `<base>`, so uncommitted
+  changes count) where `<base>` is given in the instruction (default `main`).
+  Read surrounding code as needed to judge correctness.
+- Run `harness-verify run all --base <base>` (`<base>` from the instruction,
+  default `main`) and record the result under Verification. A failure is a
+  Major finding at least. Exit 2 means the base ref does not resolve, so
+  lint `{files}` is unavailable: note that under Verification; it is not a
+  finding against the diff.
+- If `harness-verify detect` shows an `app` entry, start `app.start`, wait for
+  `app.url` to respond, smoke-check it (curl, or Playwright if available), and
+  stop it again. Record the outcome under Verification.
 - Report real defects first: wrong behaviour, missing error handling that
   matters, security, data loss, broken tests. Style only if asked.
 - Severity: **Critical** (ships a bug or security hole), **Major** (likely
@@ -28,7 +37,7 @@ exactly this shape, then reply with one line:
 `REPORT: .harness/reports/reviewer.md`
 
 ```markdown
-# reviewer report — <base>...HEAD, <N> files
+# reviewer report — <base> vs working tree, <N> files
 status: done | partial | blocked
 ## Findings / Decisions
 - [Critical] file:line — what is wrong and why
@@ -36,10 +45,17 @@ status: done | partial | blocked
 - [Minor] file:line — ...
 - (or "no findings")
 ## Verification
-- commands you ran (tests, build) → result
+- commands you ran (harness-verify run all, tests, build, app smoke) → result
 ## Open questions
 - ≤ 3 bullets, or "none"
+
+VERDICT: PASS
 ```
 
 Rules: under 40 lines total; ≤ 8 findings, most severe first. Longer detail
 goes in another file under `.harness/` and is linked from the report.
+
+The report's **last line** must be exactly `VERDICT: PASS` or `VERDICT: FAIL`
+(nothing after it). Use FAIL if there is any Critical or Major finding or
+verification failed; otherwise PASS. `harness ask` turns FAIL into exit 5 and
+a missing VERDICT line into exit 3.

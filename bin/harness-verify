@@ -1,0 +1,342 @@
+#!/bin/bash
+# harness-verify — computational checks (format, lint, test) for harness workers.
+# Spec: docs/superpowers/specs/2026-10-18-verification-loop-design.md
+#
+#   harness-verify detect                 print resolved commands as JSON
+#   harness-verify format [file]          PostToolUse hook (reads hook JSON on stdin if no file)
+#   harness-verify stop                   Stop hook (reads hook JSON on stdin)
+#   harness-verify run [lint|test|all]    manual / reviewer: exit 0 pass, 1 fail
+#   harness-verify baseline [agent]       record the start state (harness ask calls it)
+#
+# Never blocks a worker because of its own prerequisites: jq missing, not a git
+# repo, or no config all exit 0 (with at most one stderr line).
+set -u
+
+warn() { echo "harness-verify: $*" >&2; }
+
+if ! command -v jq >/dev/null 2>&1; then
+  warn "jq not found, skipping"
+  exit 0
+fi
+
+STATE_REL=".harness/verify"
+IS_GIT=0
+ROOT=$PWD
+AGENT=implementer
+STEP_OUT=""
+RAN=0
+
+# enter_root [dir] — the root is the cwd (hook stdin cwd, else the process cwd);
+# every .harness/ path is relative to it, like bin/harness. Never the git toplevel.
+enter_root() {
+  [ -z "${1:-}" ] || cd "$1" 2>/dev/null || true
+  ROOT=$(pwd -P)
+  if [ "$(git rev-parse --is-inside-work-tree 2>/dev/null)" = true ]; then
+    IS_GIT=1
+  else
+    IS_GIT=0
+  fi
+}
+
+# set_agent NAME — only plain names are used in state file paths
+set_agent() {
+  case "${1:-}" in
+    ''|*[!A-Za-z0-9_-]*) ;;
+    *) AGENT=$1 ;;
+  esac
+}
+
+# --- config --------------------------------------------------------------------
+
+# cfg_get KEY -> prints the JSON value from the first config file that has KEY
+cfg_get() {
+  local f
+  for f in .harness/verify.local.json .claude/harness.json; do
+    [ -f "$f" ] || continue
+    if jq -e --arg k "$1" 'type == "object" and has($k)' "$f" >/dev/null 2>&1; then
+      jq -c --arg k "$1" '.[$k]' "$f"
+      return 0
+    fi
+  done
+  return 1
+}
+
+# resolve_step KEY -> command string, or nothing when the step is disabled/absent
+# (explicit config only: no language or project-type detection)
+resolve_step() {
+  local v
+  if v=$(cfg_get "$1"); then
+    printf '%s' "$v" | jq -r 'if type == "string" then . else empty end'
+  fi
+}
+
+max_attempts() {
+  local v
+  v=$(cfg_get maxAttempts 2>/dev/null)
+  case "$v" in ''|*[!0-9]*|0) v=3 ;; esac
+  echo "$v"
+}
+
+cmd_detect() {
+  local f l t a m
+  f=$(resolve_step format); l=$(resolve_step lint); t=$(resolve_step test)
+  a=$(cfg_get app 2>/dev/null); [ -n "$a" ] || a=null
+  m=$(max_attempts)
+  if [ -z "$f$l$t" ] && [ "$a" = null ]; then
+    warn "nothing configured: put {\"test\": \"...\"} in .claude/harness.json (or .harness/verify.local.json)"
+  fi
+  jq -n -c --arg f "$f" --arg l "$l" --arg t "$t" --argjson a "$a" --argjson m "$m" '
+    def nz: if . == "" then null else . end;
+    {format: ($f | nz), lint: ($l | nz), test: ($t | nz), app: $a, maxAttempts: $m}'
+}
+
+# --- files ---------------------------------------------------------------------
+
+# changed_files [BASE] -> files (relative to the cwd) changed since BASE (default:
+# the baseline, else HEAD) plus untracked ones, one per line
+changed_files() {
+  local base=${1:-} f
+  [ "$IS_GIT" = 1 ] || return 0
+  [ -n "$base" ] || base=$(sed -n 1p "$STATE_REL/$AGENT.base" 2>/dev/null)
+  [ -n "$base" ] || base=HEAD
+  { git -c core.quotepath=off diff --relative --name-only "$base" -- . ':(exclude).harness' 2>/dev/null
+    git -c core.quotepath=off ls-files --others --exclude-standard -- . ':(exclude).harness' 2>/dev/null
+  } | sort -u | while IFS= read -r f; do
+    [ -f "$f" ] && printf '%s\n' "$f"
+  done
+}
+
+# quote_files -> stdin lines to one shell-quoted, space-separated string
+quote_files() {
+  local f out=""
+  while IFS= read -r f; do
+    [ -n "$f" ] || continue
+    out="$out $(printf '%q' "$f")"
+  done
+  printf '%s' "${out# }"
+}
+
+# expand_files CMD QUOTED -> CMD with every {files} replaced
+expand_files() {
+  local c=$1 q=$2 tok='{files}' out=""
+  while :; do
+    case "$c" in
+      *"$tok"*) out="$out${c%%"$tok"*}$q"; c=${c#*"$tok"} ;;
+      *) break ;;
+    esac
+  done
+  printf '%s' "$out$c"
+}
+
+# --- running steps -------------------------------------------------------------
+
+# run_step STEP FILES — STEP is lint|test, FILES newline-separated. Sets
+# STEP_OUT, RAN. Returns the command's status; 0 when the step is absent or has
+# {files} but no (matching) files exist.
+run_step() {
+  local cmd q rc
+  STEP_OUT=""
+  cmd=$(resolve_step "$1")
+  [ -n "$cmd" ] || return 0
+  case "$cmd" in
+    *'{files}'*)
+      q=$(printf '%s\n' "${2:-}" | quote_files)
+      [ -n "$q" ] || return 0
+      cmd=$(expand_files "$cmd" "$q") ;;
+  esac
+  RAN=1
+  STEP_OUT=$(/bin/bash -c "$cmd" </dev/null 2>&1)
+  rc=$?
+  return $rc
+}
+
+tail40() { printf '%s\n' "$1" | tail -n 40; }
+
+cmd_run() {
+  local what=${1:-all} files="" rc=0 ran_any=0 baseref=main mb="" explicit=0
+  case "$what" in lint|test|all) shift ;; --*) what=all ;; *) warn "usage: harness-verify run [lint|test|all] [--base REF]"; exit 1 ;; esac
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --base) [ $# -ge 2 ] || { warn "--base needs a ref"; exit 1; }; baseref=$2; explicit=1; shift 2 ;;
+      *) warn "usage: harness-verify run [lint|test|all] [--base REF]"; exit 1 ;;
+    esac
+  done
+  enter_root
+  if [ "$IS_GIT" = 1 ]; then
+    if [ "$explicit" = 0 ] && ! git rev-parse --verify -q "$baseref^{commit}" >/dev/null 2>&1; then
+      baseref=master
+    fi
+    mb=$(git merge-base "$baseref" HEAD 2>/dev/null) || mb=""
+    if [ -z "$mb" ]; then
+      warn "base ref '$baseref' does not resolve (use --base <ref>)"
+      exit 2
+    fi
+  fi
+  files=$(changed_files "$mb")
+  [ -n "$files" ] || warn "no changed files versus $baseref"
+  if [ "$what" = lint ] || [ "$what" = all ]; then
+    RAN=0
+    run_step lint "$files" || rc=1
+    [ "$RAN" -eq 0 ] || { ran_any=1; printf '== lint ==\n%s\n' "$STEP_OUT"; }
+    [ "$rc" -eq 0 ] || exit 1
+  fi
+  if [ "$what" = test ] || [ "$what" = all ]; then
+    RAN=0
+    run_step test "$files" || rc=1
+    [ "$RAN" -eq 0 ] || { ran_any=1; printf '== test ==\n%s\n' "$STEP_OUT"; }
+    [ "$rc" -eq 0 ] || exit 1
+  fi
+  [ "$ran_any" -eq 1 ] || echo "harness-verify: nothing to run"
+  exit 0
+}
+
+# --- state ---------------------------------------------------------------------
+
+# state_id -> HEAD sha and a hash of the working tree changes (outside .harness/)
+state_id() {
+  local head h
+  head=$(git rev-parse HEAD 2>/dev/null)
+  h=$({ git status --porcelain -- . ':(exclude).harness'
+        git diff HEAD -- . ':(exclude).harness'
+        git ls-files --others --exclude-standard -- . ':(exclude).harness' | while IFS= read -r f; do
+          printf '%s\n' "$f"; cat "$f" 2>/dev/null
+        done; } 2>/dev/null | cksum)
+  printf '%s\n%s\n' "$head" "$h"
+}
+
+write_result() { # status step tail attempts
+  mkdir -p "$STATE_REL"
+  jq -n -c --arg s "$1" --arg st "$2" --arg t "$3" --argjson a "${4:-0}" \
+    '{status: $s, attempts: $a, step: $st, tail: $t}' > "$STATE_REL/$AGENT.json"
+}
+
+cmd_baseline() {
+  set_agent "${1:-}"
+  enter_root
+  # after a verify FAIL keep the original .base: the next ask must still compare
+  # against the tree the failing work started from
+  local prev=""
+  prev=$(jq -r '.status // empty' "$STATE_REL/$AGENT.json" 2>/dev/null)
+  rm -f "${STATE_REL:?}/${AGENT:?}.json" ".harness/reports/${AGENT:?}.md.pending"
+  if [ "$IS_GIT" != 1 ]; then
+    warn "not a git repo, no baseline"
+    exit 0
+  fi
+  mkdir -p "$STATE_REL"
+  if [ "$prev" != fail ] || [ ! -s "$STATE_REL/$AGENT.base" ]; then
+    state_id > "$STATE_REL/$AGENT.base"
+  fi
+  echo 0 > "$STATE_REL/$AGENT.attempts"
+  exit 0
+}
+
+# --- hooks ---------------------------------------------------------------------
+
+cmd_stop() {
+  local input attempts max files step="" out reason rep pend
+  input=$(cat)
+  set_agent "$(printf '%s' "$input" | jq -r '.agent_type // empty' 2>/dev/null)"
+  enter_root "$(printf '%s' "$input" | jq -r '.cwd // empty' 2>/dev/null)"
+  if [ "$IS_GIT" != 1 ]; then
+    exit 0
+  fi
+  if [ -f "$STATE_REL/$AGENT.base" ] && [ "$(state_id)" = "$(cat "$STATE_REL/$AGENT.base")" ]; then
+    write_result skipped "" "" 0
+    exit 0
+  fi
+  # hide the report while verifying so `harness ask/report` never sees an unverified one
+  rep=".harness/reports/${AGENT:?}.md"; pend="$rep.pending"
+  [ ! -f "$rep" ] || mv -f "$rep" "$pend"
+  attempts=$(cat "$STATE_REL/$AGENT.attempts" 2>/dev/null)
+  case "$attempts" in ''|*[!0-9]*) attempts=0 ;; esac
+  max=$(max_attempts)
+  files=$(changed_files)
+
+  RAN=0
+  if ! run_step lint "$files"; then
+    step=lint; out=$STEP_OUT
+  elif ! run_step test "$files"; then
+    step=test; out=$STEP_OUT
+  fi
+  if [ -z "$step" ]; then
+    [ ! -f "$pend" ] || mv -f "$pend" "$rep"
+    if [ "$RAN" -eq 1 ]; then write_result pass "" "" "$attempts"; else write_result skipped "" "" "$attempts"; fi
+    exit 0
+  fi
+  out=$(tail40 "$out")
+  if [ "$attempts" -lt "$max" ]; then
+    attempts=$((attempts + 1))
+    echo "$attempts" > "$STATE_REL/$AGENT.attempts"
+    rm -f "$pend"
+    write_result fail "$step" "$out" "$attempts"
+    reason=$(printf 'Verification failed at step %s (attempt %s of %s). Last output:\n%s\n\nFix the cause and finish again; then rewrite the report.' "$step" "$attempts" "$max" "$out")
+    jq -n -c --arg r "$reason" '{decision: "block", reason: $r}'
+    exit 0
+  fi
+  # cap reached: keep the worker's final report so `harness ask` exits 5 with it
+  [ ! -f "$pend" ] || mv -f "$pend" "$rep"
+  write_result fail "$step" "$out" "$attempts"
+  exit 0
+}
+
+cmd_format() {
+  local input="" file="${1:-}" tool cwd q out fcmd lcmd d
+  if [ -z "$file" ]; then
+    input=$(cat)
+    tool=$(printf '%s' "$input" | jq -r '.tool_name // empty' 2>/dev/null)
+    case "$tool" in
+      Edit|Write|MultiEdit) ;;
+      *) exit 0 ;;
+    esac
+    file=$(printf '%s' "$input" | jq -r '.tool_input.file_path // empty' 2>/dev/null)
+    cwd=$(printf '%s' "$input" | jq -r '.cwd // empty' 2>/dev/null)
+    set_agent "$(printf '%s' "$input" | jq -r '.agent_type // empty' 2>/dev/null)"
+  else
+    cwd=""
+  fi
+  enter_root "$cwd"
+  [ -n "$file" ] || exit 0
+  case "$file" in
+    /*)
+      # compare physical paths (macOS /var -> /private/var)
+      d=$(cd -P "${file%/*}" 2>/dev/null && pwd -P) || exit 0
+      file="$d/${file##*/}"
+      case "$file" in
+        "$ROOT"/*) file=${file#"$ROOT"/} ;;
+        *) exit 0 ;;
+      esac ;;
+  esac
+  case "$file" in .harness/*|.git/*|*/../*|../*) exit 0 ;; esac
+  [ -f "$file" ] || exit 0
+  fcmd=$(resolve_step format)
+  if [ -n "$fcmd" ]; then
+    case "$fcmd" in
+      *'{files}'*)
+        q=$(printf '%s\n' "$file" | quote_files)
+        fcmd=$(expand_files "$fcmd" "$q") ;;
+    esac
+    [ -z "$fcmd" ] || /bin/bash -c "$fcmd" </dev/null >/dev/null 2>&1 || true
+  fi
+  lcmd=$(resolve_step lint)
+  case "$lcmd" in
+    *'{files}'*)
+      q=$(printf '%s\n' "$file" | quote_files)
+      lcmd=$(expand_files "$lcmd" "$q")
+      if ! out=$(/bin/bash -c "$lcmd" </dev/null 2>&1); then
+        out=$(printf '%s\n' "$out" | head -n 40)
+        jq -n -c --arg r "$(printf 'Lint failed for %s:\n%s' "$file" "$out")" '{decision: "block", reason: $r}'
+      fi ;;
+  esac
+  exit 0
+}
+
+case "${1:-}" in
+  detect)   enter_root; cmd_detect ;;
+  format)   shift; cmd_format "$@" ;;
+  stop)     cmd_stop ;;
+  run)      shift; cmd_run "$@" ;;
+  baseline) shift; cmd_baseline "$@" ;;
+  *)
+    echo "usage: harness-verify detect | format [file] | stop | run [lint|test|all] | baseline [agent]" >&2
+    exit 1 ;;
+esac

@@ -6,7 +6,10 @@
 #         $FAKE_DIR/prompt_fail     exists => `agent prompt` is rejected (socket_unavailable)
 #         $FAKE_DIR/layout          optional "WIDTH HEIGHT" for `pane layout` (default 162 45)
 #         $FAKE_DIR/pane.<agent>    pane id recorded by `agent start --pane` (default w1:p2)
-#         $FAKE_PROMPT_HOOK         shell snippet run when `agent prompt` is called
+#         $FAKE_DIR/session.<agent> Claude session id reported by `agent get` (default sess-<agent>-0)
+#         $FAKE_CLEAR               ok (default): `agent prompt <a> /clear` assigns a new session id
+#                                   stuck: /clear is accepted but the session id never changes
+#         $FAKE_PROMPT_HOOK         shell snippet run when `agent prompt` is called (not for /clear)
 set -u
 : "${FAKE_DIR:?FAKE_DIR must be set}"
 : "${FAKE_LOG:?FAKE_LOG must be set}"
@@ -27,6 +30,14 @@ case "$sub" in
     echo '{"id":"cli:pane:split","result":{"pane":{"pane_id":"w1:p2"}},"type":"pane_split"}'
     ;;
   "pane close")
+    # closing a pane ends the agent living in it
+    for f in "$FAKE_DIR"/pane.*; do
+      [ -f "$f" ] || continue
+      if [ "$(cat "$f")" = "${3:-}" ]; then
+        n=${f##*/pane.}
+        rm -f "$FAKE_DIR/live.$n" "$f" "$FAKE_DIR/session.$n"
+      fi
+    done
     echo '{"id":"cli:pane:close","result":{},"type":"pane_close"}'
     ;;
   "agent get")
@@ -35,7 +46,9 @@ case "$sub" in
       status=$(cat "$FAKE_DIR/live.$name")
       pane=w1:p2
       if [ -f "$FAKE_DIR/pane.$name" ]; then pane=$(cat "$FAKE_DIR/pane.$name"); fi
-      printf '{"id":"cli:agent:get","result":{"agent":{"agent":"claude","agent_status":"%s","pane_id":"%s"}},"type":"agent_info"}\n' "$status" "$pane"
+      sess="sess-$name-0"
+      if [ -f "$FAKE_DIR/session.$name" ]; then sess=$(cat "$FAKE_DIR/session.$name"); fi
+      printf '{"id":"cli:agent:get","result":{"agent":{"agent":"claude","agent_session":{"kind":"id","value":"%s"},"agent_status":"%s","pane_id":"%s"}},"type":"agent_info"}\n' "$sess" "$status" "$pane"
     else
       echo '{"error":{"code":"agent_not_found"}}' >&2; exit 1
     fi
@@ -46,6 +59,7 @@ case "$sub" in
       echo '{"error":{"code":"agent_not_ready"}}' >&2; exit 1
     fi
     echo idle > "$FAKE_DIR/live.$name"
+    echo "sess-$name-s$$" > "$FAKE_DIR/session.$name"
     prev=""
     for a in "$@"; do
       if [ "$prev" = --pane ]; then echo "$a" > "$FAKE_DIR/pane.$name"; break; fi
@@ -60,6 +74,14 @@ case "$sub" in
     fi
     if [ "$(cat "$FAKE_DIR/live.$name" 2>/dev/null)" = blocked ]; then
       echo '{"error":{"code":"agent_blocked"}}' >&2; exit 1
+    fi
+    if [ "${4:-}" = /clear ]; then
+      if [ "${FAKE_CLEAR:-ok}" != stuck ]; then
+        echo "sess-$name-c$$-$RANDOM" > "$FAKE_DIR/session.$name"
+        echo idle > "$FAKE_DIR/live.$name"
+      fi
+      echo '{"id":"cli:agent:prompt","result":{},"type":"agent_prompt"}'
+      exit 0
     fi
     if [ -n "${FAKE_PROMPT_HOOK:-}" ]; then
       /bin/bash -c "$FAKE_PROMPT_HOOK"

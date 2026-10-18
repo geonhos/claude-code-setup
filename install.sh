@@ -16,6 +16,7 @@ BIN_DIR=${BIN_DIR:-$HOME/.local/bin}
 GIT_IGNORE=${GIT_IGNORE:-${XDG_CONFIG_HOME:-$HOME/.config}/git/ignore}
 SETTINGS="$CLAUDE_DIR/settings.json"
 GATE="$REPO/claude/hooks/conductor-gate.sh"
+RESUME="$REPO/claude/hooks/conductor-resume.sh"
 MATCHER="Edit|Write|NotebookEdit|Read|Grep|Glob|Bash|Agent|Workflow|Monitor|mcp__filesystem__.*"
 
 die() { echo "install: $*" >&2; exit 1; }
@@ -25,6 +26,8 @@ if [ "${1:-}" = "--test" ]; then
   rc=0
   /bin/bash "$REPO/tests/gate.test.sh"    || rc=1
   /bin/bash "$REPO/tests/harness.test.sh" || rc=1
+  /bin/bash "$REPO/tests/verify.test.sh"  || rc=1
+  /bin/bash "$REPO/tests/progress.test.sh" || rc=1
   /bin/bash "$REPO/tests/install.test.sh" || rc=1
   exit $rc
 fi
@@ -65,6 +68,7 @@ for f in "$REPO"/claude/agents/*.md; do
   ln -sfn "$f" "$dest"
 done
 ln -sfn "$REPO/bin/harness" "$BIN_DIR/harness"
+ln -sfn "$REPO/bin/harness-verify" "$BIN_DIR/harness-verify"
 case ":$PATH:" in
   *":$BIN_DIR:"*) ;;
   *) echo "warning: $BIN_DIR is not on PATH; add it so the conductor can run 'harness'" >&2 ;;
@@ -75,7 +79,7 @@ bak="$SETTINGS.bak.$(date +%Y%m%d%H%M%S)"
 cp "$SETTINGS" "$bak"
 tmp=$(mktemp)
 trap 'rm -f "$tmp"' EXIT
-jq --arg gate "$GATE" --arg matcher "$MATCHER" '
+jq --arg gate "$GATE" --arg matcher "$MATCHER" --arg resume "$RESUME" '
   .agent = "conductor"
   | .promptCacheTtl = "1h"
   | .subagentPromptCacheTtl = "1h"
@@ -87,6 +91,10 @@ jq --arg gate "$GATE" --arg matcher "$MATCHER" '
   # strip our gate from every entry; drop entries left empty; re-append one canonical entry
   | .hooks.PreToolUse |= map(if any(.hooks[]?; .command == $gate) then (.hooks |= map(select(.command != $gate))) | select((.hooks | length) > 0) else . end)
   | .hooks.PreToolUse += [{matcher: $matcher, hooks: [{type: "command", command: $gate}]}]
+  # same for the SessionStart resume hook (other SessionStart hooks stay)
+  | .hooks.SessionStart //= []
+  | .hooks.SessionStart |= map(if any(.hooks[]?; .command == $resume) then (.hooks |= map(select(.command != $resume))) | select((.hooks | length) > 0) else . end)
+  | .hooks.SessionStart += [{matcher: "startup|clear|compact", hooks: [{type: "command", command: $resume}]}]
 ' "$SETTINGS" > "$tmp"
 cat "$tmp" > "$SETTINGS" || die "failed to write $SETTINGS; restore from $bak"
 
@@ -101,8 +109,10 @@ fi
 cat <<EOF
 installed:
   gate hook      $GATE  (matcher: $MATCHER)
+  resume hook    $RESUME  (SessionStart: startup|clear|compact)
   agents         $CLAUDE_DIR/agents/ ($(cd "$REPO/claude/agents" && ls *.md | tr '\n' ' '))
   harness        $BIN_DIR/harness
+  harness-verify $BIN_DIR/harness-verify
   settings       $SETTINGS (backup: $bak)
   agent          settings.agent = conductor (workers override with --agent <name>)
   cache TTL      promptCacheTtl=1h subagentPromptCacheTtl=1h

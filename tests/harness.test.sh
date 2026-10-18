@@ -24,7 +24,7 @@ setup() {
 # run ARGS... -> sets OUT, RC  (killed by SIGALRM after 5s so a hang fails fast)
 GUARD="perl -e alarm(5);exec(@ARGV)"
 run() {
-  OUT=$(HERDR_ENV=1 HERDR_PANE_ID=w1:p1 PATH="$FAKE_BIN:$PATH" $GUARD /bin/bash "$HARNESS" "$@" 2>&1)
+  OUT=$(HERDR_ENV=1 HERDR_PANE_ID=w1:p1 PATH="$FAKE_BIN:$HERE/../bin:$PATH" $GUARD /bin/bash "$HARNESS" "$@" 2>&1)
   RC=$?
 }
 
@@ -58,7 +58,7 @@ setup
 run spawn analyst
 check "spawn rc" [ "$RC" -eq 0 ]
 check "spawn prints pane" [ "$OUT" = "w1:p2" ]
-check "spawn splits with env" logged "pane split --current --direction right --cwd $WORK --env HARNESS_ROLE=worker --no-focus"
+check "spawn splits with env" logged "pane split --current --direction right --cwd $WORK --env HARNESS_ROLE=worker --env CLAUDE_CODE_AUTO_COMPACT_WINDOW=160000 --no-focus"
 check "spawn starts agent" logged "agent start analyst --kind claude --pane w1:p2 -- --agent analyst"
 check "spawn records pane" grep -q "^analyst w1:p2$" "$WORK/.harness/panes"
 
@@ -220,11 +220,11 @@ check "busy: screen on stdout" grep -q "fake screen line" <<<"$OUT"
 
 # --- report ------------------------------------------------------------------------
 setup
-mkdir -p .harness/reports && printf 'R1\nR2\n' > .harness/reports/reviewer.md
+mkdir -p .harness/reports && printf 'R1\nVERDICT: PASS\n' > .harness/reports/reviewer.md
 run report reviewer
 check "report rc" [ "$RC" -eq 0 ]
-check "report prints file" [ "$OUT" = "$(printf 'R1\nR2')" ]
-check "report: no herdr calls" [ ! -s "$FAKE_LOG" ]
+check "report prints file" [ "$OUT" = "$(printf 'R1\nVERDICT: PASS')" ]
+check "report: no prompt sent" not_logged "agent prompt"
 
 setup
 run report reviewer
@@ -247,7 +247,7 @@ setup
 echo working > "$FAKE_DIR/live.implementer"
 run status
 check "status rc" [ "$RC" -eq 0 ]
-check "status live line" grep -Eq "^implementer +working +w1:p2$" <<<"$OUT"
+check "status live line" grep -Eq "^implementer +working +w1:p2 +-$" <<<"$OUT"
 check "status dead line" grep -Eq "^analyst +-$" <<<"$OUT"
 
 # --- close ------------------------------------------------------------------------------
@@ -283,6 +283,157 @@ setup
 run close analyst
 check "close dead rc" [ "$RC" -eq 1 ]
 check "close dead message" grep -q "not running" <<<"$OUT"
+
+# --- ask: verification loop (exit 5, VERDICT, baseline) ----------------------------
+gitwork() { git init -q . && git config user.email t@t && git config user.name t && echo s > s.txt && git add s.txt && git -c core.hooksPath=/dev/null commit -q -m s; }
+
+setup; gitwork
+echo idle > "$FAKE_DIR/live.implementer"
+export FAKE_PROMPT_HOOK="test -s $WORK/.harness/verify/implementer.base && touch $WORK/seen-base; mkdir -p $WORK/.harness/reports; printf '# implementer report\nstatus: done\n' > $WORK/.harness/reports/implementer.md"
+run ask implementer "do it"
+check "implementer baseline before prompt" [ -e "$WORK/seen-base" ]
+check "implementer verify none: exit 0" [ "$RC" -eq 0 ]
+
+setup; gitwork
+echo idle > "$FAKE_DIR/live.implementer"
+export FAKE_PROMPT_HOOK="mkdir -p $WORK/.harness/reports $WORK/.harness/verify; printf '# implementer report\nstatus: partial\n' > $WORK/.harness/reports/implementer.md; printf '{\"status\":\"fail\",\"attempts\":3,\"step\":\"test\",\"tail\":\"x\"}' > $WORK/.harness/verify/implementer.json"
+run ask implementer "do it"
+check "implementer verify fail: exit 5" [ "$RC" -eq 5 ]
+check "implementer verify fail: report printed" grep -q "status: partial" <<<"$OUT"
+check "implementer verify fail: verify line" grep -qx "verify: FAIL (test, 3 attempts)" <<<"$OUT"
+
+setup; gitwork
+echo idle > "$FAKE_DIR/live.implementer"
+export FAKE_PROMPT_HOOK="mkdir -p $WORK/.harness/reports $WORK/.harness/verify; printf '# r\nstatus: done\n' > $WORK/.harness/reports/implementer.md; printf '{\"status\":\"pass\",\"attempts\":1,\"step\":\"\",\"tail\":\"\"}' > $WORK/.harness/verify/implementer.json"
+run ask implementer "do it"
+check "implementer verify pass: exit 0" [ "$RC" -eq 0 ]
+
+setup; gitwork
+echo idle > "$FAKE_DIR/live.implementer"
+mkdir -p .harness/verify; echo '{"status":"fail","attempts":3,"step":"test","tail":""}' > .harness/verify/implementer.json
+export FAKE_PROMPT_HOOK="mkdir -p $WORK/.harness/reports; printf '# r\nstatus: done\n' > $WORK/.harness/reports/implementer.md"
+run ask implementer "do it"
+check "stale verify fail cleared by baseline" [ "$RC" -eq 0 ]
+
+for v in "FAIL:5" "PASS:0"; do
+  setup
+  echo idle > "$FAKE_DIR/live.reviewer"
+  export FAKE_PROMPT_HOOK="mkdir -p $WORK/.harness/reports; printf '# reviewer report\nstatus: done\n- [Minor] x\n\nVERDICT: ${v%%:*}\n\n' > $WORK/.harness/reports/reviewer.md"
+  run ask reviewer "review"
+  check "reviewer VERDICT ${v%%:*}: exit" [ "$RC" -eq "${v##*:}" ]
+  check "reviewer VERDICT ${v%%:*}: report printed" grep -q "VERDICT: ${v%%:*}" <<<"$OUT"
+done
+
+setup
+echo idle > "$FAKE_DIR/live.reviewer"
+export FAKE_PROMPT_HOOK="mkdir -p $WORK/.harness/reports; printf '# reviewer report\nstatus: done\nno findings\n' > $WORK/.harness/reports/reviewer.md"
+run ask reviewer "review"
+check "reviewer missing VERDICT: exit 3" [ "$RC" -eq 3 ]
+check "reviewer missing VERDICT: message" grep -q "VERDICT" <<<"$OUT"
+
+setup
+echo idle > "$FAKE_DIR/live.reviewer"
+export FAKE_PROMPT_HOOK="mkdir -p $WORK/.harness/reports; printf '# r\nVERDICT: PASS\nmore text after\n' > $WORK/.harness/reports/reviewer.md"
+run ask reviewer "review"
+check "reviewer VERDICT not last line: exit 3" [ "$RC" -eq 3 ]
+
+setup
+echo idle > "$FAKE_DIR/live.analyst"
+export FAKE_PROMPT_HOOK="mkdir -p $WORK/.harness/reports; printf '# r\nVERDICT: FAIL\n' > $WORK/.harness/reports/analyst.md"
+run ask analyst "q"
+check "analyst unaffected by VERDICT text" [ "$RC" -eq 0 ]
+
+# --- report: same finish logic as ask ----------------------------------------------
+setup; gitwork
+mkdir -p .harness/reports .harness/verify
+printf '# r\nstatus: partial\n' > .harness/reports/implementer.md
+echo '{"status":"fail","attempts":3,"step":"test","tail":""}' > .harness/verify/implementer.json
+run report implementer
+check "report implementer verify fail: exit 5" [ "$RC" -eq 5 ]
+check "report implementer verify fail: line" grep -qx "verify: FAIL (test, 3 attempts)" <<<"$OUT"
+echo '{"status":"pass","attempts":1,"step":"","tail":""}' > .harness/verify/implementer.json
+run report implementer
+check "report implementer verify pass: exit 0" [ "$RC" -eq 0 ]
+
+setup
+mkdir -p .harness/reports
+printf '# r\nVERDICT: FAIL\n' > .harness/reports/reviewer.md
+run report reviewer
+check "report reviewer FAIL: exit 5" [ "$RC" -eq 5 ]
+printf '# r\nVERDICT: PASS\n' > .harness/reports/reviewer.md
+run report reviewer
+check "report reviewer PASS: exit 0" [ "$RC" -eq 0 ]
+printf '# r\nno verdict\n' > .harness/reports/reviewer.md
+run report reviewer
+check "report reviewer no VERDICT: exit 3" [ "$RC" -eq 3 ]
+
+setup
+echo working > "$FAKE_DIR/live.implementer"
+mkdir -p .harness/reports; echo unverified > .harness/reports/implementer.md
+run report implementer
+check "report while working: exit 4" [ "$RC" -eq 4 ]
+check "report while working: not printed" not_grep "unverified" <(printf '%s' "$OUT")
+check "report while working: message" grep -q "working" <<<"$OUT"
+
+# ask with a failing baseline still clears a stale fail result
+setup
+echo idle > "$FAKE_DIR/live.implementer"
+mkdir -p .harness/verify; echo '{"status":"fail","attempts":3,"step":"test","tail":""}' > .harness/verify/implementer.json
+export FAKE_PROMPT_HOOK="mkdir -p $WORK/.harness/reports; printf '# r\nstatus: done\n' > $WORK/.harness/reports/implementer.md"
+run ask implementer "do it"
+check "non-git: stale verify fail cleared" [ "$RC" -eq 0 ]
+
+# --- implementer: harness-verify missing is loud ------------------------------------
+setup
+echo idle > "$FAKE_DIR/live.implementer"
+NB=$(mktemp -d); ln -s "$(command -v jq)" "$NB/jq"
+OUT=$(HERDR_ENV=1 HERDR_PANE_ID=w1:p1 PATH="$FAKE_BIN:$NB:/usr/bin:/bin" $GUARD /bin/bash "$HARNESS" ask implementer "x" 2>&1); RC=$?
+check "no harness-verify: exit 1" [ "$RC" -eq 1 ]
+check "no harness-verify: names install.sh" grep -q "install.sh" <<<"$OUT"
+check "no harness-verify: nothing prompted" not_logged "agent prompt"
+OUT=$(HERDR_ENV=1 HERDR_PANE_ID=w1:p1 PATH="$FAKE_BIN:$NB:/usr/bin:/bin" $GUARD /bin/bash "$HARNESS" ask analyst "x" 2>&1); RC=$?
+check "no harness-verify: analyst unaffected" not_grep "harness-verify not found" <(printf "%s" "$OUT")
+rm -rf "$NB"
+
+# --- implementer: hook killed mid-run leaves only .pending ----------------------------
+setup; gitwork
+echo idle > "$FAKE_DIR/live.implementer"
+export FAKE_PROMPT_HOOK="mkdir -p $WORK/.harness/reports; printf '# r\nstatus: done\n' > $WORK/.harness/reports/implementer.md.pending"
+run ask implementer "do it"
+check "interrupted ask: exit 5" [ "$RC" -eq 5 ]
+check "interrupted ask: INTERRUPTED line" grep -qx "verify: INTERRUPTED" <<<"$OUT"
+check "interrupted ask: report restored" [ -f "$WORK/.harness/reports/implementer.md" ]
+check "interrupted ask: pending gone" [ ! -e "$WORK/.harness/reports/implementer.md.pending" ]
+unset FAKE_PROMPT_HOOK
+
+setup
+echo idle > "$FAKE_DIR/live.implementer"
+mkdir -p .harness/reports; echo '# r' > .harness/reports/implementer.md.pending
+run report implementer
+check "interrupted report: exit 5" [ "$RC" -eq 5 ]
+check "interrupted report: INTERRUPTED line" grep -qx "verify: INTERRUPTED" <<<"$OUT"
+
+setup
+echo working > "$FAKE_DIR/live.implementer"
+mkdir -p .harness/reports; echo '# r' > .harness/reports/implementer.md.pending
+run report implementer
+check "pending while working: exit 4" [ "$RC" -eq 4 ]
+check "pending while working: not restored" [ -e "$WORK/.harness/reports/implementer.md.pending" ]
+
+# --- ask again after verify FAIL: no re-baseline, still exit 5 ------------------------
+setup; gitwork
+echo idle > "$FAKE_DIR/live.implementer"
+mkdir -p .claude; echo '{"test":"exit 1","maxAttempts":1}' > .claude/harness.json
+printf 'fake/\nherdr.log\n' > .gitignore   # harness noise must not count as changes
+STOPJ="printf '{\"agent_type\":\"implementer\",\"cwd\":\"$WORK\"}' | harness-verify stop >/dev/null"
+export FAKE_PROMPT_HOOK="echo c > $WORK/new.txt; $STOPJ; $STOPJ; mkdir -p $WORK/.harness/reports; printf '# r\nstatus: partial\n' > $WORK/.harness/reports/implementer.md"
+run ask implementer "do it"
+check "refail: first ask exit 5" [ "$RC" -eq 5 ]
+export FAKE_PROMPT_HOOK="$STOPJ; mkdir -p $WORK/.harness/reports; printf '# r\nstatus: partial\n' > $WORK/.harness/reports/implementer.md"
+run ask implementer "retry without changes"
+check "refail: second ask (no new change) exit 5" [ "$RC" -eq 5 ]
+check "refail: verify line" grep -q "verify: FAIL" <<<"$OUT"
+unset FAKE_PROMPT_HOOK
 
 echo "PASS $pass / FAIL $fail"
 [ "$fail" -eq 0 ]
