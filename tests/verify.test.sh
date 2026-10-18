@@ -198,6 +198,7 @@ check "stop fail reason has output" reason_grep -q boom-output
 check "stop fail reason names step" reason_grep -q test
 check "stop fail only decision+reason" [ "$(printf '%s' "$OUT" | jq -c 'keys')" = '["decision","reason"]' ]
 check "stop fail deletes report" [ ! -e "$R/.harness/reports/implementer.md" ]
+check "stop fail leaves no pending" [ ! -e "$R/.harness/reports/implementer.md.pending" ]
 check "stop fail status" [ "$(result status)" = fail ]
 check "stop fail step" [ "$(result step)" = test ]
 check "stop fail attempts 1" [ "$(result attempts)" = 1 ]
@@ -207,7 +208,8 @@ check "stop attempts 2" [ "$(result attempts)" = 2 ]
 echo report > "$R/.harness/reports/implementer.md"
 hvin "$(stopjson)" stop
 check "stop cap allows" [ -z "$OUT" ]
-check "stop cap keeps report" [ -e "$R/.harness/reports/implementer.md" ]
+check "stop cap deletes report" [ ! -e "$R/.harness/reports/implementer.md" ]
+check "stop cap leaves no pending" [ ! -e "$R/.harness/reports/implementer.md.pending" ]
 check "stop cap records fail" [ "$(result status)" = fail ]
 check "stop cap attempts stay" [ "$(result attempts)" = 2 ]
 hv baseline
@@ -229,6 +231,114 @@ hv baseline; echo nope > "$R/new.txt"
 hvin "$(stopjson)" stop
 check "stop lint fail blocks" [ "$(printf '%s' "$OUT" | jq -r .decision)" = block ]
 check "stop lint step" [ "$(result step)" = lint ]
+
+# stop: report hidden while verifying, restored on pass
+newrepo
+cfg '{"test":"test ! -e .harness/reports/implementer.md && test -e .harness/reports/implementer.md.pending"}'
+mkdir -p "$R/.harness/reports"; echo rep > "$R/.harness/reports/implementer.md"
+hv baseline; echo c > "$R/new.txt"
+hvin "$(stopjson)" stop
+check "stop hides report while verifying" [ "$(result status)" = pass ]
+check "stop pass restores report" [ "$(cat "$R/.harness/reports/implementer.md")" = rep ]
+check "stop pass no pending" [ ! -e "$R/.harness/reports/implementer.md.pending" ]
+
+# stop/ask from a subdirectory of the repo: root is the cwd
+newrepo
+mkdir -p "$R/sub/deep"
+echo '{"test":"echo tests-ran"}' > "$R/sub/deep/c.json"
+SUBR=$R; R="$R/sub"
+cfg '{"test":"echo tests-ran"}'
+mkdir -p "$R/.harness/reports"; echo rep > "$R/.harness/reports/implementer.md"
+hv baseline
+check "sub: baseline in cwd" [ -s "$R/.harness/verify/implementer.base" ]
+check "sub: no state at toplevel" [ ! -e "$SUBR/.harness/verify" ]
+echo c > "$R/new.txt"
+hvin "$(stopjson)" stop
+check "sub: stop result in cwd" [ "$(result status)" = pass ]
+check "sub: no result at toplevel" [ ! -e "$SUBR/.harness/verify/implementer.json" ]
+cfg '{"test":"exit 1","maxAttempts":1}'
+hvin "$(stopjson)" stop
+check "sub: stop fail blocks" [ "$(printf '%s' "$OUT" | jq -r .decision)" = block ]
+check "sub: report deleted in cwd" [ ! -e "$R/.harness/reports/implementer.md" ]
+cfg '{"lint":"printf \"%s\\n\" {files} > files.out","test":"true"}'
+hv baseline; echo z > "$R/z.txt"; echo y > "$SUBR/outside.txt"
+hvin "$(stopjson)" stop
+check "sub: files relative to cwd" grep -qx 'z.txt' "$R/files.out"
+check "sub: files exclude outside cwd" not_grep -q outside "$R/files.out"
+hvin "$(postjson Write "$R/z.txt")" format
+check "sub: format rc ok" [ "$RC" -eq 0 ]
+
+# stop: staged at baseline, edited + re-added -> must run
+newrepo
+cfg '{"test":"echo tests-ran > ran.out"}'
+echo v1 > "$R/st.txt"; ( cd "$R" && git add st.txt )
+hv baseline
+echo v2 > "$R/st.txt"; ( cd "$R" && git add st.txt )
+hvin "$(stopjson)" stop
+check "staged edit: not skipped" [ "$(result status)" = pass ]
+check "staged edit: test ran" [ -s "$R/ran.out" ]
+
+# stop: implementer committed (HEAD moved) still counts as changed
+newrepo
+cfg '{"lint":"printf \"%s\\n\" {files} > files.out","test":"echo tests-ran > ran.out"}'
+( cd "$R" && git add .claude && git -c core.hooksPath=/dev/null commit -q -m cfg )
+hv baseline
+echo c > "$R/c.txt"; ( cd "$R" && git add c.txt && git -c core.hooksPath=/dev/null commit -q -m work )
+hvin "$(stopjson)" stop
+check "committed: not skipped" [ "$(result status)" = pass ]
+check "committed: test ran" [ -s "$R/ran.out" ]
+check "committed: committed file linted" grep -qx 'c.txt' "$R/files.out"
+
+# baseline clears stale result even outside git
+N=$((N + 1)); R="$ROOT/nogitb$N"; mkdir -p "$R/.harness/verify"
+echo '{"status":"fail"}' > "$R/.harness/verify/implementer.json"
+hv baseline
+check "baseline non-repo clears stale result" [ ! -e "$R/.harness/verify/implementer.json" ]
+
+# run all: files versus merge base of --base, plus dirty
+newrepo
+cfg '{"lint":"printf \"%s\\n\" {files} > files.out","test":"echo test-ran"}'
+( cd "$R" && git add .claude && git -c core.hooksPath=/dev/null commit -q -m cfg && git branch -M main && git checkout -q -b feat )
+echo a > "$R/committed.txt"; ( cd "$R" && git add committed.txt && git -c core.hooksPath=/dev/null commit -q -m c )
+echo d > "$R/dirty.txt"
+hv run all
+check "run all: committed file linted" grep -qx committed.txt "$R/files.out"
+check "run all: dirty file linted" grep -qx dirty.txt "$R/files.out"
+check "run all: seed not linted" not_grep -q seed "$R/files.out"
+( cd "$R" && git checkout -q -b other main~0 ) 
+hv run all --base feat
+check "run --base: committed on base not linted" not_grep -q committed "$R/files.out"
+( cd "$R" && git checkout -q feat && rm dirty.txt )
+rm -f "$R/files.out"
+hv run all --base feat
+check "run empty list: test still runs" grep -q test-ran <<<"$OUT"
+check "run empty list: lint not run" [ ! -e "$R/files.out" ]
+OUT=$(cd "$R" && /bin/bash "$VERIFY" run all --base feat 2>&1 >/dev/null </dev/null)
+check "run empty list: says so on stderr" grep -qi 'no changed files' <<<"$OUT"
+
+# auto-detected {files} commands filter by extension; explicit ones do not
+newrepo
+printf '[tool.ruff]\n' > "$R/pyproject.toml"
+echo a > "$R/a.py"; echo b > "$R/b.md"
+JB=$(mktemp -d); printf '#!/bin/sh\nprintf "%%s\\n" "$@" > "%s/ruff.args"\n' "$JB" > "$JB/ruff"; chmod +x "$JB/ruff"
+OUT=$(cd "$R" && PATH="$JB:$PATH" /bin/bash "$VERIFY" run lint 2>&1 </dev/null); RC=$?
+check "pyproject lint only .py" grep -qx a.py "$JB/ruff.args"
+check "pyproject lint skips non-.py" not_grep -q b.md "$JB/ruff.args"
+rm -rf "$JB"
+newrepo
+echo a > "$R/a.py"; echo b > "$R/b.md"
+cfg '{"lint":"printf \"%s\\n\" {files} > files.out"}'
+hv run lint
+check "explicit lint unfiltered" grep -qx b.md "$R/files.out"
+newrepo
+echo a > "$R/a.go"; echo b > "$R/b.md"; echo 'module x' > "$R/go.mod"
+JB=$(mktemp -d); printf '#!/bin/sh\nprintf "%%s\\n" "$@" > "%s/gofmt.args"\n' "$JB" > "$JB/gofmt"; chmod +x "$JB/gofmt"
+hvin "$(postjson Write "$R/b.md")" format
+OUT=$(cd "$R" && printf '%s' "$(postjson Write "$R/b.md")" | PATH="$JB:$PATH" /bin/bash "$VERIFY" format 2>&1)
+check "go format skips non-.go" [ ! -e "$JB/gofmt.args" ]
+OUT=$(cd "$R" && printf '%s' "$(postjson Write "$R/a.go")" | PATH="$JB:$PATH" /bin/bash "$VERIFY" format 2>&1)
+check "go format runs on .go" grep -qx a.go "$JB/gofmt.args"
+rm -rf "$JB"
 
 # stop: not a git repo -> skipped, allowed
 N=$((N + 1)); R="$ROOT/nogit$N"; mkdir -p "$R"

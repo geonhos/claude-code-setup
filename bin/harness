@@ -17,8 +17,10 @@
 #                         reviewer's last line is `VERDICT: FAIL`); the report is
 #                         still printed on stdout. A reviewer report without a
 #                         final VERDICT line counts as no valid report (3).
-# `report` prints .harness/reports/<agent>.md without touching herdr:
-#   exit 0 printed · 3 no report yet.
+# `report` prints .harness/reports/<agent>.md with the same exit codes as `ask`
+#   (0 · 3 no report/no VERDICT · 5 verification failed), plus 4 while the agent
+#   is still working. It never sends a prompt.
+# .harness/ lives in the directory where the conductor runs ($PWD).
 # Output of `ask`: stdout = report on exit 0; screen text on 2/3/4;
 #                  diagnostics on stderr.
 set -u
@@ -193,7 +195,7 @@ finish_report() {
         "VERDICT: FAIL") cat "$report"; exit 5 ;;
       esac
       echo "harness: reviewer report has no final 'VERDICT: PASS|FAIL' line; ask it to rewrite the report." >&2
-      show_pane_screen "$pane"
+      case "$pane" in ''|-) ;; *) show_pane_screen "$pane" ;; esac
       exit 3 ;;
   esac
   cat "$report"
@@ -234,6 +236,7 @@ cmd_ask() {
   # implementer: record the start state so the Stop hook can tell "no changes"
   # from "changes to verify" (never fatal)
   if [ "$agent" = implementer ]; then
+    rm -f .harness/verify/implementer.json
     verify_tool baseline implementer 2>/dev/null || true
   fi
 
@@ -284,10 +287,14 @@ cmd_report() {
   local agent=${1:-}
   [ -n "$agent" ] || usage
   valid_agent "$agent"
-  local report="$REPORT_DIR/$agent.md"
+  local report="$REPORT_DIR/$agent.md" fields
+  fields=$(agent_fields "$agent")
+  if [ "${fields%%$TAB*}" = working ]; then
+    echo "harness: $agent is still working; wait for it to finish (harness status), then run: harness report $agent" >&2
+    exit 4
+  fi
   if [ -f "$report" ]; then
-    cat "$report"
-    exit 0
+    finish_report "$agent" "$report" "${fields#*$TAB}"
   fi
   echo "harness: no report for $agent at $report" >&2
   exit 3

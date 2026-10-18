@@ -220,11 +220,11 @@ check "busy: screen on stdout" grep -q "fake screen line" <<<"$OUT"
 
 # --- report ------------------------------------------------------------------------
 setup
-mkdir -p .harness/reports && printf 'R1\nR2\n' > .harness/reports/reviewer.md
+mkdir -p .harness/reports && printf 'R1\nVERDICT: PASS\n' > .harness/reports/reviewer.md
 run report reviewer
 check "report rc" [ "$RC" -eq 0 ]
-check "report prints file" [ "$OUT" = "$(printf 'R1\nR2')" ]
-check "report: no herdr calls" [ ! -s "$FAKE_LOG" ]
+check "report prints file" [ "$OUT" = "$(printf 'R1\nVERDICT: PASS')" ]
+check "report: no prompt sent" not_logged "agent prompt"
 
 setup
 run report reviewer
@@ -342,6 +342,46 @@ echo idle > "$FAKE_DIR/live.analyst"
 export FAKE_PROMPT_HOOK="mkdir -p $WORK/.harness/reports; printf '# r\nVERDICT: FAIL\n' > $WORK/.harness/reports/analyst.md"
 run ask analyst "q"
 check "analyst unaffected by VERDICT text" [ "$RC" -eq 0 ]
+
+# --- report: same finish logic as ask ----------------------------------------------
+setup; gitwork
+mkdir -p .harness/reports .harness/verify
+printf '# r\nstatus: partial\n' > .harness/reports/implementer.md
+echo '{"status":"fail","attempts":3,"step":"test","tail":""}' > .harness/verify/implementer.json
+run report implementer
+check "report implementer verify fail: exit 5" [ "$RC" -eq 5 ]
+check "report implementer verify fail: line" grep -qx "verify: FAIL (test, 3 attempts)" <<<"$OUT"
+echo '{"status":"pass","attempts":1,"step":"","tail":""}' > .harness/verify/implementer.json
+run report implementer
+check "report implementer verify pass: exit 0" [ "$RC" -eq 0 ]
+
+setup
+mkdir -p .harness/reports
+printf '# r\nVERDICT: FAIL\n' > .harness/reports/reviewer.md
+run report reviewer
+check "report reviewer FAIL: exit 5" [ "$RC" -eq 5 ]
+printf '# r\nVERDICT: PASS\n' > .harness/reports/reviewer.md
+run report reviewer
+check "report reviewer PASS: exit 0" [ "$RC" -eq 0 ]
+printf '# r\nno verdict\n' > .harness/reports/reviewer.md
+run report reviewer
+check "report reviewer no VERDICT: exit 3" [ "$RC" -eq 3 ]
+
+setup
+echo working > "$FAKE_DIR/live.implementer"
+mkdir -p .harness/reports; echo unverified > .harness/reports/implementer.md
+run report implementer
+check "report while working: exit 4" [ "$RC" -eq 4 ]
+check "report while working: not printed" not_grep "unverified" <(printf '%s' "$OUT")
+check "report while working: message" grep -q "working" <<<"$OUT"
+
+# ask with a failing baseline still clears a stale fail result
+setup
+echo idle > "$FAKE_DIR/live.implementer"
+mkdir -p .harness/verify; echo '{"status":"fail","attempts":3,"step":"test","tail":""}' > .harness/verify/implementer.json
+export FAKE_PROMPT_HOOK="mkdir -p $WORK/.harness/reports; printf '# r\nstatus: done\n' > $WORK/.harness/reports/implementer.md"
+run ask implementer "do it"
+check "non-git: stale verify fail cleared" [ "$RC" -eq 0 ]
 
 echo "PASS $pass / FAIL $fail"
 [ "$fail" -eq 0 ]

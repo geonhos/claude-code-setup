@@ -47,21 +47,26 @@ Run `./install.sh --test` to execute the test suites.
 ```
 harness spawn  <agent> [--direction right|down]
 harness ask    <agent> '<instruction>' [--timeout MS]   # exit 2 blocked · 3 no report · 4 still working · 5 verification failed
-harness report <agent>                                   # print existing report, or exit 3
+harness report <agent>                                   # print existing report (same exit codes as ask), 3 none, 4 still working
 harness status
 harness close  <agent>
 ```
 
 ## Verification loop
 
+`.harness/` (reports, panes, verify state) lives in the directory where the
+conductor runs; workers and hooks use that same directory (the hook `cwd`),
+not the git toplevel.
+
 The implementer does not judge its own work. `harness-verify` runs inside its
 loop through hooks in `claude/agents/implementer.md`: a `PostToolUse` hook
 formats each edited file and feeds back per-file lint errors, and a `Stop`
 hook runs lint and tests over the changes and sends the worker back with the
-failing output (up to `maxAttempts`, default 3; the report is deleted
-meanwhile). `harness ask implementer` records a baseline first and exits **5**
+failing output (up to `maxAttempts`, default 3; the report is hidden while
+verifying and deleted on failure). `harness ask implementer` records a baseline first and exits **5**
 (report plus a `verify: FAIL (<step>, <n> attempts)` line) when verification
-gave up. The reviewer runs `harness-verify run all`, smoke-checks the app if
+gave up (`harness report` applies the same checks). The reviewer runs `harness-verify run all [--base <ref>]` (files changed versus
+the merge base with `main`, plus uncommitted ones), smoke-checks the app if
 configured, and ends its report with `VERDICT: PASS` or `VERDICT: FAIL`
 (FAIL → exit 5; missing → exit 3).
 
