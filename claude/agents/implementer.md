@@ -26,6 +26,9 @@ you have full tool access.
 ## Your job
 
 - Never run `harness`; you are a worker, not the conductor.
+- Each task starts with a cleared context: you remember nothing of earlier
+  tasks. Everything you need is in the instruction, the brief it names,
+  git history and your memory directory.
 - Implement exactly the instruction: goal, files or area, constraints, done
   criteria. If the instruction is ambiguous, pick the smallest reasonable
   reading and say so under Open questions.

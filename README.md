@@ -46,11 +46,40 @@ Run `./install.sh --test` to execute the test suites.
 
 ```
 harness spawn  <agent> [--direction right|down]
-harness ask    <agent> '<instruction>' [--timeout MS]   # exit 2 blocked · 3 no report · 4 still working · 5 verification failed
+harness ask    <agent> '<instruction>' [--timeout MS] [--fresh|--keep]   # exit 2 blocked · 3 no report · 4 still working · 5 verification failed
 harness report <agent>                                   # print existing report (same exit codes as ask), 3 none, 4 still working
 harness status
 harness close  <agent>
 ```
+
+## Progress log and context reset
+
+Every `harness ask` (any exit code) writes `.harness/log/<ts>-<agent>.md`
+(instruction, brief file contents, report or screen tail) and appends one JSON
+line to `.harness/progress.jsonl` (ts, agent, session, instr, exit, verify,
+dur_s, head_before/after, ctx_before/after, status, summary), then regenerates
+`.harness/progress.md` (≤ 60 lines: goal, last 15 asks, open questions,
+worker state). Write a one-paragraph `.harness/goal.md` to set the goal line.
+Logging problems only warn on stderr; they never change an ask's result.
+
+A `SessionStart` hook (`claude/hooks/conductor-resume.sh`, matcher
+`startup|clear|compact`, installed by `install.sh`) injects `progress.md`
+into the conductor's context; it stays silent for workers.
+
+Rotation after each ask: newest 200 logs kept, logs older than 14 days
+deleted, `progress.jsonl` over 1 MB rolled to `progress.jsonl.<ts>.gz`.
+Knobs: `HARNESS_LOG_KEEP`, `HARNESS_LOG_DAYS`, `HARNESS_JSONL_MAX` (bytes).
+
+Before an ask, a live worker's context is cleared with `/clear` (waits for a
+new session id; if that does not happen within 10 s the pane is closed and
+respawned): the implementer always, analyst/reviewer when their context
+exceeds `HARNESS_CTX_RESET` tokens (default 120000) or with `--fresh`.
+`--keep` skips the clear for one ask. Freshly spawned workers are never
+cleared. Panes get `CLAUDE_CODE_AUTO_COMPACT_WINDOW=160000` as a late safety
+net. `harness status` shows a `ctx` column (tokens read from the transcript
+under `~/.claude/projects`, `-` when unknown; override the directory with
+`HARNESS_PROJECTS_DIR`). Live probe: `/clear` keeps the `--agent` prompt and
+settles in under a second.
 
 ## Verification loop
 
@@ -124,10 +153,11 @@ runs the conductor agent.
 bin/harness                      herdr wrapper CLI
 bin/harness-verify               format/lint/test checks used by worker hooks
 claude/hooks/conductor-gate.sh   PreToolUse gate
+claude/hooks/conductor-resume.sh SessionStart hook: injects .harness/progress.md
 claude/agents/{analyst,implementer,reviewer}.md  worker definitions (model, memory, cacheTtl, report contract)
 claude/agents/conductor.md       conductor system prompt (settings.agent)
 claude/agents/solo.md            escape-hatch agent (empty body = default prompt)
 install.sh                       installer (--test runs tests/)
-tests/                           gate, harness (against tests/fake-herdr), verify, install
+tests/                           gate, harness (against tests/fake-herdr), verify, progress, install
 docs/superpowers/                spec and plan
 ```

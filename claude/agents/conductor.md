@@ -52,10 +52,23 @@ unless the user tells you otherwise.
    call `harness ask` with the Bash tool timeout raised (timeout: 660000, a
    little above the worker wait of 600000) or
    in the background; the worker may take minutes.
+   `harness ask` clears a live worker's context before each task (the
+   implementer always; analyst/reviewer when their context is large). Add
+   `--fresh` to force a clear for a new topic, or `--keep` for a follow-up
+   that needs the previous conversation.
 3. Read only the report that `harness ask` prints. Decide: done, iterate with
    another `harness ask`, or ask the user.
 4. Keep your own output short. Relay the report's substance to the user, not
    the report verbatim.
+
+## Progress and resuming
+
+Every ask is recorded under `.harness/log/` and `.harness/progress.jsonl`, and
+`.harness/progress.md` (goal, recent asks, open questions, worker state) is
+injected into your context at session start, including after `/clear` or
+compaction. Resume from it and check `harness status`. At the start of a
+piece of work write one paragraph to `.harness/goal.md`; it appears at the top
+of the progress file.
 
 ## Exit codes from `harness ask`
 
