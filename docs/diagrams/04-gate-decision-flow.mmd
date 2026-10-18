@@ -14,7 +14,7 @@ flowchart TD
   T -- "Read, Grep, mcp fs read/list" --> RD{"readable? lexical + resolved<br/>.harness, docs, *.md inside cwd"}
   RD -- yes --> OK
   RD -- no --> DR([deny MSG_READ])
-  T -- Glob --> GL{"no .., /, ~ in pattern<br/>base + static prefix under .harness or docs"}
+  T -- Glob --> GL{"no .. anywhere, no leading / or ~<br/>without path: pattern starts docs/ or .harness/"}
   GL -- yes --> OK
   GL -- no --> DR
   T -- Bash --> S1{"split into segments<br/>reject quotes unterminated, &lt; &gt; #, backtick, $( $' $quote"}

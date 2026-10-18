@@ -231,9 +231,10 @@ last_exit() {
 
 # maybe_reset <agent> <fresh> <keep> <existed> <ctx> — clear a live worker's
 # context before a new task, falling back to close + respawn. Sets RESET_PANE
-# when it respawned. Skipped (unless --fresh) when the agent's last ask did not
-# end cleanly: only exit 0 (or 5 for the reviewer: a FAIL verdict is a complete
-# outcome) allows a reset; any other or unknown exit keeps the worker's context.
+# when it respawned. Skipped (unless --fresh) when the agent's last logged ask
+# did not end cleanly: reset runs when that exit is 0 (reviewer: 0 or 5, a FAIL
+# verdict is a complete outcome) or when no exit is logged (first ask after
+# spawn, rotated/empty jsonl); any other exit keeps the worker's context.
 maybe_reset() {
   local agent=$1 fresh=$2 keep=$3 existed=$4 ctx=${5:-} need=0 st last
   RESET_PANE=""

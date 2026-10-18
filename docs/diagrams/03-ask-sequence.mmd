@@ -16,7 +16,7 @@ sequenceDiagram
   alt status = working
     H-->>C: screen, exit 4 (nothing sent)
   end
-  Note over H,D: maybe_reset (live worker only, not --keep)<br/>need = implementer always, else ctx > 120000, or --fresh<br/>skip unless --fresh when last ask exit not 0 (reviewer: not 0/5)<br/>status idle|done → /clear, poll new session id (≤10 s) → else close + respawn
+  Note over H,D: maybe_reset (live worker only, not --keep)<br/>need = implementer always, else ctx > 120000, or --fresh<br/>reset only if last logged exit is 0 (reviewer: 0 or 5) or none logged; else keep context unless --fresh<br/>status idle|done → /clear, poll new session id (≤10 s) → else close + respawn
   H->>S: archive leftover report as late (jsonl exit null), rm report
   opt implementer
     H->>V: baseline (state id → verify/implementer.base, attempts=0)

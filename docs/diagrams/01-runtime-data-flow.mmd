@@ -1,12 +1,13 @@
 flowchart LR
   user([User])
-  subgraph herdr["herdr (terminal multiplexer)"]
-    cond["Conductor session<br/>claude, settings.agent = conductor"]
-    an["analyst pane<br/>opus"]
-    im["implementer pane<br/>sonnet"]
-    rv["reviewer pane<br/>opus"]
-  end
+  cond["Conductor session<br/>claude, settings.agent = conductor"]
   hcli["harness CLI<br/>bin/harness"]
+  herdr["herdr<br/>terminal multiplexer"]
+  subgraph workers["worker panes (in herdr)"]
+    an["analyst<br/>opus"]
+    im["implementer<br/>sonnet"]
+    rv["reviewer<br/>opus"]
+  end
   hv["harness-verify<br/>bin/harness-verify"]
   subgraph store[".harness/ (cwd of conductor)"]
     rep[("reports/&lt;agent&gt;.md")]
@@ -16,13 +17,11 @@ flowchart LR
   tx[("~/.claude/projects/.../session.jsonl")]
   gh[(git / GitHub)]
 
-  user -- "request, answers" --> cond
-  cond -- "summary, questions" --> user
-  cond -- "harness ask/report/status (Bash)" --> hcli
-  hcli -- "stdout report + exit 0-5" --> cond
-  hcli -- "pane split, agent start/prompt/get" --> herdr
-  herdr -- "status, session id, screen text" --> hcli
-  an & im & rv -- "write report" --> rep
+  user <-- "request, answers ⇄ summary, questions" --> cond
+  cond <-- "harness ask/report/status (Bash) ⇄ stdout report + exit 0-5" --> hcli
+  hcli <-- "pane split, agent start/prompt/get ⇄ status, session id, screen text" --> herdr
+  herdr -. "hosts" .- workers
+  workers -- "write report" --> rep
   rep -- "read" --> hcli
   hcli -- "log + jsonl + regen md" --> log
   tx -- "ctx tokens (last usage)" --> hcli
@@ -30,5 +29,5 @@ flowchart LR
   rv -- "run all --base" --> hv
   hv -- "state, block reason" --> vst
   hcli -- "baseline, read status" --> vst
-  im & rv -- "commit / diff" --> gh
+  workers -- "commit / diff" --> gh
   cond -- "gh pr create/view" --> gh

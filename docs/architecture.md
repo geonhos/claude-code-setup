@@ -2,7 +2,7 @@
 
 The harness is a **conductor** Claude session, gated by a PreToolUse hook so it can only read reports and run `harness`, plus three worker Claude sessions (analyst, implementer, reviewer) in [herdr](https://herdr.dev) panes. `.harness/` in the project directory is the shared store for reports, logs, verification state and the progress summary.
 
-These diagrams describe the code on `main` as of commit `583e0e5`, not the specs. Mermaid sources live in [`diagrams/`](diagrams/README.md).
+These diagrams describe the code on `main` as of commit `bdcf357` (main merge of PR #10), not the specs. Mermaid sources live in [`diagrams/`](diagrams/README.md).
 
 ## Contents
 
@@ -24,13 +24,14 @@ These diagrams describe the code on `main` as of commit `583e0e5`, not the specs
 ```mermaid
 flowchart LR
   user([User])
-  subgraph herdr["herdr (terminal multiplexer)"]
-    cond["Conductor session<br/>claude, settings.agent = conductor"]
-    an["analyst pane<br/>opus"]
-    im["implementer pane<br/>sonnet"]
-    rv["reviewer pane<br/>opus"]
-  end
+  cond["Conductor session<br/>claude, settings.agent = conductor"]
   hcli["harness CLI<br/>bin/harness"]
+  herdr["herdr<br/>terminal multiplexer"]
+  subgraph workers["worker panes (in herdr)"]
+    an["analyst<br/>opus"]
+    im["implementer<br/>sonnet"]
+    rv["reviewer<br/>opus"]
+  end
   hv["harness-verify<br/>bin/harness-verify"]
   subgraph store[".harness/ (cwd of conductor)"]
     rep[("reports/&lt;agent&gt;.md")]
@@ -40,13 +41,11 @@ flowchart LR
   tx[("~/.claude/projects/.../session.jsonl")]
   gh[(git / GitHub)]
 
-  user -- "request, answers" --> cond
-  cond -- "summary, questions" --> user
-  cond -- "harness ask/report/status (Bash)" --> hcli
-  hcli -- "stdout report + exit 0-5" --> cond
-  hcli -- "pane split, agent start/prompt/get" --> herdr
-  herdr -- "status, session id, screen text" --> hcli
-  an & im & rv -- "write report" --> rep
+  user <-- "request, answers ⇄ summary, questions" --> cond
+  cond <-- "harness ask/report/status (Bash) ⇄ stdout report + exit 0-5" --> hcli
+  hcli <-- "pane split, agent start/prompt/get ⇄ status, session id, screen text" --> herdr
+  herdr -. "hosts" .- workers
+  workers -- "write report" --> rep
   rep -- "read" --> hcli
   hcli -- "log + jsonl + regen md" --> log
   tx -- "ctx tokens (last usage)" --> hcli
@@ -54,7 +53,7 @@ flowchart LR
   rv -- "run all --base" --> hv
   hv -- "state, block reason" --> vst
   hcli -- "baseline, read status" --> vst
-  im & rv -- "commit / diff" --> gh
+  workers -- "commit / diff" --> gh
   cond -- "gh pr create/view" --> gh
 ```
 
@@ -75,12 +74,15 @@ flowchart LR
   hcli["harness CLI"]
   subgraph claudehome["~/.claude"]
     set[("settings.json<br/>agent, hooks, env, TTLs")]
-    hooks["hooks: conductor-gate.sh<br/>conductor-resume.sh"]
     agents[("agents/*.md")]
+  end
+  subgraph repo["repo: claude/hooks/*.sh"]
+    hooks["conductor-gate.sh<br/>conductor-resume.sh"]
   end
   prog[("progress.md")]
 
   set -. "configures" .-> cond
+  set -. "hook commands (absolute path)" .-> hooks
   agents -. "claude --agent: prompt + hooks" .-> workers
   cond -- "PreToolUse hook JSON" --> hooks
   hooks -- "deny JSON / allow" --> cond
@@ -118,7 +120,7 @@ sequenceDiagram
   alt status = working
     H-->>C: screen, exit 4 (nothing sent)
   end
-  Note over H,D: maybe_reset (live worker only, not --keep)<br/>need = implementer always, else ctx > 120000, or --fresh<br/>skip unless --fresh when last ask exit not 0 (reviewer: not 0/5)<br/>status idle|done → /clear, poll new session id (≤10 s) → else close + respawn
+  Note over H,D: maybe_reset (live worker only, not --keep)<br/>need = implementer always, else ctx > 120000, or --fresh<br/>reset only if last logged exit is 0 (reviewer: 0 or 5) or none logged; else keep context unless --fresh<br/>status idle|done → /clear, poll new session id (≤10 s) → else close + respawn
   H->>S: archive leftover report as late (jsonl exit null), rm report
   opt implementer
     H->>V: baseline (state id → verify/implementer.base, attempts=0)
@@ -177,7 +179,7 @@ flowchart TD
   T -- "Read, Grep, mcp fs read/list" --> RD{"readable? lexical + resolved<br/>.harness, docs, *.md inside cwd"}
   RD -- yes --> OK
   RD -- no --> DR([deny MSG_READ])
-  T -- Glob --> GL{"no .., /, ~ in pattern<br/>base + static prefix under .harness or docs"}
+  T -- Glob --> GL{"no .. anywhere, no leading / or ~<br/>without path: pattern starts docs/ or .harness/"}
   GL -- yes --> OK
   GL -- no --> DR
   T -- Bash --> S1{"split into segments<br/>reject quotes unterminated, &lt; &gt; #, backtick, $( $' $quote"}
@@ -262,7 +264,7 @@ flowchart TD
   TX[("~/.claude/projects/enc-cwd/session.jsonl<br/>last main-thread assistant usage")] --> CTX["ctx = input + cache_creation + cache_read"]
   CTX --> JL
   CTX --> RS{"reset before ask?<br/>live and not --keep"}
-  RS -- "implementer: always<br/>analyst/reviewer: ctx &gt; 120000 or --fresh" --> LE{"last ask exit 0?<br/>(reviewer also 5) or --fresh"}
+  RS -- "implementer: always<br/>analyst/reviewer: ctx &gt; 120000 or --fresh" --> LE{"last logged exit 0 (reviewer: 0 or 5)<br/>or none logged, or --fresh?"}
   LE -- no --> KEEP(["keep context"])
   LE -- yes --> CLR["/clear, poll for new session id + idle"]
   CLR -- timeout --> RSP["close pane + respawn"]

@@ -11,7 +11,7 @@ flowchart TD
   TX[("~/.claude/projects/enc-cwd/session.jsonl<br/>last main-thread assistant usage")] --> CTX["ctx = input + cache_creation + cache_read"]
   CTX --> JL
   CTX --> RS{"reset before ask?<br/>live and not --keep"}
-  RS -- "implementer: always<br/>analyst/reviewer: ctx &gt; 120000 or --fresh" --> LE{"last ask exit 0?<br/>(reviewer also 5) or --fresh"}
+  RS -- "implementer: always<br/>analyst/reviewer: ctx &gt; 120000 or --fresh" --> LE{"last logged exit 0 (reviewer: 0 or 5)<br/>or none logged, or --fresh?"}
   LE -- no --> KEEP(["keep context"])
   LE -- yes --> CLR["/clear, poll for new session id + idle"]
   CLR -- timeout --> RSP["close pane + respawn"]
