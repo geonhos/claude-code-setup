@@ -33,7 +33,7 @@ CWD=${CWD%/}
 MSG_WRITE="Conductor cannot edit source. Delegate: harness ask implementer '<instruction>'. Direct writes are allowed only under docs/**/*.md and .harness/."
 MSG_READ="Conductor does not read source. Delegate: harness ask analyst '<question>' and read its report. Direct reads are allowed only under .harness/, docs/, and *.md files."
 MSG_AGENT="Native subagents inherit the Fable model. Use harness ask <analyst|implementer|reviewer> '<instruction>' instead."
-MSG_BASH="Conductor shell is limited to: harness; gh (pr/issue/run/repo view-style subcommands, pr create, no api); herdr read-only (status, pane/agent list|get|layout|wait); read-only git (status / log / diff --stat / branch list / show --stat); cat or ls (no -R) under .harness/ and docs/; jq as a pipe consumer. Delegate command execution: harness ask implementer '<command and goal>'."
+MSG_BASH="Conductor shell is limited to: harness; gh (pr/issue/run/repo view-style subcommands, pr create, no api); herdr read-only (status, pane list|get|layout|current, agent list|get|wait|explain, workspace list, tab list); read-only git (status / log / diff --stat / branch list / show --stat); cat or ls (no -R) under .harness/ and docs/; jq as a pipe consumer. Delegate command execution: harness ask implementer '<command and goal>'."
 
 deny() {
   jq -n --arg r "$1" \

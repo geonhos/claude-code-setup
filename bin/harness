@@ -26,7 +26,7 @@
 # Context reset before an ask on a live worker: implementer always, analyst/
 # reviewer when ctx > HARNESS_CTX_RESET (default 120000) or with --fresh;
 # --keep skips it. Reset = /clear, else close + respawn.
-# Output of `ask`: stdout = report on exit 0; screen text on 2/3/4;
+# Output of `ask`: stdout = report on exit 0 and 5; screen text on 2/3/4;
 #                  diagnostics on stderr.
 set -u
 

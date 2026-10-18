@@ -7,7 +7,9 @@ Architecture diagrams: [docs/architecture.md](docs/architecture.md).
 
 Why: Fable tokens are expensive. The conductor never loads source into its
 context, and workers (`analyst` opus · `implementer` sonnet · `reviewer`
-opus) carry project memory so they stop re-discovering the codebase.
+opus) — analyst and implementer carry project memory so they stop
+re-discovering the codebase; the reviewer deliberately has none, so each
+review starts without assumptions.
 
 ## Requirements
 
@@ -24,8 +26,10 @@ cd ~/workspace/claude-code-setup
 ```
 
 `install.sh` is idempotent. It symlinks `claude/agents/*.md` into
-`~/.claude/agents/`, links `bin/harness` into `~/.local/bin`, merges one
-PreToolUse hook and `promptCacheTtl`/`subagentPromptCacheTtl: 1h` into
+`~/.claude/agents/`, links `bin/harness` and `bin/harness-verify` into
+`~/.local/bin`, merges one PreToolUse hook (the gate), one SessionStart hook
+(`conductor-resume.sh`), `env.BASH_DEFAULT_TIMEOUT_MS`/`BASH_MAX_TIMEOUT_MS`
+and `promptCacheTtl`/`subagentPromptCacheTtl: 1h` into
 `~/.claude/settings.json` (backup kept), sets `agent: conductor` in
 `~/.claude/settings.json` so every plain `claude` session starts as the
 conductor (workers override it with `--agent <name>`), adds `.harness/` to
