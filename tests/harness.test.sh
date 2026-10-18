@@ -58,7 +58,7 @@ setup
 run spawn analyst
 check "spawn rc" [ "$RC" -eq 0 ]
 check "spawn prints pane" [ "$OUT" = "w1:p2" ]
-check "spawn splits with env" logged "pane split --current --direction right --cwd $WORK --env HARNESS_ROLE=worker --no-focus"
+check "spawn splits with env" logged "pane split --current --direction right --cwd $WORK --env HARNESS_ROLE=worker --env CLAUDE_CODE_AUTO_COMPACT_WINDOW=160000 --no-focus"
 check "spawn starts agent" logged "agent start analyst --kind claude --pane w1:p2 -- --agent analyst"
 check "spawn records pane" grep -q "^analyst w1:p2$" "$WORK/.harness/panes"
 
@@ -247,7 +247,7 @@ setup
 echo working > "$FAKE_DIR/live.implementer"
 run status
 check "status rc" [ "$RC" -eq 0 ]
-check "status live line" grep -Eq "^implementer +working +w1:p2$" <<<"$OUT"
+check "status live line" grep -Eq "^implementer +working +w1:p2 +-$" <<<"$OUT"
 check "status dead line" grep -Eq "^analyst +-$" <<<"$OUT"
 
 # --- close ------------------------------------------------------------------------------

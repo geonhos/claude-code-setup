@@ -3,7 +3,7 @@
 # Spec: docs/superpowers/specs/2026-10-12-herdr-conductor-setup-design.md
 #
 #   harness spawn  <agent> [--direction right|down]
-#   harness ask    <agent> '<instruction>' [--timeout MS]
+#   harness ask    <agent> '<instruction>' [--timeout MS] [--fresh|--keep]
 #   harness report <agent>
 #   harness status
 #   harness close  <agent>
@@ -21,6 +21,11 @@
 #   (0 · 3 no report/no VERDICT · 5 verification failed), plus 4 while the agent
 #   is still working. It never sends a prompt.
 # .harness/ lives in the directory where the conductor runs ($PWD).
+# Every ask is logged to .harness/log/ and .harness/progress.jsonl, and
+# .harness/progress.md is regenerated (log errors only warn on stderr).
+# Context reset before an ask on a live worker: implementer always, analyst/
+# reviewer when ctx > HARNESS_CTX_RESET (default 120000) or with --fresh;
+# --keep skips it. Reset = /clear, else close + respawn.
 # Output of `ask`: stdout = report on exit 0; screen text on 2/3/4;
 #                  diagnostics on stderr.
 set -u
@@ -28,6 +33,9 @@ set -u
 AGENTS="analyst implementer reviewer"
 REPORT_DIR=".harness/reports"
 PANES_FILE=".harness/panes"
+LOG_DIR=".harness/log"
+JSONL=".harness/progress.jsonl"
+PROGRESS_MD=".harness/progress.md"
 DEFAULT_TIMEOUT=600000
 TAB=$(printf '\t')
 
@@ -35,7 +43,7 @@ usage() {
   cat >&2 <<EOF
 usage:
   harness spawn  <agent> [--direction right|down]
-  harness ask    <agent> '<instruction>' [--timeout MS]
+  harness ask    <agent> '<instruction>' [--timeout MS] [--fresh|--keep]
   harness report <agent>
   harness status
   harness close  <agent>
@@ -146,7 +154,7 @@ cmd_spawn() {
   [ -n "$dir" ] || dir=$(pick_direction)
 
   local out pane
-  if ! out=$(herdr pane split --current --direction "$dir" --cwd "$PWD" --env HARNESS_ROLE=worker --no-focus 2>&1); then
+  if ! out=$(herdr pane split --current --direction "$dir" --cwd "$PWD" --env HARNESS_ROLE=worker --env CLAUDE_CODE_AUTO_COMPACT_WINDOW=160000 --no-focus 2>&1); then
     die "pane split failed: $out"
   fi
   pane=$(printf '%s' "$out" | jq -r '.result.pane.pane_id // empty' 2>/dev/null)
@@ -164,6 +172,178 @@ cmd_spawn() {
     exit 1
   fi
   echo "$pane"
+}
+
+# agent_session <agent> — Claude session id herdr reports for the agent
+agent_session() { agent_json "$1" | jq -r '.result.agent.agent_session.value // empty' 2>/dev/null; }
+
+# ctx_tokens <agent> — context size from the last main-thread assistant usage in
+# the transcript (~/.claude/projects/<cwd with / and . as ->/<session>.jsonl);
+# prints nothing when unknown
+ctx_tokens() {
+  local sid f
+  sid=$(agent_session "$1")
+  [ -n "$sid" ] || return 0
+  f="${HARNESS_PROJECTS_DIR:-$HOME/.claude/projects}/$(printf %s "$PWD" | sed 's#[/.]#-#g')/$sid.jsonl"
+  [ -r "$f" ] || return 0
+  tail -n 200 "$f" 2>/dev/null | jq -R 'fromjson? | select(type == "object" and .type == "assistant" and (.isSidechain | not) and ((.message.usage | type) == "object")) | .message.usage | (.input_tokens // 0) + (.cache_creation_input_tokens // 0) + (.cache_read_input_tokens // 0)' 2>/dev/null | tail -n 1
+}
+
+# fmt_ctx <tokens> — "137k", or "-" when unknown
+fmt_ctx() {
+  case "${1:-}" in
+    ''|*[!0-9]*) echo - ;;
+    *) echo "$(($1 / 1000))k" ;;
+  esac
+}
+
+# do_clear <agent> — send /clear (no --wait: herdr would stall) and poll until
+# the session id changed and the agent is idle again. 0 = cleared.
+do_clear() {
+  local old new st i=0 j
+  old=$(agent_session "$1")
+  herdr agent prompt "$1" /clear >/dev/null 2>&1 || return 1
+  while [ "$i" -lt "${HARNESS_CLEAR_POLLS:-20}" ]; do
+    sleep "${HARNESS_CLEAR_INTERVAL:-0.5}"
+    j=$(agent_json "$1") || return 1
+    new=$(printf '%s' "$j" | jq -r '.result.agent.agent_session.value // empty' 2>/dev/null)
+    st=$(printf '%s' "$j" | jq -r '.result.agent.agent_status // empty' 2>/dev/null)
+    if [ -n "$new" ] && [ "$new" != "$old" ] && [ "$st" = idle ]; then
+      return 0
+    fi
+    i=$((i + 1))
+  done
+  return 1
+}
+
+# maybe_reset <agent> <fresh> <keep> <existed> <ctx> — clear a live worker's
+# context before a new task, falling back to close + respawn. Sets RESET_PANE
+# when it respawned.
+maybe_reset() {
+  local agent=$1 fresh=$2 keep=$3 existed=$4 ctx=${5:-} need=0 st
+  RESET_PANE=""
+  [ "$existed" = 1 ] && [ "$keep" = 0 ] || return 0
+  case "$agent" in
+    implementer) need=1 ;;
+    *)
+      case "$ctx" in
+        ''|*[!0-9]*) ;;
+        *) [ "$ctx" -gt "${HARNESS_CTX_RESET:-120000}" ] && need=1 ;;
+      esac ;;
+  esac
+  [ "$fresh" = 1 ] && need=1
+  [ "$need" = 1 ] || return 0
+  st=$(agent_status "$agent")
+  case "$st" in idle|done) ;; *) return 0 ;; esac
+  do_clear "$agent" && return 0
+  echo "harness: /clear did not take effect for $agent; respawning it" >&2
+  if ! ( cmd_close "$agent" ) >&2; then
+    echo "harness: could not close $agent; continuing without a reset" >&2
+    return 0
+  fi
+  RESET_PANE=$(cmd_spawn "$agent") || exit 1
+}
+
+# --- progress log ----------------------------------------------------------------------
+
+git_head() { git rev-parse --short HEAD 2>/dev/null || true; }
+num_or_null() { case "${1:-}" in ''|*[!0-9]*) echo null ;; *) echo "$1" ;; esac; }
+
+# record_progress <agent> <text> <rc> <t0> <head_before> <stdout-file> <ctx_before>
+# Writes the log file + jsonl line, rotates, regenerates progress.md.
+record_progress() {
+  local agent=$1 text=$2 rc=$3 t0=$4 hb=$5 out=$6 cb=${7:-}
+  local report="$REPORT_DIR/$agent.md" vj=.harness/verify/implementer.json
+  local now ts stamp ha sess ca status="" summary="" verify="" logf n brief
+  now=$(date +%s)
+  ts=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+  stamp=$(date +%Y%m%d-%H%M%S)
+  ha=$(git_head); sess=$(agent_session "$agent"); ca=$(ctx_tokens "$agent")
+  if [ -f "$report" ]; then
+    status=$(sed -n 's/^status: *//p' "$report" | head -n 1)
+    summary=$(sed -n 's/^# *//p' "$report" | head -n 1)
+  fi
+  if [ "$agent" = implementer ]; then
+    verify=$(jq -r '.status // empty' "$vj" 2>/dev/null)
+    grep -q '^verify: INTERRUPTED' "$out" 2>/dev/null && verify=interrupted
+  fi
+
+  mkdir -p "$LOG_DIR" || return 1
+  logf="$LOG_DIR/$stamp-$agent.md"; n=1
+  while [ -e "$logf" ]; do n=$((n + 1)); logf="$LOG_DIR/$stamp-$agent-$n.md"; done
+  brief=$(printf '%s' "$text" | grep -o '\.harness/task-[A-Za-z0-9_.-]*\.md' | head -n 1)
+  {
+    printf '# %s ask %s (exit %s, %ss)\n\n## Instruction\n\n%s\n' "$agent" "$ts" "$rc" "$((now - t0))" "$text"
+    if [ -n "$brief" ] && [ -f "$brief" ]; then
+      printf '\n## Brief (%s)\n\n' "$brief"; cat "$brief"
+    fi
+    if [ -f "$report" ]; then
+      printf '\n## Report\n\n'; cat "$report"
+    else
+      printf '\n## Screen / output (no report)\n\n'; cat "$out"
+    fi
+  } > "$logf" || return 1
+
+  # rotate the jsonl first so the new line lands in the fresh file
+  if [ -f "$JSONL" ] && [ "$(wc -c < "$JSONL" | tr -d ' ')" -gt "${HARNESS_JSONL_MAX:-1048576}" ]; then
+    mv "$JSONL" "$JSONL.$stamp" && gzip -f "$JSONL.$stamp"
+  fi
+  jq -n -c --arg ts "$ts" --arg agent "$agent" --arg session "$sess" \
+    --arg instr "$(printf '%s' "$text" | tr '\n' ' ' | cut -c1-160)" \
+    --argjson exit "$rc" --arg verify "$verify" --argjson dur "$((now - t0))" \
+    --arg hb "$hb" --arg ha "$ha" --argjson cb "$(num_or_null "$cb")" --argjson ca "$(num_or_null "$ca")" \
+    --arg status "$status" --arg summary "$summary" '
+    def nz: if . == "" then null else . end;
+    {ts: $ts, agent: $agent, session: ($session | nz), instr: $instr, exit: $exit,
+     verify: ($verify | nz), dur_s: $dur, head_before: ($hb | nz), head_after: ($ha | nz),
+     ctx_before: $cb, ctx_after: $ca, status: ($status | nz), summary: ($summary | nz)}' >> "$JSONL" || return 1
+
+  rotate_logs "$logf"
+  write_progress_md
+  return 0
+}
+
+# rotate_logs <current-log> — newest N logs kept, older than D days deleted
+rotate_logs() {
+  local f
+  ls -1t "$LOG_DIR"/*.md 2>/dev/null | grep -vxF -- "$1" | tail -n +"${HARNESS_LOG_KEEP:-200}" \
+    | while IFS= read -r f; do rm -f "$f"; done
+  find "$LOG_DIR" -name '*.md' -mtime "+${HARNESS_LOG_DAYS:-14}" -exec rm -f {} + 2>/dev/null
+  return 0
+}
+
+# write_progress_md — regenerate .harness/progress.md (<= 60 lines)
+write_progress_md() {
+  local tmp="$PROGRESS_MD.tmp.$$" branch goal a f q fields line=""
+  branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "-")
+  goal="(unset)"
+  if [ -s .harness/goal.md ]; then
+    goal=$(tr '\n' ' ' < .harness/goal.md | sed 's/  */ /g; s/ $//' | cut -c1-400)
+  fi
+  {
+    printf '# Progress — %s (%s)\n' "$(basename "$PWD")" "$branch"
+    printf 'Goal: %s\n' "$goal"
+    printf '## Recent asks (newest first, max 15)\n'
+    tail -n 15 "$JSONL" 2>/dev/null | jq -r -R 'fromjson? | "- \(.ts) \(.agent) exit \(.exit) verify \(.verify // "-") \(.head_before // "")..\(.head_after // "") — \(.summary // "")"' 2>/dev/null \
+      | awk '{ a[NR] = $0 } END { for (i = NR; i >= 1; i--) print a[i] }'
+    for f in $(ls -t .harness/reports/*.md 2>/dev/null); do
+      q=$(awk '/^## Open questions/ { on = 1; next } /^## / { on = 0 } on && /^- / { if (tolower($0) !~ /^- *none *$/) print }' "$f" | head -n 10)
+      if [ -n "$q" ]; then
+        printf '## Open questions (from %s)\n%s\n' "$(basename "$f" .md)" "$q"
+        break
+      fi
+    done
+    printf '## Workers\n'
+    for a in $AGENTS; do
+      if fields=$(agent_fields "$a"); then
+        q="$a ${fields%%$TAB*} ctx $(fmt_ctx "$(ctx_tokens "$a")")"
+      else
+        q="$a -"
+      fi
+      if [ -z "$line" ]; then line=$q; else line="$line · $q"; fi
+    done
+    printf -- '- %s\n' "$line"
+  } 2>/dev/null | head -n 60 > "$tmp" && mv "$tmp" "$PROGRESS_MD"
 }
 
 # verify_tool ARGS... — run harness-verify from PATH (installed by ./install.sh)
@@ -211,8 +391,27 @@ finish_report() {
   exit 0
 }
 
+# cmd_ask — runs ask_inner (which exits through many paths) in a subshell, then
+# logs the outcome. Output and exit code are the inner ones; logging problems
+# only warn on stderr.
 cmd_ask() {
-  local agent=${1:-} text=${2:-} timeout=$DEFAULT_TIMEOUT
+  local agent=${1:-} text=${2:-} tmp rc t0 hb cb
+  case " $AGENTS " in *" $agent "*) ;; *) ask_inner "$@" ;; esac
+  [ -n "$text" ] || ask_inner "$@"
+  tmp=$(mktemp "${TMPDIR:-/tmp}/harness-ask.XXXXXX") || ask_inner "$@"
+  t0=$(date +%s); hb=$(git_head); cb=$(ctx_tokens "$agent" 2>/dev/null) || cb=""
+  CTX_BEFORE=$cb
+  ( ask_inner "$@" ) > "$tmp"
+  rc=$?
+  cat "$tmp"
+  record_progress "$agent" "$text" "$rc" "$t0" "$hb" "$tmp" "$cb" \
+    || echo "harness: could not write the progress log (ask result unchanged)" >&2
+  rm -f "$tmp"
+  exit "$rc"
+}
+
+ask_inner() {
+  local agent=${1:-} text=${2:-} timeout=$DEFAULT_TIMEOUT fresh=0 keep=0
   [ -n "$agent" ] && [ -n "$text" ] || usage
   valid_agent "$agent"
   shift 2
@@ -222,15 +421,19 @@ cmd_ask() {
         [ $# -ge 2 ] || usage
         case "$2" in ''|*[!0-9]*|0) usage ;; esac
         timeout=$2; shift 2 ;;
+      --fresh) fresh=1; shift ;;
+      --keep) keep=1; shift ;;
       *) usage ;;
     esac
   done
+  [ "$fresh$keep" != 11 ] || usage
 
   if [ "$agent" = implementer ] && ! command -v harness-verify >/dev/null 2>&1; then
     die "harness-verify not found on PATH; run ./install.sh (the implementer's checks would silently not run)"
   fi
 
-  local pane
+  local pane existed=0
+  agent_fields "$agent" >/dev/null && existed=1
   pane=$(cmd_spawn "$agent") || exit 1
 
   local report="$REPORT_DIR/$agent.md"
@@ -242,6 +445,10 @@ cmd_ask() {
     show_pane_screen "$pane"
     exit 4
   fi
+
+  # a live worker starts the task with a cleared context (never a fresh spawn)
+  maybe_reset "$agent" "$fresh" "$keep" "$existed" "${CTX_BEFORE:-}"
+  [ -z "$RESET_PANE" ] || pane=$RESET_PANE
 
   mkdir -p "$REPORT_DIR"
   rm -f "$report"
@@ -320,7 +527,7 @@ cmd_status() {
   local a fields
   for a in $AGENTS; do
     if fields=$(agent_fields "$a"); then
-      printf '%-12s %-8s %s\n' "$a" "${fields%%$TAB*}" "${fields#*$TAB}"
+      printf '%-12s %-8s %-8s %s\n' "$a" "${fields%%$TAB*}" "${fields#*$TAB}" "$(fmt_ctx "$(ctx_tokens "$a")")"
     else
       printf '%-12s %s\n' "$a" "-"
     fi
