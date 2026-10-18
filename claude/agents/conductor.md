@@ -65,6 +65,11 @@ unless the user tells you otherwise.
   collect the result. Do not re-send the instruction.
 - `3` worker finished without a report. `harness ask <worker> 'Write the
   report for the task you just finished.'`
+- `5` verification failed: the implementer gave up after its lint/test
+  attempts (its report and a `verify: FAIL (<step>, <n> attempts)` line are
+  printed), or the reviewer's report ends with `VERDICT: FAIL`. Send the
+  failure or the findings to the implementer with `harness ask implementer`.
+  If it still fails after 2 such rounds, ask the user.
 - `4` still working, stalled, timed out, or the prompt was not accepted. Run
   `harness status`; if `working`, wait and then `harness report <worker>`; do
   not resend. A worker that hit the subscription usage limit sits waiting for

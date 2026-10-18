@@ -13,6 +13,10 @@
 #                       4 worker still working / unknown (including busy with a
 #                         previous instruction: nothing sent), or prompt not
 #                         accepted
+#                       5 verification failed (implementer's checks gave up, or the
+#                         reviewer's last line is `VERDICT: FAIL`); the report is
+#                         still printed on stdout. A reviewer report without a
+#                         final VERDICT line counts as no valid report (3).
 # `report` prints .harness/reports/<agent>.md without touching herdr:
 #   exit 0 printed · 3 no report yet.
 # Output of `ask`: stdout = report on exit 0; screen text on 2/3/4;
@@ -160,6 +164,42 @@ cmd_spawn() {
   echo "$pane"
 }
 
+# verify_tool ARGS... — run harness-verify (on PATH, or next to this script)
+verify_tool() {
+  local v
+  v=$(command -v harness-verify 2>/dev/null) || v="$(dirname "$0")/harness-verify"
+  [ -x "$v" ] || return 1
+  "$v" "$@"
+}
+
+# finish_report <agent> <report> <pane> — print the report and exit with the
+# verification-aware status (0 pass · 3 reviewer without VERDICT · 5 failed)
+finish_report() {
+  local agent=$1 report=$2 pane=$3 last vj st
+  case "$agent" in
+    implementer)
+      vj=".harness/verify/implementer.json"
+      st=$(jq -r '.status // empty' "$vj" 2>/dev/null)
+      cat "$report"
+      if [ "$st" = fail ]; then
+        echo "verify: FAIL ($(jq -r '.step // "?"' "$vj" 2>/dev/null), $(jq -r '.attempts // 0' "$vj" 2>/dev/null) attempts)"
+        exit 5
+      fi
+      exit 0 ;;
+    reviewer)
+      last=$(awk 'NF { l = $0 } END { print l }' "$report")
+      case "$last" in
+        "VERDICT: PASS") cat "$report"; exit 0 ;;
+        "VERDICT: FAIL") cat "$report"; exit 5 ;;
+      esac
+      echo "harness: reviewer report has no final 'VERDICT: PASS|FAIL' line; ask it to rewrite the report." >&2
+      show_pane_screen "$pane"
+      exit 3 ;;
+  esac
+  cat "$report"
+  exit 0
+}
+
 cmd_ask() {
   local agent=${1:-} text=${2:-} timeout=$DEFAULT_TIMEOUT
   [ -n "$agent" ] && [ -n "$text" ] || usage
@@ -191,6 +231,12 @@ cmd_ask() {
   mkdir -p "$REPORT_DIR"
   rm -f "$report"
 
+  # implementer: record the start state so the Stop hook can tell "no changes"
+  # from "changes to verify" (never fatal)
+  if [ "$agent" = implementer ]; then
+    verify_tool baseline implementer 2>/dev/null || true
+  fi
+
   if [ "$(agent_status "$agent")" = blocked ]; then
     echo "harness: $agent is blocked on a prompt; answer it before sending work." >&2
     show_pane_screen "$pane"
@@ -215,8 +261,7 @@ cmd_ask() {
       exit 2 ;;
     idle|done)
       if [ -f "$report" ]; then
-        cat "$report"
-        exit 0
+        finish_report "$agent" "$report" "$pane"
       fi
       if [ "$prompt_failed" = 1 ]; then
         echo "harness: prompt was not accepted by herdr: $out" >&2

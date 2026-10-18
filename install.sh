@@ -25,6 +25,7 @@ if [ "${1:-}" = "--test" ]; then
   rc=0
   /bin/bash "$REPO/tests/gate.test.sh"    || rc=1
   /bin/bash "$REPO/tests/harness.test.sh" || rc=1
+  /bin/bash "$REPO/tests/verify.test.sh"  || rc=1
   /bin/bash "$REPO/tests/install.test.sh" || rc=1
   exit $rc
 fi
@@ -65,6 +66,7 @@ for f in "$REPO"/claude/agents/*.md; do
   ln -sfn "$f" "$dest"
 done
 ln -sfn "$REPO/bin/harness" "$BIN_DIR/harness"
+ln -sfn "$REPO/bin/harness-verify" "$BIN_DIR/harness-verify"
 case ":$PATH:" in
   *":$BIN_DIR:"*) ;;
   *) echo "warning: $BIN_DIR is not on PATH; add it so the conductor can run 'harness'" >&2 ;;
@@ -103,6 +105,7 @@ installed:
   gate hook      $GATE  (matcher: $MATCHER)
   agents         $CLAUDE_DIR/agents/ ($(cd "$REPO/claude/agents" && ls *.md | tr '\n' ' '))
   harness        $BIN_DIR/harness
+  harness-verify $BIN_DIR/harness-verify
   settings       $SETTINGS (backup: $bak)
   agent          settings.agent = conductor (workers override with --agent <name>)
   cache TTL      promptCacheTtl=1h subagentPromptCacheTtl=1h

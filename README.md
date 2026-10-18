@@ -46,11 +46,36 @@ Run `./install.sh --test` to execute the test suites.
 
 ```
 harness spawn  <agent> [--direction right|down]
-harness ask    <agent> '<instruction>' [--timeout MS]   # exit 2 blocked · 3 no report · 4 still working
+harness ask    <agent> '<instruction>' [--timeout MS]   # exit 2 blocked · 3 no report · 4 still working · 5 verification failed
 harness report <agent>                                   # print existing report, or exit 3
 harness status
 harness close  <agent>
 ```
+
+## Verification loop
+
+The implementer does not judge its own work. `harness-verify` runs inside its
+loop through hooks in `claude/agents/implementer.md`: a `PostToolUse` hook
+formats each edited file and feeds back per-file lint errors, and a `Stop`
+hook runs lint and tests over the changes and sends the worker back with the
+failing output (up to `maxAttempts`, default 3; the report is deleted
+meanwhile). `harness ask implementer` records a baseline first and exits **5**
+(report plus a `verify: FAIL (<step>, <n> attempts)` line) when verification
+gave up. The reviewer runs `harness-verify run all`, smoke-checks the app if
+configured, and ends its report with `VERDICT: PASS` or `VERDICT: FAIL`
+(FAIL → exit 5; missing → exit 3).
+
+Commands per project, first hit wins per key: `.harness/verify.local.json`,
+`.claude/harness.json`, then auto-detect (Makefile, package.json, pyproject,
+Cargo.toml, go.mod, `install.sh --test`):
+
+```json
+{ "format": "prettier --write {files}", "lint": "eslint {files}", "test": "npm test",
+  "app": { "start": "npm run dev", "url": "http://localhost:3000" }, "maxAttempts": 3 }
+```
+
+`null` disables a step; `harness-verify detect` prints what was resolved.
+It never blocks a worker when jq, git, or a config is missing.
 
 ## What the conductor may do directly
 
@@ -88,11 +113,12 @@ runs the conductor agent.
 
 ```
 bin/harness                      herdr wrapper CLI
+bin/harness-verify               format/lint/test checks used by worker hooks
 claude/hooks/conductor-gate.sh   PreToolUse gate
 claude/agents/{analyst,implementer,reviewer}.md  worker definitions (model, memory, cacheTtl, report contract)
 claude/agents/conductor.md       conductor system prompt (settings.agent)
 claude/agents/solo.md            escape-hatch agent (empty body = default prompt)
 install.sh                       installer (--test runs tests/)
-tests/                           gate, harness (against tests/fake-herdr), install
+tests/                           gate, harness (against tests/fake-herdr), verify, install
 docs/superpowers/                spec and plan
 ```
