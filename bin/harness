@@ -232,7 +232,8 @@ last_exit() {
 # maybe_reset <agent> <fresh> <keep> <existed> <ctx> — clear a live worker's
 # context before a new task, falling back to close + respawn. Sets RESET_PANE
 # when it respawned. Skipped (unless --fresh) when the agent's last ask did not
-# end cleanly (exit 3/4/5, or killed): the worker still holds that task.
+# end cleanly: only exit 0 (or 5 for the reviewer: a FAIL verdict is a complete
+# outcome) allows a reset; any other or unknown exit keeps the worker's context.
 maybe_reset() {
   local agent=$1 fresh=$2 keep=$3 existed=$4 ctx=${5:-} need=0 st last
   RESET_PANE=""
@@ -250,7 +251,12 @@ maybe_reset() {
   if [ "$fresh" = 0 ]; then
     last=$(last_exit "$agent")
     case "$last" in
-      3|4|5|130|143)
+      ''|0) ;;
+      5) if [ "$agent" != reviewer ]; then
+           echo "keeping context (last ask exit $last)" >&2
+           return 0
+         fi ;;
+      *)
         echo "keeping context (last ask exit $last)" >&2
         return 0 ;;
     esac
@@ -443,6 +449,14 @@ finish_report() {
   exit 0
 }
 
+# kill_tree <pid> — TERM pid and all its descendants (macOS has no setsid)
+kill_tree() {
+  local c
+  for c in $(pgrep -P "$1" 2>/dev/null); do kill_tree "$c"; done
+  kill "$1" 2>/dev/null
+  return 0
+}
+
 # ask_finish [rc] — replay the buffered stdout, log the ask, remove the temp
 # file, exit. Runs once: normally after the inner ask, or from the EXIT/TERM/INT
 # trap when the wrapper is killed mid-wait (rc 143/130 then).
@@ -451,8 +465,7 @@ ask_finish() {
   ASK_DONE=1
   local rc=${1:-1}
   if [ -n "$ASK_PID" ] && kill -0 "$ASK_PID" 2>/dev/null; then
-    pkill -P "$ASK_PID" 2>/dev/null
-    kill "$ASK_PID" 2>/dev/null
+    kill_tree "$ASK_PID"
   fi
   cat "$ASK_TMP" 2>/dev/null
   record_progress "$ASK_AGENT" "$ASK_TEXT" "$rc" "$ASK_T0" "$ASK_HB" "$ASK_TMP" "$CTX_BEFORE" \
@@ -474,7 +487,8 @@ cmd_ask() {
   CTX_BEFORE=$cb
   trap 'ask_finish 143' TERM
   trap 'ask_finish 130' INT
-  trap 'ask_finish 1' EXIT
+  trap 'ask_finish 129' HUP
+  trap 'ask_finish "$?"' EXIT
   ( ask_inner "$@" ) > "$ASK_TMP" &
   ASK_PID=$!
   wait "$ASK_PID"

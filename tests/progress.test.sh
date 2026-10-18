@@ -280,6 +280,7 @@ check "fresh+keep is a usage error" [ "$RC" -eq 1 ]
 reset_after() { # reset_after AGENT EXIT [flag] — a logged ask with EXIT, then a new ask
   setup; gitwork
   echo idle > "$FAKE_DIR/live.$1"
+  [ "$1" = implementer ] || transcript "sess-$1-0" 130000
   mkdir -p .harness
   lastjson "{\"ts\":\"2026-10-18T00:00:00Z\",\"agent\":\"$1\",\"exit\":$2}"
   hook_report "$1" '# r\nstatus: done\n'
@@ -287,11 +288,19 @@ reset_after() { # reset_after AGENT EXIT [flag] — a logged ask with EXIT, then
 }
 reset_after implementer 0
 check "after exit 0: reset" logged "agent prompt implementer /clear"
-for e in 3 4 5; do
+for e in 1 2 3 4 5 129 130 143; do
   reset_after implementer $e
   check "after exit $e: no clear" not_logged "/clear"
   check "after exit $e: stderr notice" grep -qx "keeping context (last ask exit $e)" <<<"$OUT"
 done
+reset_after reviewer 5 --fresh
+check "reviewer exit 5 --fresh: reset" logged "agent prompt reviewer /clear"
+reset_after reviewer 0
+check "reviewer exit 0: reset" logged "agent prompt reviewer /clear"
+reset_after reviewer 5
+check "reviewer exit 5 (FAIL verdict): reset" logged "agent prompt reviewer /clear"
+reset_after reviewer 4
+check "reviewer exit 4: no clear" not_logged "/clear"
 reset_after implementer 5 --fresh
 check "after exit 5 --fresh: reset" logged "agent prompt implementer /clear"
 setup; gitwork
@@ -363,6 +372,29 @@ check "kill: stdout replayed" [ "$OUT" = REPLAYED ]
 check "kill: temp file gone" [ -z "$(ls "$WORK/tmp" 2>/dev/null)" ]
 check "kill: jsonl exit 143" [ "$(jl .exit)" = 143 ]
 check "kill: log written" [ "$(logfiles | wc -l | tr -d ' ')" -eq 1 ]
+
+# --- real exit for any signal, HUP trapped, whole tree killed ---------------------------------------------------------------
+sigtest() { # sigtest SIGNAL EXPECTED_RC
+  setup
+  echo idle > "$FAKE_DIR/live.analyst"
+  mkdir -p "$WORK/tmp"; rm -f "$WORK/gc.pid"
+  export FAKE_PROMPT_HOOK="echo REPLAYED >> $WORK/tmp/harness-ask.*; (sleep 30 & echo \$! > $WORK/gc.pid; wait); sleep 30"
+  TMPDIR="$WORK/tmp" HERDR_ENV=1 HERDR_PANE_ID=w1:p1 PATH="$FAKE_BIN:$HERE/../bin:$PATH" /bin/bash "$HARNESS" ask analyst "long" > "$WORK/sig.out" 2>/dev/null &
+  KP=$!
+  i=0; while [ $i -lt 50 ] && [ ! -s "$WORK/gc.pid" ]; do sleep 0.1; i=$((i+1)); done
+  GC=$(cat "$WORK/gc.pid" 2>/dev/null)
+  kill -"$1" "$KP"; wait "$KP"; KRC=$?
+  unset FAKE_PROMPT_HOOK
+  sleep 0.3
+}
+sigtest HUP 129
+check "HUP: rc 129" [ "$KRC" -eq 129 ]
+check "HUP: jsonl exit 129" [ "$(jl .exit)" = 129 ]
+check "HUP: temp file gone" [ -z "$(ls "$WORK/tmp" 2>/dev/null)" ]
+check "HUP: grandchild gone" [ -n "$GC" ] && ! kill -0 "$GC" 2>/dev/null
+sigtest TERM 143
+check "TERM: grandchild gone" [ -n "$GC" ] && ! kill -0 "$GC" 2>/dev/null
+check "TERM: jsonl exit 143" [ "$(jl .exit)" = 143 ]
 
 # --- spawn env ----------------------------------------------------------------------------------------------------------------------------------------------
 setup

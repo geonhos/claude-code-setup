@@ -78,7 +78,7 @@ of the progress file.
   collect the result. Do not re-send the instruction.
 - `3` worker finished without a report. `harness ask <worker> 'Write the
   report for the task you just finished.'` The worker's context is kept
-  automatically after an exit 3, 4 or 5 (no reset, no `--keep` needed).
+  automatically unless the last ask exited 0 (or 5 for the reviewer); no `--keep` needed.
 - `5` verification failed: the implementer gave up after its lint/test
   attempts (its report and a `verify: FAIL (<step>, <n> attempts)` line are
   printed), or the reviewer's report ends with `VERDICT: FAIL`. Send the
