@@ -44,7 +44,9 @@ hook_report() { # hook_report AGENT BODY -> FAKE_PROMPT_HOOK writing a report
 jl() { jq -r "$1" "$WORK/.harness/progress.jsonl" 2>/dev/null | tail -n 1; }
 nlines() { wc -l < "$1" | tr -d ' '; }
 logfiles() { ls "$WORK"/.harness/log/*.md 2>/dev/null; }
-projdir() { echo "$HARNESS_PROJECTS_DIR/$(printf %s "$PWD" | sed 's#[/.]#-#g')"; }
+# the encoding rule lives in bin/harness (project_dir_name), reached via _projdir
+projdir() { echo "$HARNESS_PROJECTS_DIR/$(HERDR_ENV=1 PATH="$FAKE_BIN:$HERE/../bin:$PATH" /bin/bash "$HARNESS" _projdir)"; }
+lastjson() { printf '%s\n' "$1" >> .harness/progress.jsonl; }
 # transcript SESSION CACHE_READ [CREATE] [INPUT]
 transcript() {
   mkdir -p "$(projdir)"
@@ -273,6 +275,94 @@ check "HARNESS_CTX_RESET honoured" logged "agent prompt analyst /clear"
 setup
 run ask analyst "q" --fresh --keep
 check "fresh+keep is a usage error" [ "$RC" -eq 1 ]
+
+# --- reset skipped after an unclean ask ----------------------------------------------------------------------------------------------------
+reset_after() { # reset_after AGENT EXIT [flag] — a logged ask with EXIT, then a new ask
+  setup; gitwork
+  echo idle > "$FAKE_DIR/live.$1"
+  mkdir -p .harness
+  lastjson "{\"ts\":\"2026-10-18T00:00:00Z\",\"agent\":\"$1\",\"exit\":$2}"
+  hook_report "$1" '# r\nstatus: done\n'
+  runerr ask "$1" "do it" ${3:-}
+}
+reset_after implementer 0
+check "after exit 0: reset" logged "agent prompt implementer /clear"
+for e in 3 4 5; do
+  reset_after implementer $e
+  check "after exit $e: no clear" not_logged "/clear"
+  check "after exit $e: stderr notice" grep -qx "keeping context (last ask exit $e)" <<<"$OUT"
+done
+reset_after implementer 5 --fresh
+check "after exit 5 --fresh: reset" logged "agent prompt implementer /clear"
+setup; gitwork
+echo idle > "$FAKE_DIR/live.implementer"; mkdir -p .harness
+lastjson '{"ts":"t","agent":"implementer","exit":5}'
+lastjson '{"ts":"t","agent":"analyst","exit":0}'
+lastjson '{"ts":"t","agent":"implementer","exit":null,"late":true}'
+hook_report implementer '# r\nstatus: done\n'
+run ask implementer "do it"
+check "other agents/late lines do not hide the last exit" not_logged "/clear"
+
+# --- late report archived, never deleted unlogged --------------------------------------------------------------------------------
+setup
+echo working > "$FAKE_DIR/live.analyst"
+run ask analyst "first"
+check "late: first ask exit 4" [ "$RC" -eq 4 ]
+echo idle > "$FAKE_DIR/live.analyst"
+mkdir -p .harness/reports
+printf '# LATE REPORT title\nstatus: partial\n' > .harness/reports/analyst.md
+hook_report analyst '# r\nstatus: done\n'
+run ask analyst "second"
+check "late: archive file" [ "$(ls .harness/log/*-analyst-late.md 2>/dev/null | wc -l | tr -d ' ')" -eq 1 ]
+check "late: archive has the report" grep -q "LATE REPORT title" .harness/log/*-analyst-late.md
+check "late: jsonl line" [ "$(jq -c 'select(.late == true) | [.exit, .status, .summary]' .harness/progress.jsonl)" = '[null,"partial","LATE REPORT title"]' ]
+check "late: in progress.md" grep -q "analyst late report .* — LATE REPORT title" .harness/progress.md
+# an already logged report is not archived again
+run ask analyst "third"
+check "logged report not archived twice" [ "$(ls .harness/log/*-analyst-late.md | wc -l | tr -d ' ')" -eq 1 ]
+check "logged report: sha stored" [ -n "$(jl .report_sha | grep -v null)" ]
+setup
+echo idle > "$FAKE_DIR/live.analyst"
+hook_report analyst '# r\nstatus: done\n'
+run ask analyst "a"
+run ask analyst "b"
+check "normal flow: no late archive" [ "$(ls .harness/log/*-late*.md 2>/dev/null | wc -l | tr -d ' ')" -eq 0 ]
+
+# --- transcript dir encoding ----------------------------------------------------------------------------------------------------------------------
+setup
+mkdir -p "$WORK/a_b c é한.d" && cd "$WORK/a_b c é한.d" || exit 1
+check "encode: every non-alnum char (not byte) is -" [ "$(projdir | sed 's#.*/##')" = "$(printf %s "$(pwd -P)" | perl -CS -pe 's/[^A-Za-z0-9]/-/g')" ]
+check "encode: tail is a-b-c----d" [ "$(projdir | sed 's#.*/##' | sed 's#.*\(a-b-c-*d\)$#\1#')" = "a-b-c----d" ]
+echo idle > "$FAKE_DIR/live.analyst"
+transcript sess-analyst-0 134572 2750 2
+run status
+check "encode: ctx read in an odd cwd" grep -Eq "^analyst +idle +w1:p2 +137k$" <<<"$OUT"
+cd "$WORK"
+
+# --- ctx: whole-file scan -------------------------------------------------------------------------------------------------------------------------------
+setup
+echo idle > "$FAKE_DIR/live.analyst"
+transcript sess-analyst-0 134572 2750 2
+i=0; while [ $i -lt 400 ]; do echo '{"type":"progress","data":{}}' >> "$(projdir)/sess-analyst-0.jsonl"; i=$((i+1)); done
+run status
+check "ctx: assistant line beyond 200 lines back" grep -Eq "^analyst +idle +w1:p2 +137k$" <<<"$OUT"
+
+# --- ask wrapper killed mid-wait ------------------------------------------------------------------------------------------------------------------
+setup
+echo idle > "$FAKE_DIR/live.analyst"
+mkdir -p "$WORK/tmp"
+export FAKE_PROMPT_HOOK="echo REPLAYED >> $WORK/tmp/harness-ask.*; sleep 3"
+TMPDIR="$WORK/tmp" HERDR_ENV=1 HERDR_PANE_ID=w1:p1 PATH="$FAKE_BIN:$HERE/../bin:$PATH" /bin/bash "$HARNESS" ask analyst "long" > "$WORK/killed.out" 2>/dev/null &
+KP=$!
+i=0; while [ $i -lt 50 ] && ! grep -q REPLAYED "$WORK"/tmp/harness-ask.* 2>/dev/null; do sleep 0.1; i=$((i+1)); done
+kill -TERM "$KP"; wait "$KP"; KRC=$?
+unset FAKE_PROMPT_HOOK
+OUT=$(cat "$WORK/killed.out")
+check "kill: exit 143" [ "$KRC" -eq 143 ]
+check "kill: stdout replayed" [ "$OUT" = REPLAYED ]
+check "kill: temp file gone" [ -z "$(ls "$WORK/tmp" 2>/dev/null)" ]
+check "kill: jsonl exit 143" [ "$(jl .exit)" = 143 ]
+check "kill: log written" [ "$(logfiles | wc -l | tr -d ' ')" -eq 1 ]
 
 # --- spawn env ----------------------------------------------------------------------------------------------------------------------------------------------
 setup

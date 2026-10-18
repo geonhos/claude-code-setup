@@ -177,16 +177,23 @@ cmd_spawn() {
 # agent_session <agent> — Claude session id herdr reports for the agent
 agent_session() { agent_json "$1" | jq -r '.result.agent.agent_session.value // empty' 2>/dev/null; }
 
+# project_dir_name <path> — the directory name Claude Code uses under
+# ~/.claude/projects for a cwd. Observed with `claude -p` in dirs named a_b,
+# "c d", "é한x" and p.q-r: every character outside [A-Za-z0-9] becomes "-", one
+# per character (not per byte), on the real path (/tmp -> /private/tmp).
+project_dir_name() { printf %s "$1" | perl -CS -pe 's/[^A-Za-z0-9]/-/g'; }
+
 # ctx_tokens <agent> — context size from the last main-thread assistant usage in
-# the transcript (~/.claude/projects/<cwd with / and . as ->/<session>.jsonl);
+# the transcript (~/.claude/projects/<project_dir_name>/<session>.jsonl);
 # prints nothing when unknown
 ctx_tokens() {
   local sid f
   sid=$(agent_session "$1")
   [ -n "$sid" ] || return 0
-  f="${HARNESS_PROJECTS_DIR:-$HOME/.claude/projects}/$(printf %s "$PWD" | sed 's#[/.]#-#g')/$sid.jsonl"
+  f="${HARNESS_PROJECTS_DIR:-$HOME/.claude/projects}/$(project_dir_name "$(pwd -P)")/$sid.jsonl"
   [ -r "$f" ] || return 0
-  tail -n 200 "$f" 2>/dev/null | jq -R 'fromjson? | select(type == "object" and .type == "assistant" and (.isSidechain | not) and ((.message.usage | type) == "object")) | .message.usage | (.input_tokens // 0) + (.cache_creation_input_tokens // 0) + (.cache_read_input_tokens // 0)' 2>/dev/null | tail -n 1
+  grep '"type":"assistant"' "$f" 2>/dev/null | grep -v '"isSidechain":true' | tail -n 1 \
+    | jq -R 'fromjson? | select(type == "object" and .type == "assistant" and ((.message.usage | type) == "object")) | .message.usage | (.input_tokens // 0) + (.cache_creation_input_tokens // 0) + (.cache_read_input_tokens // 0)' 2>/dev/null
 }
 
 # fmt_ctx <tokens> — "137k", or "-" when unknown
@@ -216,11 +223,18 @@ do_clear() {
   return 1
 }
 
+# last_exit <agent> — exit code of the agent's last logged ask (late archives
+# have no exit and are skipped); nothing when unknown
+last_exit() {
+  tail -n 200 "$JSONL" 2>/dev/null | jq -R -r --arg a "$1" 'fromjson? | select(type == "object" and .agent == $a and (.exit | type) == "number") | .exit' 2>/dev/null | tail -n 1
+}
+
 # maybe_reset <agent> <fresh> <keep> <existed> <ctx> — clear a live worker's
 # context before a new task, falling back to close + respawn. Sets RESET_PANE
-# when it respawned.
+# when it respawned. Skipped (unless --fresh) when the agent's last ask did not
+# end cleanly (exit 3/4/5, or killed): the worker still holds that task.
 maybe_reset() {
-  local agent=$1 fresh=$2 keep=$3 existed=$4 ctx=${5:-} need=0 st
+  local agent=$1 fresh=$2 keep=$3 existed=$4 ctx=${5:-} need=0 st last
   RESET_PANE=""
   [ "$existed" = 1 ] && [ "$keep" = 0 ] || return 0
   case "$agent" in
@@ -233,6 +247,14 @@ maybe_reset() {
   esac
   [ "$fresh" = 1 ] && need=1
   [ "$need" = 1 ] || return 0
+  if [ "$fresh" = 0 ]; then
+    last=$(last_exit "$agent")
+    case "$last" in
+      3|4|5|130|143)
+        echo "keeping context (last ask exit $last)" >&2
+        return 0 ;;
+    esac
+  fi
   st=$(agent_status "$agent")
   case "$st" in idle|done) ;; *) return 0 ;; esac
   do_clear "$agent" && return 0
@@ -247,6 +269,8 @@ maybe_reset() {
 # --- progress log ----------------------------------------------------------------------
 
 git_head() { git rev-parse --short HEAD 2>/dev/null || true; }
+# file_sum <file> — cksum "crc-size" of a file (portable), empty if unreadable
+file_sum() { cksum < "$1" 2>/dev/null | awk '{ print $1 "-" $2 }'; }
 num_or_null() { case "${1:-}" in ''|*[!0-9]*) echo null ;; *) echo "$1" ;; esac; }
 
 # record_progress <agent> <text> <rc> <t0> <head_before> <stdout-file> <ctx_before>
@@ -254,7 +278,7 @@ num_or_null() { case "${1:-}" in ''|*[!0-9]*) echo null ;; *) echo "$1" ;; esac;
 record_progress() {
   local agent=$1 text=$2 rc=$3 t0=$4 hb=$5 out=$6 cb=${7:-}
   local report="$REPORT_DIR/$agent.md" vj=.harness/verify/implementer.json
-  local now ts stamp ha sess ca status="" summary="" verify="" logf n brief
+  local now ts stamp ha sess ca status="" summary="" verify="" logf n brief sha=""
   now=$(date +%s)
   ts=$(date -u +%Y-%m-%dT%H:%M:%SZ)
   stamp=$(date +%Y%m%d-%H%M%S)
@@ -262,6 +286,7 @@ record_progress() {
   if [ -f "$report" ]; then
     status=$(sed -n 's/^status: *//p' "$report" | head -n 1)
     summary=$(sed -n 's/^# *//p' "$report" | head -n 1)
+    sha=$(file_sum "$report")
   fi
   if [ "$agent" = implementer ]; then
     verify=$(jq -r '.status // empty' "$vj" 2>/dev/null)
@@ -292,13 +317,37 @@ record_progress() {
     --arg instr "$(printf '%s' "$text" | tr '\n' ' ' | cut -c1-160)" \
     --argjson exit "$rc" --arg verify "$verify" --argjson dur "$((now - t0))" \
     --arg hb "$hb" --arg ha "$ha" --argjson cb "$(num_or_null "$cb")" --argjson ca "$(num_or_null "$ca")" \
-    --arg status "$status" --arg summary "$summary" '
+    --arg status "$status" --arg summary "$summary" --arg sha "$sha" '
     def nz: if . == "" then null else . end;
     {ts: $ts, agent: $agent, session: ($session | nz), instr: $instr, exit: $exit,
      verify: ($verify | nz), dur_s: $dur, head_before: ($hb | nz), head_after: ($ha | nz),
-     ctx_before: $cb, ctx_after: $ca, status: ($status | nz), summary: ($summary | nz)}' >> "$JSONL" || return 1
+     ctx_before: $cb, ctx_after: $ca, status: ($status | nz), summary: ($summary | nz), report_sha: ($sha | nz)}' >> "$JSONL" || return 1
 
   rotate_logs "$logf"
+  write_progress_md "$agent" "$ca"
+  return 0
+}
+
+# archive_late <agent> <report> — a report still on disk that no logged ask
+# carries (it appeared after an exit-4 ask): copy it into the log, with a jsonl
+# line (exit null, late true), before the next ask deletes it. A report already
+# logged (same checksum on the agent's last line) is not archived twice.
+archive_late() {
+  local agent=$1 report=$2 sha last ts stamp logf n status summary
+  sha=$(file_sum "$report")
+  last=$(tail -n 200 "$JSONL" 2>/dev/null | jq -R -r --arg a "$agent" 'fromjson? | select(type == "object" and .agent == $a) | .report_sha // ""' 2>/dev/null | tail -n 1)
+  [ -z "$sha" ] || [ "$sha" != "$last" ] || return 0
+  ts=$(date -u +%Y-%m-%dT%H:%M:%SZ); stamp=$(date +%Y%m%d-%H%M%S)
+  status=$(sed -n 's/^status: *//p' "$report" | head -n 1)
+  summary=$(sed -n 's/^# *//p' "$report" | head -n 1)
+  mkdir -p "$LOG_DIR" || return 1
+  logf="$LOG_DIR/$stamp-$agent-late.md"; n=1
+  while [ -e "$logf" ]; do n=$((n + 1)); logf="$LOG_DIR/$stamp-$agent-late-$n.md"; done
+  { printf '# %s late report %s (not logged by any ask)\n\n## Report\n\n' "$agent" "$ts"; cat "$report"; } > "$logf" || return 1
+  jq -n -c --arg ts "$ts" --arg agent "$agent" --arg status "$status" --arg summary "$summary" --arg sha "$sha" '
+    def nz: if . == "" then null else . end;
+    {ts: $ts, agent: $agent, exit: null, late: true, status: ($status | nz),
+     summary: ($summary | nz), report_sha: ($sha | nz)}' >> "$JSONL" || return 1
   write_progress_md
   return 0
 }
@@ -312,8 +361,10 @@ rotate_logs() {
   return 0
 }
 
-# write_progress_md — regenerate .harness/progress.md (<= 60 lines)
+# write_progress_md [agent ctx] — regenerate .harness/progress.md (<= 60 lines);
+# a given agent/ctx pair saves reading that transcript twice
 write_progress_md() {
+  local known=${1:-} knownctx=${2:-} c
   local tmp="$PROGRESS_MD.tmp.$$" branch goal a f q fields line=""
   branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "-")
   goal="(unset)"
@@ -324,7 +375,7 @@ write_progress_md() {
     printf '# Progress — %s (%s)\n' "$(basename "$PWD")" "$branch"
     printf 'Goal: %s\n' "$goal"
     printf '## Recent asks (newest first, max 15)\n'
-    tail -n 15 "$JSONL" 2>/dev/null | jq -r -R 'fromjson? | "- \(.ts) \(.agent) exit \(.exit) verify \(.verify // "-") \(.head_before // "")..\(.head_after // "") — \(.summary // "")"' 2>/dev/null \
+    tail -n 15 "$JSONL" 2>/dev/null | jq -r -R 'fromjson? | "- \(.ts) \(.agent) \(if .late then "late report" else "exit \(.exit)" end) verify \(.verify // "-") \(.head_before // "")..\(.head_after // "") — \(.summary // "")"' 2>/dev/null \
       | awk '{ a[NR] = $0 } END { for (i = NR; i >= 1; i--) print a[i] }'
     for f in $(ls -t .harness/reports/*.md 2>/dev/null); do
       q=$(awk '/^## Open questions/ { on = 1; next } /^## / { on = 0 } on && /^- / { if (tolower($0) !~ /^- *none *$/) print }' "$f" | head -n 10)
@@ -336,7 +387,8 @@ write_progress_md() {
     printf '## Workers\n'
     for a in $AGENTS; do
       if fields=$(agent_fields "$a"); then
-        q="$a ${fields%%$TAB*} ctx $(fmt_ctx "$(ctx_tokens "$a")")"
+        if [ "$a" = "$known" ]; then c=$knownctx; else c=$(ctx_tokens "$a"); fi
+        q="$a ${fields%%$TAB*} ctx $(fmt_ctx "$c")"
       else
         q="$a -"
       fi
@@ -391,23 +443,42 @@ finish_report() {
   exit 0
 }
 
-# cmd_ask — runs ask_inner (which exits through many paths) in a subshell, then
-# logs the outcome. Output and exit code are the inner ones; logging problems
-# only warn on stderr.
+# ask_finish [rc] — replay the buffered stdout, log the ask, remove the temp
+# file, exit. Runs once: normally after the inner ask, or from the EXIT/TERM/INT
+# trap when the wrapper is killed mid-wait (rc 143/130 then).
+ask_finish() {
+  [ "$ASK_DONE" = 0 ] || return 0
+  ASK_DONE=1
+  local rc=${1:-1}
+  if [ -n "$ASK_PID" ] && kill -0 "$ASK_PID" 2>/dev/null; then
+    pkill -P "$ASK_PID" 2>/dev/null
+    kill "$ASK_PID" 2>/dev/null
+  fi
+  cat "$ASK_TMP" 2>/dev/null
+  record_progress "$ASK_AGENT" "$ASK_TEXT" "$rc" "$ASK_T0" "$ASK_HB" "$ASK_TMP" "$CTX_BEFORE" \
+    || echo "harness: could not write the progress log (ask result unchanged)" >&2
+  rm -f "$ASK_TMP"
+  exit "$rc"
+}
+
+# cmd_ask — runs ask_inner (which exits through many paths) in a background
+# subshell and waits, then logs the outcome. Output and exit code are the inner
+# ones; logging problems only warn on stderr.
 cmd_ask() {
-  local agent=${1:-} text=${2:-} tmp rc t0 hb cb
+  local agent=${1:-} text=${2:-} cb
   case " $AGENTS " in *" $agent "*) ;; *) ask_inner "$@" ;; esac
   [ -n "$text" ] || ask_inner "$@"
-  tmp=$(mktemp "${TMPDIR:-/tmp}/harness-ask.XXXXXX") || ask_inner "$@"
-  t0=$(date +%s); hb=$(git_head); cb=$(ctx_tokens "$agent" 2>/dev/null) || cb=""
+  ASK_TMP=$(mktemp "${TMPDIR:-/tmp}/harness-ask.XXXXXX") || ask_inner "$@"
+  ASK_AGENT=$agent ASK_TEXT=$text ASK_DONE=0 ASK_PID=""
+  ASK_T0=$(date +%s); ASK_HB=$(git_head); cb=$(ctx_tokens "$agent" 2>/dev/null) || cb=""
   CTX_BEFORE=$cb
-  ( ask_inner "$@" ) > "$tmp"
-  rc=$?
-  cat "$tmp"
-  record_progress "$agent" "$text" "$rc" "$t0" "$hb" "$tmp" "$cb" \
-    || echo "harness: could not write the progress log (ask result unchanged)" >&2
-  rm -f "$tmp"
-  exit "$rc"
+  trap 'ask_finish 143' TERM
+  trap 'ask_finish 130' INT
+  trap 'ask_finish 1' EXIT
+  ( ask_inner "$@" ) > "$ASK_TMP" &
+  ASK_PID=$!
+  wait "$ASK_PID"
+  ask_finish "$?"
 }
 
 ask_inner() {
@@ -451,6 +522,12 @@ ask_inner() {
   [ -z "$RESET_PANE" ] || pane=$RESET_PANE
 
   mkdir -p "$REPORT_DIR"
+  if [ -f "$report" ]; then
+    archive_late "$agent" "$report" || {
+      echo "harness: could not archive the leftover report; kept as $report.unlogged" >&2
+      mv -f "$report" "$report.unlogged"
+    }
+  fi
   rm -f "$report"
 
   # implementer: record the start state so the Stop hook can tell "no changes"
@@ -556,6 +633,7 @@ case "${1:-}" in
   ask)    shift; cmd_ask "$@" ;;
   report) shift; cmd_report "$@" ;;
   status) cmd_status ;;
+  _projdir) shift; project_dir_name "${1:-$(pwd -P)}"; echo ;;
   close)  shift; cmd_close "$@" ;;
   *)      usage ;;
 esac
