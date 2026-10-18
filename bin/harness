@@ -249,8 +249,9 @@ cmd_ask() {
   # implementer: record the start state so the Stop hook can tell "no changes"
   # from "changes to verify" (never fatal)
   if [ "$agent" = implementer ]; then
-    rm -f .harness/verify/implementer.json
-    verify_tool baseline implementer 2>/dev/null || true
+    # baseline reads the last result (keeps the base after a fail) and clears it;
+    # if it cannot run, clear the stale result ourselves
+    verify_tool baseline implementer 2>/dev/null || rm -f .harness/verify/implementer.json
   fi
 
   if [ "$(agent_status "$agent")" = blocked ]; then

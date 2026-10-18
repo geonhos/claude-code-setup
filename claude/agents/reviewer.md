@@ -17,8 +17,11 @@ you do not fix.
 - Review `git diff <base>` (the working tree against `<base>`, so uncommitted
   changes count) where `<base>` is given in the instruction (default `main`).
   Read surrounding code as needed to judge correctness.
-- Run `harness-verify run all` and record the result under Verification. A
-  failure is a Major finding at least.
+- Run `harness-verify run all --base <base>` (`<base>` from the instruction,
+  default `main`) and record the result under Verification. A failure is a
+  Major finding at least. Exit 2 means the base ref does not resolve, so
+  lint `{files}` is unavailable: note that under Verification; it is not a
+  finding against the diff.
 - If `harness-verify detect` shows an `app` entry, start `app.start`, wait for
   `app.url` to respond, smoke-check it (curl, or Playwright if available), and
   stop it again. Record the outcome under Verification.

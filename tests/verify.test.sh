@@ -34,6 +34,7 @@ lcfg() { mkdir -p "$R/.harness"; printf '%s' "$1" > "$R/.harness/verify.local.js
 det() { hv detect; printf '%s' "$OUT" | jq -r "$1" 2>/dev/null; }
 stopjson() { jq -n -c --arg c "$R" '{hook_event_name:"Stop",agent_type:"implementer",cwd:$c,stop_hook_active:false}'; }
 postjson() { jq -n -c --arg c "$R" --arg t "$1" --arg f "$2" '{hook_event_name:"PostToolUse",agent_type:"implementer",cwd:$c,tool_name:$t,tool_input:{file_path:$f}}'; }
+not_cmp() { ! cmp -s "$@"; }
 not_grep() { ! grep "$@"; }
 not_out_has() { ! printf '%s' "$OUT" | grep -q -- "$1"; }
 reason_grep() { printf '%s' "$OUT" | jq -r .reason | grep "$@"; }
@@ -131,6 +132,43 @@ check "baseline resets attempts" [ "$(cat "$R/.harness/verify/implementer.attemp
 check "baseline clears last result" [ ! -e "$R/.harness/verify/implementer.json" ]
 hv baseline reviewer
 check "baseline other agent" [ -s "$R/.harness/verify/reviewer.base" ]
+
+# baseline after a fail keeps the original .base; pass/skipped/no json re-baselines
+newrepo
+hv baseline
+cp "$R/.harness/verify/implementer.base" "$R/orig.base"
+echo c > "$R/new.txt"
+echo '{"status":"fail","attempts":2,"step":"test","tail":""}' > "$R/.harness/verify/implementer.json"
+echo 2 > "$R/.harness/verify/implementer.attempts"
+( cd "$R" && git add new.txt && git -c core.hooksPath=/dev/null commit -q -m moved )
+hv baseline
+check "baseline after fail keeps base" cmp -s "$R/orig.base" "$R/.harness/verify/implementer.base"
+check "baseline after fail resets attempts" [ "$(cat "$R/.harness/verify/implementer.attempts")" = 0 ]
+check "baseline after fail clears json" [ ! -e "$R/.harness/verify/implementer.json" ]
+hv baseline
+check "baseline with no json re-baselines" not_cmp "$R/orig.base" "$R/.harness/verify/implementer.base"
+for st in pass skipped; do
+  cp "$R/orig.base" "$R/.harness/verify/implementer.base"
+  echo "{\"status\":\"$st\"}" > "$R/.harness/verify/implementer.json"
+  hv baseline
+  check "baseline after $st re-baselines" not_cmp "$R/orig.base" "$R/.harness/verify/implementer.base"
+done
+newrepo
+mkdir -p "$R/.harness/verify"; echo '{"status":"fail"}' > "$R/.harness/verify/implementer.json"
+hv baseline
+check "baseline after fail without base creates one" [ -s "$R/.harness/verify/implementer.base" ]
+
+# fail -> baseline -> stop with no new change still verifies and fails
+newrepo
+cfg '{"test":"exit 1","maxAttempts":1}'
+hv baseline; echo c > "$R/new.txt"
+hvin "$(stopjson)" stop
+hvin "$(stopjson)" stop
+check "fail recorded at cap" [ "$(result status)" = fail ]
+hv baseline
+hvin "$(stopjson)" stop
+check "stop after re-ask without change: not skipped" [ "$(result status)" != skipped ]
+check "stop after re-ask without change: blocks" [ "$(printf '%s' "$OUT" | jq -r .decision)" = block ]
 
 # --- stop ----------------------------------------------------------------------------
 newrepo

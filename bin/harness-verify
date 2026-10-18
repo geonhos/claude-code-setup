@@ -213,13 +213,19 @@ write_result() { # status step tail attempts
 cmd_baseline() {
   set_agent "${1:-}"
   enter_root
+  # after a verify FAIL keep the original .base: the next ask must still compare
+  # against the tree the failing work started from
+  local prev=""
+  prev=$(jq -r '.status // empty' "$STATE_REL/$AGENT.json" 2>/dev/null)
   rm -f "${STATE_REL:?}/${AGENT:?}.json" ".harness/reports/${AGENT:?}.md.pending"
   if [ "$IS_GIT" != 1 ]; then
     warn "not a git repo, no baseline"
     exit 0
   fi
   mkdir -p "$STATE_REL"
-  state_id > "$STATE_REL/$AGENT.base"
+  if [ "$prev" != fail ] || [ ! -s "$STATE_REL/$AGENT.base" ]; then
+    state_id > "$STATE_REL/$AGENT.base"
+  fi
   echo 0 > "$STATE_REL/$AGENT.attempts"
   exit 0
 }

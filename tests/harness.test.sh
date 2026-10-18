@@ -420,5 +420,20 @@ run report implementer
 check "pending while working: exit 4" [ "$RC" -eq 4 ]
 check "pending while working: not restored" [ -e "$WORK/.harness/reports/implementer.md.pending" ]
 
+# --- ask again after verify FAIL: no re-baseline, still exit 5 ------------------------
+setup; gitwork
+echo idle > "$FAKE_DIR/live.implementer"
+mkdir -p .claude; echo '{"test":"exit 1","maxAttempts":1}' > .claude/harness.json
+printf 'fake/\nherdr.log\n' > .gitignore   # harness noise must not count as changes
+STOPJ="printf '{\"agent_type\":\"implementer\",\"cwd\":\"$WORK\"}' | harness-verify stop >/dev/null"
+export FAKE_PROMPT_HOOK="echo c > $WORK/new.txt; $STOPJ; $STOPJ; mkdir -p $WORK/.harness/reports; printf '# r\nstatus: partial\n' > $WORK/.harness/reports/implementer.md"
+run ask implementer "do it"
+check "refail: first ask exit 5" [ "$RC" -eq 5 ]
+export FAKE_PROMPT_HOOK="$STOPJ; mkdir -p $WORK/.harness/reports; printf '# r\nstatus: partial\n' > $WORK/.harness/reports/implementer.md"
+run ask implementer "retry without changes"
+check "refail: second ask (no new change) exit 5" [ "$RC" -eq 5 ]
+check "refail: verify line" grep -q "verify: FAIL" <<<"$OUT"
+unset FAKE_PROMPT_HOOK
+
 echo "PASS $pass / FAIL $fail"
 [ "$fail" -eq 0 ]
