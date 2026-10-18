@@ -371,21 +371,30 @@ git_branch_ok() {
   return 0
 }
 
-# has_unquoted_dollar RAW -> 0 when RAW has a $ outside single quotes (double
-# quotes still expand; a backslash-escaped $ is literal)
-has_unquoted_dollar() {
-  printf '%s\n' "$1" | awk '
-    BEGIN { st = 0; hit = 0 }   # st: 0 unquoted, 1 single, 2 double
+# unquoted_text_ok RAW -> 0 when the segment's shell text is plain. Outside
+# quotes only A-Z a-z 0-9 . _ / @ % + , : - = and spaces are allowed, and a word
+# may not start with = (zsh =cmd) or ~. That rules out braces, globs, glob
+# qualifiers, expansions, backslashes, redirects and history bangs in one go.
+# Single-quoted text is literal. Double-quoted text may not contain $ ` \ or !.
+unquoted_text_ok() {
+  printf '%s\n' "$1" | LC_ALL=C awk '
+    BEGIN { st = 0; bad = 0; ws = 1 }   # st: 0 unquoted, 1 single, 2 double; ws: at word start
     { n = length($0)
       for (i = 1; i <= n; i++) {
         c = substr($0, i, 1)
         if (st == 1) { if (c == "\047") st = 0 }
-        else if (c == "\\") i++
-        else if (c == "$") hit = 1
-        else if (st == 0 && c == "\047") st = 1
-        else if (c == "\"") st = (st == 0 ? 2 : 0)
+        else if (st == 2) {
+          if (c == "\"") st = 0
+          else if (c == "$" || c == "`" || c == "\\" || c == "!") bad = 1
+        } else if (c == " ") { ws = 1; continue }
+        else if (c == "\047") st = 1
+        else if (c == "\"") st = 2
+        else if (c ~ /[A-Za-z0-9._\/@%+,:-]/) { }
+        else if (c == "=" && !ws) { }
+        else bad = 1
+        ws = 0
       } }
-    END { exit hit ? 0 : 1 }'
+    END { exit (bad || st != 0) ? 1 : 0 }'
 }
 
 # cat_ls_segment_ok MASKED -> 0 when a cat / ls segment needs no quoting,
@@ -436,8 +445,8 @@ bash_ok() {
     raw=$(printf '%s' "$raw" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')
     [ -n "$seg" ] || continue
     n=$((n + 1))
-    # no parameter expansion outside single quotes, in any command
-    has_unquoted_dollar "$raw" && return 1
+    # plain shell text only (character allowlist), in any command
+    unquoted_text_ok "$raw" || return 1
     # reject '..' path components (but not git ranges like main...HEAD)
     printf ' %s ' "$seg" | grep -Eq '[ /=]\.\.([ /]|$)' && return 1
     case "$seg" in

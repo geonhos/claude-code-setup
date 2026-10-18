@@ -185,7 +185,7 @@ expect allow $C "bash sq backticks"       "$(bcmd "harness ask analyst 'Edit \`s
 expect allow $C "bash sq \$("            "$(bcmd "harness ask analyst 'see \$(not expanded)'")"
 expect deny  $C "bash dq backticks"       "$(bcmd 'harness ask analyst "run `id`"')"
 expect deny  $C "bash unquoted backticks" "$(bcmd 'harness `id`')"
-expect allow $C "bash dq escaped \$("    "$(bcmd 'harness ask analyst "cost \$(x)"')"
+expect deny  $C "bash dq escaped \$("    "$(bcmd 'harness ask analyst "cost \$(x)"')"
 
 # --- Bash: redirects ---------------------------------------------------------
 expect deny  $C "bash redirect"           "$(bcmd 'git status > out.txt')"
@@ -469,6 +469,35 @@ expect deny  $C "gh recover source"         "$(bcmd 'gh pr create --recover src/
 expect deny  $C "gh recover= source"        "$(bcmd 'gh issue create --recover=src/a.sh')"
 expect deny  $C "gh quoted recover"         "$(bcmd 'gh pr create "--recover" src/a.sh')"
 expect allow $C "gh recover .harness"       "$(bcmd 'gh pr create --recover .harness/r.json')"
+
+
+# --- round 4: character allowlist for unquoted text -------------------------------
+expect deny  $C "al git log brace"          "$(bcmd 'git log {-p,-1}')"
+expect deny  $C "al gh merge brace"         "$(bcmd 'gh pr merge 1 --squash {--delete-branch,}')"
+expect deny  $C "al gh auth brace"          "$(bcmd 'gh auth status {--show-token,-a}')"
+expect deny  $C "al gh run brace"           "$(bcmd 'gh run view 1 {--log,}')"
+expect deny  $C "al gh issue brace"         "$(bcmd 'gh issue create --title x {--body-file=install.sh,}')"
+expect deny  $C "al zsh glob qualifier"     "$(bcmd "harness ask x *(e:'cat install.sh':)")"
+expect deny  $C "al zsh glob qualifier 2"   "$(bcmd "git status *(e{'cat install.sh'})")"
+expect deny  $C "al =(cmd)"                 "$(bcmd 'gh pr view 1 =(cat install.sh)')"
+expect deny  $C "al =cmd word"              "$(bcmd 'harness ask x =ls')"
+expect deny  $C "al git log -'p'"           "$(bcmd "git log -'p'")"
+expect deny  $C "al gh run view dq log"     "$(bcmd 'gh run view 1 "--log"')"
+expect deny  $C "al ls tilde"               "$(bcmd 'ls ~')"
+expect deny  $C "al git branch glob"        "$(bcmd 'git branch --list feat*')"
+expect deny  $C "al dq backtick"            "$(bcmd 'harness ask x "a `b`"')"
+expect deny  $C "al dq bang"                "$(bcmd 'harness ask x "hi!"')"
+expect deny  $C "al dq backslash"           "$(bcmd 'harness ask x "a\\nb"')"
+expect deny  $C "al unquoted bang"          "$(bcmd 'harness ask x hi!')"
+expect deny  $C "al unquoted caret"         "$(bcmd 'harness ask x a^b')"
+expect deny  $C "al unquoted backslash"     "$(bcmd 'harness ask x a\ b')"
+expect allow $C "al harness read task"      "$(bcmd "harness ask implementer 'Read .harness/task-implementer.md and do it.'")"
+expect allow $C "al harness sq specials"    "$(bcmd "harness ask x 'a {b} (c) *d* \$e'")"
+expect allow $C "al gh create paren title"  "$(bcmd "gh pr create --title 'fix: x (y)' --body-file .harness/pr.md")"
+expect allow $C "al git diff range"         "$(bcmd 'git diff --stat main...HEAD')"
+expect allow $C "al two segs"               "$(bcmd 'harness status; herdr agent get reviewer')"
+expect allow $C "al 2>&1"                   "$(bcmd 'harness report implementer 2>&1')"
+expect allow $C "al dq plain"               "$(bcmd 'harness ask x "plain words, fine (really) {ok}"')"
 
 # --- other tools pass through ----------------------------------------------
 expect allow $C "Skill"                   "$(tool Skill '{"skill":"x"}')"

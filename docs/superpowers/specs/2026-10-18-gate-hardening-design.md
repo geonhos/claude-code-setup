@@ -46,11 +46,17 @@ Additional rules:
 - Anything not listed (including `gist`, `repo clone`, `pr checkout`,
   `pr diff`, `run download`, `release`, `search`, `alias`, `extension`) → deny.
 
-### 1a. No `$` expansion in any Bash segment
+### 1a. Character allowlist for unquoted shell text (every Bash segment)
 
-A `$` that is not inside single quotes (including inside double quotes) →
-deny, for every command. This stops word-splitting tricks such as
-`git log -1${=IFS}-p`. A backslash-escaped `$` is literal and allowed.
+The segment is scanned quote-aware, before any per-command rule. Outside quotes
+only `A-Z a-z 0-9 . _ / @ % + , : - =` and spaces are allowed, and a word may
+not start with `=` (zsh `=cmd`) or `~`. Anything else (`{ } ( ) [ ] * ? ! ^ ~
+# \ < > $`, backtick, tab, newline) → deny. This covers brace expansion, globs,
+zsh glob qualifiers, `=(cmd)`, word splitting via `${IFS}`, and escapes in one
+rule. Single-quoted text is literal and unrestricted. Double-quoted text may
+not contain `$`, backtick, `\` or `!`. Operator splitting (`; & | && ||`) and
+the standalone `2>&1` are unchanged. Per-command flag checks run on the fully
+de-quoted word, so `-'p'` and `"--log"` cannot hide a flag.
 
 ### 2. `git branch` is list-only
 
@@ -98,7 +104,7 @@ keeps the current fail-open behaviour (allow + one stderr line).
 
 ## Known limitations
 
-- Prose false-denies: a quoted title/body that contains `$`, or an option-like
+- Prose false-denies: a double-quoted title/body that contains `$`, backtick, `\\` or `!`, or an option-like
   word (`-d`, `-t`, `--log…`) in an unquoted position, may be denied.
 - `Glob` patterns with a symlinked directory in the middle of the pattern
   (after a glob character) are not resolved; only the static prefix is.
