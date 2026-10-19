@@ -1,25 +1,25 @@
-# Architecture
+# 아키텍처
 
-The harness is a **conductor** Claude session, gated by a PreToolUse hook so it can only read reports and run `harness`, plus three worker Claude sessions (analyst, implementer, reviewer) in [herdr](https://herdr.dev) panes. `.harness/` in the project directory is the shared store for reports, logs, verification state and the progress summary.
+이 harness는 **conductor(지휘 세션)** Claude 세션 하나와 워커 Claude 세션 셋(analyst, implementer, reviewer)으로 이뤄진다. 워커는 [herdr](https://herdr.dev) 패널에서 돈다. conductor는 PreToolUse 훅으로 게이트를 걸어 리포트 읽기와 `harness` 실행만 할 수 있게 했다. 프로젝트 디렉터리의 `.harness/`는 리포트, 로그, 검증 상태, 진행 요약을 두는 공용 저장소다.
 
-These diagrams describe the code on `main` as of commit `bdcf357` (main merge of PR #10), not the specs. Mermaid sources live in [`diagrams/`](diagrams/README.md).
+아래 다이어그램은 스펙이 아니라 `main`의 코드(커밋 `bdcf357`, PR #10을 main에 머지한 시점)를 기준으로 그렸다. Mermaid 원본은 [`diagrams/`](diagrams/README.md)에 있다.
 
-## Contents
+## 목차
 
-1. [Runtime data flow](#1-runtime-data-flow)
-2. [Config and hook wiring](#2-config-and-hook-wiring)
-3. [harness ask sequence](#3-harness-ask-sequence)
-4. [Conductor gate decision flow (conductor-gate.sh)](#4-conductor-gate-decision-flow-conductor-gatesh)
-5. [Verification loop](#5-verification-loop)
-6. [Progress log and context reset](#6-progress-log-and-context-reset)
-7. [Install layout (install.sh)](#7-install-layout-installsh)
-8. [Exit codes](#exit-codes)
+1. [런타임 데이터 흐름](#1-런타임-데이터-흐름)
+2. [설정과 훅 연결](#2-설정과-훅-연결)
+3. [harness ask 시퀀스](#3-harness-ask-시퀀스)
+4. [conductor 게이트 판정 흐름 (conductor-gate.sh)](#4-conductor-게이트-판정-흐름-conductor-gatesh)
+5. [검증 루프](#5-검증-루프)
+6. [진행 로그와 컨텍스트 리셋](#6-진행-로그와-컨텍스트-리셋)
+7. [설치 구성 (install.sh)](#7-설치-구성-installsh)
+8. [Exit code](#exit-code)
 
-## 1. Runtime data flow
+## 1. 런타임 데이터 흐름
 
-![Runtime data flow](diagrams/01-runtime-data-flow.svg)
+![런타임 데이터 흐름](diagrams/01-runtime-data-flow.svg)
 
-<details><summary>Mermaid source</summary>
+<details><summary>Mermaid 원본</summary>
 
 ```mermaid
 flowchart LR
@@ -59,13 +59,13 @@ flowchart LR
 
 </details>
 
-The conductor never touches source: it talks to the user, runs `harness` (gated Bash), and reads only reports. Workers write reports into `.harness/`; `harness` reads them, logs every ask and returns an exit code. Context size comes from the worker's transcript under `~/.claude/projects`.
+conductor는 소스를 건드리지 않는다. 사용자와 대화하고, `harness`(게이트를 통과한 Bash)를 실행하고, 리포트만 읽는다. 워커가 `.harness/`에 리포트를 쓰면 `harness`가 그것을 읽고, ask마다 로그를 남기고, exit code를 돌려준다. 컨텍스트 크기는 `~/.claude/projects` 아래 워커 트랜스크립트에서 가져온다.
 
-## 2. Config and hook wiring
+## 2. 설정과 훅 연결
 
-![Config and hook wiring](diagrams/02-config-wiring.svg)
+![설정과 훅 연결](diagrams/02-config-wiring.svg)
 
-<details><summary>Mermaid source</summary>
+<details><summary>Mermaid 원본</summary>
 
 ```mermaid
 flowchart LR
@@ -93,13 +93,13 @@ flowchart LR
 
 </details>
 
-`~/.claude/settings.json` makes every plain `claude` session the conductor and registers the PreToolUse gate and the SessionStart resume hook. Worker prompts and their hooks come from `agents/*.md` via `claude --agent`.
+`~/.claude/settings.json`이 평범한 `claude` 세션을 모두 conductor로 만들고, PreToolUse 게이트와 SessionStart resume 훅을 등록한다. 워커의 프롬프트와 훅은 `claude --agent`가 `agents/*.md`에서 가져온다.
 
-## 3. `harness ask` sequence
+## 3. `harness ask` 시퀀스
 
-![`harness ask` sequence](diagrams/03-ask-sequence.svg)
+![`harness ask` 시퀀스](diagrams/03-ask-sequence.svg)
 
-<details><summary>Mermaid source</summary>
+<details><summary>Mermaid 원본</summary>
 
 ```mermaid
 sequenceDiagram
@@ -154,13 +154,13 @@ sequenceDiagram
 
 </details>
 
-The context reset runs after the "still working" check and before the old report is removed and the prompt is sent; a freshly spawned worker is never reset. Whatever the outcome (including SIGTERM/INT/HUP of the wrapper → exit 143/130/129), `ask_finish` replays the buffered stdout and writes the log.
+컨텍스트 리셋은 "still working" 확인 뒤, 이전 리포트를 지우고 프롬프트를 보내기 전에 실행된다. 방금 띄운 워커는 리셋하지 않는다. 결과가 무엇이든(wrapper가 SIGTERM/INT/HUP을 받아 exit 143/130/129로 끝나는 경우 포함) `ask_finish`가 버퍼에 담아 둔 stdout을 다시 출력하고 로그를 쓴다.
 
-## 4. Conductor gate decision flow (`conductor-gate.sh`)
+## 4. conductor 게이트 판정 흐름 (`conductor-gate.sh`)
 
-![Conductor gate decision flow (`conductor-gate.sh`)](diagrams/04-gate-decision-flow.svg)
+![conductor 게이트 판정 흐름 (`conductor-gate.sh`)](diagrams/04-gate-decision-flow.svg)
 
-<details><summary>Mermaid source</summary>
+<details><summary>Mermaid 원본</summary>
 
 ```mermaid
 flowchart TD
@@ -200,13 +200,13 @@ flowchart TD
 
 </details>
 
-Default role is conductor; only `HARNESS_ROLE=worker` turns the gate off. Missing jq fails closed, but unparseable input fails open. Every deny reason is a fixed string naming the worker to use (stable prompt cache). A Bash command is allowed only when every `; & |`-separated segment passes; `jq` segments are checked by `jq_segment_ok` alone and never hit the `BASH_ALLOW` regex.
+기본 역할은 conductor이고, `HARNESS_ROLE=worker`일 때만 게이트가 꺼진다. jq가 없으면 fail closed지만, 입력을 파싱하지 못하면 fail open이다. 거부 사유는 모두 써야 할 워커 이름을 담은 고정 문자열이다(프롬프트 캐시를 안정적으로 유지하려는 것). Bash 명령은 `; & |`로 나눈 세그먼트가 전부 통과해야 허용된다. `jq` 세그먼트는 `jq_segment_ok`만으로 검사하고 `BASH_ALLOW` 정규식은 거치지 않는다.
 
-## 5. Verification loop
+## 5. 검증 루프
 
-![Verification loop](diagrams/05-verification-loop.svg)
+![검증 루프](diagrams/05-verification-loop.svg)
 
-<details><summary>Mermaid source</summary>
+<details><summary>Mermaid 원본</summary>
 
 ```mermaid
 flowchart TD
@@ -242,13 +242,13 @@ flowchart TD
 
 </details>
 
-`harness ask implementer` first calls `harness-verify baseline` (state id = HEAD + hash of working-tree changes; the base is kept after a fail). The Stop hook hides the report while checking, so `harness` never sees an unverified one; at the attempt cap it keeps the report and `harness` exits 5.
+`harness ask implementer`는 먼저 `harness-verify baseline`을 호출한다(state id = HEAD + 작업 트리 변경분의 해시, 실패한 뒤에도 base는 유지). Stop 훅은 검사하는 동안 리포트를 숨기므로 `harness`가 검증 전 리포트를 볼 일은 없다. 시도 횟수 상한에 닿으면 리포트를 그대로 두고 `harness`가 exit 5로 끝난다.
 
-## 6. Progress log and context reset
+## 6. 진행 로그와 컨텍스트 리셋
 
-![Progress log and context reset](diagrams/06-progress-and-reset.svg)
+![진행 로그와 컨텍스트 리셋](diagrams/06-progress-and-reset.svg)
 
-<details><summary>Mermaid source</summary>
+<details><summary>Mermaid 원본</summary>
 
 ```mermaid
 flowchart TD
@@ -272,13 +272,13 @@ flowchart TD
 
 </details>
 
-Every ask writes a log file and a jsonl line and rebuilds `progress.md`; logging failures only warn. The conductor's SessionStart hook feeds `progress.md` back after a restart, `/clear` or compaction. Knobs: `HARNESS_LOG_KEEP`, `HARNESS_LOG_DAYS`, `HARNESS_JSONL_MAX`, `HARNESS_CTX_RESET`.
+ask마다 로그 파일과 jsonl 한 줄을 쓰고 `progress.md`를 다시 만든다. 로그 작업이 실패해도 경고만 출력한다. conductor의 SessionStart 훅이 재시작, `/clear`, 컴팩션 뒤에 `progress.md`를 다시 넣어 준다. 조절 변수: `HARNESS_LOG_KEEP`, `HARNESS_LOG_DAYS`, `HARNESS_JSONL_MAX`, `HARNESS_CTX_RESET`.
 
-## 7. Install layout (`install.sh`)
+## 7. 설치 구성 (`install.sh`)
 
-![Install layout (`install.sh`)](diagrams/07-install-layout.svg)
+![설치 구성 (`install.sh`)](diagrams/07-install-layout.svg)
 
-<details><summary>Mermaid source</summary>
+<details><summary>Mermaid 원본</summary>
 
 ```mermaid
 flowchart LR
@@ -303,16 +303,16 @@ flowchart LR
 
 </details>
 
-Idempotent: re-running replaces the gate/resume entries instead of adding duplicates. Hooks are referenced by absolute repo path, not copied. The gate matcher is `Edit|Write|NotebookEdit|Read|Grep|Glob|Bash|Agent|Workflow|Monitor|mcp__filesystem__.*`.
+여러 번 실행해도 결과가 같다. 다시 실행하면 게이트/resume 항목이 중복 추가되지 않고 교체된다. 훅은 복사하지 않고 저장소의 절대 경로로 참조한다. 게이트 matcher는 `Edit|Write|NotebookEdit|Read|Grep|Glob|Bash|Agent|Workflow|Monitor|mcp__filesystem__.*`다.
 
-## Exit codes
+## Exit code
 
-| Code | Meaning |
-|------|---------|
-| 0 | Report returned, verification passed (or not applicable) |
-| 1 | Setup error (e.g. implementer asked but `harness-verify` not on PATH) |
-| 2 | Worker blocked, waiting for input; screen returned |
-| 3 | No report produced (or reviewer report without a final `VERDICT:` line) |
-| 4 | Worker still working / not ready, or prompt failed; nothing usable returned |
-| 5 | Report returned but verification failed or was interrupted (`VERDICT: FAIL`, `verify: FAIL`/`INTERRUPTED`) |
-| 129 / 130 / 143 | Wrapper received SIGHUP / SIGINT / SIGTERM; log still written |
+| 코드 | 의미 |
+|------|------|
+| 0 | 리포트를 돌려줌, 검증 통과(또는 해당 없음) |
+| 1 | 설정 오류 (예: implementer에게 ask했는데 `harness-verify`가 `PATH`에 없음) |
+| 2 | 워커가 막혀서 입력을 기다림. 화면을 돌려줌 |
+| 3 | 리포트가 없음 (또는 reviewer 리포트에 마지막 `VERDICT:` 줄이 없음) |
+| 4 | 워커가 아직 작업 중이거나 준비되지 않았음, 또는 프롬프트 전송 실패. 쓸 만한 결과 없음 |
+| 5 | 리포트는 있으나 검증이 실패했거나 중단됨 (`VERDICT: FAIL`, `verify: FAIL`/`INTERRUPTED`) |
+| 129 / 130 / 143 | wrapper가 SIGHUP / SIGINT / SIGTERM을 받음. 로그는 그대로 기록 |
