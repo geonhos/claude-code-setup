@@ -1,6 +1,6 @@
 # 아키텍처
 
-이 harness는 **conductor(지휘 세션)** Claude 세션 하나와 워커 Claude 세션 셋(analyst, implementer, reviewer)으로 이뤄진다. 워커는 [herdr](https://herdr.dev) 패널에서 돈다. conductor는 PreToolUse 훅으로 게이트를 걸어 리포트 읽기와 `harness` 실행만 할 수 있게 했다. 프로젝트 디렉터리의 `.harness/`는 리포트, 로그, 검증 상태, 진행 요약을 두는 공용 저장소다.
+이 harness는 **conductor(지휘 세션)** Claude 세션 하나와 워커 Claude 세션 셋(analyst, implementer, reviewer)으로 이뤄진다. 워커는 [herdr](https://herdr.dev) 패널에서 돈다. conductor에는 PreToolUse 훅 게이트가 걸려 있어 리포트 읽기와 `harness` 실행만 할 수 있다. 프로젝트 디렉터리의 `.harness/`는 리포트, 로그, 검증 상태, 진행 요약을 두는 공용 저장소다.
 
 아래 다이어그램은 스펙이 아니라 `main`의 코드(커밋 `bdcf357`, PR #10을 main에 머지한 시점)를 기준으로 그렸다. Mermaid 원본은 [`diagrams/`](diagrams/README.md)에 있다.
 
@@ -59,7 +59,7 @@ flowchart LR
 
 </details>
 
-conductor는 소스를 건드리지 않는다. 사용자와 대화하고, `harness`(게이트를 통과한 Bash)를 실행하고, 리포트만 읽는다. 워커가 `.harness/`에 리포트를 쓰면 `harness`가 그것을 읽고, ask마다 로그를 남기고, exit code를 돌려준다. 컨텍스트 크기는 `~/.claude/projects` 아래 워커 트랜스크립트에서 가져온다.
+conductor는 소스를 건드리지 않는다. 사용자와 대화하고, `harness`(게이트가 검사하는 Bash)를 실행하고, 리포트만 읽는다. 워커가 `.harness/`에 리포트를 쓰면 `harness`가 그것을 읽고, ask마다 로그를 남기고, exit code를 돌려준다. 컨텍스트 크기는 `~/.claude/projects` 아래 워커 트랜스크립트에서 가져온다.
 
 ## 2. 설정과 훅 연결
 
@@ -315,4 +315,4 @@ flowchart LR
 | 3 | 리포트가 없음 (또는 reviewer 리포트에 마지막 `VERDICT:` 줄이 없음) |
 | 4 | 워커가 아직 작업 중이거나 준비되지 않았음, 또는 프롬프트 전송 실패. 쓸 만한 결과 없음 |
 | 5 | 리포트는 있으나 검증이 실패했거나 중단됨 (`VERDICT: FAIL`, `verify: FAIL`/`INTERRUPTED`) |
-| 129 / 130 / 143 | wrapper가 SIGHUP / SIGINT / SIGTERM을 받음. 로그는 그대로 기록 |
+| 129 / 130 / 143 | wrapper가 SIGHUP / SIGINT / SIGTERM을 받음. 로그는 그래도 기록됨 |
