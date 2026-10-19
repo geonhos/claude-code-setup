@@ -1,20 +1,17 @@
 # claude-code-setup — herdr conductor
 
-A user-level Claude Code setup where the main session (Fable) is a
-**conductor**: it reads only worker reports and delegates all analysis and
-implementation to Claude workers running in [herdr](https://herdr.dev) panes.
+메인 세션(Fable)을 **conductor(지휘 세션)** 로 쓰는 사용자 단위 Claude Code 설정. conductor는 워커 리포트만 읽고, 분석과 구현은 전부 [herdr](https://herdr.dev) 패널에서 도는 Claude 워커에게 맡긴다.
+아키텍처 다이어그램은 [docs/architecture.md](docs/architecture.md)에 있다.
 
-Why: Fable tokens are expensive. The conductor never loads source into its
-context, and workers (`analyst` opus · `implementer` sonnet · `reviewer`
-opus) carry project memory so they stop re-discovering the codebase.
+이렇게 하는 이유: Fable 토큰이 비싸다. conductor는 소스를 컨텍스트에 올리지 않고, 워커(`analyst` opus · `implementer` sonnet · `reviewer` opus)가 일을 한다. analyst와 implementer는 프로젝트 메모리를 가져서 코드베이스를 매번 다시 파악하지 않는다. reviewer는 일부러 메모리를 두지 않는다. 리뷰마다 선입견 없이 시작하게 하려는 것이다.
 
-## Requirements
+## 요구 사항
 
-- macOS, `/bin/bash` 3.2 is enough
+- macOS, `/bin/bash` 3.2면 충분
 - `jq`, `herdr` ≥ 0.9, Claude Code ≥ 2.1.248
-- `~/.local/bin` on `PATH`
+- `PATH`에 `~/.local/bin`
 
-## Install
+## 설치
 
 ```bash
 git clone https://github.com/geonhos/claude-code-setup ~/workspace/claude-code-setup
@@ -22,27 +19,26 @@ cd ~/workspace/claude-code-setup
 ./install.sh
 ```
 
-`install.sh` is idempotent. It symlinks `claude/agents/*.md` into
-`~/.claude/agents/`, links `bin/harness` into `~/.local/bin`, merges one
-PreToolUse hook and `promptCacheTtl`/`subagentPromptCacheTtl: 1h` into
-`~/.claude/settings.json` (backup kept), sets `agent: conductor` in
-`~/.claude/settings.json` so every plain `claude` session starts as the
-conductor (workers override it with `--agent <name>`), adds `.harness/` to
-the global gitignore, and runs `herdr integration install claude`.
+`install.sh`는 여러 번 실행해도 결과가 같다. 하는 일:
 
-Run `./install.sh --test` to execute the test suites.
+- `claude/agents/*.md`를 `~/.claude/agents/`에 심링크
+- `bin/harness`, `bin/harness-verify`를 `~/.local/bin`에 링크
+- `~/.claude/settings.json`에 아래 항목을 병합 (백업을 남긴다)
+  - PreToolUse 훅 하나(게이트), SessionStart 훅 하나(`conductor-resume.sh`)
+  - `env.BASH_DEFAULT_TIMEOUT_MS`/`BASH_MAX_TIMEOUT_MS`
+  - `promptCacheTtl`/`subagentPromptCacheTtl: 1h`
+  - `agent: conductor` — 평범한 `claude` 세션이 모두 conductor로 시작한다. 워커는 `--agent <name>`으로 덮어쓴다.
+- 전역 gitignore에 `.harness/` 추가
+- `herdr integration install claude` 실행
 
-## Daily use
+테스트는 `./install.sh --test`로 돌린다.
 
-1. Open a herdr pane in your project and start `claude` as usual.
-2. Give it work. When it tries to read or edit source, the gate denies the
-   call and tells it which worker to use.
-3. It runs `harness ask <worker> '<instruction>'`. A sibling pane opens with
-   a Claude worker; when the worker finishes, its report
-   (`.harness/reports/<worker>.md`, ≤ 40 lines) is printed back. The
-   installer raises the Bash tool timeout (`BASH_DEFAULT_TIMEOUT_MS=600000`)
-   so a long worker task does not get cut off.
-4. You watch workers in their panes; the conductor only sees reports.
+## 사용법
+
+1. 프로젝트의 herdr 패널에서 평소처럼 `claude`를 시작한다.
+2. 작업을 맡긴다. 소스를 읽거나 고치려 하면 게이트가 호출을 거부하고, 어느 워커를 써야 하는지 알려 준다.
+3. conductor가 `harness ask <worker> '<instruction>'`을 실행한다. 옆에 패널이 열리고 Claude 워커가 뜬다. 워커가 끝나면 리포트(`.harness/reports/<worker>.md`, 40줄 이하)가 출력된다. 설치 스크립트가 Bash 도구 타임아웃을 늘려 두므로(`BASH_DEFAULT_TIMEOUT_MS=600000`) 긴 워커 작업도 중간에 끊기지 않는다.
+4. 워커의 작업은 각 패널에서 볼 수 있다. conductor가 보는 것은 리포트뿐이다.
 
 ```
 harness spawn  <agent> [--direction right|down]
@@ -52,102 +48,65 @@ harness status
 harness close  <agent>
 ```
 
-## Progress log and context reset
+## 진행 로그와 컨텍스트 리셋
 
-Every `harness ask` (any exit code) writes `.harness/log/<ts>-<agent>.md`
-(instruction, brief file contents, report or screen tail) and appends one JSON
-line to `.harness/progress.jsonl` (ts, agent, session, instr, exit, verify,
-dur_s, head_before/after, ctx_before/after, status, summary), then regenerates
-`.harness/progress.md` (≤ 60 lines: goal, last 15 asks, open questions,
-worker state). Write a one-paragraph `.harness/goal.md` to set the goal line.
-Logging problems only warn on stderr; they never change an ask's result.
+`harness ask`는 exit code와 관계없이 매번 `.harness/log/<ts>-<agent>.md`(instruction, brief 파일 내용, 리포트 또는 화면 끝부분)를 쓰고, `.harness/progress.jsonl`에 JSON 한 줄(ts, agent, session, instr, exit, verify, dur_s, head_before/after, ctx_before/after, status, summary)을 덧붙인 뒤 `.harness/progress.md`를 다시 만든다. `progress.md`는 60줄 이하이고 goal, 최근 ask 15개, 미해결 질문, 워커 상태가 들어간다. goal 줄은 한 문단짜리 `.harness/goal.md`를 써서 정한다.
+로그 작업에서 문제가 생겨도 stderr에 경고만 찍고 ask 결과는 바꾸지 않는다.
 
-A `SessionStart` hook (`claude/hooks/conductor-resume.sh`, matcher
-`startup|clear|compact`, installed by `install.sh`) injects `progress.md`
-into the conductor's context; it stays silent for workers.
+`SessionStart` 훅(`claude/hooks/conductor-resume.sh`, matcher `startup|clear|compact`, `install.sh`가 설치)이 `progress.md`를 conductor 컨텍스트에 넣어 준다. 워커 세션에서는 아무것도 출력하지 않는다.
 
-Rotation after each ask: newest 200 logs kept, logs older than 14 days
-deleted, `progress.jsonl` over 1 MB rolled to `progress.jsonl.<ts>.gz`.
-Knobs: `HARNESS_LOG_KEEP`, `HARNESS_LOG_DAYS`, `HARNESS_JSONL_MAX` (bytes).
+ask가 끝날 때마다 로그를 정리한다. 최신 200개만 남기고, 14일이 지난 로그는 지우고, 1 MB를 넘은 `progress.jsonl`은 `progress.jsonl.<ts>.gz`로 압축해 옮긴다.
+조절 변수: `HARNESS_LOG_KEEP`, `HARNESS_LOG_DAYS`, `HARNESS_JSONL_MAX`(바이트).
 
-Before an ask, a live worker's context is cleared with `/clear` (waits for a
-new session id; if that does not happen within 10 s the pane is closed and
-respawned): the implementer always, analyst/reviewer when their context
-exceeds `HARNESS_CTX_RESET` tokens (default 120000) or with `--fresh`.
-`--keep` skips the clear for one ask. Freshly spawned workers are never
-cleared. Panes get `CLAUDE_CODE_AUTO_COMPACT_WINDOW=160000` as a late safety
-net. `harness status` shows a `ctx` column (tokens read from the transcript
-under `~/.claude/projects`, `-` when unknown; override the directory with
-`HARNESS_PROJECTS_DIR`). Live probe: `/clear` keeps the `--agent` prompt and
-settles in under a second.
+ask 전에 살아 있는 워커의 컨텍스트를 `/clear`로 비운다. 새 세션 id가 생길 때까지 기다리고, 10초 안에 안 생기면 패널을 닫고 다시 띄운다. implementer는 항상 비우고, analyst/reviewer는 컨텍스트가 `HARNESS_CTX_RESET` 토큰(기본 120000)을 넘었거나 `--fresh`일 때 비운다. `--keep`은 해당 ask 한 번만 비우기를 건너뛴다. 방금 띄운 워커는 비우지 않는다. 패널에는 마지막 안전장치로 `CLAUDE_CODE_AUTO_COMPACT_WINDOW=160000`을 준다.
+`harness status`의 `ctx` 열은 `~/.claude/projects` 아래 트랜스크립트에서 읽은 토큰 수이고, 알 수 없으면 `-`다. 디렉터리는 `HARNESS_PROJECTS_DIR`로 바꾼다.
+실측: `/clear`를 해도 `--agent` 프롬프트는 유지되고, 1초 안에 끝난다.
 
-## Verification loop
+## 검증 루프
 
-`.harness/` (reports, panes, verify state) lives in the directory where the
-conductor runs; workers and hooks use that same directory (the hook `cwd`),
-not the git toplevel.
+`.harness/`(리포트, 패널, 검증 상태)는 conductor를 실행한 디렉터리에 만들어진다. 워커와 훅도 같은 디렉터리(훅의 `cwd`)를 쓰며, git toplevel은 쓰지 않는다.
 
-The implementer does not judge its own work. `harness-verify` runs inside its
-loop through hooks in `claude/agents/implementer.md`: a `PostToolUse` hook
-formats each edited file and feeds back per-file lint errors, and a `Stop`
-hook runs lint and tests over the changes and sends the worker back with the
-failing output (up to `maxAttempts`, default 3; the report is hidden while
-verifying and deleted on each failed attempt; at the cap it is kept). `harness ask implementer` (which needs `harness-verify` installed by
-`./install.sh`, else exit 1) records a baseline first and exits **5**
-(report plus a `verify: FAIL (<step>, <n> attempts)` line) when verification
-gave up (`harness report` applies the same checks). The reviewer runs `harness-verify run all [--base <ref>]` (files changed versus
-the merge base with `main`, plus uncommitted ones), smoke-checks the app if
-configured, and ends its report with `VERDICT: PASS` or `VERDICT: FAIL`
-(FAIL → exit 5; missing → exit 3).
+implementer는 자기 작업을 스스로 판정하지 않는다. `claude/agents/implementer.md`의 훅이 `harness-verify`를 루프 안에서 돌린다. `PostToolUse` 훅이 수정한 파일마다 포맷을 적용하고 파일 단위 lint 오류를 돌려주며, `Stop` 훅은 변경분 전체에 lint와 테스트를 돌려서 실패하면 실패 출력과 함께 워커를 되돌려 보낸다. 최대 `maxAttempts`회(기본 3)까지 반복하고, 검증하는 동안은 리포트를 숨기며 실패할 때마다 리포트를 지운다. 횟수를 다 쓰면 리포트를 그대로 둔다.
+`harness ask implementer`는 `./install.sh`로 설치한 `harness-verify`가 있어야 하고(없으면 exit 1), 먼저 baseline을 기록한다. 재시도 상한까지 검증에 실패하면 exit **5**(리포트와 `verify: FAIL (<step>, <n> attempts)` 줄)로 종료한다. `harness report`도 같은 검사를 한다.
+reviewer는 `harness-verify run all [--base <ref>]`(`main`과의 merge base 이후 바뀐 파일과 커밋하지 않은 파일)를 돌리고, 설정돼 있으면 앱을 스모크 체크한 뒤, 리포트 마지막에 `VERDICT: PASS` 또는 `VERDICT: FAIL`을 적는다(FAIL이면 exit 5, 없으면 exit 3).
 
-Commands come only from explicit config, first hit wins per key:
-`.harness/verify.local.json`, then `.claude/harness.json`. There is no
-language or project-type detection; a missing key skips that step and no
-config at all means `skipped` (the Stop hook allows). The conductor must run
-in the directory that holds `.claude/harness.json` (the root is the cwd, not
-the git toplevel). This repo uses `{"test": "./install.sh --test"}`.
+명령은 명시적인 설정에서만 가져오고, 키마다 먼저 찾은 쪽이 이긴다. 순서는 `.harness/verify.local.json`, `.claude/harness.json`이다. 언어나 프로젝트 유형을 자동으로 감지하지 않는다. 없는 키는 그 단계를 건너뛰고, 설정이 아예 없으면 `skipped`(Stop 훅은 통과)다. conductor는 `.claude/harness.json`이 있는 디렉터리에서 실행해야 한다(기준은 cwd이고 git toplevel이 아니다). 이 저장소는 `{"test": "./install.sh --test"}`를 쓴다.
 
 ```json
 { "format": "prettier --write {files}", "lint": "eslint {files}", "test": "npm test",
   "app": { "start": "npm run dev", "url": "http://localhost:3000" }, "maxAttempts": 3 }
 ```
 
-`null` disables a step; `harness-verify detect` prints what was resolved.
-It never blocks a worker when jq, git, or a config is missing.
+`null`로 두면 그 단계를 끈다. `harness-verify detect`는 해석된 설정을 출력한다.
+jq, git, 설정 중 무엇이 없어도 워커를 막지 않는다.
 
-## What the conductor may do directly
+## conductor가 직접 할 수 있는 일
 
-`harness`, `gh` (allowlist: `pr create|view|list|status|checks|comment|edit|merge`, `issue view|list|create|comment`, `run list|view` without `--log*`, `repo view`, `auth status`, `browse`; never `api`; `--body-file` only from `.harness/` or `docs/`; no `pr merge -d`, no `auth status --show-token`), read-only `herdr`
-(`status`, `pane list|get|layout|current`, `agent list|get|wait|explain`,
-`workspace list`, `tab list`), `jq` (as a pipe
-consumer only), read-only `git` (`status`, `log`, `diff --stat`, `branch` (list-only), `show --stat`; no patch, output or delete flags), `ls` (never recursive), `cat`/`ls` under
-`.harness/` and `docs/` (no quotes, globs or `$` in their arguments), and
-writing Markdown under `docs/` and anything under `.harness/`. Everything else
-is denied with a reason naming the worker to use.
+- `harness`
+- `gh`: 허용 목록은 `pr create|view|list|status|checks|comment|edit|merge`, `issue view|list|create|comment`, `run list|view`(`--log*` 제외), `repo view`, `auth status`, `browse`. `api`는 금지. `--body-file`은 `.harness/` 또는 `docs/` 아래 파일만 가능. `pr merge -d`와 `auth status --show-token`은 금지.
+- 읽기 전용 `herdr`: `status`, `pane list|get|layout|current`, `agent list|get|wait|explain`, `workspace list`, `tab list`
+- `jq` (파이프 뒤에서만)
+- 읽기 전용 `git`: `status`, `log`, `diff --stat`, `branch`(목록만), `show --stat`. patch, output, 삭제 플래그는 금지.
+- `ls` (재귀 금지)
+- `.harness/`와 `docs/` 아래의 `cat`/`ls` (인자에 따옴표, glob, `$` 금지)
+- `docs/` 아래 Markdown 작성, `.harness/` 아래 모든 파일 작성
 
-## Known limits
+이 밖의 호출은 모두 거부되고, 거부 사유에 써야 할 워커 이름이 들어 있다.
 
-The gate covers the built-in file/shell tools, `Monitor`, and the `filesystem`
-MCP server. Other MCP servers that read files are not gated. File-tool
-paths are checked again after symlink resolution. Without `jq` the gate
-denies everything (fail closed) unless `HARNESS_ROLE=worker`. Instructions to workers must use single
-quotes if they contain backticks or `$(`.
+## 알려진 한계
 
-The conductor agent's body replaces Claude Code's default system prompt (that
-is how `--agent` works), so the conductor relies on this file for its
-operating guidance.
+게이트가 막는 것은 기본 파일/셸 도구, `Monitor`, `filesystem` MCP 서버다. 파일을 읽는 다른 MCP 서버는 막지 못한다. 파일 도구의 경로는 심링크를 풀고 나서 한 번 더 검사한다. jq가 없으면 게이트는 `HARNESS_ROLE=worker`가 아닌 한 모든 호출을 거부한다(fail closed). 워커에게 보내는 instruction에 백틱이나 `$(`가 들어가면 작은따옴표로 감싸야 한다.
 
-## Opt out
+conductor 에이전트의 본문은 Claude Code의 기본 시스템 프롬프트를 대체한다(`--agent`가 원래 그렇게 동작한다). 그래서 conductor는 동작 지침을 이 파일에 의존한다.
 
-- Per project: `{ "agent": "solo", "env": { "HARNESS_ROLE": "worker" } }` in
-  that project's `.claude/settings.json` (project settings override the
-  user-level `agent`).
-- One session: `HARNESS_ROLE=worker claude --agent solo`.
+## 끄는 방법
 
-`HARNESS_ROLE=worker claude` alone only turns the gate off; the session still
-runs the conductor agent.
+- 프로젝트 단위: 그 프로젝트의 `.claude/settings.json`에 `{ "agent": "solo", "env": { "HARNESS_ROLE": "worker" } }`를 둔다. 프로젝트 설정이 사용자 단위 `agent`보다 우선한다.
+- 세션 하나만: `HARNESS_ROLE=worker claude --agent solo`.
 
-## Layout
+`HARNESS_ROLE=worker claude`만 쓰면 게이트만 꺼지고, 세션은 여전히 conductor 에이전트로 돈다.
+
+## 디렉터리 구성
 
 ```
 bin/harness                      herdr wrapper CLI

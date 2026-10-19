@@ -1,0 +1,33 @@
+flowchart TD
+  A["PreToolUse hook JSON on stdin"] --> R{"HARNESS_ROLE = worker?"}
+  R -- yes --> OK([allow: no output])
+  R -- no --> J{"jq on PATH?"}
+  J -- no --> DJ([deny: static JSON, fail closed])
+  J -- yes --> P{"tool_name parsed?"}
+  P -- no --> OK
+  P -- yes --> T{"tool_name"}
+  T -- "Agent, Workflow" --> DA([deny MSG_AGENT])
+  T -- Monitor --> DB([deny MSG_BASH])
+  T -- "Edit, Write, NotebookEdit,<br/>mcp fs write/edit/mkdir/move" --> WR{"writable? lexical + symlink-resolved<br/>.harness/* or docs/*.md"}
+  WR -- yes --> OK
+  WR -- no --> DW([deny MSG_WRITE])
+  T -- "Read, Grep, mcp fs read/list" --> RD{"readable? lexical + resolved<br/>.harness, docs, *.md inside cwd"}
+  RD -- yes --> OK
+  RD -- no --> DR([deny MSG_READ])
+  T -- Glob --> GL{"no .. anywhere, no leading / or ~<br/>without path: pattern starts docs/ or .harness/"}
+  GL -- yes --> OK
+  GL -- no --> DR
+  T -- Bash --> S1{"split into segments<br/>reject quotes unterminated, &lt; &gt; #, backtick, $( $' $quote"}
+  S1 -- "fail or no segments" --> DB
+  S1 -- ok --> S2{"each segment: character allowlist<br/>and no .. path component"}
+  S2 -- fail --> DB
+  S2 -- "jq segment" --> JQ{"jq: not first segment, 1 filter<br/>no -f/-L/env/paths/expansion"}
+  JQ -- "ok (skips regex)" --> NX(["next segment"])
+  JQ -- fail --> DB
+  S2 -- "other" --> S3{"per-command check<br/>git: no patch/output/delete flags, no rev:path, branch list-only<br/>gh: subcommand allowlist, body-file under .harness/docs<br/>cat/ls: no quotes/globs, path in .harness/docs, no -R"}
+  S3 -- fail --> DB
+  S3 -- ok --> S4{"matches BASH_ALLOW regex?<br/>harness, herdr read-only, gh, git read-only, cat, ls"}
+  S4 -- yes --> NX
+  NX -- "all segments ok" --> OK
+  S4 -- no --> DB
+  T -- other tools --> OK
