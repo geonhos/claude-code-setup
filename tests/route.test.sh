@@ -35,15 +35,21 @@ check "route-log: valid json line" jq -e . "$RJ" >/dev/null
 
 rl 'not json'
 check "route-log: garbage rc 0" [ "$RC" -eq 0 ]
-check "route-log: garbage warns" printf '%s' "$OUT" | grep -q 'route-log'
+check "route-log: garbage warns" grep -q 'route-log' <<<"$OUT"
 check "route-log: garbage not appended" [ "$(nlines "$RJ")" -eq 1 ]
 
 rl '[1,2]'
 check "route-log: non-object not appended" [ "$(nlines "$RJ")" -eq 1 ]
 
+rl '{"a":1} {"b":2}'
+check "route-log: two objects refused" [ "$(nlines "$RJ")" -eq 1 ]
+rl '{"c":1} junk'
+check "route-log: object plus junk refused" [ "$(nlines "$RJ")" -eq 1 ]
+
 rl ''
 check "route-log: empty rc 0" [ "$RC" -eq 0 ]
 check "route-log: empty not appended" [ "$(nlines "$RJ")" -eq 1 ]
+check "route-log: empty warns" grep -q 'route-log' <<<"$OUT"
 
 OUT=$(cd "$P" && HARNESS_ROUTE_LOG=0 env -u HERDR_ENV PATH="$BIN:$PATH" /bin/bash "$HARNESS" route-log '{"event":"x"}' 2>&1); RC=$?
 check "route-log: disabled rc 0" [ "$RC" -eq 0 ]
@@ -56,6 +62,7 @@ check "route-log: rotate rc 0" [ "$RC" -eq 0 ]
 check "route-log: rotated gz exists" ls "$P"/.harness/routing.jsonl.*.gz >/dev/null 2>&1
 check "route-log: fresh file has one line" [ "$(nlines "$RJ")" -eq 1 ]
 check "route-log: fresh file has new event" [ "$(last .event)" = after ]
+check "route-log: rotated content kept" [ "$(gzip -dc "$P"/.harness/routing.jsonl.*.gz | tr -cd x | wc -c | tr -d ' ')" -eq 200 ]
 rm -f "$P"/.harness/routing.jsonl.*.gz
 
 # no .harness/ in cwd: created, not an error (harness ask relies on this)

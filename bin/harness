@@ -348,9 +348,10 @@ cmd_route_log() {
   if [ -z "$line" ]; then
     echo "harness: route-log: empty line (ignored)" >&2; return 0
   fi
-  line=$(printf '%s' "$line" | jq -c 'select(type == "object")' 2>/dev/null)
+  # exactly one JSON object (a stream like '{} {}' or '{} junk' is refused)
+  line=$(printf '%s' "$line" | jq -s -c 'if length == 1 and (.[0] | type) == "object" then .[0] else empty end' 2>/dev/null)
   if [ -z "$line" ]; then
-    echo "harness: route-log: not a JSON object (ignored)" >&2; return 0
+    echo "harness: route-log: not a single JSON object (ignored)" >&2; return 0
   fi
   mkdir -p .harness 2>/dev/null || { echo "harness: route-log: cannot create .harness/" >&2; return 0; }
   stamp=$(date +%Y%m%d-%H%M%S)
