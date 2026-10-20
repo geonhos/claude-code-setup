@@ -112,7 +112,7 @@ argument-hint: <what to investigate>
 `.harness/routing.jsonl`, append-only, UTC `ts`. 줄 2종.
 
 ```json
-{"ts":"2026-10-20T05:12:01Z","event":"prompt","session":"<session_id>","prompt_id":"<prompt_id>","prompt":"<원문, 최대 4000자>","skill":"/implement"}
+{"ts":"2026-10-20T05:12:01Z","event":"prompt","session":"<session_id>","prompt_id":"<prompt_id>","agent":"conductor","prompt":"<원문, 최대 4000자>","skill":"/implement"}
 {"ts":"2026-10-20T05:12:40Z","event":"delegate","session":"<session_id>","worker":"implementer","source":"skill","exit":0}
 ```
 
@@ -121,6 +121,7 @@ argument-hint: <what to investigate>
 | `ts` | 훅 실행 시각 | ask 종료 시각 |
 | `session` | 훅 stdin `session_id` | Bash 환경 `CLAUDE_CODE_SESSION_ID` (없으면 null) |
 | `prompt_id` | 훅 stdin `prompt_id` | — |
+| `agent` | 훅 stdin `agent_type` (없으면 null) | — |
 | `prompt` | 원문, 4000자 초과 시 잘림 | — |
 | `skill` | prompt가 `/analyze`, `/implement`, `/review`로 시작하면 그 이름, 아니면 null | — |
 | `worker` | — | analyst / implementer / reviewer |

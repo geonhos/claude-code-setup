@@ -76,7 +76,7 @@ rm -f "$RJ"
 # payload CWD PROMPT [SESSION]
 payload() {
   jq -n -c --arg c "$1" --arg p "$2" --arg s "${3:-s1}" \
-    '{session_id:$s, transcript_path:"/t.jsonl", cwd:$c, permission_mode:"default", hook_event_name:"UserPromptSubmit", prompt:$p, prompt_id:"p-1"}'
+    '{session_id:$s, transcript_path:"/t.jsonl", cwd:$c, permission_mode:"default", hook_event_name:"UserPromptSubmit", prompt:$p, prompt_id:"p-1", agent_type:"conductor"}'
 }
 # hook PAYLOAD [ENV=VAL...] -> OUT (stdout+stderr), RC; HARNESS_ROLE unset, cwd elsewhere on purpose
 hook() {
@@ -93,6 +93,7 @@ check "hook: one line" [ "$(nlines "$RJ")" -eq 1 ]
 check "hook: event prompt" [ "$(last .event)" = prompt ]
 check "hook: session" [ "$(last .session)" = s1 ]
 check "hook: prompt_id" [ "$(last .prompt_id)" = p-1 ]
+check "hook: agent" [ "$(last .agent)" = conductor ]
 check "hook: prompt text" [ "$(last .prompt)" = 'what does install.sh do?' ]
 check "hook: skill null" [ "$(last .skill)" = null ]
 check "hook: ts shape" [ "$(last '.ts|test("^[0-9]{4}-[0-9]{2}-[0-9]{2}T")')" = true ]
@@ -111,6 +112,7 @@ hook "$(payload "$P" "$uni" 12345)"
 check "hook: unicode and quotes round-trip" [ "$(last .prompt)" = "$uni" ]
 hook "$(jq -n -c --arg c "$P" --arg p "$uni" '{session_id:12345, cwd:$c, prompt:$p}')"
 check "hook: numeric session_id stringified" [ "$(last .session)" = 12345 ]
+check "hook: agent null without agent_type" [ "$(last .agent)" = null ]
 
 long=$(head -c 4001 /dev/zero | tr '\0' 'y')
 hook "$(payload "$P" "$long")"

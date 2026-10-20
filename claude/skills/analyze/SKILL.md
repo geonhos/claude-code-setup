@@ -8,7 +8,7 @@ argument-hint: <what to find out, and what decision it feeds>
 
 If you are a worker session (HARNESS_ROLE=worker, or your system prompt names
 you analyst, implementer, reviewer or solo), ignore this skill and do the
-investigation yourself.
+investigation yourself (`harness ask` refuses to run in a worker session anyway).
 
 ## Steps
 

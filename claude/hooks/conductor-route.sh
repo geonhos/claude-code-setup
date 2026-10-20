@@ -26,6 +26,7 @@ line=$(printf '%s' "$input" | jq -c --arg ts "$ts" '
   | {ts: $ts, event: "prompt",
      session: (((.session_id // "") | tostring) | nz),
      prompt_id: (((.prompt_id // "") | tostring) | nz),
+     agent: (((.agent_type // "") | tostring) | nz),
      prompt: ($p | .[:4000]),
      skill: (if ($p | test("^/(analyze|implement|review)(\\s|$)"))
              then ($p | capture("^(?<s>/[a-z]+)") | .s) else null end)}' 2>/dev/null) || exit 0

@@ -21,6 +21,7 @@
 # `report` prints .harness/reports/<agent>.md with the same exit codes as `ask`
 #   (0 · 3 no report/no VERDICT · 5 verification failed), plus 4 while the agent
 #   is still working. It never sends a prompt.
+# Workers (HARNESS_ROLE=worker) may not ask or spawn: skills are user-global and would otherwise nest.
 # .harness/ lives in the directory where the conductor runs ($PWD).
 # Every ask is logged to .harness/log/ and .harness/progress.jsonl, and
 # .harness/progress.md is regenerated (log errors only warn on stderr).
@@ -136,6 +137,7 @@ pick_direction() {
 }
 
 cmd_spawn() {
+  [ "${HARNESS_ROLE:-}" != worker ] || die "harness ask/spawn is for the conductor; a worker (HARNESS_ROLE=worker) does its task itself"
   local agent=${1:-} dir=""
   [ -n "$agent" ] || usage
   valid_agent "$agent"
@@ -536,6 +538,7 @@ ask_finish() {
 # subshell and waits, then logs the outcome. Output and exit code are the inner
 # ones; logging problems only warn on stderr.
 cmd_ask() {
+  [ "${HARNESS_ROLE:-}" != worker ] || die "harness ask/spawn is for the conductor; a worker (HARNESS_ROLE=worker) does its task itself"
   local agent=${1:-} text=${2:-} cb
   case " $AGENTS " in *" $agent "*) ;; *) ask_inner "$@" ;; esac
   [ -n "$text" ] || ask_inner "$@"

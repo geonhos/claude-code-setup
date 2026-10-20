@@ -8,7 +8,7 @@ argument-hint: <what to change; the commit message if it should commit>
 
 If you are a worker session (HARNESS_ROLE=worker, or your system prompt names
 you analyst, implementer, reviewer or solo), ignore this skill and make the
-change yourself.
+change yourself (`harness ask` refuses to run in a worker session anyway).
 
 ## Steps
 

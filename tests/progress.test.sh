@@ -25,12 +25,12 @@ setup() {
 
 GUARD="perl -e alarm(10);exec(@ARGV)"
 run() {
-  OUT=$(HERDR_ENV=1 HERDR_PANE_ID=w1:p1 PATH="$FAKE_BIN:$HERE/../bin:$PATH" $GUARD /bin/bash "$HARNESS" "$@" 2>/dev/null)
+  OUT=$(HERDR_ENV=1 HERDR_PANE_ID=w1:p1 PATH="$FAKE_BIN:$HERE/../bin:$PATH" $GUARD env -u HARNESS_ROLE /bin/bash "$HARNESS" "$@" 2>/dev/null)
   RC=$?
 }
 # runerr: same, stdout+stderr merged
 runerr() {
-  OUT=$(HERDR_ENV=1 HERDR_PANE_ID=w1:p1 PATH="$FAKE_BIN:$HERE/../bin:$PATH" $GUARD /bin/bash "$HARNESS" "$@" 2>&1)
+  OUT=$(HERDR_ENV=1 HERDR_PANE_ID=w1:p1 PATH="$FAKE_BIN:$HERE/../bin:$PATH" $GUARD env -u HARNESS_ROLE /bin/bash "$HARNESS" "$@" 2>&1)
   RC=$?
 }
 check() { local label=$1; shift; if "$@"; then pass=$((pass + 1)); else fail=$((fail + 1)); echo "FAIL [$label]: $OUT"; fi; }
@@ -45,7 +45,7 @@ jl() { jq -r "$1" "$WORK/.harness/progress.jsonl" 2>/dev/null | tail -n 1; }
 nlines() { wc -l < "$1" | tr -d ' '; }
 logfiles() { ls "$WORK"/.harness/log/*.md 2>/dev/null; }
 # the encoding rule lives in bin/harness (project_dir_name), reached via _projdir
-projdir() { echo "$HARNESS_PROJECTS_DIR/$(HERDR_ENV=1 PATH="$FAKE_BIN:$HERE/../bin:$PATH" /bin/bash "$HARNESS" _projdir)"; }
+projdir() { echo "$HARNESS_PROJECTS_DIR/$(HERDR_ENV=1 PATH="$FAKE_BIN:$HERE/../bin:$PATH" env -u HARNESS_ROLE /bin/bash "$HARNESS" _projdir)"; }
 lastjson() { printf '%s\n' "$1" >> .harness/progress.jsonl; }
 # transcript SESSION CACHE_READ [CREATE] [INPUT]
 transcript() {
@@ -96,7 +96,7 @@ check "route: worker" [ "$(rj .worker)" = analyst ]
 check "route: source skill" [ "$(rj .source)" = skill ]
 check "route: exit 0" [ "$(rj .exit)" = 0 ]
 check "route: session null without env" [ "$(rj .session)" = null ]
-OUT=$(CLAUDE_CODE_SESSION_ID=cond-42 HERDR_ENV=1 HERDR_PANE_ID=w1:p1 PATH="$FAKE_BIN:$HERE/../bin:$PATH" $GUARD /bin/bash "$HARNESS" ask analyst "again" 2>/dev/null); RC=$?
+OUT=$(CLAUDE_CODE_SESSION_ID=cond-42 HERDR_ENV=1 HERDR_PANE_ID=w1:p1 PATH="$FAKE_BIN:$HERE/../bin:$PATH" $GUARD env -u HARNESS_ROLE /bin/bash "$HARNESS" ask analyst "again" 2>/dev/null); RC=$?
 check "route: default source conductor" [ "$(rj .source)" = conductor ]
 check "route: session from env" [ "$(rj .session)" = cond-42 ]
 check "route: two lines" [ "$(nlines .harness/routing.jsonl)" -eq 2 ]
@@ -410,7 +410,7 @@ setup
 echo idle > "$FAKE_DIR/live.analyst"
 mkdir -p "$WORK/tmp"
 export FAKE_PROMPT_HOOK="echo REPLAYED >> $WORK/tmp/harness-ask.*; sleep 3"
-TMPDIR="$WORK/tmp" HERDR_ENV=1 HERDR_PANE_ID=w1:p1 PATH="$FAKE_BIN:$HERE/../bin:$PATH" /bin/bash "$HARNESS" ask analyst "long" > "$WORK/killed.out" 2>/dev/null &
+TMPDIR="$WORK/tmp" HERDR_ENV=1 HERDR_PANE_ID=w1:p1 PATH="$FAKE_BIN:$HERE/../bin:$PATH" env -u HARNESS_ROLE /bin/bash "$HARNESS" ask analyst "long" > "$WORK/killed.out" 2>/dev/null &
 KP=$!
 i=0; while [ $i -lt 50 ] && ! grep -q REPLAYED "$WORK"/tmp/harness-ask.* 2>/dev/null; do sleep 0.1; i=$((i+1)); done
 kill -TERM "$KP"; wait "$KP"; KRC=$?
@@ -428,7 +428,7 @@ sigtest() { # sigtest SIGNAL EXPECTED_RC
   echo idle > "$FAKE_DIR/live.analyst"
   mkdir -p "$WORK/tmp"; rm -f "$WORK/gc.pid"
   export FAKE_PROMPT_HOOK="echo REPLAYED >> $WORK/tmp/harness-ask.*; (sleep 30 & echo \$! > $WORK/gc.pid; wait); sleep 30"
-  TMPDIR="$WORK/tmp" HERDR_ENV=1 HERDR_PANE_ID=w1:p1 PATH="$FAKE_BIN:$HERE/../bin:$PATH" /bin/bash "$HARNESS" ask analyst "long" > "$WORK/sig.out" 2>/dev/null &
+  TMPDIR="$WORK/tmp" HERDR_ENV=1 HERDR_PANE_ID=w1:p1 PATH="$FAKE_BIN:$HERE/../bin:$PATH" env -u HARNESS_ROLE /bin/bash "$HARNESS" ask analyst "long" > "$WORK/sig.out" 2>/dev/null &
   KP=$!
   i=0; while [ $i -lt 50 ] && [ ! -s "$WORK/gc.pid" ]; do sleep 0.1; i=$((i+1)); done
   GC=$(cat "$WORK/gc.pid" 2>/dev/null)

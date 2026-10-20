@@ -341,14 +341,15 @@ flowchart TD
 `routing.jsonl`은 append-only이고 줄이 두 종류다.
 
 ```json
-{"ts":"2026-10-20T05:12:01Z","event":"prompt","session":"<id>","prompt_id":"<id>","prompt":"...","skill":"/implement"}
+{"ts":"2026-10-20T05:12:01Z","event":"prompt","session":"<id>","prompt_id":"<id>","agent":"conductor","prompt":"...","skill":"/implement"}
 {"ts":"2026-10-20T05:12:40Z","event":"delegate","session":"<id>","worker":"implementer","source":"skill","exit":0}
 ```
 
-- `prompt` 줄은 훅이 쓴다. `prompt_id`는 훅 payload의 `prompt_id`이고, `prompt`는 4000자에서 잘린다. `skill`은 입력의 첫 토큰이 `/analyze`, `/implement`, `/review` 중 하나일 때만 채워진다(`/analyzefoo`는 아님).
+- `prompt` 줄은 훅이 쓴다. `prompt_id`는 훅 payload의 `prompt_id`, `agent`는 `agent_type`(없으면 null)이라 conductor가 아닌 세션의 프롬프트를 오프라인에서 걸러낼 수 있고, `prompt`는 4000자에서 잘린다. `skill`은 입력의 첫 토큰이 `/analyze`, `/implement`, `/review` 중 하나일 때만 채워진다(`/analyzefoo`는 아님).
 - `delegate` 줄은 `harness ask`가 끝날 때(시그널 포함) 쓴다. `source`는 `--via` 값(기본 `conductor`), `session`은 conductor Bash 환경의 `CLAUDE_CODE_SESSION_ID`.
 - 직접 답변은 기록하지 않는다. 같은 `session`에서 다음 `prompt` 줄 전까지 `delegate` 줄이 없으면 직접 답변으로 본다.
 - 로테이션은 `progress.jsonl`과 같다(`HARNESS_JSONL_MAX`, 기본 1 MiB, gzip). `HARNESS_ROUTE_LOG=0`으로 끈다.
+- 워커 세션에서는 `harness ask`/`spawn`이 exit 1로 거부된다(HARNESS_ROLE=worker).
 - 훅은 `HARNESS_ROLE=worker`, jq/harness 부재, cwd에 `.harness/` 없음, 입력 오류 어느 경우에도 무출력 exit 0이다. 프롬프트를 막거나 컨텍스트를 주입하지 않는다.
 
 이 로그는 나중에 결정 모델(Kev)을 파인튜닝해 "직접 답변 / 어느 워커" 힌트를 주입하기 위한 학습 데이터다. 배경과 모델 선택 근거는 [`research/2026-10-20-decision-models-kev-vs-laya.md`](research/2026-10-20-decision-models-kev-vs-laya.md), 설계는 [`superpowers/specs/2026-10-20-skill-routing-design.md`](superpowers/specs/2026-10-20-skill-routing-design.md).

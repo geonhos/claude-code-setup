@@ -8,7 +8,7 @@ argument-hint: <commit range | branch | "working tree"> [focus]
 
 If you are a worker session (HARNESS_ROLE=worker, or your system prompt names
 you analyst, implementer, reviewer or solo), ignore this skill and review the
-diff yourself.
+diff yourself (`harness ask` refuses to run in a worker session anyway).
 
 ## Steps
 
