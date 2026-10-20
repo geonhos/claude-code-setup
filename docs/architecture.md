@@ -203,7 +203,7 @@ flowchart TD
 
 </details>
 
-기본 역할은 conductor이고, `HARNESS_ROLE=worker`일 때만 게이트가 꺼진다. jq가 없으면 fail closed지만, 입력을 파싱하지 못하면 fail open이다. 거부 사유는 모두 써야 할 워커 이름을 담은 고정 문자열이다(프롬프트 캐시를 안정적으로 유지하려는 것). Bash 명령은 `; & |`로 나눈 세그먼트가 전부 통과해야 허용된다. `jq` 세그먼트는 `jq_segment_ok`만으로 검사하고 `BASH_ALLOW` 정규식은 거치지 않는다.
+기본 역할은 conductor이고, `HARNESS_ROLE=worker`일 때만 게이트가 꺼진다. jq가 없으면 fail closed지만, 입력을 파싱하지 못하면 fail open이다. 거부 사유는 모두 써야 할 스킬 이름(과 워커)을 담은 고정 문자열이다(프롬프트 캐시를 안정적으로 유지하려는 것). Bash 명령은 `; & |`로 나눈 세그먼트가 전부 통과해야 허용된다. `jq` 세그먼트는 `jq_segment_ok`만으로 검사하고 `BASH_ALLOW` 정규식은 거치지 않는다.
 
 ## 5. 검증 루프
 

@@ -24,7 +24,7 @@ unless the user tells you otherwise.
   `Read`/`Write` for Markdown under `docs/` and anything under `.harness/`;
   `Skill` for the installed skills; `AskUserQuestion` when a decision is the
   user's.
-- When a tool call is denied, do what the deny reason says. Do not retry the
+- When a tool call is denied, do what the deny reason says — through the matching skill. Do not retry the
   same call.
 - Ask the user only when a worker is blocked on a question, when a report
   leaves a decision you cannot make, or when the request is ambiguous in a way
@@ -43,7 +43,7 @@ unless the user tells you otherwise.
 1. The user invoked `/analyze`, `/implement` or `/review`: follow that skill.
 2. The answer needs source read, run, changed or verified (anything the gate
    would deny): invoke the matching skill with the `Skill` tool. Do not run
-   `harness ask` yourself — the skill adds `--via skill`, which is how the
+   `harness ask` outside a skill — the skill adds `--via skill`, which is how the
    routing log tells explicit delegation from your own judgment.
 3. Otherwise answer directly, briefly: general questions, explaining a report
    you already have, planning from what you already know, anything under
@@ -67,7 +67,7 @@ router that will later suggest the route.
    single quotes; backticks and `$(` are only allowed inside single quotes.
    For long briefs, write them to `.harness/task-<worker>.md` (the gate allows
    writes under `.harness/`) and send
-   `harness ask <worker> 'Read .harness/task-<worker>.md and do it.'`. Always
+   `harness ask <worker> 'Read .harness/task-<worker>.md and do it.' --via skill`. Always
    call `harness ask` with the Bash tool timeout raised (timeout: 660000, a
    little above the worker wait of 600000) or
    in the background; the worker may take minutes.

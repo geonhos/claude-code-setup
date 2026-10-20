@@ -531,6 +531,19 @@ expect_reason "Conductor cannot edit"   "reason: write" "$(tool Write '{"file_pa
 expect_reason "Conductor does not read" "reason: read"  "$(tool Read '{"file_path":"src/a.ts"}')"
 expect_reason "Native subagents"        "reason: agent" "$(tool Agent '{"prompt":"x"}')"
 expect_reason "Conductor shell"         "reason: bash"  "$(bcmd 'npm test')"
+# every deny reason names the skill to use, not a raw `harness ask`
+expect_reason_has() {
+  local got
+  got=$(run_gate conductor "$3" | jq -r '.hookSpecificOutput.permissionDecisionReason // empty' 2>/dev/null)
+  case "$got" in
+    *"$1"*) report ok "$2" "*$1*" "$got" "$3" ;;
+    *)      report bad "$2" "*$1*" "$got" "$3" ;;
+  esac
+}
+expect_reason_has "/implement" "skill named: write" "$(tool Write '{"file_path":"src/a.ts","content":"x"}')"
+expect_reason_has "/analyze"   "skill named: read"  "$(tool Read '{"file_path":"src/a.ts"}')"
+expect_reason_has "/review"    "skill named: agent" "$(tool Agent '{"prompt":"x"}')"
+expect_reason_has "/implement" "skill named: bash"  "$(bcmd 'npm test')"
 expect_event  "event name"                              "$(bcmd 'npm test')"
 
 echo "PASS $pass / FAIL $fail"
