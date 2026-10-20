@@ -1,6 +1,6 @@
 # claude-code-setup — herdr conductor
 
-메인 세션(Fable)을 **conductor(지휘 세션)** 로 쓰는 사용자 단위 Claude Code 설정. conductor는 워커 리포트만 읽고, 분석과 구현은 전부 [herdr](https://herdr.dev) 패널에서 도는 Claude 워커에게 맡긴다.
+메인 세션(Fable)을 **conductor(지휘 세션)** 로 쓰는 사용자 단위 Claude Code 설정. 평범한 질의는 conductor가 직접 답하고, 소스를 읽거나 고치거나 검증해야 하는 일은 `/analyze` `/implement` `/review` 스킬로 [herdr](https://herdr.dev) 패널에서 도는 Claude 워커에게 맡긴다. conductor는 워커 리포트만 읽는다.
 아키텍처 다이어그램은 [docs/architecture.md](docs/architecture.md)에 있다.
 
 이렇게 하는 이유: Fable 토큰이 비싸다. conductor는 소스를 컨텍스트에 올리지 않고, 워커(`analyst` opus · `implementer` sonnet · `reviewer` opus)가 일을 한다. analyst와 implementer는 프로젝트 메모리를 가져서 코드베이스를 매번 다시 파악하지 않는다. reviewer는 일부러 메모리를 두지 않는다. 리뷰마다 선입견 없이 시작하게 하려는 것이다.
@@ -22,9 +22,10 @@ cd ~/workspace/claude-code-setup
 `install.sh`는 여러 번 실행해도 결과가 같다. 하는 일:
 
 - `claude/agents/*.md`를 `~/.claude/agents/`에 심링크
+- `claude/skills/*/`를 `~/.claude/skills/`에 디렉터리 심링크 (이미 있던 다른 스킬은 `~/.claude/skills.bak/`으로 옮긴다)
 - `bin/harness`, `bin/harness-verify`를 `~/.local/bin`에 링크
 - `~/.claude/settings.json`에 아래 항목을 병합 (백업을 남긴다)
-  - PreToolUse 훅 하나(게이트), SessionStart 훅 하나(`conductor-resume.sh`)
+  - PreToolUse 훅 하나(게이트), SessionStart 훅 하나(`conductor-resume.sh`), UserPromptSubmit 훅 하나(`conductor-route.sh`)
   - `env.BASH_DEFAULT_TIMEOUT_MS`/`BASH_MAX_TIMEOUT_MS`
   - `promptCacheTtl`/`subagentPromptCacheTtl: 1h`
   - `agent: conductor` — 평범한 `claude` 세션이 모두 conductor로 시작한다. 워커는 `--agent <name>`으로 덮어쓴다.
@@ -36,16 +37,17 @@ cd ~/workspace/claude-code-setup
 ## 사용법
 
 1. 프로젝트의 herdr 패널에서 평소처럼 `claude`를 시작한다.
-2. 작업을 맡긴다. 소스를 읽거나 고치려 하면 게이트가 호출을 거부하고, 어느 워커를 써야 하는지 알려 준다.
-3. conductor가 `harness ask <worker> '<instruction>'`을 실행한다. 옆에 패널이 열리고 Claude 워커가 뜬다. 워커가 끝나면 리포트(`.harness/reports/<worker>.md`, 40줄 이하)가 출력된다. 설치 스크립트가 Bash 도구 타임아웃을 늘려 두므로(`BASH_DEFAULT_TIMEOUT_MS=600000`) 긴 워커 작업도 중간에 끊기지 않는다.
+2. 질문하거나 작업을 맡긴다. 일반 질문은 conductor가 바로 답한다. 소스를 읽거나 고치려 하면 게이트가 호출을 거부하고, conductor는 맞는 스킬(`/analyze` 조사 · `/implement` 변경 · `/review` 검토)을 호출한다. 직접 `/implement …`처럼 쳐도 된다.
+3. 스킬이 `harness ask <worker> '<instruction>' --via skill`을 실행한다. 옆에 패널이 열리고 Claude 워커가 뜬다. 워커가 끝나면 리포트(`.harness/reports/<worker>.md`, 40줄 이하)가 출력된다. 설치 스크립트가 Bash 도구 타임아웃을 늘려 두므로(`BASH_DEFAULT_TIMEOUT_MS=600000`) 긴 워커 작업도 중간에 끊기지 않는다.
 4. 워커의 작업은 각 패널에서 볼 수 있다. conductor가 보는 것은 리포트뿐이다.
 
 ```
 harness spawn  <agent> [--direction right|down]
-harness ask    <agent> '<instruction>' [--timeout MS] [--fresh|--keep]   # exit 2 blocked · 3 no report · 4 still working · 5 verification failed
+harness ask    <agent> '<instruction>' [--timeout MS] [--fresh|--keep] [--via skill|conductor]   # exit 2 blocked · 3 no report · 4 still working · 5 verification failed
 harness report <agent>                                   # print existing report (same exit codes as ask), 3 none, 4 still working
 harness status
 harness close  <agent>
+harness route-log '<json>'                               # append one line to .harness/routing.jsonl (used by the hook and by ask)
 ```
 
 ## 진행 로그와 컨텍스트 리셋
@@ -61,6 +63,8 @@ ask가 끝날 때마다 로그를 정리한다. 최신 200개만 남기고, 14�
 ask 전에 살아 있는 워커의 컨텍스트를 `/clear`로 비운다. 새 세션 id가 생길 때까지 기다리고, 10초 안에 안 생기면 패널을 닫고 다시 띄운다. implementer는 항상 비우고, analyst/reviewer는 컨텍스트가 `HARNESS_CTX_RESET` 토큰(기본 120000)을 넘었거나 `--fresh`일 때 비운다. `--keep`은 해당 ask 한 번만 비우기를 건너뛴다. 방금 띄운 워커는 비우지 않는다. 패널에는 마지막 안전장치로 `CLAUDE_CODE_AUTO_COMPACT_WINDOW=160000`을 준다.
 `harness status`의 `ctx` 열은 `~/.claude/projects` 아래 트랜스크립트에서 읽은 토큰 수이고, 알 수 없으면 `-`다. 디렉터리는 `HARNESS_PROJECTS_DIR`로 바꾼다.
 실측: `/clear`를 해도 `--agent` 프롬프트는 유지되고, 1초 안에 끝난다.
+
+프롬프트마다 UserPromptSubmit 훅이 `.harness/routing.jsonl`에 `prompt` 줄을, `harness ask`가 끝날 때마다 `delegate` 줄(`source`: 스킬 경유면 `skill`, 아니면 `conductor`)을 남긴다. 직접 답변은 "다음 프롬프트까지 delegate 줄 없음"으로 나중에 도출한다. 이 로그는 결정 모델을 학습시켜 라우팅 힌트를 주기 위한 데이터다 — 배경은 [docs/research/2026-10-20-decision-models-kev-vs-laya.md](docs/research/2026-10-20-decision-models-kev-vs-laya.md). `HARNESS_ROUTE_LOG=0`으로 끈다.
 
 ## 검증 루프
 
@@ -91,7 +95,7 @@ jq, git, 설정 중 무엇이 없어도 워커를 막지 않는다.
 - `.harness/`와 `docs/` 아래의 `cat`/`ls` (인자에 따옴표, glob, `$` 금지)
 - `docs/` 아래 Markdown 작성, `.harness/` 아래 모든 파일 작성
 
-이 밖의 호출은 모두 거부되고, 거부 사유에 써야 할 워커 이름이 들어 있다.
+이 밖의 호출은 모두 거부되고, 거부 사유에 워커 이름이 들어 있다. conductor는 그 워커에 맞는 스킬을 부른다.
 
 ## 알려진 한계
 
@@ -113,10 +117,12 @@ bin/harness                      herdr wrapper CLI
 bin/harness-verify               format/lint/test checks used by worker hooks
 claude/hooks/conductor-gate.sh   PreToolUse gate
 claude/hooks/conductor-resume.sh SessionStart hook: injects .harness/progress.md
+claude/hooks/conductor-route.sh  UserPromptSubmit hook: logs each prompt to .harness/routing.jsonl
+claude/skills/<name>/SKILL.md    /analyze /implement /review (symlinked to ~/.claude/skills/<name>)
 claude/agents/{analyst,implementer,reviewer}.md  worker definitions (model, memory, cacheTtl, report contract)
 claude/agents/conductor.md       conductor system prompt (settings.agent)
 claude/agents/solo.md            escape-hatch agent (empty body = default prompt)
 install.sh                       installer (--test runs tests/)
-tests/                           gate, harness (against tests/fake-herdr), verify, progress, install
+tests/                           gate, harness (against tests/fake-herdr), verify, progress, install, route
 docs/superpowers/                spec and plan
 ```
