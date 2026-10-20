@@ -2,7 +2,7 @@
 
 이 harness는 **conductor(지휘 세션)** Claude 세션 하나와 워커 Claude 세션 셋(analyst, implementer, reviewer)으로 이뤄진다. 워커는 [herdr](https://herdr.dev) 패널에서 돈다. conductor에는 PreToolUse 훅 게이트가 걸려 있어 리포트 읽기와 `harness` 실행만 할 수 있다. 프로젝트 디렉터리의 `.harness/`는 리포트, 로그, 검증 상태, 진행 요약을 두는 공용 저장소다.
 
-아래 다이어그램은 스펙이 아니라 `main`의 코드(커밋 `bdcf357`, PR #10을 main에 머지한 시점)를 기준으로 그렸다. Mermaid 원본은 [`diagrams/`](diagrams/README.md)에 있다.
+아래 다이어그램은 스펙이 아니라 `main`의 코드(커밋 `bdcf357`, PR #10을 main에 머지한 시점)를 기준으로 그렸다. Mermaid 원본은 [`diagrams/`](diagrams/README.md)에 있다. 8절과 2·7절의 Mermaid 텍스트는 feature/v8-skill-routing 변경을 반영했고 SVG는 아직 재렌더하지 않았다.
 
 ## 목차
 
@@ -13,7 +13,8 @@
 5. [검증 루프](#5-검증-루프)
 6. [진행 로그와 컨텍스트 리셋](#6-진행-로그와-컨텍스트-리셋)
 7. [설치 구성 (install.sh)](#7-설치-구성-installsh)
-8. [Exit code](#exit-code)
+8. [라우팅 로그와 스킬](#8-라우팅-로그와-스킬)
+9. [Exit code](#exit-code)
 
 ## 1. 런타임 데이터 흐름
 
@@ -75,9 +76,10 @@ flowchart LR
   subgraph claudehome["~/.claude"]
     set[("settings.json<br/>agent, hooks, env, TTLs")]
     agents[("agents/*.md")]
+    skills[("skills/*/SKILL.md")]
   end
   subgraph repo["repo: claude/hooks/*.sh"]
-    hooks["conductor-gate.sh<br/>conductor-resume.sh"]
+    hooks["conductor-gate.sh<br/>conductor-resume.sh<br/>conductor-route.sh"]
   end
   prog[("progress.md")]
 
@@ -88,12 +90,13 @@ flowchart LR
   hooks -- "deny JSON / allow" --> cond
   prog -- "read by" --> hooks
   hooks -- "SessionStart: progress.md" --> cond
+  skills -. "/analyze /implement /review" .-> cond
   hcli -. "starts with --agent X" .-> workers
 ```
 
 </details>
 
-`~/.claude/settings.json`이 평범한 `claude` 세션을 모두 conductor로 만들고, PreToolUse 게이트와 SessionStart resume 훅을 등록한다. 워커의 프롬프트와 훅은 `claude --agent`가 `agents/*.md`에서 가져온다.
+`~/.claude/settings.json`이 평범한 `claude` 세션을 모두 conductor로 만들고, PreToolUse 게이트와 SessionStart resume 훅을 등록한다. 워커의 프롬프트와 훅은 `claude --agent`가 `agents/*.md`에서 가져온다. UserPromptSubmit 훅(`conductor-route.sh`)은 프롬프트마다 `.harness/routing.jsonl`에 한 줄을 남긴다.
 
 ## 3. `harness ask` 시퀀스
 
@@ -200,7 +203,7 @@ flowchart TD
 
 </details>
 
-기본 역할은 conductor이고, `HARNESS_ROLE=worker`일 때만 게이트가 꺼진다. jq가 없으면 fail closed지만, 입력을 파싱하지 못하면 fail open이다. 거부 사유는 모두 써야 할 워커 이름을 담은 고정 문자열이다(프롬프트 캐시를 안정적으로 유지하려는 것). Bash 명령은 `; & |`로 나눈 세그먼트가 전부 통과해야 허용된다. `jq` 세그먼트는 `jq_segment_ok`만으로 검사하고 `BASH_ALLOW` 정규식은 거치지 않는다.
+기본 역할은 conductor이고, `HARNESS_ROLE=worker`일 때만 게이트가 꺼진다. jq가 없으면 fail closed지만, 입력을 파싱하지 못하면 fail open이다. 거부 사유는 모두 써야 할 스킬 이름(과 워커)을 담은 고정 문자열이다(프롬프트 캐시를 안정적으로 유지하려는 것). Bash 명령은 `; & |`로 나눈 세그먼트가 전부 통과해야 허용된다. `jq` 세그먼트는 `jq_segment_ok`만으로 검사하고 `BASH_ALLOW` 정규식은 거치지 않는다.
 
 ## 5. 검증 루프
 
@@ -287,23 +290,69 @@ flowchart LR
     RB["bin/harness, bin/harness-verify"]
     RG["claude/hooks/conductor-gate.sh"]
     RR["claude/hooks/conductor-resume.sh"]
+    RT["claude/hooks/conductor-route.sh"]
+    RS["claude/skills/*/"]
   end
   HI["herdr integration install claude<br/>(runs first)"]
   A2["~/.claude/agents/*.md<br/>symlinks, foreign files backed up"]
   B2["~/.local/bin/harness, harness-verify<br/>symlinks"]
-  ST["~/.claude/settings.json (backup .bak.ts)<br/>agent = conductor<br/>promptCacheTtl, subagentPromptCacheTtl = 1h<br/>env BASH_DEFAULT/MAX_TIMEOUT_MS<br/>hooks.PreToolUse: one gate entry<br/>hooks.SessionStart: one resume entry"]
+  ST["~/.claude/settings.json (backup .bak.ts)<br/>agent = conductor<br/>promptCacheTtl, subagentPromptCacheTtl = 1h<br/>env BASH_DEFAULT/MAX_TIMEOUT_MS<br/>hooks.PreToolUse: one gate entry<br/>hooks.SessionStart: one resume entry<br/>hooks.UserPromptSubmit: one route entry"]
+  S2["~/.claude/skills/&lt;name&gt;<br/>directory symlinks<br/>(foreign ones → ~/.claude/skills.bak/)"]
   GI["~/.config/git/ignore<br/>+ .harness/"]
   RA -- "ln -sfn" --> A2
   RB -- "ln -sfn" --> B2
   RG -- "jq merge (path)" --> ST
   RR -- "jq merge (path)" --> ST
+  RT -- "jq merge (path)" --> ST
+  RS -- "ln -sfn" --> S2
   HI --> ST
   repo -. "./install.sh" .-> GI
 ```
 
 </details>
 
-여러 번 실행해도 결과가 같다. 다시 실행하면 게이트/resume 항목이 중복 추가되지 않고 교체된다. 훅은 복사하지 않고 저장소의 절대 경로로 참조한다. 게이트 matcher는 `Edit|Write|NotebookEdit|Read|Grep|Glob|Bash|Agent|Workflow|Monitor|mcp__filesystem__.*`다.
+여러 번 실행해도 결과가 같다. 다시 실행하면 게이트/resume/route 항목이 중복 추가되지 않고 교체된다. 훅은 복사하지 않고 저장소의 절대 경로로 참조한다. 게이트 matcher는 `Edit|Write|NotebookEdit|Read|Grep|Glob|Bash|Agent|Workflow|Monitor|mcp__filesystem__.*`다.
+
+SVG는 아직 재렌더하지 않았다(렌더 방법은 [diagrams/README.md](diagrams/README.md)).
+
+## 8. 라우팅 로그와 스킬
+
+conductor는 기본적으로 직접 답하고, 소스 읽기·변경·검증이 필요할 때만 스킬로 워커에 위임한다. 스킬은 `claude/skills/<name>/SKILL.md`에 있고 `install.sh`가 `~/.claude/skills/<name>`에 디렉터리 심링크한다.
+
+| 스킬 | 워커 | 브리프 파일 | 실행 명령 |
+|---|---|---|---|
+| `/analyze` | analyst (opus) | `.harness/task-analyst.md` | `harness ask analyst '…' --via skill` |
+| `/implement` | implementer (sonnet) | `.harness/task-implementer.md` | `harness ask implementer '…' --via skill` |
+| `/review` | reviewer (opus) | `.harness/task-reviewer.md` | `harness ask reviewer '…' --via skill` |
+
+```mermaid
+flowchart TD
+  U([User prompt]) --> H["UserPromptSubmit hook<br/>conductor-route.sh"]
+  H -- "harness route-log" --> RJ[(".harness/routing.jsonl<br/>event: prompt")]
+  U --> C{"conductor"}
+  C -- "/analyze /implement /review typed" --> SK["Skill"]
+  C -- "needs source read/changed/verified" --> SK
+  C -- "otherwise" --> D([direct answer])
+  SK -- "harness ask <worker> '…' --via skill" --> A["harness ask"]
+  A -- "ask_finish → route-log" --> RJ2[(".harness/routing.jsonl<br/>event: delegate, source: skill|conductor")]
+  A --> W["worker"]
+```
+
+`routing.jsonl`은 append-only이고 줄이 두 종류다.
+
+```json
+{"ts":"2026-10-20T05:12:01Z","event":"prompt","session":"<id>","prompt_id":"<id>","agent":"conductor","prompt":"...","skill":"/implement"}
+{"ts":"2026-10-20T05:12:40Z","event":"delegate","session":"<id>","worker":"implementer","source":"skill","exit":0}
+```
+
+- `prompt` 줄은 훅이 쓴다. `prompt_id`는 훅 payload의 `prompt_id`, `agent`는 `agent_type`(없으면 null)이라 conductor가 아닌 세션의 프롬프트를 오프라인에서 걸러낼 수 있고, `prompt`는 4000자에서 잘린다. `skill`은 입력의 첫 토큰이 `/analyze`, `/implement`, `/review` 중 하나일 때만 채워진다(`/analyzefoo`는 아님).
+- `delegate` 줄은 `harness ask`가 끝날 때(시그널 포함) 쓴다. `source`는 `--via` 값(기본 `conductor`), `session`은 conductor Bash 환경의 `CLAUDE_CODE_SESSION_ID`.
+- 직접 답변은 기록하지 않는다. 같은 `session`에서 다음 `prompt` 줄 전까지 `delegate` 줄이 없으면 직접 답변으로 본다.
+- 로테이션은 `progress.jsonl`과 같다(`HARNESS_JSONL_MAX`, 기본 1 MiB, gzip). `HARNESS_ROUTE_LOG=0`으로 끈다.
+- 워커 세션에서는 `harness ask`/`spawn`이 exit 1로 거부된다(HARNESS_ROLE=worker).
+- 훅은 `HARNESS_ROLE=worker`, jq/harness 부재, cwd에 `.harness/` 없음, 입력 오류 어느 경우에도 무출력 exit 0이다. 프롬프트를 막거나 컨텍스트를 주입하지 않는다.
+
+이 로그는 나중에 결정 모델(Kev)을 파인튜닝해 "직접 답변 / 어느 워커" 힌트를 주입하기 위한 학습 데이터다. 배경과 모델 선택 근거는 [`research/2026-10-20-decision-models-kev-vs-laya.md`](research/2026-10-20-decision-models-kev-vs-laya.md), 설계는 [`superpowers/specs/2026-10-20-skill-routing-design.md`](superpowers/specs/2026-10-20-skill-routing-design.md).
 
 ## Exit code
 

@@ -24,7 +24,7 @@ setup() {
 # run ARGS... -> sets OUT, RC  (killed by SIGALRM after 5s so a hang fails fast)
 GUARD="perl -e alarm(5);exec(@ARGV)"
 run() {
-  OUT=$(HERDR_ENV=1 HERDR_PANE_ID=w1:p1 PATH="$FAKE_BIN:$HERE/../bin:$PATH" $GUARD /bin/bash "$HARNESS" "$@" 2>&1)
+  OUT=$(HERDR_ENV=1 HERDR_PANE_ID=w1:p1 PATH="$FAKE_BIN:$HERE/../bin:$PATH" $GUARD env -u HARNESS_ROLE /bin/bash "$HARNESS" "$@" 2>&1)
   RC=$?
 }
 
@@ -40,7 +40,7 @@ not_logged() { ! grep -qF -- "$1" "$FAKE_LOG"; }
 
 # --- preconditions -----------------------------------------------------------
 setup
-OUT=$(env -u HERDR_ENV PATH="$FAKE_BIN:$PATH" /bin/bash "$HARNESS" status 2>&1); RC=$?
+OUT=$(env -u HERDR_ENV -u HARNESS_ROLE PATH="$FAKE_BIN:$PATH" /bin/bash "$HARNESS" status 2>&1); RC=$?
 check "refuses outside herdr" [ "$RC" -eq 1 ]
 check "refuses outside herdr: message" grep -q "herdr pane" <<<"$OUT"
 
@@ -111,9 +111,23 @@ check "auto direction tall -> down" logged "pane split --current --direction dow
 
 setup
 echo "80 45" > "$FAKE_DIR/layout"
-OUT=$(HERDR_ENV=1 HERDR_PANE_ID= PATH="$FAKE_BIN:$PATH" $GUARD /bin/bash "$HARNESS" spawn analyst 2>&1); RC=$?
+OUT=$(HERDR_ENV=1 HERDR_PANE_ID= PATH="$FAKE_BIN:$PATH" $GUARD env -u HARNESS_ROLE /bin/bash "$HARNESS" spawn analyst 2>&1); RC=$?
 check "no HERDR_PANE_ID -> right" logged "pane split --current --direction right"
 check "no HERDR_PANE_ID: no layout call" not_logged "pane layout"
+
+# --- worker guard: ask/spawn refused in worker sessions ----------------------------
+setup
+OUT=$(HERDR_ENV=1 HERDR_PANE_ID=w1:p1 PATH="$FAKE_BIN:$PATH" HARNESS_ROLE=worker $GUARD /bin/bash "$HARNESS" ask analyst x 2>&1); RC=$?
+check "worker ask rc 1" [ "$RC" -eq 1 ]
+check "worker ask message" grep -q conductor <<<"$OUT"
+check "worker ask: no progress.jsonl" [ ! -e "$WORK/.harness/progress.jsonl" ]
+check "worker ask: no routing.jsonl" [ ! -e "$WORK/.harness/routing.jsonl" ]
+check "worker ask: nothing sent" not_logged "agent prompt"
+OUT=$(HERDR_ENV=1 HERDR_PANE_ID=w1:p1 PATH="$FAKE_BIN:$PATH" HARNESS_ROLE=worker $GUARD /bin/bash "$HARNESS" spawn analyst 2>&1); RC=$?
+check "worker spawn rc 1" [ "$RC" -eq 1 ]
+check "worker spawn: no pane split" not_logged "pane split"
+OUT=$(HERDR_ENV=1 HERDR_PANE_ID=w1:p1 PATH="$FAKE_BIN:$PATH" HARNESS_ROLE=worker $GUARD /bin/bash "$HARNESS" status 2>&1); RC=$?
+check "worker status still works" [ "$RC" -eq 0 ]
 
 # --- ask: success ----------------------------------------------------------------
 setup
@@ -123,7 +137,7 @@ check "ask rc" [ "$RC" -eq 0 ]
 check "ask spawns first" logged "agent start analyst"
 check "ask prompts with wait" logged "agent prompt analyst Describe\\ the\\ repo --wait --timeout 600000"
 check "ask prints report" grep -q "status: done" <<<"$OUT"
-OUT=$(HERDR_ENV=1 HERDR_PANE_ID=w1:p1 PATH="$FAKE_BIN:$PATH" $GUARD /bin/bash "$HARNESS" ask analyst "again" 2>/dev/null); RC=$?
+OUT=$(HERDR_ENV=1 HERDR_PANE_ID=w1:p1 PATH="$FAKE_BIN:$PATH" $GUARD env -u HARNESS_ROLE /bin/bash "$HARNESS" ask analyst "again" 2>/dev/null); RC=$?
 check "ask stdout is exactly the report" [ "$OUT" = "$(printf '# analyst report\nstatus: done')" ]
 
 # --- ask: dash-leading instruction stays positional ------------------------------
@@ -169,7 +183,7 @@ run ask analyst "x"
 check "blocked before rc" [ "$RC" -eq 2 ]
 check "blocked before: no prompt sent" not_logged "agent prompt"
 check "blocked before: screen" grep -q "fake screen line" <<<"$OUT"
-OUT=$(HERDR_ENV=1 HERDR_PANE_ID=w1:p1 PATH="$FAKE_BIN:$PATH" $GUARD /bin/bash "$HARNESS" ask analyst "x" 2>/dev/null); RC=$?
+OUT=$(HERDR_ENV=1 HERDR_PANE_ID=w1:p1 PATH="$FAKE_BIN:$PATH" $GUARD env -u HARNESS_ROLE /bin/bash "$HARNESS" ask analyst "x" 2>/dev/null); RC=$?
 check "blocked: screen on stdout" grep -q "fake screen line" <<<"$OUT"
 
 # --- ask: blocked after prompt ----------------------------------------------------
@@ -215,7 +229,7 @@ check "busy rc" [ "$RC" -eq 4 ]
 check "busy: no prompt sent" not_logged "agent prompt"
 check "busy: report untouched" [ "$(cat "$WORK/.harness/reports/analyst.md")" = "PENDING" ]
 check "busy: points to harness report" grep -q "harness report analyst" <<<"$OUT"
-OUT=$(HERDR_ENV=1 HERDR_PANE_ID=w1:p1 PATH="$FAKE_BIN:$PATH" $GUARD /bin/bash "$HARNESS" ask analyst "second" 2>/dev/null); RC=$?
+OUT=$(HERDR_ENV=1 HERDR_PANE_ID=w1:p1 PATH="$FAKE_BIN:$PATH" $GUARD env -u HARNESS_ROLE /bin/bash "$HARNESS" ask analyst "second" 2>/dev/null); RC=$?
 check "busy: screen on stdout" grep -q "fake screen line" <<<"$OUT"
 
 # --- report ------------------------------------------------------------------------
@@ -387,11 +401,11 @@ check "non-git: stale verify fail cleared" [ "$RC" -eq 0 ]
 setup
 echo idle > "$FAKE_DIR/live.implementer"
 NB=$(mktemp -d); ln -s "$(command -v jq)" "$NB/jq"
-OUT=$(HERDR_ENV=1 HERDR_PANE_ID=w1:p1 PATH="$FAKE_BIN:$NB:/usr/bin:/bin" $GUARD /bin/bash "$HARNESS" ask implementer "x" 2>&1); RC=$?
+OUT=$(HERDR_ENV=1 HERDR_PANE_ID=w1:p1 PATH="$FAKE_BIN:$NB:/usr/bin:/bin" $GUARD env -u HARNESS_ROLE /bin/bash "$HARNESS" ask implementer "x" 2>&1); RC=$?
 check "no harness-verify: exit 1" [ "$RC" -eq 1 ]
 check "no harness-verify: names install.sh" grep -q "install.sh" <<<"$OUT"
 check "no harness-verify: nothing prompted" not_logged "agent prompt"
-OUT=$(HERDR_ENV=1 HERDR_PANE_ID=w1:p1 PATH="$FAKE_BIN:$NB:/usr/bin:/bin" $GUARD /bin/bash "$HARNESS" ask analyst "x" 2>&1); RC=$?
+OUT=$(HERDR_ENV=1 HERDR_PANE_ID=w1:p1 PATH="$FAKE_BIN:$NB:/usr/bin:/bin" $GUARD env -u HARNESS_ROLE /bin/bash "$HARNESS" ask analyst "x" 2>&1); RC=$?
 check "no harness-verify: analyst unaffected" not_grep "harness-verify not found" <(printf "%s" "$OUT")
 rm -rf "$NB"
 

@@ -18,19 +18,19 @@ setup() {
   export HARNESS_CLEAR_INTERVAL=0 HARNESS_CLEAR_POLLS=3
   mkdir -p "$FAKE_DIR"
   : > "$FAKE_LOG"
-  unset FAKE_PROMPT_HOOK FAKE_CLEAR HARNESS_CTX_RESET HARNESS_LOG_KEEP HARNESS_LOG_DAYS HARNESS_JSONL_MAX
+  unset FAKE_PROMPT_HOOK FAKE_CLEAR HARNESS_CTX_RESET HARNESS_LOG_KEEP HARNESS_LOG_DAYS HARNESS_JSONL_MAX HARNESS_ROUTE_LOG
   cd "$WORK" || exit 1
   printf 'fake/\nherdr.log\nprojects/\n' > .gitignore
 }
 
 GUARD="perl -e alarm(10);exec(@ARGV)"
 run() {
-  OUT=$(HERDR_ENV=1 HERDR_PANE_ID=w1:p1 PATH="$FAKE_BIN:$HERE/../bin:$PATH" $GUARD /bin/bash "$HARNESS" "$@" 2>/dev/null)
+  OUT=$(HERDR_ENV=1 HERDR_PANE_ID=w1:p1 PATH="$FAKE_BIN:$HERE/../bin:$PATH" $GUARD env -u HARNESS_ROLE /bin/bash "$HARNESS" "$@" 2>/dev/null)
   RC=$?
 }
 # runerr: same, stdout+stderr merged
 runerr() {
-  OUT=$(HERDR_ENV=1 HERDR_PANE_ID=w1:p1 PATH="$FAKE_BIN:$HERE/../bin:$PATH" $GUARD /bin/bash "$HARNESS" "$@" 2>&1)
+  OUT=$(HERDR_ENV=1 HERDR_PANE_ID=w1:p1 PATH="$FAKE_BIN:$HERE/../bin:$PATH" $GUARD env -u HARNESS_ROLE /bin/bash "$HARNESS" "$@" 2>&1)
   RC=$?
 }
 check() { local label=$1; shift; if "$@"; then pass=$((pass + 1)); else fail=$((fail + 1)); echo "FAIL [$label]: $OUT"; fi; }
@@ -45,7 +45,7 @@ jl() { jq -r "$1" "$WORK/.harness/progress.jsonl" 2>/dev/null | tail -n 1; }
 nlines() { wc -l < "$1" | tr -d ' '; }
 logfiles() { ls "$WORK"/.harness/log/*.md 2>/dev/null; }
 # the encoding rule lives in bin/harness (project_dir_name), reached via _projdir
-projdir() { echo "$HARNESS_PROJECTS_DIR/$(HERDR_ENV=1 PATH="$FAKE_BIN:$HERE/../bin:$PATH" /bin/bash "$HARNESS" _projdir)"; }
+projdir() { echo "$HARNESS_PROJECTS_DIR/$(HERDR_ENV=1 PATH="$FAKE_BIN:$HERE/../bin:$PATH" env -u HARNESS_ROLE /bin/bash "$HARNESS" _projdir)"; }
 lastjson() { printf '%s\n' "$1" >> .harness/progress.jsonl; }
 # transcript SESSION CACHE_READ [CREATE] [INPUT]
 transcript() {
@@ -81,6 +81,55 @@ check "jsonl: verify null for analyst" [ "$(jl '.verify')" = null ]
 long=$(printf 'x%.0s' $(seq 1 300))
 run ask analyst "$long"
 check "jsonl: instr 160 chars" [ "$(jl '.instr|length')" -eq 160 ]
+
+# --- routing.jsonl delegate line per ask --------------------------------------------
+rj() { jq -r "$1" "$WORK/.harness/routing.jsonl" 2>/dev/null | tail -n 1; }
+unset CLAUDE_CODE_SESSION_ID  # the host session must not leak into the null-session case
+setup
+echo idle > "$FAKE_DIR/live.analyst"
+hook_report analyst '# analyst report — r\nstatus: done\n'
+run ask analyst "look" --via skill
+check "route: ask rc" [ "$RC" -eq 0 ]
+check "route: one delegate line" [ "$(nlines .harness/routing.jsonl)" -eq 1 ]
+check "route: event" [ "$(rj .event)" = delegate ]
+check "route: worker" [ "$(rj .worker)" = analyst ]
+check "route: source skill" [ "$(rj .source)" = skill ]
+check "route: exit 0" [ "$(rj .exit)" = 0 ]
+check "route: session null without env" [ "$(rj .session)" = null ]
+OUT=$(CLAUDE_CODE_SESSION_ID=cond-42 HERDR_ENV=1 HERDR_PANE_ID=w1:p1 PATH="$FAKE_BIN:$HERE/../bin:$PATH" $GUARD env -u HARNESS_ROLE /bin/bash "$HARNESS" ask analyst "again" 2>/dev/null); RC=$?
+check "route: default source conductor" [ "$(rj .source)" = conductor ]
+check "route: session from env" [ "$(rj .session)" = cond-42 ]
+check "route: two lines" [ "$(nlines .harness/routing.jsonl)" -eq 2 ]
+run ask analyst "x" --via skill --fresh
+check "route: --via combines with --fresh" [ "$RC" -eq 0 ]
+check "route: three lines" [ "$(nlines .harness/routing.jsonl)" -eq 3 ]
+runerr ask analyst "x" --via bogus
+check "route: bogus via rc 1" [ "$RC" -eq 1 ]
+check "route: bogus via message" grep -q -- '--via' <<<"$OUT"
+check "route: bogus via not logged" [ "$(nlines .harness/routing.jsonl)" -eq 3 ]
+check "route: bogus via no progress line" [ "$(nlines .harness/progress.jsonl)" -eq 3 ]
+runerr ask analyst "x" --via
+check "route: --via without value rc 1" [ "$RC" -eq 1 ]
+check "route: --via without value not logged" [ "$(nlines .harness/routing.jsonl)" -eq 3 ]
+check "route: --via without value no progress line" [ "$(nlines .harness/progress.jsonl)" -eq 3 ]
+hook_report analyst '# analyst report — r\nstatus: done\n'
+run ask analyst "--via" --via skill
+check "route: text --via is not an option" [ "$RC" -eq 0 ]
+check "route: text --via source skill" [ "$(rj .source)" = skill ]
+# exit code of a failing ask is still recorded
+rm -f "$FAKE_DIR/live.analyst"; echo idle > "$FAKE_DIR/live.analyst"
+unset FAKE_PROMPT_HOOK
+run ask analyst "no report please" --via skill
+check "route: exit 3 recorded" [ "$(rj .exit)" = 3 ]
+check "route: rc still 3" [ "$RC" -eq 3 ]
+# routing log failure does not change the ask result
+chmod 000 .harness/routing.jsonl
+hook_report analyst '# analyst report — r\nstatus: done\n'
+runerr ask analyst "y"
+check "route: unwritable log keeps rc 0" [ "$RC" -eq 0 ]
+check "route: unwritable log warns" grep -q 'route-log' <<<"$OUT"
+check "route: unwritable log only our warning" [ "$(grep -c 'Permission denied' <<<"$OUT")" -eq 0 ]
+chmod 644 .harness/routing.jsonl
 
 # --- exit 3 (no report): screen tail in log ----------------------------------------------
 setup
@@ -361,7 +410,7 @@ setup
 echo idle > "$FAKE_DIR/live.analyst"
 mkdir -p "$WORK/tmp"
 export FAKE_PROMPT_HOOK="echo REPLAYED >> $WORK/tmp/harness-ask.*; sleep 3"
-TMPDIR="$WORK/tmp" HERDR_ENV=1 HERDR_PANE_ID=w1:p1 PATH="$FAKE_BIN:$HERE/../bin:$PATH" /bin/bash "$HARNESS" ask analyst "long" > "$WORK/killed.out" 2>/dev/null &
+TMPDIR="$WORK/tmp" HERDR_ENV=1 HERDR_PANE_ID=w1:p1 PATH="$FAKE_BIN:$HERE/../bin:$PATH" env -u HARNESS_ROLE /bin/bash "$HARNESS" ask analyst "long" > "$WORK/killed.out" 2>/dev/null &
 KP=$!
 i=0; while [ $i -lt 50 ] && ! grep -q REPLAYED "$WORK"/tmp/harness-ask.* 2>/dev/null; do sleep 0.1; i=$((i+1)); done
 kill -TERM "$KP"; wait "$KP"; KRC=$?
@@ -379,7 +428,7 @@ sigtest() { # sigtest SIGNAL EXPECTED_RC
   echo idle > "$FAKE_DIR/live.analyst"
   mkdir -p "$WORK/tmp"; rm -f "$WORK/gc.pid"
   export FAKE_PROMPT_HOOK="echo REPLAYED >> $WORK/tmp/harness-ask.*; (sleep 30 & echo \$! > $WORK/gc.pid; wait); sleep 30"
-  TMPDIR="$WORK/tmp" HERDR_ENV=1 HERDR_PANE_ID=w1:p1 PATH="$FAKE_BIN:$HERE/../bin:$PATH" /bin/bash "$HARNESS" ask analyst "long" > "$WORK/sig.out" 2>/dev/null &
+  TMPDIR="$WORK/tmp" HERDR_ENV=1 HERDR_PANE_ID=w1:p1 PATH="$FAKE_BIN:$HERE/../bin:$PATH" env -u HARNESS_ROLE /bin/bash "$HARNESS" ask analyst "long" > "$WORK/sig.out" 2>/dev/null &
   KP=$!
   i=0; while [ $i -lt 50 ] && [ ! -s "$WORK/gc.pid" ]; do sleep 0.1; i=$((i+1)); done
   GC=$(cat "$WORK/gc.pid" 2>/dev/null)
@@ -395,6 +444,7 @@ check "HUP: grandchild gone" [ -n "$GC" ] && ! kill -0 "$GC" 2>/dev/null
 sigtest TERM 143
 check "TERM: grandchild gone" [ -n "$GC" ] && ! kill -0 "$GC" 2>/dev/null
 check "TERM: jsonl exit 143" [ "$(jl .exit)" = 143 ]
+check "route: delegate on TERM" [ "$(rj .exit)" = 143 ]
 
 # --- spawn env ----------------------------------------------------------------------------------------------------------------------------------------------
 setup

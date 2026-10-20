@@ -6,6 +6,7 @@ REPO=$(cd "$HERE/.." && pwd)
 pass=0
 fail=0
 check() { local label=$1; shift; if "$@"; then pass=$((pass + 1)); else fail=$((fail + 1)); echo "FAIL [$label]" >&2; fi; }
+not_grep() { ! grep "$@"; }
 
 ROOT=$(mktemp -d)
 trap 'rm -rf "$ROOT"' EXIT
@@ -35,7 +36,8 @@ cat > "$CLAUDE_DIR/settings.json" <<'EOF'
       { "matcher": "Bash", "hooks": [ { "type": "command", "command": "/opt/other-hook.sh" } ] }
     ],
     "Stop": [ { "matcher": "", "hooks": [ { "type": "command", "command": "/opt/stop.sh" } ] } ],
-    "SessionStart": [ { "matcher": "startup", "hooks": [ { "type": "command", "command": "/opt/session.sh" } ] } ]
+    "SessionStart": [ { "matcher": "startup", "hooks": [ { "type": "command", "command": "/opt/session.sh" } ] } ],
+    "UserPromptSubmit": [ { "hooks": [ { "type": "command", "command": "/opt/prompt.sh" } ] } ]
   }
 }
 EOF
@@ -43,6 +45,7 @@ printf 'node_modules/\n' > "$GIT_IGNORE"
 
 run_install() { install_in "$T"; }
 
+mkdir -p "$CLAUDE_DIR/skills/analyze"; echo old > "$CLAUDE_DIR/skills/analyze/SKILL.md"
 run_install
 check "first run rc" [ "$RC" -eq 0 ]
 
@@ -67,6 +70,21 @@ check "agent set to conductor" [ "$(jq -r .agent "$S")" = conductor ]
 for a in analyst implementer reviewer conductor solo; do
   check "agent symlink $a" [ "$(readlink "$CLAUDE_DIR/agents/$a.md")" = "$REPO/claude/agents/$a.md" ]
 done
+for s in analyze implement review; do
+  check "skill symlink $s" [ "$(readlink "$CLAUDE_DIR/skills/$s")" = "$REPO/claude/skills/$s" ]
+  check "skill symlink $s resolves" [ -f "$CLAUDE_DIR/skills/$s/SKILL.md" ]
+done
+check "foreign skill dir backed up" ls -d "$CLAUDE_DIR"/skills.bak/analyze.* >/dev/null 2>&1
+check "no backup left inside skills/" [ -z "$(ls -d "$CLAUDE_DIR"/skills/*.bak.* 2>/dev/null)" ]
+check "foreign skill dir warning" grep -q 'skills/analyze existed and was backed up' "$T/out.txt"
+ROUTE="$REPO/claude/hooks/conductor-route.sh"
+check "route hook executable" [ -x "$ROUTE" ]
+check "route hook added once" [ "$(jq --arg r "$ROUTE" '[.hooks.UserPromptSubmit[]? | select(any(.hooks[]?; .command==$r))] | length' "$S")" -eq 1 ]
+check "route hook has no matcher" jq -e --arg r "$ROUTE" '.hooks.UserPromptSubmit[] | select(any(.hooks[]?; .command==$r)) | has("matcher") | not' "$S" >/dev/null
+check "route hook type command" jq -e --arg r "$ROUTE" '.hooks.UserPromptSubmit[] | select(any(.hooks[]?; .command==$r)) | .hooks[0].type=="command"' "$S" >/dev/null
+check "other UserPromptSubmit hook preserved" [ "$(jq '[.hooks.UserPromptSubmit[]? | select(any(.hooks[]?; .command=="/opt/prompt.sh"))] | length' "$S")" -eq 1 ]
+check "installed output lists route hook" grep -q 'route hook' "$T/out.txt"
+check "installed output lists skills" grep -q '^  skills  ' "$T/out.txt"
 check "harness symlink" [ "$(readlink "$BIN_DIR/harness")" = "$REPO/bin/harness" ]
 check "harness-verify symlink" [ "$(readlink "$BIN_DIR/harness-verify")" = "$REPO/bin/harness-verify" ]
 check "CLAUDE.md not created" [ ! -e "$CLAUDE_DIR/CLAUDE.md" ]
@@ -82,11 +100,21 @@ check "other hook still once" [ "$(jq '[.hooks.PreToolUse[] | select(.hooks[] | 
 check "agent still conductor after rerun" [ "$(jq -r .agent "$S")" = conductor ]
 check "CLAUDE.md still absent after rerun" [ ! -e "$CLAUDE_DIR/CLAUDE.md" ]
 check "gitignore line once" [ "$(grep -cx '.harness/' "$GIT_IGNORE")" -eq 1 ]
+check "route hook still once after rerun" [ "$(jq --arg r "$REPO/claude/hooks/conductor-route.sh" '[.hooks.UserPromptSubmit[]? | select(any(.hooks[]?; .command==$r))] | length' "$S")" -eq 1 ]
+check "other UserPromptSubmit still once" [ "$(jq '[.hooks.UserPromptSubmit[]? | select(any(.hooks[]?; .command=="/opt/prompt.sh"))] | length' "$S")" -eq 1 ]
+check "skill symlink survives rerun" [ "$(readlink "$CLAUDE_DIR/skills/implement")" = "$REPO/claude/skills/implement" ]
+check "no skill backup warning on rerun" not_grep -q 'skills/.*backed up' "$T/out.txt"
 # fresh HOME with no settings.json at all
 T2=$(newdir fresh)
+mkdir -p "$T2/claude/skills"; ln -s /tmp/elsewhere "$T2/claude/skills/review"
 install_in "$T2"
 check "fresh install rc" [ "$RC" -eq 0 ]
 check "fresh settings created" jq -e '.hooks.PreToolUse | length == 1' "$T2/claude/settings.json" >/dev/null
+
+check "fresh install has route hook" jq -e '.hooks.UserPromptSubmit | length == 1' "$T2/claude/settings.json" >/dev/null
+check "fresh install has skills" [ -L "$T2/claude/skills/review" ]
+check "misdirected skill symlink replaced" [ "$(readlink "$T2/claude/skills/review")" = "$REPO/claude/skills/review" ]
+check "misdirected skill symlink backed up" ls -d "$T2"/claude/skills.bak/review.* >/dev/null 2>&1
 
 # invalid settings must abort without side effects
 assert_untouched() { # DIR ORIGINAL_CONTENT
@@ -154,6 +182,21 @@ install_in "$T11" >/dev/null
 check "write failure rc" [ "$RC" -ne 0 ]
 check "write failure message" grep -q "failed to write" "$T11/out.txt"
 check "write failure no success banner" [ -z "$(grep '^installed:' "$T11/out.txt")" ]
+
+# --- skills: static checks -----------------------------------------------------------------
+for s in analyze implement review; do
+  SK="$REPO/claude/skills/$s/SKILL.md"
+  check "skill $s exists" [ -f "$SK" ]
+  check "skill $s name matches dir" [ "$(sed -n 's/^name: *//p' "$SK" | head -1)" = "$s" ]
+  check "skill $s says conductor only" grep -qi 'conductor only' "$SK"
+  check "skill $s uses --via skill" grep -q -- '--via skill' "$SK"
+  check "skill $s no context fork" not_grep -q '^context: *fork' "$SK"
+  check "skill $s has worker opt-out" grep -q 'HARNESS_ROLE=worker' "$SK"
+done
+check "skill analyze targets analyst" grep -q 'harness ask analyst' "$REPO/claude/skills/analyze/SKILL.md"
+check "skill implement targets implementer" grep -q 'harness ask implementer' "$REPO/claude/skills/implement/SKILL.md"
+check "skill review targets reviewer" grep -q 'harness ask reviewer' "$REPO/claude/skills/review/SKILL.md"
+check "skill review demands VERDICT" grep -q 'VERDICT' "$REPO/claude/skills/review/SKILL.md"
 
 # --- SessionStart resume hook ----------------------------------------------------------------
 RESUME="$REPO/claude/hooks/conductor-resume.sh"
