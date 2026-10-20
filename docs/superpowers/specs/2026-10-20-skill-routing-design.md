@@ -28,7 +28,7 @@ conductor 시스템 프롬프트(`claude/agents/conductor.md`)가 **모든 요�
 
 - 결정 모델 설치·호출·힌트 주입 (3·4단계).
 - 학습 데이터 export 스크립트 (3단계에서 로그 스키마가 확정된 뒤).
-- 게이트 판정 로직 변경 (deny 메시지의 **문구**만 스킬명으로 바꾼다 — §11 참고).
+- 게이트 판정 로직 변경 (deny 메시지의 **문구**만 스킬명으로 바꾼다 — §12 참고).
 
 ## 3. 구성 요소
 
@@ -219,6 +219,8 @@ exit 0
 | ① 훅 `session_id` == `CLAUDE_CODE_SESSION_ID` | 일치 (result.json, Bash 출력 `SID=`, 훅 payload 세 값 동일) | 그대로 (`routing.last` 대안 불필요) |
 | ② 슬래시 호출 시 훅 prompt | 원문 `/probe now` | 원문: `skill` 필드 유지 |
 
+**엔드투엔드 확인 (2026-10-20, 설치된 훅·스킬·새 conductor.md, `claude -p`)**: 일반 질문 → `prompt` 줄(`skill:null`, `agent:"conductor"`)만 남고 워커 없이 답변. `/analyze …` → `prompt` 줄에 `skill:"/analyze"`, `agent:"conductor"`, `session`은 `claude -p` 결과의 `session_id`와 일치, `prompt_id` non-null. 이어서 `delegate` 줄이 `source:"skill"`로 2건 기록됨(`exit:3`; herdr 밖 임시 디렉터리라 워커가 이 저장소의 pane에 붙어 보고서가 생기지 않음).
+
 훅 payload 키: `agent_type, cwd, hook_event_name, permission_mode, prompt, prompt_id, session_id, transcript_path`.
 
 ## 10. 문서
@@ -226,7 +228,15 @@ exit 0
 - `docs/architecture.md`: "8. 라우팅과 스킬" 섹션 — 프롬프트 → (스킬 호출 | conductor 판단 | 직접 답변) 흐름도, `routing.jsonl` 스키마 표, 훅 등록 위치. 목차와 "2. 설정과 훅 연결", "7. 설치 구성" 다이어그램 텍스트에 UserPromptSubmit·skills 반영(Mermaid 원본만, SVG 재렌더는 별도).
 - `README.md`: 스킬 3개 한 줄씩, "일반 질의는 conductor가 직접 답한다" 한 줄, `routing.jsonl` 언급.
 
-## 11. 결정 기록
+## 11. 후속 (이 스펙 범위 밖, 다음 스펙 후보)
+
+- `/clear`·`/compact` 뒤 `CLAUDE_CODE_SESSION_ID`가 훅의 `session_id`와 계속 같은지 실측. 갈리면 prompt/delegate 조인이 깨지므로 `.harness/routing.last` 방식으로 보완.
+- conductor.md의 "When to delegate" 1~4항과 Loop 1항이 같은 분기를 두 번 말한다 — 프롬프트 길이를 줄일 때 합친다.
+- 스킬 미설치 fallback(`--via` 없음)으로 시작한 ask의 exit 3 후속이 `--via skill`로 라벨되는 드문 노이즈.
+- `docs/diagrams/*.svg` 재렌더(2·7·8절 Mermaid 변경 반영).
+- 3단계: `routing.jsonl` → Kev 학습 JSONL export 스크립트와 파인튜닝.
+
+## 12. 결정 기록
 
 | 결정 | 선택 | 대안과 기각 이유 |
 |---|---|---|
