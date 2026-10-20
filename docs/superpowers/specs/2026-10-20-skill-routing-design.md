@@ -210,6 +210,15 @@ exit 0
 
 ②가 "치환 뒤"면 §6.1의 `skill` 필드는 항상 null이 되고, 그 경우 필드를 제거한다. ①이 다르면 `delegate` 줄의 `session`을 훅이 남긴 `.harness/routing.last`(최근 prompt의 session)에서 읽는 대안을 쓴다.
 
+**실측 결과 (2026-10-20, claude `2.1.304 (Claude Code)`)**
+
+| 항목 | 결과 | 설계 반영 |
+|---|---|---|
+| ① 훅 `session_id` == `CLAUDE_CODE_SESSION_ID` | 일치 (result.json, Bash 출력 `SID=`, 훅 payload 세 값 동일) | 그대로 (`routing.last` 대안 불필요) |
+| ② 슬래시 호출 시 훅 prompt | 원문 `/probe now` | 원문: `skill` 필드 유지 |
+
+훅 payload 키: `agent_type, cwd, hook_event_name, permission_mode, prompt, prompt_id, session_id, transcript_path`.
+
 ## 10. 문서
 
 - `docs/architecture.md`: "8. 라우팅과 스킬" 섹션 — 프롬프트 → (스킬 호출 | conductor 판단 | 직접 답변) 흐름도, `routing.jsonl` 스키마 표, 훅 등록 위치. 목차와 "2. 설정과 훅 연결", "7. 설치 구성" 다이어그램 텍스트에 UserPromptSubmit·skills 반영(Mermaid 원본만, SVG 재렌더는 별도).
