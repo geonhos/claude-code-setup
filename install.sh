@@ -28,6 +28,7 @@ if [ "${1:-}" = "--test" ]; then
   /bin/bash "$REPO/tests/harness.test.sh" || rc=1
   /bin/bash "$REPO/tests/verify.test.sh"  || rc=1
   /bin/bash "$REPO/tests/progress.test.sh" || rc=1
+  /bin/bash "$REPO/tests/route.test.sh"   || rc=1
   /bin/bash "$REPO/tests/install.test.sh" || rc=1
   exit $rc
 fi
