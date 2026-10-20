@@ -2,7 +2,7 @@
 
 이 harness는 **conductor(지휘 세션)** Claude 세션 하나와 워커 Claude 세션 셋(analyst, implementer, reviewer)으로 이뤄진다. 워커는 [herdr](https://herdr.dev) 패널에서 돈다. conductor에는 PreToolUse 훅 게이트가 걸려 있어 리포트 읽기와 `harness` 실행만 할 수 있다. 프로젝트 디렉터리의 `.harness/`는 리포트, 로그, 검증 상태, 진행 요약을 두는 공용 저장소다.
 
-아래 다이어그램은 스펙이 아니라 `main`의 코드(커밋 `bdcf357`, PR #10을 main에 머지한 시점)를 기준으로 그렸다. Mermaid 원본은 [`diagrams/`](diagrams/README.md)에 있다. 8절과 §2·§7의 Mermaid 텍스트는 feature/v8-skill-routing 변경을 반영했고 SVG는 아직 재렌더하지 않았다.
+아래 다이어그램은 스펙이 아니라 `main`의 코드(커밋 `bdcf357`, PR #10을 main에 머지한 시점)를 기준으로 그렸다. Mermaid 원본은 [`diagrams/`](diagrams/README.md)에 있다. 8절과 2·7절의 Mermaid 텍스트는 feature/v8-skill-routing 변경을 반영했고 SVG는 아직 재렌더하지 않았다.
 
 ## 목차
 
@@ -313,7 +313,7 @@ flowchart LR
 
 여러 번 실행해도 결과가 같다. 다시 실행하면 게이트/resume/route 항목이 중복 추가되지 않고 교체된다. 훅은 복사하지 않고 저장소의 절대 경로로 참조한다. 게이트 matcher는 `Edit|Write|NotebookEdit|Read|Grep|Glob|Bash|Agent|Workflow|Monitor|mcp__filesystem__.*`다.
 
-SVG(`diagrams/*.svg`)는 재렌더 전까지 이 두 변경을 반영하지 않는다; 렌더 방법은 [`diagrams/README.md`](diagrams/README.md).
+SVG는 아직 재렌더하지 않았다(렌더 방법은 [diagrams/README.md](diagrams/README.md)).
 
 ## 8. 라우팅 로그와 스킬
 
@@ -345,7 +345,7 @@ flowchart TD
 {"ts":"2026-10-20T05:12:40Z","event":"delegate","session":"<id>","worker":"implementer","source":"skill","exit":0}
 ```
 
-- `prompt` 줄은 훅이 쓴다. `prompt_id`는 훅 payload의 `prompt_id`이고, `prompt`는 4000자에서 잘리고, `skill`은 입력이 `/analyze`·`/implement`·`/review`로 시작할 때만 채워진다.
+- `prompt` 줄은 훅이 쓴다. `prompt_id`는 훅 payload의 `prompt_id`이고, `prompt`는 4000자에서 잘린다. `skill`은 입력의 첫 토큰이 `/analyze`, `/implement`, `/review` 중 하나일 때만 채워진다(`/analyzefoo`는 아님).
 - `delegate` 줄은 `harness ask`가 끝날 때(시그널 포함) 쓴다. `source`는 `--via` 값(기본 `conductor`), `session`은 conductor Bash 환경의 `CLAUDE_CODE_SESSION_ID`.
 - 직접 답변은 기록하지 않는다. 같은 `session`에서 다음 `prompt` 줄 전까지 `delegate` 줄이 없으면 직접 답변으로 본다.
 - 로테이션은 `progress.jsonl`과 같다(`HARNESS_JSONL_MAX`, 기본 1 MiB, gzip). `HARNESS_ROUTE_LOG=0`으로 끈다.

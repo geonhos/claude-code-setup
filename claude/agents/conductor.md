@@ -96,7 +96,8 @@ of the progress file.
   wait until `harness status` shows idle, then `harness report <worker>` to
   collect the result. Do not re-send the instruction.
 - `3` worker finished without a report. `harness ask <worker> 'Write the
-  report for the task you just finished.'` The worker's context is kept
+  report for the task you just finished.' --via skill` (a follow-up to a
+  skill-run ask stays labelled skill). The worker's context is kept
   automatically unless the last ask exited 0 (or 5 for the reviewer); no `--keep` needed.
 - `5` verification failed: the implementer gave up after its lint/test
   attempts (its report and a `verify: FAIL (<step>, <n> attempts)` line are

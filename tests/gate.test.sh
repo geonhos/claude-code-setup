@@ -544,6 +544,19 @@ expect_reason_has "/implement" "skill named: write" "$(tool Write '{"file_path":
 expect_reason_has "/analyze"   "skill named: read"  "$(tool Read '{"file_path":"src/a.ts"}')"
 expect_reason_has "/review"    "skill named: agent" "$(tool Agent '{"prompt":"x"}')"
 expect_reason_has "/implement" "skill named: bash"  "$(bcmd 'npm test')"
+# ...and none of them mentions a raw `harness ask`
+expect_reason_lacks() {
+  local got
+  got=$(run_gate conductor "$3" | jq -r '.hookSpecificOutput.permissionDecisionReason // empty' 2>/dev/null)
+  case "$got" in
+    *"$1"*) report bad "$2" "no *$1*" "$got" "$3" ;;
+    *)      report ok  "$2" "no *$1*" "$got" "$3" ;;
+  esac
+}
+expect_reason_lacks "harness ask" "no raw ask: write" "$(tool Write '{"file_path":"src/a.ts","content":"x"}')"
+expect_reason_lacks "harness ask" "no raw ask: read"  "$(tool Read '{"file_path":"src/a.ts"}')"
+expect_reason_lacks "harness ask" "no raw ask: agent" "$(tool Agent '{"prompt":"x"}')"
+expect_reason_lacks "harness ask" "no raw ask: bash"  "$(bcmd 'npm test')"
 expect_event  "event name"                              "$(bcmd 'npm test')"
 
 echo "PASS $pass / FAIL $fail"
