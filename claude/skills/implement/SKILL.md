@@ -1,0 +1,39 @@
+---
+name: implement
+description: Conductor only. Delegate a change (code, tests, config, hooks, scripts, commits, pushes — anything outside docs/**/*.md and .harness/) to the herdr implementer worker and relay its report. Use whenever a file the conductor cannot write must change.
+argument-hint: <what to change; the commit message if it should commit>
+---
+
+# /implement — delegate to the implementer worker (sonnet)
+
+If you are a worker session (HARNESS_ROLE=worker, or your system prompt names
+you analyst, implementer, reviewer or solo), ignore this skill and make the
+change yourself.
+
+## Steps
+
+1. Write a self-contained brief to `.harness/task-implementer.md` from
+   `$ARGUMENTS` and the conversation. The implementer starts with a cleared
+   context every time. Cover:
+   - **Goal**: the exact behaviour wanted, and what must not change.
+   - **Files or area** to touch; the spec or plan under `docs/` to follow.
+   - **Tests**: which to add or update, and the command that must pass.
+   - **Commit**: whether to commit, the exact message (ending with the
+     attribution lines given in this conversation), and whether to push.
+     Say "do not commit" when unsure.
+   - **Report**: files touched, how it verified, the commit hash.
+2. Run, with the Bash tool timeout raised to 660000 or in the background:
+
+   ```
+   harness ask implementer 'Read .harness/task-implementer.md and do it.' --via skill
+   ```
+
+   Use `--keep` only for a follow-up that needs its previous conversation.
+3. Handle the exit code as conductor.md's "Exit codes from `harness ask`"
+   section says. In particular `5` means its lint/test checks failed after
+   retries: send the printed failure back with another `/implement` (its
+   context is kept automatically after a 5). After 2 failed rounds, ask the
+   user.
+4. For anything beyond a trivial change, follow with `/review` before calling
+   the work done.
+5. Relay the substance of the report, not the report verbatim.

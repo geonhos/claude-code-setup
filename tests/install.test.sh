@@ -6,6 +6,7 @@ REPO=$(cd "$HERE/.." && pwd)
 pass=0
 fail=0
 check() { local label=$1; shift; if "$@"; then pass=$((pass + 1)); else fail=$((fail + 1)); echo "FAIL [$label]" >&2; fi; }
+not_grep() { ! grep "$@"; }
 
 ROOT=$(mktemp -d)
 trap 'rm -rf "$ROOT"' EXIT
@@ -154,6 +155,21 @@ install_in "$T11" >/dev/null
 check "write failure rc" [ "$RC" -ne 0 ]
 check "write failure message" grep -q "failed to write" "$T11/out.txt"
 check "write failure no success banner" [ -z "$(grep '^installed:' "$T11/out.txt")" ]
+
+# --- skills: static checks -----------------------------------------------------------------
+for s in analyze implement review; do
+  SK="$REPO/claude/skills/$s/SKILL.md"
+  check "skill $s exists" [ -f "$SK" ]
+  check "skill $s name matches dir" [ "$(sed -n 's/^name: *//p' "$SK" | head -1)" = "$s" ]
+  check "skill $s says conductor only" grep -qi 'conductor only' "$SK"
+  check "skill $s uses --via skill" grep -q -- '--via skill' "$SK"
+  check "skill $s no context fork" not_grep -q '^context: *fork' "$SK"
+  check "skill $s has worker opt-out" grep -q 'HARNESS_ROLE=worker' "$SK"
+done
+check "skill analyze targets analyst" grep -q 'harness ask analyst' "$REPO/claude/skills/analyze/SKILL.md"
+check "skill implement targets implementer" grep -q 'harness ask implementer' "$REPO/claude/skills/implement/SKILL.md"
+check "skill review targets reviewer" grep -q 'harness ask reviewer' "$REPO/claude/skills/review/SKILL.md"
+check "skill review demands VERDICT" grep -q 'VERDICT' "$REPO/claude/skills/review/SKILL.md"
 
 # --- SessionStart resume hook ----------------------------------------------------------------
 RESUME="$REPO/claude/hooks/conductor-resume.sh"
