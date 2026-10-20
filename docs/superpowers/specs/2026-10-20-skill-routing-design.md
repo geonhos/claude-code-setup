@@ -94,7 +94,7 @@ argument-hint: <what to investigate>
 
 1. "If you are a worker session (your system prompt says HARNESS_ROLE=worker or names you analyst/implementer/reviewer), ignore this skill and do the task yourself." — 사용자 전역 스킬이라 워커 세션에도 보이기 때문.
 2. `$ARGUMENTS`와 대화 맥락으로 **자기완결 브리프**를 `.harness/task-<worker>.md`에 쓴다: 목표, 파일/영역, 제약, 완료 기준, 커밋 여부와 메시지.
-3. `harness ask --via skill <worker> 'Read .harness/task-<worker>.md and do it.'` — Bash timeout 660000, 또는 백그라운드. 작은따옴표 규칙은 conductor.md를 따른다.
+3. `harness ask <worker> 'Read .harness/task-<worker>.md and do it.' --via skill` — Bash timeout 660000, 또는 백그라운드. 작은따옴표 규칙은 conductor.md를 따른다. (기존 CLI 관행대로 옵션은 `<worker> '<instruction>'` 뒤에 온다.)
 4. exit code는 conductor.md의 표대로 처리한다. 리포트 요지만 사용자에게 전달한다.
 
 ### 5.2 워커별 차이
@@ -143,9 +143,10 @@ harness route-log '<json 한 줄>'
 
 ### 6.3 `harness ask --via`
 
-- `harness ask [--via skill|conductor] [--fresh|--keep] <worker> '<instruction>'`. 기본 `conductor`. 다른 값은 exit 1.
+- `harness ask <worker> '<instruction>' [--timeout MS] [--fresh|--keep] [--via skill|conductor]`. 기본 `conductor`. 다른 값은 exit 1 (로그를 남기지 않음). 옵션은 기존 `--fresh`/`--keep`처럼 instruction 뒤에 온다.
+- `harness route-log`는 herdr 없이도 동작해야 한다(훅이 호출). 디스패치에서 `need herdr`/`HERDR_ENV` 검사 **앞**에 처리한다.
 - `ask_finish`에서 (어떤 exit든, 시그널 포함) `delegate` 줄을 `route-log`로 1개 append.
-- 게이트: `harness( .*)?` 정규식이 이미 허용. `tests/gate.test.sh`에 `harness ask --via skill implementer 'x'` allow 케이스를 고정한다.
+- 게이트: `harness( .*)?` 정규식이 이미 허용. `tests/gate.test.sh`에 `harness ask implementer 'x' --via skill` allow 케이스를 고정한다.
 - `VAR=x harness …` 환경변수 접두는 게이트가 막으므로 플래그 방식을 쓴다.
 
 ### 6.4 `claude/hooks/conductor-route.sh` (UserPromptSubmit)
@@ -198,8 +199,8 @@ exit 0
 |---|---|
 | `tests/route.test.sh` (신규) | 샘플 stdin → `routing.jsonl` 1줄, 필드(`event`,`session`,`prompt`,`skill`) 검증 / `HARNESS_ROLE=worker` → 무출력·파일 미생성 / 깨진 JSON → exit 0, 파일 불변 / `PATH`에서 jq 제거 → exit 0 / `.harness/` 없는 cwd → 미기록 / 4001자 prompt → 4000자 / `/implement foo` → `skill:"/implement"`, `/implementation` → null / 크기 초과 → 로테이션 파일 생성 / `HARNESS_ROUTE_LOG=0` → 미기록 |
 | `tests/install.test.sh` | UserPromptSubmit 엔트리 정확히 1개 / 재설치 후에도 1개 / 다른 UserPromptSubmit 훅 보존 / `~/.claude/skills/{analyze,implement,review}` 심링크 존재, 대상이 레포 디렉터리 / 기존 비심링크 디렉터리 백업 |
-| `tests/progress.test.sh` | fake-herdr로 `harness ask --via skill analyst 'x'` → delegate 줄 `source:"skill"` / `--via` 생략 → `"conductor"` / `--via bogus` → exit 1 / `route-log` 쓰기 실패 시 ask exit 불변 |
-| `tests/gate.test.sh` | `harness ask --via skill implementer 'x'` → allow / `harness route-log '{...}'` → allow |
+| `tests/progress.test.sh` | fake-herdr로 `harness ask analyst 'x' --via skill` → delegate 줄 `source:"skill"` / `--via` 생략 → `"conductor"` / `--via bogus` → exit 1, 로그 없음 / `route-log` 쓰기 실패 시 ask exit 불변 |
+| `tests/gate.test.sh` | `harness ask implementer 'x' --via skill` → allow / `harness route-log '{...}'` → allow |
 | 스킬 정적 검사 (route.test.sh 또는 install.test.sh) | 3개 `SKILL.md` 존재, frontmatter `name` == 디렉터리명, 본문에 `--via skill` 포함, `context: fork` 미포함 |
 
 **실측 과제** (구현 계획의 첫 태스크, 결과를 이 스펙에 추기):
