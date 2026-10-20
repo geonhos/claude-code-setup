@@ -28,7 +28,7 @@ conductor 시스템 프롬프트(`claude/agents/conductor.md`)가 **모든 요�
 
 - 결정 모델 설치·호출·힌트 주입 (3·4단계).
 - 학습 데이터 export 스크립트 (3단계에서 로그 스키마가 확정된 뒤).
-- 게이트 deny 메시지 문구 변경 (고정 문자열 = 프롬프트 캐시 안정성 유지).
+- 게이트 판정 로직 변경 (deny 메시지의 **문구**만 스킬명으로 바꾼다 — §11 참고).
 
 ## 3. 구성 요소
 
@@ -177,7 +177,7 @@ exit 0
 
 ## 7. 설치 (`install.sh`)
 
-- (a) `claude/skills/*/` → `~/.claude/skills/<name>` **디렉터리 심링크**(`ln -sfn`). 기존 항목이 심링크가 아니면 `.bak.<ts>`로 백업 후 교체. agents 루프와 같은 형태.
+- (a) `claude/skills/*/` → `~/.claude/skills/<name>` **디렉터리 심링크**(`ln -sfn`). 기존 항목이 우리 레포를 가리키는 심링크가 아니면 `~/.claude/skills.bak/<name>.<ts>`로 옮긴 뒤 교체. 백업을 `skills/` **밖**에 두는 이유: `~/.claude/skills/*/SKILL.md`는 전부 스킬로 로드되므로 `skills/analyze.bak.<ts>/SKILL.md`가 남아 있으면 중복 스킬이 된다. agents 루프와 같은 형태.
 - (b) 기존 jq 필터에 `UserPromptSubmit` 3줄 추가: `//= []` → 우리 command 포함 엔트리에서 그 hook 제거, 빈 엔트리 삭제 → `{hooks:[{type:"command", command:$route}]}` append. **matcher 없음.** 같은 패턴이 세 번 반복되므로 jq `def` 함수로 묶는 리팩터는 선택.
 - (c) `installed:` 출력에 skills와 UserPromptSubmit 줄 추가.
 - 재실행 멱등: 심링크 교체, 훅 엔트리 정확히 1개 유지, 타 훅 보존.
@@ -234,4 +234,4 @@ exit 0
 | 직접 답변 기록 | 기록하지 않고 오프라인 조인 | 같은 줄 보강: JSONL 재작성·경합. 별도 "direct" 줄: 훅 시점엔 결정을 모름 |
 | 로그 헬퍼 위치 | `harness route-log` 서브커맨드 | 훅 내 복제: 로테이션 로직 두 곳 |
 | 훅 등록 위치 | `settings.json` + 스크립트 첫 줄 role 체크 | `conductor.md` frontmatter hooks: trusted dir에서만 발동, 기존 관행과 다름 |
-| 게이트 deny 메시지 | 변경 없음 | 스킬명으로 바꾸기: 고정 문자열 규칙·캐시 안정성 우선. conductor.md가 스킬 경유를 우선하므로 충돌 없음 |
+| 게이트 deny 메시지 | 워커 이름 대신 **스킬명**을 지시 (`/analyze`, `/implement`) | 처음엔 "변경 없음"으로 정했으나 Task 7 리뷰에서 뒤집음: conductor.md의 "deny 사유대로 하라" 규칙과 deny 문구의 `harness ask implementer`가 합쳐지면 모델이 스킬을 건너뛰고 직접 ask를 쳐서 `source=conductor`로 잘못 기록된다. 문구는 여전히 고정 문자열이므로 캐시 안정성은 유지된다 |
