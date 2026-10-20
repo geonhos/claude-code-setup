@@ -13,8 +13,8 @@ change yourself.
 ## Steps
 
 1. Write a self-contained brief to `.harness/task-implementer.md` from
-   `$ARGUMENTS` and the conversation. The implementer starts with a cleared
-   context every time. Cover:
+   `$ARGUMENTS` and the conversation. The implementer normally starts with a
+   cleared context (it is kept after a non-zero exit such as 5). Cover:
    - **Goal**: the exact behaviour wanted, and what must not change.
    - **Files or area** to touch; the spec or plan under `docs/` to follow.
    - **Tests**: which to add or update, and the command that must pass.

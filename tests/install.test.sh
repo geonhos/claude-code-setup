@@ -36,7 +36,8 @@ cat > "$CLAUDE_DIR/settings.json" <<'EOF'
       { "matcher": "Bash", "hooks": [ { "type": "command", "command": "/opt/other-hook.sh" } ] }
     ],
     "Stop": [ { "matcher": "", "hooks": [ { "type": "command", "command": "/opt/stop.sh" } ] } ],
-    "SessionStart": [ { "matcher": "startup", "hooks": [ { "type": "command", "command": "/opt/session.sh" } ] } ]
+    "SessionStart": [ { "matcher": "startup", "hooks": [ { "type": "command", "command": "/opt/session.sh" } ] } ],
+    "UserPromptSubmit": [ { "hooks": [ { "type": "command", "command": "/opt/prompt.sh" } ] } ]
   }
 }
 EOF
@@ -44,6 +45,7 @@ printf 'node_modules/\n' > "$GIT_IGNORE"
 
 run_install() { install_in "$T"; }
 
+mkdir -p "$CLAUDE_DIR/skills/analyze"; echo old > "$CLAUDE_DIR/skills/analyze/SKILL.md"
 run_install
 check "first run rc" [ "$RC" -eq 0 ]
 
@@ -68,6 +70,20 @@ check "agent set to conductor" [ "$(jq -r .agent "$S")" = conductor ]
 for a in analyst implementer reviewer conductor solo; do
   check "agent symlink $a" [ "$(readlink "$CLAUDE_DIR/agents/$a.md")" = "$REPO/claude/agents/$a.md" ]
 done
+for s in analyze implement review; do
+  check "skill symlink $s" [ "$(readlink "$CLAUDE_DIR/skills/$s")" = "$REPO/claude/skills/$s" ]
+  check "skill symlink $s resolves" [ -f "$CLAUDE_DIR/skills/$s/SKILL.md" ]
+done
+check "foreign skill dir backed up" ls -d "$CLAUDE_DIR"/skills/analyze.bak.* >/dev/null 2>&1
+check "foreign skill dir warning" grep -q 'skills/analyze existed and was backed up' "$T/out.txt"
+ROUTE="$REPO/claude/hooks/conductor-route.sh"
+check "route hook executable" [ -x "$ROUTE" ]
+check "route hook added once" [ "$(jq --arg r "$ROUTE" '[.hooks.UserPromptSubmit[]? | select(any(.hooks[]?; .command==$r))] | length' "$S")" -eq 1 ]
+check "route hook has no matcher" jq -e --arg r "$ROUTE" '.hooks.UserPromptSubmit[] | select(any(.hooks[]?; .command==$r)) | has("matcher") | not' "$S" >/dev/null
+check "route hook type command" jq -e --arg r "$ROUTE" '.hooks.UserPromptSubmit[] | select(any(.hooks[]?; .command==$r)) | .hooks[0].type=="command"' "$S" >/dev/null
+check "other UserPromptSubmit hook preserved" [ "$(jq '[.hooks.UserPromptSubmit[]? | select(any(.hooks[]?; .command=="/opt/prompt.sh"))] | length' "$S")" -eq 1 ]
+check "installed output lists route hook" grep -q 'route hook' "$T/out.txt"
+check "installed output lists skills" grep -q 'skills ' "$T/out.txt"
 check "harness symlink" [ "$(readlink "$BIN_DIR/harness")" = "$REPO/bin/harness" ]
 check "harness-verify symlink" [ "$(readlink "$BIN_DIR/harness-verify")" = "$REPO/bin/harness-verify" ]
 check "CLAUDE.md not created" [ ! -e "$CLAUDE_DIR/CLAUDE.md" ]
@@ -83,11 +99,18 @@ check "other hook still once" [ "$(jq '[.hooks.PreToolUse[] | select(.hooks[] | 
 check "agent still conductor after rerun" [ "$(jq -r .agent "$S")" = conductor ]
 check "CLAUDE.md still absent after rerun" [ ! -e "$CLAUDE_DIR/CLAUDE.md" ]
 check "gitignore line once" [ "$(grep -cx '.harness/' "$GIT_IGNORE")" -eq 1 ]
+check "route hook still once after rerun" [ "$(jq --arg r "$REPO/claude/hooks/conductor-route.sh" '[.hooks.UserPromptSubmit[]? | select(any(.hooks[]?; .command==$r))] | length' "$S")" -eq 1 ]
+check "other UserPromptSubmit still once" [ "$(jq '[.hooks.UserPromptSubmit[]? | select(any(.hooks[]?; .command=="/opt/prompt.sh"))] | length' "$S")" -eq 1 ]
+check "skill symlink survives rerun" [ "$(readlink "$CLAUDE_DIR/skills/implement")" = "$REPO/claude/skills/implement" ]
+check "no second skill backup on rerun" [ "$(ls -d "$CLAUDE_DIR"/skills/analyze.bak.* | wc -l | tr -d ' ')" -eq 1 ]
 # fresh HOME with no settings.json at all
 T2=$(newdir fresh)
 install_in "$T2"
 check "fresh install rc" [ "$RC" -eq 0 ]
 check "fresh settings created" jq -e '.hooks.PreToolUse | length == 1' "$T2/claude/settings.json" >/dev/null
+
+check "fresh install has route hook" jq -e '.hooks.UserPromptSubmit | length == 1' "$T2/claude/settings.json" >/dev/null
+check "fresh install has skills" [ -L "$T2/claude/skills/review" ]
 
 # invalid settings must abort without side effects
 assert_untouched() { # DIR ORIGINAL_CONTENT
