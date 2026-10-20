@@ -357,20 +357,25 @@ cmd_route_log() {
   fi
   mkdir -p .harness 2>/dev/null || { echo "harness: route-log: cannot create .harness/" >&2; return 0; }
   stamp=$(date +%Y%m%d-%H%M%S)
-  if [ -f "$ROUTE_JSONL" ] && [ "$(wc -c < "$ROUTE_JSONL" | tr -d ' ')" -gt "${HARNESS_JSONL_MAX:-1048576}" ]; then
+  if [ -f "$ROUTE_JSONL" ] && [ -r "$ROUTE_JSONL" ] && [ "$(wc -c < "$ROUTE_JSONL" | tr -d ' ')" -gt "${HARNESS_JSONL_MAX:-1048576}" ]; then
     mv "$ROUTE_JSONL" "$ROUTE_JSONL.$stamp" && gzip -f "$ROUTE_JSONL.$stamp"
   fi
-  printf '%s\n' "$line" >> "$ROUTE_JSONL" 2>/dev/null \
+  printf '%s\n' "$line" 2>/dev/null >> "$ROUTE_JSONL" \
     || echo "harness: route-log: could not write $ROUTE_JSONL" >&2
   return 0
 }
 
-# ask_via ARGS... — the value after the last `--via` among ask's options
-# (default conductor). Validation is cmd_ask's: it must refuse before any log.
+# ask_via AGENT TEXT [OPTIONS...] — the value after the last `--via` among the
+# options following the two positionals (so instruction text "--via" is never an
+# option). Default conductor; a `--via` with no value yields "". Validation is
+# cmd_ask's: it must refuse before any log.
 ask_via() {
   local v=conductor
+  shift 2
   while [ $# -gt 0 ]; do
-    if [ "$1" = --via ] && [ $# -ge 2 ]; then v=$2; shift 2; else shift; fi
+    if [ "$1" = --via ]; then
+      if [ $# -ge 2 ]; then v=$2; shift 2; else v=''; shift; fi
+    else shift; fi
   done
   printf '%s\n' "$v"
 }
@@ -537,6 +542,7 @@ cmd_ask() {
   ASK_VIA=$(ask_via "$@")
   case "$ASK_VIA" in
     skill|conductor) ;;
+    '') die "--via needs a value: skill or conductor" ;;
     *) die "--via expects skill or conductor (got '$ASK_VIA')" ;;
   esac
   ASK_TMP=$(mktemp "${TMPDIR:-/tmp}/harness-ask.XXXXXX") || ask_inner "$@"

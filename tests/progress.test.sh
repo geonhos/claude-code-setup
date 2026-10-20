@@ -18,7 +18,7 @@ setup() {
   export HARNESS_CLEAR_INTERVAL=0 HARNESS_CLEAR_POLLS=3
   mkdir -p "$FAKE_DIR"
   : > "$FAKE_LOG"
-  unset FAKE_PROMPT_HOOK FAKE_CLEAR HARNESS_CTX_RESET HARNESS_LOG_KEEP HARNESS_LOG_DAYS HARNESS_JSONL_MAX
+  unset FAKE_PROMPT_HOOK FAKE_CLEAR HARNESS_CTX_RESET HARNESS_LOG_KEEP HARNESS_LOG_DAYS HARNESS_JSONL_MAX HARNESS_ROUTE_LOG
   cd "$WORK" || exit 1
   printf 'fake/\nherdr.log\nprojects/\n' > .gitignore
 }
@@ -110,6 +110,12 @@ check "route: bogus via not logged" [ "$(nlines .harness/routing.jsonl)" -eq 3 ]
 check "route: bogus via no progress line" [ "$(nlines .harness/progress.jsonl)" -eq 3 ]
 runerr ask analyst "x" --via
 check "route: --via without value rc 1" [ "$RC" -eq 1 ]
+check "route: --via without value not logged" [ "$(nlines .harness/routing.jsonl)" -eq 3 ]
+check "route: --via without value no progress line" [ "$(nlines .harness/progress.jsonl)" -eq 3 ]
+hook_report analyst '# analyst report — r\nstatus: done\n'
+run ask analyst "--via" --via skill
+check "route: text --via is not an option" [ "$RC" -eq 0 ]
+check "route: text --via source skill" [ "$(rj .source)" = skill ]
 # exit code of a failing ask is still recorded
 rm -f "$FAKE_DIR/live.analyst"; echo idle > "$FAKE_DIR/live.analyst"
 unset FAKE_PROMPT_HOOK
@@ -122,6 +128,7 @@ hook_report analyst '# analyst report — r\nstatus: done\n'
 runerr ask analyst "y"
 check "route: unwritable log keeps rc 0" [ "$RC" -eq 0 ]
 check "route: unwritable log warns" grep -q 'route-log' <<<"$OUT"
+check "route: unwritable log only our warning" [ "$(grep -c 'Permission denied' <<<"$OUT")" -eq 0 ]
 chmod 644 .harness/routing.jsonl
 
 # --- exit 3 (no report): screen tail in log ----------------------------------------------
@@ -437,6 +444,7 @@ check "HUP: grandchild gone" [ -n "$GC" ] && ! kill -0 "$GC" 2>/dev/null
 sigtest TERM 143
 check "TERM: grandchild gone" [ -n "$GC" ] && ! kill -0 "$GC" 2>/dev/null
 check "TERM: jsonl exit 143" [ "$(jl .exit)" = 143 ]
+check "route: delegate on TERM" [ "$(rj .exit)" = 143 ]
 
 # --- spawn env ----------------------------------------------------------------------------------------------------------------------------------------------
 setup
