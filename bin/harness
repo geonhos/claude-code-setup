@@ -3,7 +3,7 @@
 # Spec: docs/superpowers/specs/2026-10-12-herdr-conductor-setup-design.md
 #
 #   harness spawn  <agent> [--direction right|down]
-#   harness ask    <agent> '<instruction>' [--timeout MS] [--fresh|--keep]
+#   harness ask    <agent> '<instruction>' [--timeout MS] [--fresh|--keep] [--via skill|conductor]
 #   harness report <agent>
 #   harness status
 #   harness close  <agent>
@@ -24,6 +24,8 @@
 # .harness/ lives in the directory where the conductor runs ($PWD).
 # Every ask is logged to .harness/log/ and .harness/progress.jsonl, and
 # .harness/progress.md is regenerated (log errors only warn on stderr).
+# Every ask also appends a `delegate` line to .harness/routing.jsonl (source =
+# --via, default conductor; the /analyze /implement /review skills pass skill).
 # Context reset before an ask on a live worker: implementer always, analyst/
 # reviewer when ctx > HARNESS_CTX_RESET (default 120000) or with --fresh;
 # --keep skips it. Reset = /clear, else close + respawn.
@@ -45,7 +47,7 @@ usage() {
   cat >&2 <<EOF
 usage:
   harness spawn  <agent> [--direction right|down]
-  harness ask    <agent> '<instruction>' [--timeout MS] [--fresh|--keep]
+  harness ask    <agent> '<instruction>' [--timeout MS] [--fresh|--keep] [--via skill|conductor]
   harness report <agent>
   harness status
   harness close  <agent>
@@ -363,6 +365,27 @@ cmd_route_log() {
   return 0
 }
 
+# ask_via ARGS... — the value after the last `--via` among ask's options
+# (default conductor). Validation is cmd_ask's: it must refuse before any log.
+ask_via() {
+  local v=conductor
+  while [ $# -gt 0 ]; do
+    if [ "$1" = --via ] && [ $# -ge 2 ]; then v=$2; shift 2; else shift; fi
+  done
+  printf '%s\n' "$v"
+}
+
+# record_route_delegate <agent> <source> <rc> — one `delegate` line in
+# .harness/routing.jsonl; session from CLAUDE_CODE_SESSION_ID (null if unset)
+record_route_delegate() {
+  local line
+  line=$(jq -n -c --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg worker "$1" --arg source "$2" \
+    --argjson exit "$(num_or_null "$3")" --arg session "${CLAUDE_CODE_SESSION_ID:-}" '
+    def nz: if . == "" then null else . end;
+    {ts: $ts, event: "delegate", session: ($session | nz), worker: $worker, source: $source, exit: $exit}' 2>/dev/null) || return 0
+  cmd_route_log "$line"
+}
+
 # archive_late <agent> <report> — a report still on disk that no logged ask
 # carries (it appeared after an exit-4 ask): copy it into the log, with a jsonl
 # line (exit null, late true), before the next ask deletes it. A report already
@@ -499,6 +522,7 @@ ask_finish() {
   cat "$ASK_TMP" 2>/dev/null
   record_progress "$ASK_AGENT" "$ASK_TEXT" "$rc" "$ASK_T0" "$ASK_HB" "$ASK_TMP" "$CTX_BEFORE" \
     || echo "harness: could not write the progress log (ask result unchanged)" >&2
+  record_route_delegate "$ASK_AGENT" "${ASK_VIA:-conductor}" "$rc"
   rm -f "$ASK_TMP"
   exit "$rc"
 }
@@ -510,6 +534,11 @@ cmd_ask() {
   local agent=${1:-} text=${2:-} cb
   case " $AGENTS " in *" $agent "*) ;; *) ask_inner "$@" ;; esac
   [ -n "$text" ] || ask_inner "$@"
+  ASK_VIA=$(ask_via "$@")
+  case "$ASK_VIA" in
+    skill|conductor) ;;
+    *) die "--via expects skill or conductor (got '$ASK_VIA')" ;;
+  esac
   ASK_TMP=$(mktemp "${TMPDIR:-/tmp}/harness-ask.XXXXXX") || ask_inner "$@"
   ASK_AGENT=$agent ASK_TEXT=$text ASK_DONE=0 ASK_PID=""
   ASK_T0=$(date +%s); ASK_HB=$(git_head); cb=$(ctx_tokens "$agent" 2>/dev/null) || cb=""
@@ -537,6 +566,9 @@ ask_inner() {
         timeout=$2; shift 2 ;;
       --fresh) fresh=1; shift ;;
       --keep) keep=1; shift ;;
+      --via)
+        [ $# -ge 2 ] || usage
+        shift 2 ;;
       *) usage ;;
     esac
   done

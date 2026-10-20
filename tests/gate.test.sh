@@ -132,6 +132,8 @@ expect deny  $C "Monitor"                 "$(tool Monitor '{"command":"tail -f s
 
 # --- Bash: allowlist ---------------------------------------------------------
 expect allow $C "bash harness ask"        "$(bcmd 'harness ask analyst "what is this"')"
+expect allow $C "bash harness ask --via"  "$(bcmd "harness ask implementer 'x' --via skill")"
+expect allow $C "bash harness route-log"  "$(bcmd "harness route-log '{\"event\":\"prompt\"}'")"
 expect allow $C "bash harness status"     "$(bcmd 'harness status')"
 expect allow $C "bash herdr"              "$(bcmd 'herdr agent list')"
 expect allow $C "bash gh"                 "$(bcmd 'gh pr view 12')"

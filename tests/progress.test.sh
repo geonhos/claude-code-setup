@@ -82,6 +82,48 @@ long=$(printf 'x%.0s' $(seq 1 300))
 run ask analyst "$long"
 check "jsonl: instr 160 chars" [ "$(jl '.instr|length')" -eq 160 ]
 
+# --- routing.jsonl delegate line per ask --------------------------------------------
+rj() { jq -r "$1" "$WORK/.harness/routing.jsonl" 2>/dev/null | tail -n 1; }
+unset CLAUDE_CODE_SESSION_ID  # the host session must not leak into the null-session case
+setup
+echo idle > "$FAKE_DIR/live.analyst"
+hook_report analyst '# analyst report — r\nstatus: done\n'
+run ask analyst "look" --via skill
+check "route: ask rc" [ "$RC" -eq 0 ]
+check "route: one delegate line" [ "$(nlines .harness/routing.jsonl)" -eq 1 ]
+check "route: event" [ "$(rj .event)" = delegate ]
+check "route: worker" [ "$(rj .worker)" = analyst ]
+check "route: source skill" [ "$(rj .source)" = skill ]
+check "route: exit 0" [ "$(rj .exit)" = 0 ]
+check "route: session null without env" [ "$(rj .session)" = null ]
+OUT=$(CLAUDE_CODE_SESSION_ID=cond-42 HERDR_ENV=1 HERDR_PANE_ID=w1:p1 PATH="$FAKE_BIN:$HERE/../bin:$PATH" $GUARD /bin/bash "$HARNESS" ask analyst "again" 2>/dev/null); RC=$?
+check "route: default source conductor" [ "$(rj .source)" = conductor ]
+check "route: session from env" [ "$(rj .session)" = cond-42 ]
+check "route: two lines" [ "$(nlines .harness/routing.jsonl)" -eq 2 ]
+run ask analyst "x" --via skill --fresh
+check "route: --via combines with --fresh" [ "$RC" -eq 0 ]
+check "route: three lines" [ "$(nlines .harness/routing.jsonl)" -eq 3 ]
+runerr ask analyst "x" --via bogus
+check "route: bogus via rc 1" [ "$RC" -eq 1 ]
+check "route: bogus via message" grep -q -- '--via' <<<"$OUT"
+check "route: bogus via not logged" [ "$(nlines .harness/routing.jsonl)" -eq 3 ]
+check "route: bogus via no progress line" [ "$(nlines .harness/progress.jsonl)" -eq 3 ]
+runerr ask analyst "x" --via
+check "route: --via without value rc 1" [ "$RC" -eq 1 ]
+# exit code of a failing ask is still recorded
+rm -f "$FAKE_DIR/live.analyst"; echo idle > "$FAKE_DIR/live.analyst"
+unset FAKE_PROMPT_HOOK
+run ask analyst "no report please" --via skill
+check "route: exit 3 recorded" [ "$(rj .exit)" = 3 ]
+check "route: rc still 3" [ "$RC" -eq 3 ]
+# routing log failure does not change the ask result
+chmod 000 .harness/routing.jsonl
+hook_report analyst '# analyst report — r\nstatus: done\n'
+runerr ask analyst "y"
+check "route: unwritable log keeps rc 0" [ "$RC" -eq 0 ]
+check "route: unwritable log warns" grep -q 'route-log' <<<"$OUT"
+chmod 644 .harness/routing.jsonl
+
 # --- exit 3 (no report): screen tail in log ----------------------------------------------
 setup
 echo idle > "$FAKE_DIR/live.analyst"

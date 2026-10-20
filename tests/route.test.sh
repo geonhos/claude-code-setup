@@ -2,6 +2,7 @@
 # Tests for `harness route-log` and claude/hooks/conductor-route.sh.
 # Run: /bin/bash tests/route.test.sh
 set -u
+unset HARNESS_ROUTE_LOG HARNESS_JSONL_MAX
 HERE=$(cd "$(dirname "$0")" && pwd)
 REPO=$(cd "$HERE/.." && pwd)
 HARNESS="$REPO/bin/harness"
@@ -105,6 +106,11 @@ check "hook: prefix only is not a skill" [ "$(last .skill)" = null ]
 hook "$(payload "$P" '/analyze
 multi line')"
 check "hook: skill before newline" [ "$(last .skill)" = /analyze ]
+uni='한글 "q" '"'"'s'"'"' \ 🎉 $(x) `y`'
+hook "$(payload "$P" "$uni" 12345)"
+check "hook: unicode and quotes round-trip" [ "$(last .prompt)" = "$uni" ]
+hook "$(jq -n -c --arg c "$P" --arg p "$uni" '{session_id:12345, cwd:$c, prompt:$p}')"
+check "hook: numeric session_id stringified" [ "$(last .session)" = 12345 ]
 
 long=$(head -c 4001 /dev/zero | tr '\0' 'y')
 hook "$(payload "$P" "$long")"
