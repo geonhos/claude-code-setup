@@ -74,7 +74,8 @@ for s in analyze implement review; do
   check "skill symlink $s" [ "$(readlink "$CLAUDE_DIR/skills/$s")" = "$REPO/claude/skills/$s" ]
   check "skill symlink $s resolves" [ -f "$CLAUDE_DIR/skills/$s/SKILL.md" ]
 done
-check "foreign skill dir backed up" ls -d "$CLAUDE_DIR"/skills/analyze.bak.* >/dev/null 2>&1
+check "foreign skill dir backed up" ls -d "$CLAUDE_DIR"/skills.bak/analyze.* >/dev/null 2>&1
+check "no backup left inside skills/" [ -z "$(ls -d "$CLAUDE_DIR"/skills/*.bak.* 2>/dev/null)" ]
 check "foreign skill dir warning" grep -q 'skills/analyze existed and was backed up' "$T/out.txt"
 ROUTE="$REPO/claude/hooks/conductor-route.sh"
 check "route hook executable" [ -x "$ROUTE" ]
@@ -83,7 +84,7 @@ check "route hook has no matcher" jq -e --arg r "$ROUTE" '.hooks.UserPromptSubmi
 check "route hook type command" jq -e --arg r "$ROUTE" '.hooks.UserPromptSubmit[] | select(any(.hooks[]?; .command==$r)) | .hooks[0].type=="command"' "$S" >/dev/null
 check "other UserPromptSubmit hook preserved" [ "$(jq '[.hooks.UserPromptSubmit[]? | select(any(.hooks[]?; .command=="/opt/prompt.sh"))] | length' "$S")" -eq 1 ]
 check "installed output lists route hook" grep -q 'route hook' "$T/out.txt"
-check "installed output lists skills" grep -q 'skills ' "$T/out.txt"
+check "installed output lists skills" grep -q '^  skills  ' "$T/out.txt"
 check "harness symlink" [ "$(readlink "$BIN_DIR/harness")" = "$REPO/bin/harness" ]
 check "harness-verify symlink" [ "$(readlink "$BIN_DIR/harness-verify")" = "$REPO/bin/harness-verify" ]
 check "CLAUDE.md not created" [ ! -e "$CLAUDE_DIR/CLAUDE.md" ]
@@ -102,15 +103,18 @@ check "gitignore line once" [ "$(grep -cx '.harness/' "$GIT_IGNORE")" -eq 1 ]
 check "route hook still once after rerun" [ "$(jq --arg r "$REPO/claude/hooks/conductor-route.sh" '[.hooks.UserPromptSubmit[]? | select(any(.hooks[]?; .command==$r))] | length' "$S")" -eq 1 ]
 check "other UserPromptSubmit still once" [ "$(jq '[.hooks.UserPromptSubmit[]? | select(any(.hooks[]?; .command=="/opt/prompt.sh"))] | length' "$S")" -eq 1 ]
 check "skill symlink survives rerun" [ "$(readlink "$CLAUDE_DIR/skills/implement")" = "$REPO/claude/skills/implement" ]
-check "no second skill backup on rerun" [ "$(ls -d "$CLAUDE_DIR"/skills/analyze.bak.* | wc -l | tr -d ' ')" -eq 1 ]
+check "no skill backup warning on rerun" not_grep -q 'skills/.*backed up' "$T/out.txt"
 # fresh HOME with no settings.json at all
 T2=$(newdir fresh)
+mkdir -p "$T2/claude/skills"; ln -s /tmp/elsewhere "$T2/claude/skills/review"
 install_in "$T2"
 check "fresh install rc" [ "$RC" -eq 0 ]
 check "fresh settings created" jq -e '.hooks.PreToolUse | length == 1' "$T2/claude/settings.json" >/dev/null
 
 check "fresh install has route hook" jq -e '.hooks.UserPromptSubmit | length == 1' "$T2/claude/settings.json" >/dev/null
 check "fresh install has skills" [ -L "$T2/claude/skills/review" ]
+check "misdirected skill symlink replaced" [ "$(readlink "$T2/claude/skills/review")" = "$REPO/claude/skills/review" ]
+check "misdirected skill symlink backed up" ls -d "$T2"/claude/skills.bak/review.* >/dev/null 2>&1
 
 # invalid settings must abort without side effects
 assert_untouched() { # DIR ORIGINAL_CONTENT

@@ -76,7 +76,8 @@ for d in "$REPO"/claude/skills/*/; do
   [ -f "$d/SKILL.md" ] || continue
   dest="$CLAUDE_DIR/skills/$(basename "$d")"
   if { [ -e "$dest" ] || [ -L "$dest" ]; } && [ "$(readlink "$dest" || true)" != "$d" ]; then
-    sbak="$dest.bak.$(date +%Y%m%d%H%M%S)"
+    mkdir -p "$CLAUDE_DIR/skills.bak"
+    sbak="$CLAUDE_DIR/skills.bak/$(basename "$d").$(date +%Y%m%d%H%M%S)"
     mv "$dest" "$sbak"
     echo "warning: $dest existed and was backed up to $sbak" >&2
   fi
