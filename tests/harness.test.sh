@@ -492,6 +492,45 @@ run ask analyst "q"
 check "subdir cwd: ask accepted" [ "$RC" -eq 0 ]
 unset FAKE_PROMPT_HOOK
 
+# same-prefix sibling dir is not "inside" the repo
+setup
+echo idle > "$FAKE_DIR/live.$(WN analyst)"
+mkdir -p "$WORK-other"; echo "$(cd "$WORK-other" && pwd -P)" > "$FAKE_DIR/cwd.$(WN analyst)"
+run ask analyst "q"
+check "sibling prefix cwd: ask exit 6" [ "$RC" -eq 6 ]
+rmdir "$WORK-other"
+
+# worker cwd given via a symlink to the repo is accepted
+setup
+LINK="$WORK-link"; ln -s "$WORK" "$LINK"
+echo idle > "$FAKE_DIR/live.$(WN analyst)"
+echo "$LINK" > "$FAKE_DIR/cwd.$(WN analyst)"
+export FAKE_PROMPT_HOOK="mkdir -p $WORK/.harness/reports; printf '# r\nstatus: done\n' > $WORK/.harness/reports/analyst.md"
+run ask analyst "q"
+check "symlink cwd: ask accepted" [ "$RC" -eq 0 ]
+echo "$LINK/gone" > "$FAKE_DIR/cwd.$(WN analyst)"
+run ask analyst "q"
+check "symlink vanished cwd: ask accepted" [ "$RC" -eq 0 ]
+unset FAKE_PROMPT_HOOK
+rm -f "$LINK"
+
+# close on an out-of-repo worker -> exit 6
+setup
+echo idle > "$FAKE_DIR/live.$(WN analyst)"
+echo "/nonexistent-elsewhere" > "$FAKE_DIR/cwd.$(WN analyst)"
+run close analyst
+check "foreign cwd: close exit 6" [ "$RC" -eq 6 ]
+
+# herdr reports no cwd -> accepted with a warning
+setup
+echo idle > "$FAKE_DIR/live.$(WN analyst)"
+: > "$FAKE_DIR/cwd.$(WN analyst)"
+export FAKE_PROMPT_HOOK="mkdir -p $WORK/.harness/reports; printf '# r\nstatus: done\n' > $WORK/.harness/reports/analyst.md"
+run ask analyst "q"
+check "missing cwd: ask accepted" [ "$RC" -eq 0 ]
+check "missing cwd: warning" grep -q "did not report cwd" <<<"$OUT"
+unset FAKE_PROMPT_HOOK
+
 # old unscoped worker of this repo -> one-line hint, no kill
 setup
 echo idle > "$FAKE_DIR/live.analyst"

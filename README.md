@@ -43,7 +43,7 @@ cd ~/workspace/claude-code-setup
 
 ```
 harness spawn  <agent> [--direction right|down]
-harness ask    <agent> '<instruction>' [--timeout MS] [--fresh|--keep] [--via skill|conductor]   # exit 2 blocked · 3 no report · 4 still working · 5 verification failed
+harness ask    <agent> '<instruction>' [--timeout MS] [--fresh|--keep] [--via skill|conductor]   # exit 2 blocked · 3 no report · 4 still working · 5 verification failed · 6 worker runs outside this repo
 harness report <agent>                                   # print existing report (same exit codes as ask), 3 none, 4 still working, 6 worker runs outside this repo (worker names are `<role>-<repo8>`)
 harness status
 harness close  <agent>

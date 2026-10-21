@@ -95,8 +95,16 @@ wname() { printf '%s-%s' "$1" "$REPO8"; }
 
 # cwd_in_repo <dir> — 0 when dir (symlinks resolved) is the repo top-level or inside it
 cwd_in_repo() {
-  local d
-  d=$( cd "$1" 2>/dev/null && pwd -P ) || d=$1
+  local d=$1 rest=""
+  # a vanished path: resolve the deepest existing ancestor, re-append the rest,
+  # so /link/gone and /repo/gone behave the same
+  while [ ! -d "$d" ] && [ "$d" != "/" ] && [ "$d" != "." ] && [ -n "$d" ]; do
+    rest="/${d##*/}$rest"; d=${d%/*}; [ -n "$d" ] || d=/
+  done
+  d=$( cd "$d" 2>/dev/null && pwd -P ) || d=$1
+  [ "$d" = "/" ] && d=""
+  d="$d$rest"
+  [ -n "$d" ] || d=/
   case "$d" in "$REPO_TOP"|"$REPO_TOP"/*) return 0 ;; esac
   return 1
 }
@@ -106,7 +114,10 @@ cwd_in_repo() {
 check_worker_cwd() {
   local c
   c=$(printf '%s' "$2" | jq -r '.result.agent.cwd // empty' 2>/dev/null)
-  [ -n "$c" ] || return 0
+  if [ -z "$c" ]; then
+    echo "harness: warning: herdr did not report cwd for $(wname "$1"); repo check skipped" >&2
+    return 0
+  fi
   cwd_in_repo "$c" && return 0
   echo "harness: worker $(wname "$1") runs in $c, outside this repo ($REPO_TOP); refusing to use it. Close that pane or run harness from the right directory." >&2
   exit 6
