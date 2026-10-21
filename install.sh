@@ -33,6 +33,7 @@ if [ "${1:-}" = "--test" ]; then
   /bin/bash "$REPO/tests/route.test.sh"   || rc=1
   /bin/bash "$REPO/tests/install.test.sh" || rc=1
   /bin/bash "$REPO/tests/wiki.test.sh"    || rc=1
+  /bin/bash "$REPO/tests/retro.test.sh"   || rc=1
   # lint the real wiki so a bad page fails CI
   /bin/bash "$REPO/bin/harness" wiki-lint "$REPO/docs/wiki" || { echo "wiki-lint FAILED"; rc=1; }
   exit $rc
