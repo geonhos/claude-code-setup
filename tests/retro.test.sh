@@ -123,7 +123,8 @@ run report analyst
 check "late: report rc 0" [ "$RC" -eq 0 ]
 check "late: notice" grep -q "^retro: candidate queued (late report)" <<<"$OUT"
 check "late: same candidate extended" [ "$(ncand)" -eq 1 ] && [ "$(cand .late)" = true ] && [ "$(cand .ask_id)" = "$id" ]
-check "late: report path added" [ "$(cand .report)" = ".harness/reports/analyst.md" ]
+check "late: report snapshot path (stable)" [ "$(cand .report)" = ".harness/retro/reports/$id.md" ]
+check "late: report snapshot exists" grep -q '^# analyst report' ".harness/retro/reports/$id.md"
 run report analyst
 check "late: second collect silent" not grep -q "$QUEUED" <<<"$OUT"
 setup   # report after a good ask is not late
@@ -183,10 +184,12 @@ before=$(grep -c 'agent prompt' "$FAKE_LOG")
 run retro --dry-run
 check "retro dry-run: rc 0" [ "$RC" -eq 0 ]
 check "retro dry-run: lists both" [ "$(printf '%s\n' "$OUT" | grep -c 'exit 4')" -ge 2 ]
-check "retro dry-run: brief path" grep -q 'brief: .harness/task-retro.md' <<<"$OUT"
+check "retro dry-run: says nothing written" grep -q 'dry run: no ask sent, nothing written' <<<"$OUT"
+check "retro dry-run: no brief file written" [ ! -e .harness/task-retro.md ]
+printf '%s\n' "$OUT" > "$WORK/dry-brief.md"
 check "retro dry-run: no ask sent" [ "$(grep -c 'agent prompt' "$FAKE_LOG")" -eq "$before" ]
 check "retro dry-run: candidates kept" [ "$(ncand)" -eq 2 ]
-B=.harness/task-retro.md
+B="$WORK/dry-brief.md"
 check "brief: has both ask-ids" [ "$(grep -c '^### ' $B)" -eq 2 ]
 check "brief: Symptom/Cause/Next time" grep -q 'Symptom.*Cause.*Next time' <<<"$(tr '\n' ' ' < $B)"
 check "brief: mandatory Evidence" grep -q 'Evidence:' $B
@@ -196,6 +199,9 @@ check "brief: inbox output name" grep -q 'docs/wiki/inbox/<YYYY-MM-DD>-retro-<as
 check "brief: no prompt text" not grep -q 'PROMPT-TEXT' $B
 check "brief: no screen text" not grep -q 'fake screen' $B
 check "brief: log paths" grep -q '^- log: .harness/log/' $B
+check "brief: inbox is committed / no secrets" grep -q 'committed to git: never copy prompt text, screen text, secrets, tokens' $B
+check "brief: skip ask-ids already in inbox" grep -q 'Skip any ask-id that already appears' $B
+check "brief: evidence not only rotating paths" grep -q 'rotate away' $B
 
 # real path, analyst fails (blocked -> exit 2): candidates stay
 echo blocked > "$FAKE_DIR/live.$(WN analyst)"
@@ -207,10 +213,11 @@ check "retro fail: ask used --via retro" grep -q '"source":"retro"' .harness/rou
 # real path, analyst ok: candidates move to done/
 echo idle > "$FAKE_DIR/live.$(WN analyst)"
 hook analyst '# analyst report\nstatus: done\n'
+clears=$(grep -c "agent prompt $(WN analyst) /clear" "$FAKE_LOG")
 run retro
 check "retro ok: rc 0" [ "$RC" -eq 0 ]
 check "retro ok: brief instruction sent" grep -q 'task-retro.md' "$FAKE_LOG"
-check "retro ok: asked with --fresh" true
+check "retro ok: asked with --fresh (/clear sent)" [ "$(grep -c "agent prompt $(WN analyst) /clear" "$FAKE_LOG")" -gt "$clears" ]
 check "retro ok: pending emptied" [ "$(ncand)" -eq 0 ]
 check "retro ok: moved to done/" [ "$(ls .harness/retro/done/*.json | wc -l | tr -d ' ')" -eq 2 ]
 check "retro ok: processed line" grep -q 'retro: 2 candidates processed' <<<"$OUT"
@@ -220,8 +227,33 @@ setup   # repo without docs/wiki: brief points to .harness/retro/inbox
 echo idle > "$FAKE_DIR/live.$(WN analyst)"
 run ask analyst "x" --timeout 2000
 run retro --dry-run
-check "retro no wiki: brief output dir" grep -q '.harness/retro/inbox/' .harness/task-retro.md
-check "retro no wiki: says do not create docs/wiki" grep -q 'Do not create docs/wiki' .harness/task-retro.md
+check "retro no wiki: brief output dir" grep -q '.harness/retro/inbox/' <<<"$OUT"
+check "retro no wiki: says do not create docs/wiki" grep -q 'Do not create docs/wiki' <<<"$OUT"
+
+setup; mkdir -p docs/wiki   # retro ask times out, its report arrives later: candidates move on collect
+echo idle > "$FAKE_DIR/live.$(WN reviewer)"
+run ask reviewer "x" --timeout 2000
+check "late retro setup: 1 candidate" [ "$(ncand)" -eq 1 ]
+echo blocked > "$FAKE_DIR/live.$(WN analyst)"
+run retro
+echo idle > "$FAKE_DIR/live.$(WN analyst)"
+check "late retro: candidate kept after a non-zero retro ask" [ "$(ncand)" -eq 1 ]
+if [ "$(ncand)" -eq 1 ]; then
+  mkdir -p .harness/reports; printf '# analyst report\nstatus: done\n' > .harness/reports/analyst.md
+  run report analyst
+  check "late retro: candidates moved on collect" [ "$(ncand)" -eq 0 ]
+  check "late retro: processed notice" grep -q 'processed (late retro report)' <<<"$OUT"
+  check "late retro: no candidate for the retro ask itself" [ "$(ls .harness/retro/done/*.json | wc -l | tr -d ' ')" -eq 1 ]
+fi
+
+setup   # brief points at the log snapshot, not the live task file
+echo idle > "$FAKE_DIR/live.$(WN analyst)"
+mkdir -p .harness; printf 'BRIEF-BODY\n' > .harness/task-analyst.md
+run ask analyst 'Read .harness/task-analyst.md and do it.' --timeout 2000
+check "brief field: log#brief" [ "$(cand .brief)" = "$(cand .log)#brief" ]
+check "brief field: log holds the brief" grep -q 'BRIEF-BODY' "$(cand .log)"
+run retro --dry-run
+check "brief field: rendered as log section" grep -q '^- brief: .harness/log/.*(its `## Brief` section' <<<"$OUT"
 
 # --via validation
 setup
@@ -231,6 +263,7 @@ run ask analyst "x" --via retro
 check "--via retro accepted" [ "$RC" -eq 0 ]
 run ask analyst "x" --via bogus
 check "--via bogus still refused" [ "$RC" -eq 1 ]
+check "exit 1 (usage error): no candidate" [ "$(ncand)" -eq 0 ]
 
 # --- harness metrics -------------------------------------------------------------------------------------
 # fixed clock: NOW = 2026-10-29T00:00:00Z -> current window 2026-10-01..2026-10-29, previous 2026-09-03..2026-10-01
@@ -297,6 +330,11 @@ check "text: no wiki" grep -q '^wiki: none' <<<"$OUT"
 
 run metrics --since 2026-10-05
 check "since: window start" grep -q '2026-10-05 .. 2026-10-29 (24d)  vs  2026-09-11 .. 2026-10-05' <<<"$OUT"
+run metrics --since 2099-01-01
+check "since: future rc 1" [ "$RC" -eq 1 ]
+check "since: future message" grep -q 'in the future' <<<"$OUT"
+run metrics --since 2026-02-31
+check "since: impossible date rc 1" [ "$RC" -eq 1 ]
 run metrics --since nope
 check "since: bad date rc 1" [ "$RC" -eq 1 ]
 run metrics --bogus

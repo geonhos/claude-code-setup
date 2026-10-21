@@ -458,6 +458,14 @@ retro_write() {
     && mv -f "$f.tmp.$$" "$f" || { rm -f "$f.tmp.$$"; return 1; }
 }
 
+# retro_snapshot <ask-id> <report> — copy a report to .harness/retro/reports/<ask-id>.md
+# (the live report is archived and deleted by the next ask) and print that path.
+retro_snapshot() {
+  local d="$RETRO_DIR/reports"
+  mkdir -p "$d" 2>/dev/null && cp -f "$2" "$d/$1.md" 2>/dev/null && { printf '%s' "$d/$1.md"; return 0; }
+  printf '%s' "$2"
+}
+
 # retro_pending_logs — log paths referenced by pending candidates (rotate_logs keeps them)
 retro_pending_logs() {
   ls "$RETRO_DIR"/*.json >/dev/null 2>&1 || return 0
@@ -467,14 +475,15 @@ retro_pending_logs() {
 # retro_on_ask <agent> <rc> — after an ask is logged: queue a candidate when it is a
 # trigger, print the one-line notice. Never fails; the retro ask itself never queues.
 retro_on_ask() {
-  local agent=$1 rc=$2 reason="" va dur id cur ts rep=""
+  local agent=$1 rc=$2 reason="" va dur id cur ts rep="" bsnap
   [ "${ASK_VIA:-}" != retro ] || return 0
   dur=$(( $(date +%s) - ASK_T0 ))
   va=$(jq -r '.attempts // empty' .harness/verify/implementer.json 2>/dev/null)
   case "$rc" in
     0) ;;
     5) [ "$agent" = reviewer ] || reason="exit 5" ;;
-    143) ;;  # ask wrapper terminated by the caller (interrupt), not a harness failure
+    1) ;;          # usage / pre-flight error (bad option, worker session refusing): nothing ran
+    129|130|143) ;; # ask wrapper hung up, interrupted or terminated by the caller, not a harness failure
     *) reason="exit $rc" ;;
   esac
   if [ -z "$reason" ] && [ "$agent" = implementer ] && digits_only "$va" && [ "$va" -ge 2 ]; then
@@ -485,8 +494,10 @@ retro_on_ask() {
   cur=".harness/asks/$agent.current"
   id=$(awk 'NR == 1 { print $1 }' "$cur" 2>/dev/null); ts=$(awk 'NR == 1 { print $2 }' "$cur" 2>/dev/null)
   if [ -z "$id" ] || ! digits_only "$ts" || [ "$ts" -lt "$ASK_T0" ]; then id="$ASK_T0-$$-noid"; fi
-  [ ! -f "$REPORT_DIR/$agent.md" ] || rep="$REPORT_DIR/$agent.md"
-  retro_write "$id" "$agent" "$reason" "$rc" "$va" "$dur" "${LAST_BRIEF:-}" "${LAST_LOG:-}" "$rep" || return 0
+  [ ! -f "$REPORT_DIR/$agent.md" ] || rep=$(retro_snapshot "$id" "$REPORT_DIR/$agent.md")
+  # the live .harness/task-<role>.md is overwritten by the next ask: point at the log's copy
+  bsnap=""; [ -z "${LAST_BRIEF:-}" ] || [ -z "${LAST_LOG:-}" ] || bsnap="$LAST_LOG#brief"
+  retro_write "$id" "$agent" "$reason" "$rc" "$va" "$dur" "$bsnap" "${LAST_LOG:-}" "$rep" || return 0
   echo "retro: candidate queued ($reason) — run 'harness retro' when the task is done"
 }
 
@@ -1334,11 +1345,53 @@ retro_on_report() {
   rc=${last%%$TAB*}; instr=${last#*$TAB}
   digits_only "$rc" || return 0
   case "$rc" in 0|5) return 0 ;; esac
-  case "$instr" in *task-retro.md*) return 0 ;; esac
+  case "$instr" in *task-retro.md*) retro_done_from_brief "$report"; return 0 ;; esac
   id=$(awk 'NR == 1 { print $1 }' ".harness/asks/$agent.current" 2>/dev/null)
   [ -n "$id" ] || return 0
-  retro_write "$id" "$agent" "late report" "$rc" "" "" "" "" "$report" late || return 0
+  [ ! -e "$RETRO_DIR/done/$id.json" ] || return 0
+  retro_write "$id" "$agent" "late report" "$rc" "" "" "" "" "$(retro_snapshot "$id" "$report")" late || return 0
   echo "retro: candidate queued (late report) — run 'harness retro' when the task is done"
+}
+
+# retro_done_from_brief <report> — a retro ask that timed out but whose report later says
+# `status: done`: move the candidates named in .harness/task-retro.md to done/ so the next
+# `harness retro` does not write the same inbox notes again.
+retro_done_from_brief() {
+  local id n=0
+  [ "$(sed -n 's/^status: *//p' "$1" | head -n 1)" = done ] || return 0
+  [ -f .harness/task-retro.md ] || return 0
+  mkdir -p "$RETRO_DIR/done" 2>/dev/null || return 0
+  for id in $(sed -n 's/^### \([^ ]*\) .*/\1/p' .harness/task-retro.md); do
+    [ -f "$RETRO_DIR/$id.json" ] || continue
+    mv -f "$RETRO_DIR/$id.json" "$RETRO_DIR/done/" && n=$((n + 1))
+  done
+  [ "$n" -eq 0 ] || echo "retro: $n candidate$([ "$n" -eq 1 ] || echo s) processed (late retro report)"
+}
+
+# retro_brief <n> <candidate-files> <toplevel> — the retro brief on stdout: ask-ids,
+# reasons, numbers and file paths only.
+retro_brief() {
+  local n=$1 files=$2 top=$3 f
+  printf '# Task: failure retro (%s candidate%s)\n\n' "$n" "$([ "$n" -eq 1 ] || echo s)"
+  printf 'Read-only analysis of failed asks. Evidence lives in the files listed per candidate; open only those.\n\n'
+  printf '## Candidates\n\n'
+  printf '%s' "$files" | while IFS= read -r f; do
+    [ -n "$f" ] || continue
+    jq -r '"### \(.ask_id) — \(.role), \(.reason)\n- exit: \(.exit // "?") · verify attempts: \(.verify_attempts // "-") · duration: \(.duration_s // "?")s · late: \(.late)\n- log: \(.log // "-")\n- brief: \(.brief // "-" | if endswith("#brief") then "\(.[:-6]) (its `## Brief` section; the live task file was overwritten since)" else . end)\n- report: \(.report // "-")\n"' "$f" 2>/dev/null
+  done
+  printf '## What to write\n\n'
+  printf 'For each candidate (or one note per group of candidates with the same cause) write at most 120 words as:\n\n'
+  printf -- '- **Symptom:** what failed, observable.\n- **Cause:** the verified cause, or "unknown" with what was ruled out.\n- **Next time:** one concrete action.\n- **Evidence:** ask-id plus file:line (code, test, commit). Log and report paths under `.harness/` rotate away, so never cite only those. Mandatory; a note without it is dropped.\n\n'
+  printf 'Before writing, read `docs/wiki/index.md`. If an existing gotcha already covers the cause, write only a one-line note "recurrence of <page>" (with the Evidence line) instead of a new lesson; this feeds the 2+ recurrence promotion rule in AGENTS.md.\n\n'
+  printf '## Output\n\n'
+  if [ -d "$top/docs/wiki" ]; then
+    printf 'One file per note: `docs/wiki/inbox/<YYYY-MM-DD>-retro-<ask-id>.md` (the first ask-id of the group), starting with the header lines `role: retro`, `ask-id: <id>`, `date: <YYYY-MM-DD>` between `---` lines.\n'
+  else
+    printf 'This repo has no docs/wiki: one file per note in `.harness/retro/inbox/<YYYY-MM-DD>-retro-<ask-id>.md`. Do not create docs/wiki.\n'
+  fi
+  printf 'Skip any ask-id that already appears in a file under the inbox (a previous retro may have finished after its ask timed out).\n'
+  printf 'Do not edit wiki pages, index.md or log.md. No fluff, no success stories.\n'
+  printf 'Inbox files are committed to git: never copy prompt text, screen text, secrets, tokens, keys or URLs with credentials from the logs; paraphrase the observable symptom.\n'
 }
 
 # --- harness retro ---------------------------------------------------------------------------
@@ -1356,35 +1409,18 @@ cmd_retro() {
   done
   if [ "$n" -eq 0 ]; then echo "retro: nothing pending"; return 0; fi
   top=$(git rev-parse --show-toplevel 2>/dev/null) || top=$PWD
-  mkdir -p .harness || die "cannot create .harness/"
-  {
-    printf '# Task: failure retro (%s candidate%s)\n\n' "$n" "$([ "$n" -eq 1 ] || echo s)"
-    printf 'Read-only analysis of failed asks. Evidence lives in the files listed per candidate; open only those.\n\n'
-    printf '## Candidates\n\n'
-    printf '%s' "$files" | while IFS= read -r f; do
-      [ -n "$f" ] || continue
-      jq -r '"### \(.ask_id) — \(.role), \(.reason)\n- exit: \(.exit // "?") · verify attempts: \(.verify_attempts // "-") · duration: \(.duration_s // "?")s · late: \(.late)\n- log: \(.log // "-")\n- brief: \(.brief // "-")\n- report: \(.report // "-")\n"' "$f" 2>/dev/null
-    done
-    printf '## What to write\n\n'
-    printf 'For each candidate (or one note per group of candidates with the same cause) write at most 120 words as:\n\n'
-    printf -- '- **Symptom:** what failed, observable.\n- **Cause:** the verified cause, or "unknown" with what was ruled out.\n- **Next time:** one concrete action.\n- **Evidence:** ask-id plus file:line or a log path. Mandatory; a note without it is dropped.\n\n'
-    printf 'Before writing, read `docs/wiki/index.md`. If an existing gotcha already covers the cause, write only a one-line note "recurrence of <page>" (with the Evidence line) instead of a new lesson; this feeds the 2+ recurrence promotion rule in AGENTS.md.\n\n'
-    printf '## Output\n\n'
-    if [ -d "$top/docs/wiki" ]; then
-      printf 'One file per note: `docs/wiki/inbox/<YYYY-MM-DD>-retro-<ask-id>.md` (the first ask-id of the group), starting with the header lines `role: retro`, `ask-id: <id>`, `date: <YYYY-MM-DD>` between `---` lines.\n'
-    else
-      printf 'This repo has no docs/wiki: one file per note in `.harness/retro/inbox/<YYYY-MM-DD>-retro-<ask-id>.md`. Do not create docs/wiki.\n'
-    fi
-    printf 'Do not edit wiki pages, index.md or log.md. No fluff, no success stories, no prompt or screen text copied from the logs.\n'
-  } > "$brief" || die "cannot write $brief"
   if [ "$dry" = 1 ]; then
     printf '%s' "$files" | while IFS= read -r f; do
       [ -n "$f" ] || continue
       jq -r '"\(.ask_id)\t\(.role)\t\(.reason)"' "$f" 2>/dev/null
     done
-    echo "retro: $n candidate$([ "$n" -eq 1 ] || echo s) pending; brief: $brief (dry run, no ask sent)"
+    echo "retro: $n candidate$([ "$n" -eq 1 ] || echo s) pending (dry run: no ask sent, nothing written); brief follows"
+    echo
+    retro_brief "$n" "$files" "$top"
     return 0
   fi
+  mkdir -p .harness || die "cannot create .harness/"
+  retro_brief "$n" "$files" "$top" > "$brief" || die "cannot write $brief"
   "$BASH" "$0" ask analyst 'Read .harness/task-retro.md and do it.' --via retro --fresh
   rc=$?
   if [ "$rc" -eq 0 ]; then
@@ -1419,6 +1455,10 @@ cmd_metrics() {
   done
   now=${HARNESS_NOW:-$(date +%s)}
   digits_only "$now" || die "HARNESS_NOW must be epoch seconds"
+  if [ -n "$since" ]; then
+    jq -n -e --arg s "$since" '($s + "T00:00:00Z" | fromdateiso8601 | strftime("%Y-%m-%d")) == $s' >/dev/null 2>&1 || die "--since: not a valid date ('$since')"
+    [ ! "$since" \> "$(jq -n -r --argjson n "$now" '$n | strftime("%Y-%m-%d")')" ] || die "--since $since is in the future"
+  fi
   top=$(git rev-parse --show-toplevel 2>/dev/null) || top=$PWD
   pend=$(ls "$RETRO_DIR"/*.json 2>/dev/null | wc -l | tr -d ' ')
   done_n=$(ls "$RETRO_DIR"/done/*.json 2>/dev/null | wc -l | tr -d ' ')

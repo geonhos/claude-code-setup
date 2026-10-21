@@ -657,7 +657,9 @@ check "stale report mtime: not printed" not_grep "OLD" <(printf '%s' "$OUT" | gr
 # (Stop hook fires later than herdr's idle): still accepted within the grace
 setup
 export FAKE_PROMPT_HOOK="touch $FAKE_DIR/no_stop_hook; $(REPORT_HOOK analyst); ( sleep 0.4; id=\$(cut -d' ' -f1 $WORK/.harness/asks/analyst.current); echo \"s \$(date +%s)\" > $WORK/.harness/done/analyst.\$id ) >/dev/null 2>&1 &"
-run ask analyst "q"
+# grace is compared in whole seconds (date +%s), so a 1s grace is effectively (0,1]s and a
+# 0.4s marker sometimes loses; 3s makes it >= 2s
+OUT=$(HERDR_ENV=1 HERDR_PANE_ID=w1:p1 HARNESS_IDLE_GRACE=3 HARNESS_POLL_SEC=0.2 PATH="$FAKE_BIN:$HERE/../bin:$PATH" perl -e 'alarm(12);exec(@ARGV)' env -u HARNESS_ROLE /bin/bash "$HARNESS" ask analyst "q" 2>&1); RC=$?
 check "late marker within grace: rc 0" [ "$RC" -eq 0 ]
 
 # real background-wait scenario: turn ended (Stop -> marker), herdr idle, no report.
