@@ -560,10 +560,56 @@ restore_interrupted() {
   exit 5
 }
 
+# learned_has_evidence <line> — the bullet cites an ask-id, a commit (7-40 hex with a
+# digit), file:line, or a log/.harness path
+learned_has_evidence() {
+  printf '%s\n' "$1" | grep -Eq '[0-9]{9,}-[0-9]+-[0-9]+|[A-Za-z][A-Za-z0-9_./-]*:[0-9]+|\.harness/|\.log([^A-Za-z]|$)|(^|[^A-Za-z])log:' && return 0
+  printf '%s\n' "$1" | grep -Eo '(^|[^0-9A-Za-z])[0-9a-f]{7,40}($|[^0-9A-Za-z])' | grep -q '[0-9]' && return 0
+  return 1
+}
+
+# queue_learned <agent> <report> — copy up to 2 evidence-backed bullets of the
+# report's optional `## Learned` section to docs/wiki/inbox/<date>-<role>-<ask-id>.md.
+# Prints one stdout line when queued; bullets without evidence are dropped with a
+# one-line stderr warning. Never fails the caller (idempotent per ask-id).
+queue_learned() {
+  local agent=$1 report=$2 raw line kept="" n=0 dropped=0 askid date out
+  raw=$(awk '
+    /^## Learned[ \t]*$/ { on = 1; next }
+    on && (/^## / || /^VERDICT:/) { on = 0 }
+    on && /^[ \t]*[-*] / { sub(/^[ \t]*[-*] +/, "- "); print }
+  ' "$report" 2>/dev/null) || return 0
+  [ -n "$raw" ] || return 0
+  while IFS= read -r line; do
+    case "$line" in "- none"|"- None"|"- none."|"- -") continue ;; esac
+    if learned_has_evidence "$line"; then
+      n=$((n + 1))
+      [ "$n" -le 2 ] && kept="$kept$line
+"
+    else
+      dropped=$((dropped + 1))
+    fi
+  done <<EOF_LEARNED
+$raw
+EOF_LEARNED
+  [ "$dropped" -eq 0 ] || echo "harness: wiki: dropped $dropped Learned bullet(s) without evidence (ask-id, commit, file:line or log)" >&2
+  [ -n "$kept" ] || return 0
+  askid=$(awk 'NR == 1 { print $1 }' ".harness/asks/$agent.current" 2>/dev/null)
+  [ -n "$askid" ] || askid=$(date +%s)
+  date=$(date +%Y-%m-%d)
+  out="docs/wiki/inbox/$date-$agent-$askid.md"
+  [ ! -e "$out" ] || return 0
+  mkdir -p docs/wiki/inbox 2>/dev/null || return 0
+  { printf -- '---\nrole: %s\nask-id: %s\ndate: %s\n---\n' "$agent" "$askid" "$date"; printf '%s' "$kept"; } > "$out" 2>/dev/null || return 0
+  n=$(printf '%s' "$kept" | grep -c '^- ')
+  echo "wiki: $n lesson$([ "$n" -eq 1 ] || echo s) queued in $out"
+}
+
 # finish_report <agent> <report> <pane> — print the report and exit with the
 # verification-aware status (0 pass · 3 reviewer without VERDICT · 5 failed)
 finish_report() {
   local agent=$1 report=$2 pane=$3 last vj st
+  queue_learned "$agent" "$report"
   case "$agent" in
     implementer)
       vj=".harness/verify/implementer.json"

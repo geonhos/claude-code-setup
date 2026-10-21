@@ -31,6 +31,7 @@ run() {
   RC=$?
 }
 
+not() { ! "$@"; }
 check() { # check LABEL CONDITION...
   local label=$1; shift
   if "$@"; then pass=$((pass + 1)); else fail=$((fail + 1)); echo "FAIL [$label]: $OUT"; fi
@@ -253,6 +254,45 @@ check "report unknown agent rc" [ "$RC" -eq 1 ]
 
 run
 check "usage lists report" grep -q "harness report" <<<"$OUT"
+
+# --- report: ## Learned -> docs/wiki/inbox -------------------------------------------
+setup
+mkdir -p .harness/reports .harness/asks
+printf '1700000000-123-456 1700000000\n' > .harness/asks/analyst.current
+printf '# analyst report\nstatus: done\n## Learned\n- stat -f is GNU-hostile (bin/harness:815)\n- vague claim with no proof\n- fixed in commit 79a1964\n## Open questions\n- none\n' > .harness/reports/analyst.md
+run report analyst
+check "learned rc" [ "$RC" -eq 0 ]
+check "learned queue line" grep -q '^wiki: 2 lessons queued in docs/wiki/inbox/' <<<"$OUT"
+Q=$(ls docs/wiki/inbox/*-analyst-1700000000-123-456.md 2>/dev/null | head -1)
+check "learned file named by role+ask-id" [ -n "$Q" ]
+check "learned header" grep -q '^role: analyst' "$Q"
+check "learned header ask-id" grep -q '^ask-id: 1700000000-123-456' "$Q"
+check "learned keeps evidence bullet" grep -q 'bin/harness:815' "$Q"
+check "learned caps at 2 bullets" [ "$(grep -c '^- ' "$Q")" -eq 2 ]
+check "learned drops bullet without evidence" not grep -q 'vague claim' "$Q"
+run report analyst
+check "learned warns on dropped bullet" grep -q 'dropped 1 Learned bullet' <<<"$OUT"
+check "learned idempotent (one file)" [ "$(ls docs/wiki/inbox | wc -l | tr -d ' ')" -eq 1 ]
+check "learned second run no queue line" not grep -q '^wiki:' <<<"$OUT"
+
+setup
+mkdir -p .harness/reports
+printf '# analyst report\nstatus: done\n## Learned\n- none\n## Open questions\n- none\n' > .harness/reports/analyst.md
+run report analyst
+check "learned none: nothing queued" [ ! -d docs/wiki/inbox ]
+check "learned none: no wiki line" not grep -q '^wiki:' <<<"$OUT"
+printf '# analyst report\nstatus: done\n## Learned\n- no proof here at all\n' > .harness/reports/analyst.md
+run report analyst
+check "learned all dropped: nothing queued" [ ! -d docs/wiki/inbox ]
+printf '# analyst report\nstatus: done\n' > .harness/reports/analyst.md
+run report analyst
+check "no Learned section: nothing queued" [ ! -d docs/wiki/inbox ]
+mkdir -p .harness/reports
+printf '# reviewer report\nstatus: done\n## Learned\n- race seen in .harness/progress.jsonl\nVERDICT: PASS\n' > .harness/reports/reviewer.md
+run report reviewer
+check "learned before VERDICT: rc 0" [ "$RC" -eq 0 ]
+check "learned reviewer queued" [ "$(ls docs/wiki/inbox/*-reviewer-* 2>/dev/null | wc -l | tr -d ' ')" -eq 1 ]
+check "reviewer VERDICT still last line" [ "$(printf '%s\n' "$OUT" | tail -1)" = "VERDICT: PASS" ]
 
 # --- ask: missing instruction ------------------------------------------------------
 setup
