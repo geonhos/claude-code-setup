@@ -46,9 +46,18 @@ harness spawn  <agent> [--direction right|down]
 harness ask    <agent> '<instruction>' [--timeout MS] [--fresh|--keep] [--via skill|conductor]   # exit 2 blocked · 3 no report · 4 still working · 5 verification failed · 6 worker runs outside this repo
 harness report <agent>                                   # print existing report (same exit codes as ask), 3 none, 4 still working, 6 worker runs outside this repo (worker names are `<role>-<repo8>`)
 harness status
-harness close  <agent>
+harness close  <agent>|--all|--legacy [--force]          # exit 4 when working/blocked or the report is uncollected (--force overrides); --legacy closes old unscoped workers of this repo
 harness route-log '<json>'                               # append one line to .harness/routing.jsonl (used by the hook and by ask)
 ```
+
+## 워커 패널 자동 종료
+
+`harness close`는 herdr의 `herdr pane close <pane>`으로 패널을 닫고 `.harness/panes`에서 지운다. 워커가 `working`/`blocked`이거나 아직 수집하지 않은 리포트(`.pending` 포함)가 있으면 exit 4로 거절한다(`--force`로 무시). 다른 디렉터리의 워커는 exit 6. 닫은 뒤 `harness ask`는 평소처럼 워커를 새로 띄운다.
+자동 종료 설정은 `.harness/config.json`(없으면 첫 실행 때 기본값으로 만든다):
+- `close_after_ask.<role>`: `never`|`on_success`. 기본은 implementer `on_success`(ask가 0으로 끝나면 닫음, reviewer는 0 또는 5), analyst/reviewer `never`(`--keep` 후속 질문을 위해 컨텍스트 유지). 환경변수 `HARNESS_CLOSE_AFTER_ASK_<ROLE>`.
+- `idle_ttl_minutes`(기본 30, 0이면 끔, 환경변수 `HARNESS_IDLE_TTL_MINUTES`): `harness ask|spawn|status` 시작 때 이 저장소의 워커 중 마지막 리포트 수집 후 TTL이 지났고 idle/done이며 수집 안 한 리포트가 없는 것을 닫는다. 데몬은 없다.
+- `HARNESS_NO_AUTOCLOSE=1`이면 둘 다 꺼진다(수동 `harness close`는 그대로).
+닫을 때마다 `progress.jsonl`에 `{"event":"close","role","reason":"manual|after_ask|ttl|legacy"}`가 남고 `progress.md` 최근 항목에 `close <role> (<reason>)`로 보인다.
 
 ## 진행 로그와 컨텍스트 리셋
 

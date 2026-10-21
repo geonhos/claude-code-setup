@@ -680,5 +680,157 @@ run ask analyst "q"
 check "old marker removed" [ ! -e .harness/done/analyst.old-1 ]
 unset FAKE_PROMPT_HOOK
 
+# --- pane lifecycle: close guards, after-ask, TTL, legacy ------------------------------
+# live_worker ROLE STATUS PANE — a live, harness-registered worker
+live_worker() {
+  echo "$2" > "$FAKE_DIR/live.$(WN "$1")"
+  echo "$3" > "$FAKE_DIR/pane.$(WN "$1")"
+  mkdir -p .harness; echo "$1 $3" >> .harness/panes
+}
+# stale ROLE MINUTES — collected-stamp of that age
+stale() { mkdir -p .harness/asks; : > ".harness/asks/$1.finished"; touch -t "$(date -v-"$2"M +%Y%m%d%H%M 2>/dev/null || date -d "$2 minutes ago" +%Y%m%d%H%M)" ".harness/asks/$1.finished"; }
+
+# refuses while working / blocked / uncollected report; --force overrides
+setup
+live_worker analyst working w1:p2
+run close analyst
+check "close working: rc 4" [ "$RC" -eq 4 ]
+check "close working: message" grep -q "is working" <<<"$OUT"
+check "close working: no pane close" not_logged "pane close"
+run close analyst --force
+check "close working --force: rc 0" [ "$RC" -eq 0 ]
+check "close working --force: closed" logged "pane close w1:p2"
+check "close --force: unregistered" not_grep "^analyst " "$WORK/.harness/panes"
+setup
+live_worker analyst blocked w1:p2
+run close analyst
+check "close blocked: rc 4" [ "$RC" -eq 4 ]
+setup
+live_worker analyst idle w1:p2
+mkdir -p .harness/reports; echo "# r" > .harness/reports/analyst.md
+run close analyst
+check "close uncollected report: rc 4" [ "$RC" -eq 4 ]
+check "close uncollected report: message" grep -q "not collected" <<<"$OUT"
+run close analyst --force
+check "close uncollected --force: rc 0" [ "$RC" -eq 0 ]
+setup
+live_worker implementer idle w1:p2
+mkdir -p .harness/reports; echo x > .harness/reports/implementer.md.pending
+run close implementer
+check "close .pending: rc 4" [ "$RC" -eq 4 ]
+# collected report (stamp newer than report) closes
+setup
+live_worker analyst idle w1:p2
+mkdir -p .harness/reports .harness/asks; echo "# r" > .harness/reports/analyst.md
+sleep 1; : > .harness/asks/analyst.finished
+run close analyst
+check "close collected report: rc 0" [ "$RC" -eq 0 ]
+check "close logs event" grep -q '"event":"close","role":"analyst","pane":"w1:p2","reason":"manual"' .harness/progress.jsonl
+check "close shows in progress.md" grep -q "close analyst (manual)" .harness/progress.md
+
+# --all: closes idle ones, rc 4 when one is refused; other-repo -> 6
+setup
+live_worker analyst idle w1:p2; live_worker implementer working w1:p3
+run close --all
+check "close --all: refused rc 4" [ "$RC" -eq 4 ]
+check "close --all: idle closed" logged "pane close w1:p2"
+check "close --all: working kept" not_logged "pane close w1:p3"
+setup
+live_worker analyst idle w1:p2
+echo "/nonexistent-elsewhere" > "$FAKE_DIR/cwd.$(WN analyst)"
+run close --all
+check "close --all other repo: rc 6" [ "$RC" -eq 6 ]
+check "close --all other repo: not closed" not_logged "pane close"
+run close --bogus
+check "close bad flag: usage rc 1" [ "$RC" -eq 1 ]
+
+# idle TTL
+setup
+live_worker analyst idle w1:p2; live_worker reviewer idle w1:p3; live_worker implementer idle w1:p4
+stale analyst 90
+: > .harness/asks/reviewer.finished           # fresh
+echo "/nonexistent-elsewhere" > "$FAKE_DIR/cwd.$(WN implementer)"; stale implementer 90   # other repo
+run status
+check "ttl: stale analyst reaped" logged "pane close w1:p2"
+check "ttl: fresh reviewer kept" not_logged "pane close w1:p3"
+check "ttl: other-repo implementer kept" not_logged "pane close w1:p4"
+check "ttl: logged with reason" grep -q '"role":"analyst".*"reason":"ttl"' .harness/progress.jsonl
+check "ttl: config created" [ -s .harness/config.json ]
+setup
+live_worker analyst idle w1:p2; stale analyst 90
+mkdir -p .harness/reports; echo "# r" > .harness/reports/analyst.md      # newer than stamp: uncollected
+run status
+check "ttl: uncollected report kept" not_logged "pane close"
+rm .harness/reports/analyst.md; echo x > .harness/reports/analyst.md.pending
+run status
+check "ttl: .pending kept" not_logged "pane close"
+rm .harness/reports/analyst.md.pending; echo working > "$FAKE_DIR/live.$(WN analyst)"
+run status
+check "ttl: working kept" not_logged "pane close"
+echo idle > "$FAKE_DIR/live.$(WN analyst)"
+HARNESS_NO_AUTOCLOSE=1 run status
+check "ttl: HARNESS_NO_AUTOCLOSE=1 disables" not_logged "pane close"
+HARNESS_IDLE_TTL_MINUTES=0 run status
+check "ttl: 0 disables" not_logged "pane close"
+HARNESS_IDLE_TTL_MINUTES=200 run status
+check "ttl: env raises ttl" not_logged "pane close"
+echo '{"idle_ttl_minutes": 120}' > .harness/config.json
+run status
+check "ttl: config raises ttl" not_logged "pane close"
+echo '{"idle_ttl_minutes": 60}' > .harness/config.json
+run status
+check "ttl: config lowers ttl" logged "pane close w1:p2"
+
+# implementer on_success closes after ask 0, not after 5; analyst never; env override
+setup
+live_worker implementer idle w1:p2
+export FAKE_PROMPT_HOOK="mkdir -p $WORK/.harness/reports; printf '# implementer report\nstatus: done\n' > $WORK/.harness/reports/implementer.md"
+run ask implementer "do it"
+check "after_ask: ask rc 0" [ "$RC" -eq 0 ]
+check "after_ask: implementer closed" logged "pane close w1:p2"
+check "after_ask: logged" grep -q '"role":"implementer".*"reason":"after_ask"' .harness/progress.jsonl
+check "after_ask: stdout is only the report" grep -qx "# implementer report" <<<"$OUT"
+# ask after close respawns the worker
+: > "$FAKE_LOG"
+run ask implementer "again"
+check "respawn after close: rc 0" [ "$RC" -eq 0 ]
+check "respawn after close: pane split + start" logged "agent start $(WN implementer) --kind claude"
+setup
+live_worker implementer idle w1:p2
+export FAKE_PROMPT_HOOK="mkdir -p $WORK/.harness/reports $WORK/.harness/verify; printf '# implementer report\nstatus: partial\n' > $WORK/.harness/reports/implementer.md; printf '{\"status\":\"fail\",\"attempts\":3,\"step\":\"test\",\"tail\":\"x\"}' > $WORK/.harness/verify/implementer.json"
+run ask implementer "do it"
+check "after_ask: exit 5 not closed" [ "$RC" -eq 5 ]
+check "after_ask 5: no pane close" not_logged "pane close"
+setup
+live_worker analyst idle w1:p2
+export FAKE_PROMPT_HOOK="$(REPORT_HOOK analyst)"
+run ask analyst "q"
+check "after_ask: analyst never closed" not_logged "pane close"
+HARNESS_CLOSE_AFTER_ASK_ANALYST=on_success run ask analyst "q"
+check "after_ask: env override closes analyst" logged "pane close w1:p2"
+setup
+live_worker implementer idle w1:p2
+export FAKE_PROMPT_HOOK="$(REPORT_HOOK implementer)"
+HARNESS_NO_AUTOCLOSE=1 run ask implementer "do it"
+check "after_ask: HARNESS_NO_AUTOCLOSE=1 keeps worker" not_logged "pane close"
+unset FAKE_PROMPT_HOOK
+
+# --legacy: only same-repo unscoped workers
+setup
+echo idle > "$FAKE_DIR/live.analyst"; echo w1:p5 > "$FAKE_DIR/pane.analyst"
+echo idle > "$FAKE_DIR/live.reviewer"; echo w1:p6 > "$FAKE_DIR/pane.reviewer"; echo "/nonexistent-elsewhere" > "$FAKE_DIR/cwd.reviewer"
+live_worker implementer idle w1:p7
+run close --legacy
+check "legacy: rc 0" [ "$RC" -eq 0 ]
+check "legacy: same-repo unscoped closed" logged "pane close w1:p5"
+check "legacy: other-repo unscoped kept" not_logged "pane close w1:p6"
+check "legacy: scoped worker kept" not_logged "pane close w1:p7"
+check "legacy: logged" grep -q '"role":"analyst".*"reason":"legacy"' .harness/progress.jsonl
+echo working > "$FAKE_DIR/live.analyst"
+run close --legacy
+check "legacy working: rc 4" [ "$RC" -eq 4 ]
+run spawn analyst
+check "migration hint mentions --legacy" grep -q "harness close --legacy" <<<"$OUT"
+
 echo "PASS $pass / FAIL $fail"
 [ "$fail" -eq 0 ]

@@ -118,6 +118,14 @@ of the progress file.
   (an implementer whose own last ask exited 5 keeps its context; use `--keep` for any other
   explicit follow-up, `--fresh` to force a reset).
   If it still fails after 2 such rounds, ask the user.
+- Pane lifecycle: the implementer's pane closes itself after an ask that exits
+  0 (the next ask respawns it), and any worker idle past `idle_ttl_minutes`
+  (default 30) with a collected report is reaped at the next
+  ask/spawn/status. Config is `.harness/config.json` (`close_after_ask`,
+  `idle_ttl_minutes`); `HARNESS_NO_AUTOCLOSE=1` turns both off. Close by hand
+  with `harness close <worker>|--all` (exit 4 = working or uncollected report;
+  `--force` only if the user agrees); `harness close --legacy` closes old
+  unscoped workers of this repo.
 - `6` the worker named for this repo (`<role>-<repo8>`) runs in a directory
   outside the repo, so nothing was sent. Tell the user; they close that pane
   (or start Claude from the right directory). Never retarget it yourself.
