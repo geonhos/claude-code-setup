@@ -10,6 +10,7 @@
 #   harness route-log '<json>'   append one line to .harness/routing.jsonl (never fails)
 #
 # Exit codes for `ask`: 0 report printed · 1 usage/setup error · 2 worker blocked
+#                       6 worker runs outside this repo (cwd check); nothing was sent
 #                       3 worker finished without a report
 #                       4 worker still working / unknown (including busy with a
 #                         previous instruction: nothing sent), or prompt not
@@ -21,6 +22,7 @@
 # `report` prints .harness/reports/<agent>.md with the same exit codes as `ask`
 #   (0 · 3 no report/no VERDICT · 5 verification failed), plus 4 while the agent
 #   is still working. It never sends a prompt.
+# Worker herdr names are repo-scoped: <role>-<repo8> (see wname).
 # Workers (HARNESS_ROLE=worker) may not ask or spawn: skills are user-global and would otherwise nest.
 # .harness/ lives in the directory where the conductor runs ($PWD).
 # Every ask is logged to .harness/log/ and .harness/progress.jsonl, and
@@ -69,7 +71,57 @@ valid_agent() {
   die "unknown agent '$1' (expected one of: $AGENTS)"
 }
 
-agent_json()   { herdr agent get "$1" 2>/dev/null; }
+# --- repo-scoped worker names ------------------------------------------------------------
+# A worker's herdr name is <role>-<repo8>: repo8 = first 8 hex of a hash of the
+# repo top-level (git rev-parse --show-toplevel, else $PWD; symlinks resolved).
+# CLI/role names (analyst, implementer, reviewer) are unchanged; wname is the
+# only place that maps role -> herdr name. Exit 6 = worker belongs to another dir.
+repo_top() {
+  local t
+  t=$(git rev-parse --show-toplevel 2>/dev/null) || t=""
+  [ -n "$t" ] || t=$PWD
+  ( cd "$t" 2>/dev/null && pwd -P ) || printf '%s\n' "$t"
+}
+repo_hash8() {
+  local h
+  if command -v sha1sum >/dev/null 2>&1; then h=$(printf %s "$1" | sha1sum)
+  elif command -v shasum >/dev/null 2>&1; then h=$(printf %s "$1" | shasum -a 1)
+  else h=$(printf %s "$1" | cksum | awk '{ printf "%08x", $1 }'); fi
+  printf %s "${h%% *}" | cut -c1-8
+}
+REPO_TOP=$(repo_top)
+REPO8=$(repo_hash8 "$REPO_TOP")
+wname() { printf '%s-%s' "$1" "$REPO8"; }
+
+# cwd_in_repo <dir> — 0 when dir (symlinks resolved) is the repo top-level or inside it
+cwd_in_repo() {
+  local d
+  d=$( cd "$1" 2>/dev/null && pwd -P ) || d=$1
+  case "$d" in "$REPO_TOP"|"$REPO_TOP"/*) return 0 ;; esac
+  return 1
+}
+
+# check_worker_cwd <role> <agent-get-json> — exit 6 when the worker runs outside
+# this repo. A worker whose cwd herdr does not report is not refused.
+check_worker_cwd() {
+  local c
+  c=$(printf '%s' "$2" | jq -r '.result.agent.cwd // empty' 2>/dev/null)
+  [ -n "$c" ] || return 0
+  cwd_in_repo "$c" && return 0
+  echo "harness: worker $(wname "$1") runs in $c, outside this repo ($REPO_TOP); refusing to use it. Close that pane or run harness from the right directory." >&2
+  exit 6
+}
+
+# migration_hint <role> — one line when an old unscoped worker of this repo is still live
+migration_hint() {
+  local j c
+  j=$(herdr agent get "$1" 2>/dev/null) || return 0
+  c=$(printf '%s' "$j" | jq -r '.result.agent.cwd // empty' 2>/dev/null)
+  [ -n "$c" ] && cwd_in_repo "$c" || return 0
+  echo "harness: note: old unscoped worker '$1' is still running for this repo and is no longer used; close its pane (harness now uses $(wname "$1"))." >&2
+}
+
+agent_json()   { herdr agent get "$(wname "$1")" 2>/dev/null; }
 agent_pane()   { agent_json "$1" | jq -r '.result.agent.pane_id // empty'; }
 
 # agent_fields <agent> — one `agent get`, prints "status<TAB>pane".
@@ -100,9 +152,9 @@ show_pane_screen() {
 show_agent_diag() {
   local j
   if j=$(agent_json "$1"); then
-    echo "harness: agent get $1: $j" >&2
+    echo "harness: agent get $(wname "$1"): $j" >&2
   else
-    echo "harness: agent get $1: agent not found" >&2
+    echo "harness: agent get $(wname "$1"): agent not found" >&2
   fi
 }
 
@@ -154,9 +206,11 @@ cmd_spawn() {
 
   local fields
   if fields=$(agent_fields "$agent"); then
+    check_worker_cwd "$agent" "$(agent_json "$agent")"
     printf '%s\n' "${fields#*$TAB}"
     return 0
   fi
+  migration_hint "$agent"
 
   [ -n "$dir" ] || dir=$(pick_direction)
 
@@ -170,7 +224,7 @@ cmd_spawn() {
   mkdir -p "$(dirname "$PANES_FILE")"
   printf '%s %s\n' "$agent" "$pane" >> "$PANES_FILE"
 
-  if ! out=$(herdr agent start "$agent" --kind claude --pane "$pane" -- --agent "$agent" 2>&1); then
+  if ! out=$(herdr agent start "$(wname "$agent")" --kind claude --pane "$pane" -- --agent "$agent" 2>&1); then
     echo "harness: agent start failed for $agent in $pane: $out" >&2
     show_pane_screen "$pane" >&2
     herdr pane close "$pane" >/dev/null 2>&1 \
@@ -216,7 +270,7 @@ fmt_ctx() {
 do_clear() {
   local old new st i=0 j
   old=$(agent_session "$1")
-  herdr agent prompt "$1" /clear >/dev/null 2>&1 || return 1
+  herdr agent prompt "$(wname "$1")" /clear >/dev/null 2>&1 || return 1
   while [ "$i" -lt "${HARNESS_CLEAR_POLLS:-20}" ]; do
     sleep "${HARNESS_CLEAR_INTERVAL:-0.5}"
     j=$(agent_json "$1") || return 1
@@ -277,7 +331,7 @@ maybe_reset() {
     echo "harness: could not close $agent; continuing without a reset" >&2
     return 0
   fi
-  RESET_PANE=$(cmd_spawn "$agent") || exit 1
+  RESET_PANE=$(cmd_spawn "$agent") || exit $?
 }
 
 # --- progress log ----------------------------------------------------------------------
@@ -589,7 +643,7 @@ ask_inner() {
 
   local pane existed=0
   agent_fields "$agent" >/dev/null && existed=1
-  pane=$(cmd_spawn "$agent") || exit 1
+  pane=$(cmd_spawn "$agent") || exit $?
 
   local report="$REPORT_DIR/$agent.md"
 
@@ -632,7 +686,7 @@ ask_inner() {
   # dash-leading text from being parsed as an option. Do not add `--`: real
   # herdr rejects it.
   local out prompt_failed=0
-  if ! out=$(herdr agent prompt "$agent" "$text" --wait --timeout "$timeout" 2>&1); then
+  if ! out=$(herdr agent prompt "$(wname "$agent")" "$text" --wait --timeout "$timeout" 2>&1); then
     prompt_failed=1
     echo "harness: prompt did not settle: $out" >&2
   fi
@@ -672,6 +726,7 @@ cmd_report() {
   valid_agent "$agent"
   local report="$REPORT_DIR/$agent.md" fields
   fields=$(agent_fields "$agent")
+  ! agent_fields "$agent" >/dev/null || check_worker_cwd "$agent" "$(agent_json "$agent")"
   if [ "${fields%%$TAB*}" = working ]; then
     echo "harness: $agent is still working; wait for it to finish (harness status), then run: harness report $agent" >&2
     exit 4
@@ -701,6 +756,7 @@ cmd_close() {
   valid_agent "$agent"
   pane=$(agent_pane "$agent")
   [ -n "$pane" ] || die "$agent is not running"
+  check_worker_cwd "$agent" "$(agent_json "$agent")"
   grep -Fxq -- "$agent $pane" "$PANES_FILE" 2>/dev/null \
     || die "pane $pane was not created by harness; close it yourself"
   herdr pane close "$pane" >/dev/null || die "pane close failed for $pane"
@@ -711,6 +767,8 @@ cmd_close() {
 need jq
 # route-log is called by the UserPromptSubmit hook: no herdr needed
 if [ "${1:-}" = route-log ]; then shift; cmd_route_log "$@"; exit 0; fi
+# _wname prints the scoped herdr name for a role (tests, debugging): no herdr needed
+if [ "${1:-}" = _wname ]; then valid_agent "${2:-}"; wname "$2"; echo; exit 0; fi
 need herdr
 [ "${HERDR_ENV:-}" = 1 ] || die "run Claude inside a herdr pane (HERDR_ENV is not 1)"
 

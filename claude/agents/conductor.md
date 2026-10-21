@@ -106,6 +106,9 @@ of the progress file.
   (an implementer whose own last ask exited 5 keeps its context; use `--keep` for any other
   explicit follow-up, `--fresh` to force a reset).
   If it still fails after 2 such rounds, ask the user.
+- `6` the worker named for this repo (`<role>-<repo8>`) runs in a directory
+  outside the repo, so nothing was sent. Tell the user; they close that pane
+  (or start Claude from the right directory). Never retarget it yourself.
 - `4` still working, stalled, timed out, or the prompt was not accepted. Run
   `harness status`; if `working`, wait and then `harness report <worker>`; do
   not resend. A worker that hit the subscription usage limit sits waiting for
