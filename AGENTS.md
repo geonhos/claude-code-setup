@@ -7,7 +7,7 @@ gate the conductor's shell, verify worker output and resume from progress logs.
 `install.sh` symlinks everything into `~/.claude` and `~/bin`.
 
 ## Layout
-- `bin/` — `harness` (CLI: ask, spawn, report, close, status) and `harness-verify`
+- `bin/` — `harness` (CLI: ask, spawn, report, close, status, retro, metrics) and `harness-verify`
 - `claude/agents/` — conductor, analyst, implementer, reviewer, solo prompts
 - `claude/hooks/` — conductor-gate, conductor-route, conductor-resume (SessionStart)
 - `claude/skills/` — /analyze, /implement, /review (conductor-only)
@@ -55,3 +55,8 @@ file:line or log).
 5. hook or test — for a rule that must always hold
 
 Promotions happen only through a human-approved PR.
+
+Failed asks queue retro candidates (`.harness/retro/`); `harness retro` batches
+them into one analyst ask whose lessons go to `docs/wiki/inbox/` (decision 0004).
+`harness metrics` reports ask/exit/duration rates and wiki health; run it before
+proposing harness changes.

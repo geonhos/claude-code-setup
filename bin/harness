@@ -8,6 +8,8 @@
 #   harness status
 #   harness close  <agent>|--all|--legacy [--force]
 #   harness route-log '<json>'   append one line to .harness/routing.jsonl (never fails)
+#   harness retro [--dry-run]    one batched analyst ask over the queued failure candidates
+#   harness metrics [--since YYYY-MM-DD] [--json]   health numbers from progress.jsonl + the wiki
 #
 # Exit codes for `ask`: 0 report printed · 1 usage/setup error · 2 worker blocked
 #                       6 worker runs outside this repo (cwd check); nothing was sent
@@ -41,6 +43,12 @@
 #   HARNESS_NO_AUTOCLOSE=1 disables both. `harness close` refuses (exit 4) a working/
 #   blocked worker or an uncollected report unless --force. Closes are logged to
 #   progress.jsonl (event close, role, reason manual|after_ask|ttl|legacy).
+# Failure retros: a failed/late/retried ask queues .harness/retro/<ask-id>.json (paths and
+#   numbers only, never screen or prompt text) and prints `retro: candidate queued (...)`.
+#   Triggers: ask exit other than 0 (a reviewer exit 5 = FAIL verdict is normal: never a
+#   trigger), implementer verify attempts >= 2, a late report collected by `harness report`.
+#   `harness retro` batches the pending ones into one analyst ask (--via retro, which
+#   itself never queues a candidate).
 # Output of `ask`: stdout = report on exit 0 and 5; screen text on 2/3/4;
 #                  diagnostics on stderr.
 set -u
@@ -59,12 +67,14 @@ usage() {
   cat >&2 <<EOF
 usage:
   harness spawn  <agent> [--direction right|down]
-  harness ask    <agent> '<instruction>' [--timeout MS] [--fresh|--keep] [--via skill|conductor]
+  harness ask    <agent> '<instruction>' [--timeout MS] [--fresh|--keep] [--via skill|conductor|retro]
   harness report <agent>
   harness status
   harness close  <agent>|--all|--legacy [--force]
   harness wiki-lint [DIR]
   harness route-log '<json>'
+  harness retro [--dry-run]
+  harness metrics [--since YYYY-MM-DD] [--json]
 agents: $AGENTS
 EOF
   exit 1
@@ -368,7 +378,7 @@ num_or_null() { case "${1:-}" in ''|*[!0-9]*) echo null ;; *) echo "$1" ;; esac;
 record_progress() {
   local agent=$1 text=$2 rc=$3 t0=$4 hb=$5 out=$6 cb=${7:-}
   local report="$REPORT_DIR/$agent.md" vj=.harness/verify/implementer.json
-  local now ts stamp ha sess ca status="" summary="" verify="" logf n brief sha=""
+  local now ts stamp ha sess ca status="" summary="" verify="" logf n brief sha="" va=""
   now=$(date +%s)
   ts=$(date -u +%Y-%m-%dT%H:%M:%SZ)
   stamp=$(date +%Y%m%d-%H%M%S)
@@ -380,6 +390,7 @@ record_progress() {
   fi
   if [ "$agent" = implementer ]; then
     verify=$(jq -r '.status // empty' "$vj" 2>/dev/null)
+    va=$(jq -r '.attempts // empty' "$vj" 2>/dev/null)
     grep -q '^verify: INTERRUPTED' "$out" 2>/dev/null && verify=interrupted
   fi
 
@@ -407,15 +418,87 @@ record_progress() {
     --arg instr "$(printf '%s' "$text" | tr '\n' ' ' | cut -c1-160)" \
     --argjson exit "$rc" --arg verify "$verify" --argjson dur "$((now - t0))" \
     --arg hb "$hb" --arg ha "$ha" --argjson cb "$(num_or_null "$cb")" --argjson ca "$(num_or_null "$ca")" \
-    --arg status "$status" --arg summary "$summary" --arg sha "$sha" '
+    --arg status "$status" --arg summary "$summary" --arg sha "$sha" --argjson va "$(num_or_null "$va")" '
     def nz: if . == "" then null else . end;
     {ts: $ts, agent: $agent, session: ($session | nz), instr: $instr, exit: $exit,
-     verify: ($verify | nz), dur_s: $dur, head_before: ($hb | nz), head_after: ($ha | nz),
+     verify: ($verify | nz), verify_attempts: $va, dur_s: $dur, head_before: ($hb | nz), head_after: ($ha | nz),
      ctx_before: $cb, ctx_after: $ca, status: ($status | nz), summary: ($summary | nz), report_sha: ($sha | nz)}' >> "$JSONL" || return 1
 
+  LAST_LOG=$logf LAST_BRIEF=$brief
   rotate_logs "$logf"
   write_progress_md "$agent" "$ca"
   return 0
+}
+
+# --- failure retro candidates ---------------------------------------------------------
+RETRO_DIR=".harness/retro"
+
+# retro_write <ask-id> <role> <reason> <exit> <attempts> <dur> <brief> <log> <report> [late]
+# One candidate file per ask-id: paths and numbers only (no screen or prompt text).
+# An existing candidate is updated in place (a late report adds itself to it).
+retro_write() {
+  local f="$RETRO_DIR/$1.json" late=${10:-}
+  mkdir -p "$RETRO_DIR" 2>/dev/null || return 1
+  [ ! -e "$RETRO_DIR/done/$1.json" ] || return 1
+  if [ -f "$f" ]; then
+    [ -z "$late" ] || [ "$(jq -r '.late // false' "$f" 2>/dev/null)" != true ] || return 1
+    jq -c --arg reason "$3" --arg report "$9" --argjson late "$([ -n "$late" ] && echo true || echo false)" '
+      (if $late then .late = true | .reason = $reason else . end)
+      | (if $report != "" and (.report // "") == "" then .report = $report else . end)' "$f" > "$f.tmp.$$" 2>/dev/null \
+      && mv -f "$f.tmp.$$" "$f" || { rm -f "$f.tmp.$$"; return 1; }
+    return 0
+  fi
+  jq -n -c --arg id "$1" --arg role "$2" --arg reason "$3" --argjson exit "$(num_or_null "$4")" \
+    --argjson va "$(num_or_null "$5")" --argjson dur "$(num_or_null "$6")" --arg brief "$7" --arg log "$8" \
+    --arg report "$9" --argjson late "$([ -n "$late" ] && echo true || echo false)" \
+    --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" '
+    def nz: if . == "" then null else . end;
+    {ask_id: $id, role: $role, reason: $reason, exit: $exit, verify_attempts: $va, duration_s: $dur,
+     brief: ($brief | nz), log: ($log | nz), report: ($report | nz), late: $late, ts: $ts}' > "$f.tmp.$$" 2>/dev/null \
+    && mv -f "$f.tmp.$$" "$f" || { rm -f "$f.tmp.$$"; return 1; }
+}
+
+# retro_snapshot <ask-id> <report> — copy a report to .harness/retro/reports/<ask-id>.md
+# (the live report is archived and deleted by the next ask) and print that path.
+retro_snapshot() {
+  local d="$RETRO_DIR/reports"
+  mkdir -p "$d" 2>/dev/null && cp -f "$2" "$d/$1.md" 2>/dev/null && { printf '%s' "$d/$1.md"; return 0; }
+  printf '%s' "$2"
+}
+
+# retro_pending_logs — log paths referenced by pending candidates (rotate_logs keeps them)
+retro_pending_logs() {
+  ls "$RETRO_DIR"/*.json >/dev/null 2>&1 || return 0
+  jq -r '.log // empty' "$RETRO_DIR"/*.json 2>/dev/null
+}
+
+# retro_on_ask <agent> <rc> — after an ask is logged: queue a candidate when it is a
+# trigger, print the one-line notice. Never fails; the retro ask itself never queues.
+retro_on_ask() {
+  local agent=$1 rc=$2 reason="" va dur id cur ts rep="" bsnap
+  [ "${ASK_VIA:-}" != retro ] || return 0
+  dur=$(( $(date +%s) - ASK_T0 ))
+  va=$(jq -r '.attempts // empty' .harness/verify/implementer.json 2>/dev/null)
+  case "$rc" in
+    0) ;;
+    5) [ "$agent" = reviewer ] || reason="exit 5" ;;
+    1) ;;          # usage / pre-flight error (bad option, worker session refusing): nothing ran
+    129|130|143) ;; # ask wrapper hung up, interrupted or terminated by the caller, not a harness failure
+    *) reason="exit $rc" ;;
+  esac
+  if [ -z "$reason" ] && [ "$agent" = implementer ] && digits_only "$va" && [ "$va" -ge 2 ]; then
+    reason="$va verify attempts"
+  fi
+  [ -n "$reason" ] || return 0
+  [ "$agent" = implementer ] || va=""
+  cur=".harness/asks/$agent.current"
+  id=$(awk 'NR == 1 { print $1 }' "$cur" 2>/dev/null); ts=$(awk 'NR == 1 { print $2 }' "$cur" 2>/dev/null)
+  if [ -z "$id" ] || ! digits_only "$ts" || [ "$ts" -lt "$ASK_T0" ]; then id="$ASK_T0-$$-noid"; fi
+  [ ! -f "$REPORT_DIR/$agent.md" ] || rep=$(retro_snapshot "$id" "$REPORT_DIR/$agent.md")
+  # the live .harness/task-<role>.md is overwritten by the next ask: point at the log's copy
+  bsnap=""; [ -z "${LAST_BRIEF:-}" ] || [ -z "${LAST_LOG:-}" ] || bsnap="$LAST_LOG#brief"
+  retro_write "$id" "$agent" "$reason" "$rc" "$va" "$dur" "$bsnap" "${LAST_LOG:-}" "$rep" || return 0
+  echo "retro: candidate queued ($reason) — run 'harness retro' when the task is done"
 }
 
 # cmd_route_log <json> — append one routing event to .harness/routing.jsonl
@@ -496,9 +579,14 @@ archive_late() {
 # rotate_logs <current-log> — newest N logs kept, older than D days deleted
 rotate_logs() {
   local f
-  ls -1t "$LOG_DIR"/*.md 2>/dev/null | grep -vxF -- "$1" | tail -n +"${HARNESS_LOG_KEEP:-200}" \
+  local keep
+  keep=$(mktemp "${TMPDIR:-/tmp}/harness-keep.XXXXXX") || keep=""
+  { printf '%s\n' "$1"; retro_pending_logs; } > "${keep:-/dev/null}" 2>/dev/null
+  ls -1t "$LOG_DIR"/*.md 2>/dev/null | grep -vxFf "${keep:-/dev/null}" | tail -n +"${HARNESS_LOG_KEEP:-200}" \
     | while IFS= read -r f; do rm -f "$f"; done
-  find "$LOG_DIR" -name '*.md' -mtime "+${HARNESS_LOG_DAYS:-14}" -exec rm -f {} + 2>/dev/null
+  find "$LOG_DIR" -name '*.md' -mtime "+${HARNESS_LOG_DAYS:-14}" 2>/dev/null \
+    | grep -vxFf "${keep:-/dev/null}" | while IFS= read -r f; do rm -f "$f"; done
+  [ -z "$keep" ] || rm -f "$keep"
   return 0
 }
 
@@ -734,6 +822,7 @@ ask_finish() {
   record_progress "$ASK_AGENT" "$ASK_TEXT" "$rc" "$ASK_T0" "$ASK_HB" "$ASK_TMP" "$CTX_BEFORE" \
     || echo "harness: could not write the progress log (ask result unchanged)" >&2
   record_route_delegate "$ASK_AGENT" "${ASK_VIA:-conductor}" "$rc"
+  retro_on_ask "$ASK_AGENT" "$rc" || true
   rm -f "$ASK_TMP"
   # a printed report (0, or 5 = failed verification/FAIL verdict) counts as collected
   case "$rc" in 0|5) stamp_finished "$ASK_AGENT" ;; esac
@@ -751,9 +840,9 @@ cmd_ask() {
   [ -n "$text" ] || ask_inner "$@"
   ASK_VIA=$(ask_via "$@")
   case "$ASK_VIA" in
-    skill|conductor) ;;
-    '') die "--via needs a value: skill or conductor" ;;
-    *) die "--via expects skill or conductor (got '$ASK_VIA')" ;;
+    skill|conductor|retro) ;;
+    '') die "--via needs a value: skill, conductor or retro" ;;
+    *) die "--via expects skill, conductor or retro (got '$ASK_VIA')" ;;
   esac
   ASK_TMP=$(mktemp "${TMPDIR:-/tmp}/harness-ask.XXXXXX") || ask_inner "$@"
   ASK_AGENT=$agent ASK_TEXT=$text ASK_DONE=0 ASK_PID=""
@@ -994,6 +1083,7 @@ cmd_report() {
   fi
   restore_interrupted "$agent" "$report"
   if [ -f "$report" ]; then
+    retro_on_report "$agent" "$report" || true
     # collecting a finished worker's report restarts its idle clock
     case "${fields%%$TAB*}" in idle|done) stamp_finished "$agent" ;; esac
     finish_report "$agent" "$report" "${fields#*$TAB}"
@@ -1245,6 +1335,222 @@ reap_idle() {
   return 0
 }
 
+# retro_on_report <agent> <report> — `harness report` collecting the report of an ask that
+# ended with an exit other than 0/5 (a late report): queue/extend its candidate. Never fails.
+retro_on_report() {
+  local agent=$1 report=$2 last rc instr id
+  [ -f "$report" ] && [ -f "$JSONL" ] || return 0
+  last=$(grep -v '"event":"close"' "$JSONL" 2>/dev/null | tail -n 200 \
+    | jq -R -r --arg a "$agent" 'fromjson? | select(type == "object" and .agent == $a and .late != true) | "\(.exit)\t\(.instr // "")"' 2>/dev/null | tail -n 1)
+  rc=${last%%$TAB*}; instr=${last#*$TAB}
+  digits_only "$rc" || return 0
+  case "$rc" in 0|5) return 0 ;; esac
+  case "$instr" in *task-retro.md*) retro_done_from_brief "$report"; return 0 ;; esac
+  id=$(awk 'NR == 1 { print $1 }' ".harness/asks/$agent.current" 2>/dev/null)
+  [ -n "$id" ] || return 0
+  [ ! -e "$RETRO_DIR/done/$id.json" ] || return 0
+  retro_write "$id" "$agent" "late report" "$rc" "" "" "" "" "$(retro_snapshot "$id" "$report")" late || return 0
+  echo "retro: candidate queued (late report) — run 'harness retro' when the task is done"
+}
+
+# retro_done_from_brief <report> — a retro ask that timed out but whose report later says
+# `status: done`: move the candidates named in .harness/task-retro.md to done/ so the next
+# `harness retro` does not write the same inbox notes again.
+retro_done_from_brief() {
+  local id n=0
+  [ "$(sed -n 's/^status: *//p' "$1" | head -n 1)" = done ] || return 0
+  [ -f .harness/task-retro.md ] || return 0
+  mkdir -p "$RETRO_DIR/done" 2>/dev/null || return 0
+  for id in $(sed -n 's/^### \([^ ]*\) .*/\1/p' .harness/task-retro.md); do
+    [ -f "$RETRO_DIR/$id.json" ] || continue
+    mv -f "$RETRO_DIR/$id.json" "$RETRO_DIR/done/" && n=$((n + 1))
+  done
+  [ "$n" -eq 0 ] || echo "retro: $n candidate$([ "$n" -eq 1 ] || echo s) processed (late retro report)"
+}
+
+# retro_brief <n> <candidate-files> <toplevel> — the retro brief on stdout: ask-ids,
+# reasons, numbers and file paths only.
+retro_brief() {
+  local n=$1 files=$2 top=$3 f
+  printf '# Task: failure retro (%s candidate%s)\n\n' "$n" "$([ "$n" -eq 1 ] || echo s)"
+  printf 'Read-only analysis of failed asks. Evidence lives in the files listed per candidate; open only those.\n\n'
+  printf '## Candidates\n\n'
+  printf '%s' "$files" | while IFS= read -r f; do
+    [ -n "$f" ] || continue
+    jq -r '"### \(.ask_id) — \(.role), \(.reason)\n- exit: \(.exit // "?") · verify attempts: \(.verify_attempts // "-") · duration: \(.duration_s // "?")s · late: \(.late)\n- log: \(.log // "-")\n- brief: \(.brief // "-" | if endswith("#brief") then "\(.[:-6]) (its `## Brief` section; the live task file was overwritten since)" else . end)\n- report: \(.report // "-")\n"' "$f" 2>/dev/null
+  done
+  printf '## What to write\n\n'
+  printf 'For each candidate (or one note per group of candidates with the same cause) write at most 120 words as:\n\n'
+  printf -- '- **Symptom:** what failed, observable.\n- **Cause:** the verified cause, or "unknown" with what was ruled out.\n- **Next time:** one concrete action.\n- **Evidence:** ask-id plus file:line (code, test, commit). Log and report paths under `.harness/` rotate away, so never cite only those. Mandatory; a note without it is dropped.\n\n'
+  printf 'Before writing, read `docs/wiki/index.md`. If an existing gotcha already covers the cause, write only a one-line note "recurrence of <page>" (with the Evidence line) instead of a new lesson; this feeds the 2+ recurrence promotion rule in AGENTS.md.\n\n'
+  printf '## Output\n\n'
+  if [ -d "$top/docs/wiki" ]; then
+    printf 'One file per note: `docs/wiki/inbox/<YYYY-MM-DD>-retro-<ask-id>.md` (the first ask-id of the group), starting with the header lines `role: retro`, `ask-id: <id>`, `date: <YYYY-MM-DD>` between `---` lines.\n'
+  else
+    printf 'This repo has no docs/wiki: one file per note in `.harness/retro/inbox/<YYYY-MM-DD>-retro-<ask-id>.md`. Do not create docs/wiki.\n'
+  fi
+  printf 'Skip any ask-id that already appears in a file under the inbox (a previous retro may have finished after its ask timed out).\n'
+  printf 'Do not edit wiki pages, index.md or log.md. No fluff, no success stories.\n'
+  printf 'Inbox files are committed to git: never copy prompt text, screen text, secrets, tokens, keys or URLs with credentials from the logs; paraphrase the observable symptom.\n'
+}
+
+# --- harness retro ---------------------------------------------------------------------------
+# cmd_retro [--dry-run] — one analyst ask over every pending candidate. The brief
+# (.harness/task-retro.md) holds ask-ids, reasons, numbers and file paths only.
+cmd_retro() {
+  local dry=0 f n=0 top brief=.harness/task-retro.md rc files=""
+  case "${1:-}" in '') ;; --dry-run) dry=1 ;; *) usage ;; esac
+  [ $# -le 1 ] || usage
+  for f in "$RETRO_DIR"/*.json; do
+    [ -f "$f" ] || continue
+    files="$files$f
+"
+    n=$((n + 1))
+  done
+  if [ "$n" -eq 0 ]; then echo "retro: nothing pending"; return 0; fi
+  top=$(git rev-parse --show-toplevel 2>/dev/null) || top=$PWD
+  if [ "$dry" = 1 ]; then
+    printf '%s' "$files" | while IFS= read -r f; do
+      [ -n "$f" ] || continue
+      jq -r '"\(.ask_id)\t\(.role)\t\(.reason)"' "$f" 2>/dev/null
+    done
+    echo "retro: $n candidate$([ "$n" -eq 1 ] || echo s) pending (dry run: no ask sent, nothing written); brief follows"
+    echo
+    retro_brief "$n" "$files" "$top"
+    return 0
+  fi
+  mkdir -p .harness || die "cannot create .harness/"
+  retro_brief "$n" "$files" "$top" > "$brief" || die "cannot write $brief"
+  "$BASH" "$0" ask analyst 'Read .harness/task-retro.md and do it.' --via retro --fresh
+  rc=$?
+  if [ "$rc" -eq 0 ]; then
+    mkdir -p "$RETRO_DIR/done"
+    printf '%s' "$files" | while IFS= read -r f; do
+      [ -n "$f" ] && mv -f "$f" "$RETRO_DIR/done/"
+    done
+    echo "retro: $n candidate$([ "$n" -eq 1 ] || echo s) processed"
+  else
+    echo "retro: analyst ask exited $rc; $n candidate$([ "$n" -eq 1 ] || echo s) stay pending" >&2
+  fi
+  return "$rc"
+}
+
+# --- harness metrics -------------------------------------------------------------------------
+# cmd_metrics [--since YYYY-MM-DD] [--json] — numbers from .harness/progress.jsonl (the
+# current window and the equal one before it) plus a snapshot of retro and wiki state.
+# Windows: [start, now] and [start - len, start). Default start = now - 28 days.
+# Abnormal = a late-report row or an ask whose exit is not 0/5; rate = abnormal / rows.
+cmd_metrics() {
+  local since="" json=0 now top pend=0 done_n=0 recur=0 wiki="null" pages inbox_n=0 oldest="" f st mt idxl=0 inj=0
+  local act=0 stale=0 draft=0 sup=0 oth=0
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --json) json=1; shift ;;
+      --since)
+        [ $# -ge 2 ] || usage
+        printf '%s' "$2" | grep -Eq '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' || die "--since expects YYYY-MM-DD (got '$2')"
+        since=$2; shift 2 ;;
+      *) usage ;;
+    esac
+  done
+  now=${HARNESS_NOW:-$(date +%s)}
+  digits_only "$now" || die "HARNESS_NOW must be epoch seconds"
+  if [ -n "$since" ]; then
+    jq -n -e --arg s "$since" '($s + "T00:00:00Z" | fromdateiso8601 | strftime("%Y-%m-%d")) == $s' >/dev/null 2>&1 || die "--since: not a valid date ('$since')"
+    [ ! "$since" \> "$(jq -n -r --argjson n "$now" '$n | strftime("%Y-%m-%d")')" ] || die "--since $since is in the future"
+  fi
+  top=$(git rev-parse --show-toplevel 2>/dev/null) || top=$PWD
+  pend=$(ls "$RETRO_DIR"/*.json 2>/dev/null | wc -l | tr -d ' ')
+  done_n=$(ls "$RETRO_DIR"/done/*.json 2>/dev/null | wc -l | tr -d ' ')
+  if [ -d "$top/docs/wiki" ]; then
+    for f in $(find "$top/docs/wiki" -name '*.md' ! -path "$top/docs/wiki/inbox/*" ! -name index.md ! -name log.md 2>/dev/null); do
+      st=$(sed -n 's/^status: *//p' "$f" | head -n 1)
+      case "$st" in
+        active) act=$((act + 1)) ;; stale) stale=$((stale + 1)) ;;
+        draft) draft=$((draft + 1)) ;; superseded) sup=$((sup + 1)) ;; *) oth=$((oth + 1)) ;;
+      esac
+    done
+    for f in $(find "$top/docs/wiki/inbox" -type f -name '*.md' 2>/dev/null); do
+      inbox_n=$((inbox_n + 1))
+      mt=$(file_mtime "$f") || continue
+      if [ -z "$oldest" ] || [ "$mt" -lt "$oldest" ]; then oldest=$mt; fi
+      recur=$((recur + $(grep -ci 'recurrence of' "$f" 2>/dev/null)))
+    done
+    [ ! -f "$top/docs/wiki/index.md" ] || idxl=$(wc -l < "$top/docs/wiki/index.md" | tr -d ' ')
+    [ ! -f "$top/docs/wiki/index.md" ] || inj=$(LC_ALL=C grep -F '(active,' "$top/docs/wiki/index.md" | wc -c | tr -d ' ')
+    wiki=$(jq -n -c --argjson a "$act" --argjson s "$stale" --argjson d "$draft" --argjson u "$sup" --argjson o "$oth" \
+      --argjson inbox "$inbox_n" --argjson oldest "$(num_or_null "$oldest")" --argjson now "$now" --argjson il "$idxl" --argjson ib "$inj" '
+      {pages: {active: $a, stale: $s, draft: $d, superseded: $u, other: $o}, inbox_items: $inbox,
+       inbox_oldest_days: (if $oldest == null then null else ((($now - $oldest) / 86400) | floor) end),
+       index_lines: $il, session_start_bytes: $ib}')
+  fi
+  { [ -f "$JSONL" ] && cat "$JSONL"; true; } | jq -R -s -r --argjson now "$now" --arg since "$since" --argjson json "$json" \
+    --argjson pend "$pend" --argjson done "$done_n" --argjson recur "$recur" --argjson wiki "$wiki" '
+    def pct($n; $d): if $d == 0 then null else (($n * 1000 / $d) | round) / 10 end;
+    def median: sort | if length == 0 then null elif length % 2 == 1 then .[(length / 2 | floor)]
+      else (((.[length / 2 - 1] + .[length / 2]) / 2) | round) end;
+    def p95: sort | if length == 0 then null else .[((length * 0.95 | ceil) - 1)] end;
+    def day: strftime("%Y-%m-%d");
+    def rows: split("\n") | map(fromjson? | select(type == "object" and .event != "close"))
+      | map(. + {t: (try (.ts | fromdateiso8601) catch null)}) | map(select(.t != null));
+    def abn: .late == true or (.exit != null and .exit != 0 and .exit != 5);
+    def role_stat($rs):
+      ($rs | map(select(.late != true))) as $a
+      | { asks: ($a | length), late: ($rs | map(select(.late == true)) | length),
+          abnormal: ($rs | map(select(abn)) | length),
+          abnormal_rate: pct($rs | map(select(abn)) | length; $rs | length),
+          exit: ($rs | map(if .late == true then "late" else (.exit | if . == null then "?" else tostring end) end)
+                 | group_by(.) | map({key: .[0], value: length}) | from_entries),
+          exit5: ($a | map(select(.exit == 5)) | length),
+          duration_median_s: ($a | map(.dur_s | select(type == "number")) | median),
+          duration_p95_s: ($a | map(.dur_s | select(type == "number")) | p95),
+          mean_verify_attempts: ($a | map(.verify_attempts | select(type == "number")) | if length == 0 then null else ((add / length * 10 | round) / 10) end) };
+    def stat($rs):
+      { total: role_stat($rs),
+        roles: (["analyst", "implementer", "reviewer"] | map(. as $r | {key: $r, value: role_stat($rs | map(select(.agent == $r)))}) | from_entries) }
+      | .roles.implementer.verify_failure_rate = pct(.roles.implementer.exit5; .roles.implementer.asks)
+      | .roles.reviewer.fail_rate = pct(.roles.reviewer.exit5; .roles.reviewer.asks);
+    (rows) as $all
+    | (if $since == "" then $now - 28 * 86400 else ($since + "T00:00:00Z" | fromdateiso8601) end) as $start
+    | ($now - $start) as $len
+    | { window: {start: ($start | day), end: ($now | day), days: (($len / 86400) | round)},
+        previous: {start: ($start - $len | day), end: ($start | day)},
+        current: stat($all | map(select(.t >= $start and .t <= $now))),
+        prev: stat($all | map(select(.t >= $start - $len and .t < $start))),
+        retro: {pending: $pend, processed: $done, recurrences_noted: $recur},
+        wiki: $wiki }
+    | if $json == 1 then tojson else
+      def pad($n): tostring | . + ([range(0; $n - length) | " "] | join(""));
+      def lpad($n): tostring | ([range(0; $n - length) | " "] | join("")) + .;
+      def f: if . == null then "-" else tostring end;
+      def pc: if . == null then "-" else "\(.)%" end;
+      def dist: if (. | length) == 0 then "-" else (to_entries | map("\(.key):\(.value)") | join(" ")) end;
+      def dur: if .duration_median_s == null then "-" else "\(.duration_median_s)s / \(.duration_p95_s)s" end;
+      def row($label; $c; $p): "  " + ($label | pad(34)) + ($c | f | lpad(22)) + ($p | f | lpad(22));
+      . as $m
+      | [ "harness metrics  \(.window.start) .. \(.window.end) (\(.window.days)d)  vs  \(.previous.start) .. \(.previous.end)",
+          "",
+          ("  " + ("" | pad(34)) + ("current" | lpad(22)) + ("previous" | lpad(22))),
+          row("asks"; .current.total.asks; .prev.total.asks),
+          (["analyst", "implementer", "reviewer"][] as $r | row("  \($r)"; .current.roles[$r].asks; .prev.roles[$r].asks)),
+          row("late reports"; .current.total.late; .prev.total.late),
+          row("abnormal rate (exit not 0/5, late)"; (.current.total.abnormal_rate | pc); (.prev.total.abnormal_rate | pc)),
+          (["analyst", "implementer", "reviewer"][] as $r | row("  \($r)"; (.current.roles[$r].abnormal_rate | pc); (.prev.roles[$r].abnormal_rate | pc))),
+          row("implementer verify-failure rate"; (.current.roles.implementer.verify_failure_rate | pc); (.prev.roles.implementer.verify_failure_rate | pc)),
+          row("implementer mean verify attempts"; .current.roles.implementer.mean_verify_attempts; .prev.roles.implementer.mean_verify_attempts),
+          row("reviewer FAIL rate"; (.current.roles.reviewer.fail_rate | pc); (.prev.roles.reviewer.fail_rate | pc)),
+          (["analyst", "implementer", "reviewer"][] as $r | row("duration median / p95  \($r)"; (.current.roles[$r] | dur); (.prev.roles[$r] | dur))),
+          "",
+          "  exits current:  \(.current.total.exit | dist)",
+          "  exits previous: \(.prev.total.exit | dist)",
+          "",
+          "retro: \(.retro.pending) pending · \(.retro.processed) processed · \(.retro.recurrences_noted) recurrence note(s) in the inbox",
+          (if .wiki == null then "wiki: none (no docs/wiki)" else
+            "wiki: pages active \(.wiki.pages.active) · stale \(.wiki.pages.stale) · draft \(.wiki.pages.draft) · superseded \(.wiki.pages.superseded) · other \(.wiki.pages.other)",
+            "wiki: inbox \(.wiki.inbox_items) item(s), oldest \(.wiki.inbox_oldest_days | if . == null then "-" else "\(.)d" end) · index \(.wiki.index_lines) lines · SessionStart wiki \(.wiki.session_start_bytes) bytes" end) ]
+      | .[] end'
+}
+
 need jq
 # route-log is called by the UserPromptSubmit hook: no herdr needed
 if [ "${1:-}" = route-log ]; then shift; cmd_route_log "$@"; exit 0; fi
@@ -1254,6 +1560,9 @@ if [ "${1:-}" = _mtime ]; then file_mtime "${2:-}"; exit $?; fi
 if [ "${1:-}" = _wname ]; then valid_agent "${2:-}"; wname "$2"; echo; exit 0; fi
 # wiki-lint is pure file checking: no herdr needed
 if [ "${1:-}" = wiki-lint ]; then shift; cmd_wiki_lint "$@"; exit $?; fi
+# retro and metrics read files only; retro's ask is a separate `harness ask` process
+if [ "${1:-}" = retro ]; then shift; cmd_retro "$@"; exit $?; fi
+if [ "${1:-}" = metrics ]; then shift; cmd_metrics "$@"; exit $?; fi
 need herdr
 [ "${HERDR_ENV:-}" = 1 ] || die "run Claude inside a herdr pane (HERDR_ENV is not 1)"
 

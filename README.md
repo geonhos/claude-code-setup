@@ -43,9 +43,11 @@ cd ~/workspace/claude-code-setup
 
 ```
 harness spawn  <agent> [--direction right|down]
-harness ask    <agent> '<instruction>' [--timeout MS] [--fresh|--keep] [--via skill|conductor]   # exit 2 blocked · 3 no report · 4 still working · 5 verification failed · 6 worker runs outside this repo
+harness ask    <agent> '<instruction>' [--timeout MS] [--fresh|--keep] [--via skill|conductor|retro]   # exit 2 blocked · 3 no report · 4 still working · 5 verification failed · 6 worker runs outside this repo
 harness report <agent>                                   # print existing report (same exit codes as ask), 3 none, 4 still working, 6 worker runs outside this repo (worker names are `<role>-<repo8>`)
 harness status
+harness retro  [--dry-run]                               # 실패한 ask의 후보(.harness/retro/)를 analyst 한 번에 묶어 회고 → docs/wiki/inbox/
+harness metrics [--since YYYY-MM-DD] [--json]            # progress.jsonl·위키 기반 지표 (최근 28일 vs 직전 28일)
 harness close  <agent>|--all|--legacy [--force]          # exit 4 when working/blocked or the report is uncollected (--force overrides); --legacy closes old unscoped workers of this repo
 harness route-log '<json>'                               # append one line to .harness/routing.jsonl (used by the hook and by ask)
 ```
