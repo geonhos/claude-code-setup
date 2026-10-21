@@ -416,7 +416,7 @@ rm -rf "$NB"
 setup; gitwork
 echo idle > "$FAKE_DIR/live.$(WN implementer)"
 export FAKE_PROMPT_HOOK="mkdir -p $WORK/.harness/reports; printf '# r\nstatus: done\n' > $WORK/.harness/reports/implementer.md.pending"
-run ask implementer "do it"
+run ask implementer "do it" --timeout 2500
 check "interrupted ask: exit 5" [ "$RC" -eq 5 ]
 check "interrupted ask: INTERRUPTED line" grep -qx "verify: INTERRUPTED" <<<"$OUT"
 check "interrupted ask: report restored" [ -f "$WORK/.harness/reports/implementer.md" ]
@@ -608,7 +608,16 @@ check "earlier-turn marker: report not printed" not_grep "analyst report" <(prin
 setup
 export FAKE_PROMPT_HOOK="mkdir -p $WORK/.harness/reports; printf 'x\n' > $WORK/.harness/reports/implementer.md.pending; touch $FAKE_DIR/no_stop_hook"
 run ask implementer "q" --timeout 2500
-check "pending: no early exit 3" [ "$RC" -ne 3 ]
+check "pending: waits to deadline, exit 5 INTERRUPTED" [ "$RC" -eq 5 ]
+
+# earlier-turn marker + .pending + idle (bg-wait resume, verify running): no grace
+# exit; waits to the deadline (5)
+setup
+export FAKE_PROMPT_HOOK="touch $FAKE_DIR/no_stop_hook; id=\$(cut -d' ' -f1 $WORK/.harness/asks/implementer.current); mkdir -p $WORK/.harness/done $WORK/.harness/reports; echo \"s \$(date +%s)\" > $WORK/.harness/done/implementer.\$id; printf 'x\\n' > $WORK/.harness/reports/implementer.md.pending"
+t0=$(date +%s)
+OUT=$(HERDR_ENV=1 HERDR_PANE_ID=w1:p1 HARNESS_IDLE_GRACE=1 HARNESS_POLL_SEC=0.2 PATH="$FAKE_BIN:$HERE/../bin:$PATH" perl -e 'alarm(12);exec(@ARGV)' env -u HARNESS_ROLE /bin/bash "$HARNESS" ask implementer "q" --timeout 3000 2>&1); RC=$?
+check "marker+pending+idle: no grace exit, rc 5 at deadline" [ "$RC" -eq 5 ]
+check "marker+pending+idle: waited to deadline" [ $(( $(date +%s) - t0 )) -ge 3 ]
 
 # exit-3 message (old worker without the hook) is on stdout and names close
 setup

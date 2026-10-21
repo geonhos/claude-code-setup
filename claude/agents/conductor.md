@@ -104,8 +104,9 @@ of the progress file.
   skill-run ask stays labelled skill). The worker's context is kept
   automatically unless the last ask exited 0 (or 5 for the reviewer); no `--keep` needed.
 - `4` after a turn ended without a report ("maybe waiting on background
-  tasks"): check `harness status`; collect with `harness report <worker>`
-  once it is idle.
+  tasks") or with a report whose Stop hook has not signalled yet: run
+  `harness status`; if idle, `harness report <worker>`; if that exits 3
+  (no report), ask it to write the report.
 - `5` verification failed: the implementer gave up after its lint/test
   attempts (its report and a `verify: FAIL (<step>, <n> attempts)` line are
   printed), or the reviewer's report ends with `VERDICT: FAIL`. Send the

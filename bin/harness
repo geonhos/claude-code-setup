@@ -727,14 +727,17 @@ ask_inner() {
         exit 2 ;;
       idle|done)
         # Idle grace applies only to a worker whose Stop hook never fired.
-        # Marker, no .pending: the turn ended (maybe waiting on background tasks);
-        # keep waiting. No marker, .pending: the implementer's verification is
-        # still running; keep waiting. Marker + .pending: hook ended, leftover
-        # .pending means it was interrupted: grace, then restore (exit 5).
+        # has_marker has_pending:
+        #   10 turn ended (maybe waiting on background tasks): keep waiting.
+        #   01 verify running (or the hook was killed): keep waiting.
+        #   11 earlier-turn marker + verify running now (bg-wait resume): keep waiting.
+        #   00 no signal at all: grace, then give up.
+        # While .pending exists the only ways out are completion or the deadline
+        # (which restores the interrupted report: exit 5).
         has_marker=0; has_pending=0
         [ -f ".harness/done/$agent.$ask_id" ] && has_marker=1
         [ "$agent" = implementer ] && [ -f "$report.pending" ] && has_pending=1
-        if [ "$has_marker$has_pending" = 10 ] || [ "$has_marker$has_pending" = 01 ]; then
+        if [ "$has_marker" = 1 ] || [ "$has_pending" = 1 ]; then
           idle_since=""
         else
           [ -n "$idle_since" ] || idle_since=$now
@@ -751,7 +754,11 @@ ask_inner() {
     esac
     if [ "$now" -ge "$deadline" ]; then
       if [ -f ".harness/done/$agent.$ask_id" ] && [ ! -f "$report.pending" ]; then
-        echo "harness: $agent's turn ended without a report (maybe waiting on background tasks); check harness status / harness report $agent" >&2
+        if [ -f "$report" ]; then
+          echo "harness: $agent has a report but its Stop hook has not signalled yet (earlier-turn marker only); check harness status / harness report $agent" >&2
+        else
+          echo "harness: $agent's turn ended without a report (maybe waiting on background tasks); check harness status / harness report $agent" >&2
+        fi
         show_pane_screen "$pane"
         exit 4
       fi
