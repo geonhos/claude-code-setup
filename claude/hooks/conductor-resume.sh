@@ -5,7 +5,7 @@
 # (HARNESS_ROLE=worker), when there is nothing to inject, or when jq is unavailable.
 # Also appends the `(active,` lines of docs/wiki/index.md (at most WIKI_MAX bytes,
 # default 2048, then a "… see docs/wiki/index.md" line). Workers get no SessionStart
-# injection; they rely on the CLAUDE.md pointer to the wiki index.
+# injection; they rely on the AGENTS.md pointer to the wiki index.
 # Never fails: a SessionStart hook must not block a session.
 [ "${HARNESS_ROLE:-}" = worker ] && exit 0
 command -v jq >/dev/null 2>&1 || exit 0
