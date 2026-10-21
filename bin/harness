@@ -6,10 +6,11 @@
 #   harness ask    <agent> '<instruction>' [--timeout MS] [--fresh|--keep] [--via skill|conductor]
 #   harness report <agent>
 #   harness status
-#   harness close  <agent>
+#   harness close  <agent>|--all|--legacy [--force]
 #   harness route-log '<json>'   append one line to .harness/routing.jsonl (never fails)
 #
 # Exit codes for `ask`: 0 report printed · 1 usage/setup error · 2 worker blocked
+#                       6 worker runs outside this repo (cwd check); nothing was sent
 #                       3 worker finished without a report
 #                       4 worker still working / unknown (including busy with a
 #                         previous instruction: nothing sent), or prompt not
@@ -21,6 +22,7 @@
 # `report` prints .harness/reports/<agent>.md with the same exit codes as `ask`
 #   (0 · 3 no report/no VERDICT · 5 verification failed), plus 4 while the agent
 #   is still working. It never sends a prompt.
+# Worker herdr names are repo-scoped: <role>-<repo8> (see wname).
 # Workers (HARNESS_ROLE=worker) may not ask or spawn: skills are user-global and would otherwise nest.
 # .harness/ lives in the directory where the conductor runs ($PWD).
 # Every ask is logged to .harness/log/ and .harness/progress.jsonl, and
@@ -30,6 +32,15 @@
 # Context reset before an ask on a live worker: implementer always, analyst/
 # reviewer when ctx > HARNESS_CTX_RESET (default 120000) or with --fresh;
 # --keep skips it. Reset = /clear, else close + respawn.
+# Pane lifecycle (config: .harness/config.json, created on first use; env overrides):
+#   close_after_ask.<role> never|on_success (implementer on_success, others never);
+#     env HARNESS_CLOSE_AFTER_ASK_<ROLE>. on_success = ask exit 0 (reviewer: 0 or 5).
+#   idle_ttl_minutes (default 30, 0 = off; env HARNESS_IDLE_TTL_MINUTES): at the start
+#     of ask|spawn|status, scoped workers of this repo idle longer than that since
+#     their last collected report (.harness/asks/<role>.finished) are closed.
+#   HARNESS_NO_AUTOCLOSE=1 disables both. `harness close` refuses (exit 4) a working/
+#   blocked worker or an uncollected report unless --force. Closes are logged to
+#   progress.jsonl (event close, role, reason manual|after_ask|ttl|legacy).
 # Output of `ask`: stdout = report on exit 0 and 5; screen text on 2/3/4;
 #                  diagnostics on stderr.
 set -u
@@ -51,7 +62,7 @@ usage:
   harness ask    <agent> '<instruction>' [--timeout MS] [--fresh|--keep] [--via skill|conductor]
   harness report <agent>
   harness status
-  harness close  <agent>
+  harness close  <agent>|--all|--legacy [--force]
   harness route-log '<json>'
 agents: $AGENTS
 EOF
@@ -69,7 +80,68 @@ valid_agent() {
   die "unknown agent '$1' (expected one of: $AGENTS)"
 }
 
-agent_json()   { herdr agent get "$1" 2>/dev/null; }
+# --- repo-scoped worker names ------------------------------------------------------------
+# A worker's herdr name is <role>-<repo8>: repo8 = first 8 hex of a hash of the
+# repo top-level (git rev-parse --show-toplevel, else $PWD; symlinks resolved).
+# CLI/role names (analyst, implementer, reviewer) are unchanged; wname is the
+# only place that maps role -> herdr name. Exit 6 = worker belongs to another dir.
+repo_top() {
+  local t
+  t=$(git rev-parse --show-toplevel 2>/dev/null) || t=""
+  [ -n "$t" ] || t=$PWD
+  ( cd "$t" 2>/dev/null && pwd -P ) || printf '%s\n' "$t"
+}
+repo_hash8() {
+  local h
+  if command -v sha1sum >/dev/null 2>&1; then h=$(printf %s "$1" | sha1sum)
+  elif command -v shasum >/dev/null 2>&1; then h=$(printf %s "$1" | shasum -a 1)
+  else h=$(printf %s "$1" | cksum | awk '{ printf "%08x", $1 }'); fi
+  printf %s "${h%% *}" | cut -c1-8
+}
+REPO_TOP=$(repo_top)
+REPO8=$(repo_hash8 "$REPO_TOP")
+wname() { printf '%s-%s' "$1" "$REPO8"; }
+
+# cwd_in_repo <dir> — 0 when dir (symlinks resolved) is the repo top-level or inside it
+cwd_in_repo() {
+  local d=$1 rest=""
+  # a vanished path: resolve the deepest existing ancestor, re-append the rest,
+  # so /link/gone and /repo/gone behave the same
+  while [ ! -d "$d" ] && [ "$d" != "/" ] && [ "$d" != "." ] && [ -n "$d" ]; do
+    rest="/${d##*/}$rest"; d=${d%/*}; [ -n "$d" ] || d=/
+  done
+  d=$( cd "$d" 2>/dev/null && pwd -P ) || d=$1
+  [ "$d" = "/" ] && d=""
+  d="$d$rest"
+  [ -n "$d" ] || d=/
+  case "$d" in "$REPO_TOP"|"$REPO_TOP"/*) return 0 ;; esac
+  return 1
+}
+
+# check_worker_cwd <role> <agent-get-json> — exit 6 when the worker runs outside
+# this repo. A worker whose cwd herdr does not report is not refused.
+check_worker_cwd() {
+  local c
+  c=$(printf '%s' "$2" | jq -r '.result.agent.cwd // empty' 2>/dev/null)
+  if [ -z "$c" ]; then
+    echo "harness: warning: herdr did not report cwd for $(wname "$1"); repo check skipped" >&2
+    return 0
+  fi
+  cwd_in_repo "$c" && return 0
+  echo "harness: worker $(wname "$1") runs in $c, outside this repo ($REPO_TOP); refusing to use it. Close that pane or run harness from the right directory." >&2
+  exit 6
+}
+
+# migration_hint <role> — one line when an old unscoped worker of this repo is still live
+migration_hint() {
+  local j c
+  j=$(herdr agent get "$1" 2>/dev/null) || return 0
+  c=$(printf '%s' "$j" | jq -r '.result.agent.cwd // empty' 2>/dev/null)
+  [ -n "$c" ] && cwd_in_repo "$c" || return 0
+  echo "harness: note: old unscoped worker '$1' is still running for this repo and is no longer used; close it with: harness close --legacy (harness now uses $(wname "$1"))." >&2
+}
+
+agent_json()   { herdr agent get "$(wname "$1")" 2>/dev/null; }
 agent_pane()   { agent_json "$1" | jq -r '.result.agent.pane_id // empty'; }
 
 # agent_fields <agent> — one `agent get`, prints "status<TAB>pane".
@@ -100,9 +172,9 @@ show_pane_screen() {
 show_agent_diag() {
   local j
   if j=$(agent_json "$1"); then
-    echo "harness: agent get $1: $j" >&2
+    echo "harness: agent get $(wname "$1"): $j" >&2
   else
-    echo "harness: agent get $1: agent not found" >&2
+    echo "harness: agent get $(wname "$1"): agent not found" >&2
   fi
 }
 
@@ -154,9 +226,11 @@ cmd_spawn() {
 
   local fields
   if fields=$(agent_fields "$agent"); then
+    check_worker_cwd "$agent" "$(agent_json "$agent")"
     printf '%s\n' "${fields#*$TAB}"
     return 0
   fi
+  migration_hint "$agent"
 
   [ -n "$dir" ] || dir=$(pick_direction)
 
@@ -169,8 +243,9 @@ cmd_spawn() {
 
   mkdir -p "$(dirname "$PANES_FILE")"
   printf '%s %s\n' "$agent" "$pane" >> "$PANES_FILE"
+  rm -f ".harness/asks/$agent.finished"
 
-  if ! out=$(herdr agent start "$agent" --kind claude --pane "$pane" -- --agent "$agent" 2>&1); then
+  if ! out=$(herdr agent start "$(wname "$agent")" --kind claude --pane "$pane" -- --agent "$agent" 2>&1); then
     echo "harness: agent start failed for $agent in $pane: $out" >&2
     show_pane_screen "$pane" >&2
     herdr pane close "$pane" >/dev/null 2>&1 \
@@ -216,7 +291,7 @@ fmt_ctx() {
 do_clear() {
   local old new st i=0 j
   old=$(agent_session "$1")
-  herdr agent prompt "$1" /clear >/dev/null 2>&1 || return 1
+  herdr agent prompt "$(wname "$1")" /clear >/dev/null 2>&1 || return 1
   while [ "$i" -lt "${HARNESS_CLEAR_POLLS:-20}" ]; do
     sleep "${HARNESS_CLEAR_INTERVAL:-0.5}"
     j=$(agent_json "$1") || return 1
@@ -233,7 +308,7 @@ do_clear() {
 # last_exit <agent> — exit code of the agent's last logged ask (late archives
 # have no exit and are skipped); nothing when unknown
 last_exit() {
-  tail -n 200 "$JSONL" 2>/dev/null | jq -R -r --arg a "$1" 'fromjson? | select(type == "object" and .agent == $a and (.exit | type) == "number") | .exit' 2>/dev/null | tail -n 1
+  grep -v '"event":"close"' "$JSONL" 2>/dev/null | tail -n 200 | jq -R -r --arg a "$1" 'fromjson? | select(type == "object" and .agent == $a and (.exit | type) == "number") | .exit' 2>/dev/null | tail -n 1
 }
 
 # maybe_reset <agent> <fresh> <keep> <existed> <ctx> — clear a live worker's
@@ -273,11 +348,11 @@ maybe_reset() {
   case "$st" in idle|done) ;; *) return 0 ;; esac
   do_clear "$agent" && return 0
   echo "harness: /clear did not take effect for $agent; respawning it" >&2
-  if ! ( cmd_close "$agent" ) >&2; then
+  if ! ( preflight_close "$agent"; finish_close "$agent" "$C_PANE" "" ) >&2; then
     echo "harness: could not close $agent; continuing without a reset" >&2
     return 0
   fi
-  RESET_PANE=$(cmd_spawn "$agent") || exit 1
+  RESET_PANE=$(cmd_spawn "$agent") || exit $?
 }
 
 # --- progress log ----------------------------------------------------------------------
@@ -400,7 +475,7 @@ record_route_delegate() {
 archive_late() {
   local agent=$1 report=$2 sha last ts stamp logf n status summary
   sha=$(file_sum "$report")
-  last=$(tail -n 200 "$JSONL" 2>/dev/null | jq -R -r --arg a "$agent" 'fromjson? | select(type == "object" and .agent == $a) | .report_sha // ""' 2>/dev/null | tail -n 1)
+  last=$(grep -v '"event":"close"' "$JSONL" 2>/dev/null | tail -n 200 | jq -R -r --arg a "$agent" 'fromjson? | select(type == "object" and .agent == $a) | .report_sha // ""' 2>/dev/null | tail -n 1)
   [ -z "$sha" ] || [ "$sha" != "$last" ] || return 0
   ts=$(date -u +%Y-%m-%dT%H:%M:%SZ); stamp=$(date +%Y%m%d-%H%M%S)
   status=$(sed -n 's/^status: *//p' "$report" | head -n 1)
@@ -440,8 +515,11 @@ write_progress_md() {
     printf '# Progress — %s (%s)\n' "$(basename "$PWD")" "$branch"
     printf 'Goal: %s\n' "$goal"
     printf '## Recent asks (newest first, max 15)\n'
-    tail -n 15 "$JSONL" 2>/dev/null | jq -r -R 'fromjson? | "- \(.ts) \(.agent) \(if .late then "late report" else "exit \(.exit)" end) verify \(.verify // "-") \(.head_before // "")..\(.head_after // "") — \(.summary // "")"' 2>/dev/null \
+    grep -v '"event":"close"' "$JSONL" 2>/dev/null | tail -n 15 | jq -r -R 'fromjson? | "- \(.ts) \(.agent) \(if .late then "late report" else "exit \(.exit)" end) verify \(.verify // "-") \(.head_before // "")..\(.head_after // "") — \(.summary // "")"' 2>/dev/null \
       | awk '{ a[NR] = $0 } END { for (i = NR; i >= 1; i--) print a[i] }'
+    q=$(grep '"event":"close"' "$JSONL" 2>/dev/null | tail -n 5 | jq -r -R 'fromjson? | "\(.ts) \(.role) (\(.reason // "?"))"' 2>/dev/null \
+      | awk '{ a[NR] = $0 } END { for (i = NR; i >= 1; i--) printf "%s%s", (i == NR ? "" : "; "), a[i]; if (NR) print "" }')
+    [ -z "$q" ] || printf 'Recent closes (max 5): %s\n' "$q"
     for f in $(ls -t .harness/reports/*.md 2>/dev/null); do
       q=$(awk '/^## Open questions/ { on = 1; next } /^## / { on = 0 } on && /^- / { if (tolower($0) !~ /^- *none *$/) print }' "$f" | head -n 10)
       if [ -n "$q" ]; then
@@ -471,10 +549,12 @@ verify_tool() {
 
 # restore_interrupted <agent> <report> — implementer only: the Stop hook hides the
 # report as <report>.pending while it verifies. If the hook was killed, only the
-# .pending file is left: restore it and exit 5 (callers checked the agent is idle).
+# .pending file is left: restore it and exit 5. Callers must have checked the agent
+# is idle/done (a working agent may still be verifying; never restore then).
 restore_interrupted() {
   [ "$1" = implementer ] && [ ! -f "$2" ] && [ -f "$2.pending" ] || return 0
   mv -f "$2.pending" "$2"
+  stamp_finished "$1"
   cat "$2"
   echo "verify: INTERRUPTED"
   exit 5
@@ -531,6 +611,9 @@ ask_finish() {
     || echo "harness: could not write the progress log (ask result unchanged)" >&2
   record_route_delegate "$ASK_AGENT" "${ASK_VIA:-conductor}" "$rc"
   rm -f "$ASK_TMP"
+  # a printed report (0, or 5 = failed verification/FAIL verdict) counts as collected
+  case "$rc" in 0|5) stamp_finished "$ASK_AGENT" ;; esac
+  maybe_close_after_ask "$ASK_AGENT" "$rc"
   exit "$rc"
 }
 
@@ -589,7 +672,7 @@ ask_inner() {
 
   local pane existed=0
   agent_fields "$agent" >/dev/null && existed=1
-  pane=$(cmd_spawn "$agent") || exit 1
+  pane=$(cmd_spawn "$agent") || exit $?
 
   local report="$REPORT_DIR/$agent.md"
 
@@ -604,6 +687,14 @@ ask_inner() {
   # a live worker starts the task with a cleared context (never a fresh spawn)
   maybe_reset "$agent" "$fresh" "$keep" "$existed" "${CTX_BEFORE:-}"
   [ -z "$RESET_PANE" ] || pane=$RESET_PANE
+
+  # --keep after a close/reap: the old conversation is gone (note is consumed by any ask)
+  if [ -f ".harness/asks/$agent.closed" ]; then
+    if [ "$keep" = 1 ]; then
+      echo "harness: note: $agent was closed ($(awk 'NR==1 { print $2 }' ".harness/asks/$agent.closed")) — previous context is gone; running on a fresh worker"
+    fi
+    rm -f ".harness/asks/$agent.closed"
+  fi
 
   mkdir -p "$REPORT_DIR"
   if [ -f "$report" ]; then
@@ -628,42 +719,142 @@ ask_inner() {
     exit 2
   fi
 
+  # Completion = the worker's Stop hook wrote .harness/done/<agent>.<ask-id>
+  # AND the report is newer than this ask. herdr's idle/done is only a hint.
+  local ask_id ask_start
+  ask_id="$(date +%s)-$$-$RANDOM"
+  rm -f ".harness/done/$agent".* 2>/dev/null
+  mkdir -p .harness/asks .harness/done
+  ask_start=$(date +%s)
+  rm -f ".harness/asks/$agent.finished"
+  printf '%s %s\n' "$ask_id" "$ask_start" > ".harness/asks/$agent.current"
+
   # The instruction goes in herdr's positional text slot, which is what keeps
   # dash-leading text from being parsed as an option. Do not add `--`: real
   # herdr rejects it.
   local out prompt_failed=0
-  if ! out=$(herdr agent prompt "$agent" "$text" --wait --timeout "$timeout" 2>&1); then
+  if ! out=$(herdr agent prompt "$(wname "$agent")" "$text" --wait --timeout "$timeout" 2>&1); then
     prompt_failed=1
     echo "harness: prompt did not settle: $out" >&2
   fi
 
-  local st
-  st=$(agent_status "$agent")
-  case "$st" in
-    blocked)
-      echo "harness: $agent is blocked (needs an answer)." >&2
-      show_pane_screen "$pane"
-      exit 2 ;;
-    idle|done)
-      restore_interrupted "$agent" "$report"
-      if [ -f "$report" ]; then
-        finish_report "$agent" "$report" "$pane"
-      fi
-      if [ "$prompt_failed" = 1 ]; then
-        echo "harness: prompt was not accepted by herdr: $out" >&2
+  local has_marker has_pending st grace=${HARNESS_IDLE_GRACE:-30} poll=${HARNESS_POLL_SEC:-2}
+  local deadline=$((ask_start + (timeout + 999) / 1000)) idle_since="" now
+  case "$grace" in ''|*[!0-9]*) grace=30 ;; esac
+  while :; do
+    if ask_complete "$agent" "$ask_id" "$report"; then
+      finish_report "$agent" "$report" "$pane"
+    fi
+    st=$(agent_status "$agent")
+    now=$(date +%s)
+    case "$st" in
+      blocked)
+        echo "harness: $agent is blocked (needs an answer)." >&2
+        show_pane_screen "$pane"
+        exit 2 ;;
+      idle|done)
+        # Idle grace applies only to a worker whose Stop hook never fired.
+        # has_marker has_pending:
+        #   10 turn ended (maybe waiting on background tasks): keep waiting.
+        #   01 verify running (or the hook was killed): keep waiting.
+        #   11 earlier-turn marker + verify running now (bg-wait resume): keep waiting.
+        #   00 no signal at all: grace, then give up.
+        # While .pending exists the only ways out are completion or the deadline
+        # (which restores the interrupted report: exit 5).
+        has_marker=0; has_pending=0
+        [ -f ".harness/done/$agent.$ask_id" ] && has_marker=1
+        [ "$agent" = implementer ] && [ -f "$report.pending" ] && has_pending=1
+        if [ "$has_marker" = 1 ] || [ "$has_pending" = 1 ]; then
+          idle_since=""
+        else
+          [ -n "$idle_since" ] || idle_since=$now
+          if [ $((now - idle_since)) -ge "$grace" ]; then
+            ask_idle_giveup "$agent" "$report" "$pane" "$prompt_failed" "$out"
+          fi
+        fi ;;
+      working) idle_since="" ;;
+      *)
+        echo "harness: $agent status is '$st' (still working or unknown); check 'harness status' before re-prompting." >&2
         show_agent_diag "$agent"
+        show_pane_screen "$pane"
+        exit 4 ;;
+    esac
+    if [ "$now" -ge "$deadline" ]; then
+      if [ -f ".harness/done/$agent.$ask_id" ] && [ ! -f "$report.pending" ]; then
+        if [ -f "$report" ]; then
+          echo "harness: $agent has a report but its Stop hook has not signalled yet (earlier-turn marker only); check harness status / harness report $agent" >&2
+        else
+          echo "harness: $agent's turn ended without a report (maybe waiting on background tasks); check harness status / harness report $agent" >&2
+        fi
         show_pane_screen "$pane"
         exit 4
       fi
-      echo "harness: $agent finished but wrote no report at $report" >&2
-      show_pane_screen "$pane"
-      exit 3 ;;
-    *)
-      echo "harness: $agent status is '$st' (still working or unknown); check 'harness status' before re-prompting." >&2
+      if [ "$agent" = implementer ] && [ -f "$report.pending" ] && [ ! -f "$report" ]; then
+        case "$st" in
+          idle|done) restore_interrupted "$agent" "$report" ;;
+          *)
+            echo "harness: $agent is still verifying (Stop hook running); run harness status, then harness report $agent when idle" >&2
+            show_pane_screen "$pane"
+            exit 4 ;;
+        esac
+      fi
+      echo "harness: $agent status is '$st' (still working or unknown) after $((timeout / 1000))s; check 'harness status' before re-prompting." >&2
       show_agent_diag "$agent"
       show_pane_screen "$pane"
-      exit 4 ;;
-  esac
+      exit 4
+    fi
+    sleep "$poll"
+  done
+}
+
+# digits_only <string> — succeed only for a non-empty all-digit string
+digits_only() {
+  case "$1" in ''|*[!0-9]*) return 1 ;; esac
+}
+
+# file_mtime <file> — epoch seconds. GNU `stat -c %Y` first (BSD/macOS stat has no
+# -c and fails); `stat -f %m` second (on GNU, -f is filesystem mode and prints junk,
+# so every result is validated as all digits).
+file_mtime() {
+  local mt
+  mt=$(stat -c %Y "$1" 2>/dev/null) && digits_only "$mt" && { echo "$mt"; return 0; }
+  mt=$(stat -f %m "$1" 2>/dev/null) && digits_only "$mt" && { echo "$mt"; return 0; }
+  return 1
+}
+
+# ask_complete <agent> <ask-id> <report> — the worker's Stop hook marked this ask
+# done AFTER the report was last written (marker epoch >= report mtime, so a marker
+# from an earlier turn never completes a later report), and the report is not older
+# than this ask's start (.harness/asks/<agent>.current).
+ask_complete() {
+  local marker=".harness/done/$1.$2" cur=".harness/asks/$1.current" mt me
+  [ -f "$marker" ] && [ -f "$3" ] || return 1
+  [ -f "$cur" ] && [ ! "$3" -ot "$cur" ] || return 1
+  mt=$(file_mtime "$3") || return 1
+  me=$(awk 'NR==1 { print $2 }' "$marker" 2>/dev/null)
+  digits_only "$me" || return 1
+  [ "$me" -ge "$mt" ]
+}
+
+# ask_idle_giveup — herdr says idle/done and the worker's Stop hook never signalled
+# this ask (an old worker without the hook): no marker showed up within the grace
+ask_idle_giveup() {
+  local agent=$1 report=$2 pane=$3 prompt_failed=$4 out=$5
+  restore_interrupted "$agent" "$report"
+  if [ "$prompt_failed" = 1 ]; then
+    echo "harness: prompt was not accepted by herdr: $out" >&2
+    show_agent_diag "$agent"
+    show_pane_screen "$pane"
+    exit 4
+  fi
+  local hint="its Stop hook never signalled completion (a worker started before the hook needs a respawn: harness close $agent, or close the pane)"
+  if [ -f "$report" ]; then
+    echo "harness: $agent is idle but $hint; a report exists. Collect it with: harness report $agent; respawn with: harness close $agent to load the Stop hook"
+  else
+    echo "harness: $agent finished but wrote no report at $report; $hint"
+  fi
+  show_pane_screen "$pane"
+  exit 3
 }
 
 cmd_report() {
@@ -672,12 +863,15 @@ cmd_report() {
   valid_agent "$agent"
   local report="$REPORT_DIR/$agent.md" fields
   fields=$(agent_fields "$agent")
+  ! agent_fields "$agent" >/dev/null || check_worker_cwd "$agent" "$(agent_json "$agent")"
   if [ "${fields%%$TAB*}" = working ]; then
     echo "harness: $agent is still working; wait for it to finish (harness status), then run: harness report $agent" >&2
     exit 4
   fi
   restore_interrupted "$agent" "$report"
   if [ -f "$report" ]; then
+    # collecting a finished worker's report restarts its idle clock
+    case "${fields%%$TAB*}" in idle|done) stamp_finished "$agent" ;; esac
     finish_report "$agent" "$report" "${fields#*$TAB}"
   fi
   echo "harness: no report for $agent at $report" >&2
@@ -695,25 +889,251 @@ cmd_status() {
   done
 }
 
+# --- pane lifecycle: close, after-ask policy, idle TTL ------------------------------------
+CONFIG_FILE=".harness/config.json"
+
+# ensure_config — create the documented default config when absent (never fatal)
+ensure_config() {
+  [ -e "$CONFIG_FILE" ] && return 0
+  mkdir -p .harness 2>/dev/null || return 0
+  cat > "$CONFIG_FILE" 2>/dev/null <<'EOC'
+{
+  "_doc": "close_after_ask.<role>: never | on_success (close the worker after `harness ask` exits 0; reviewer: 0 or 5). idle_ttl_minutes: close this repo's workers idle longer than N minutes after their last collected report (0 = off). HARNESS_NO_AUTOCLOSE=1 disables both. Env overrides: HARNESS_CLOSE_AFTER_ASK_<ROLE>, HARNESS_IDLE_TTL_MINUTES.",
+  "close_after_ask": { "analyst": "never", "implementer": "on_success", "reviewer": "never" },
+  "idle_ttl_minutes": 30
+}
+EOC
+  return 0
+}
+
+# close_after_policy <role> — never|on_success (env, then config, then default)
+close_after_policy() {
+  local up v def=never
+  up=$(printf %s "$1" | tr 'a-z' 'A-Z')
+  [ "$1" = implementer ] && def=on_success
+  eval "v=\${HARNESS_CLOSE_AFTER_ASK_$up:-}"
+  [ -n "$v" ] || v=$(jq -r --arg r "$1" '.close_after_ask[$r] // empty' "$CONFIG_FILE" 2>/dev/null)
+  case "$v" in never|on_success) echo "$v" ;; *) echo "$def" ;; esac
+}
+
+# idle_ttl_minutes — non-negative integer (0 = off)
+idle_ttl_minutes() {
+  local v=${HARNESS_IDLE_TTL_MINUTES:-}
+  [ -n "$v" ] || v=$(jq -r '.idle_ttl_minutes // empty' "$CONFIG_FILE" 2>/dev/null)
+  digits_only "$v" || v=30
+  echo "$v"
+}
+
+# stamp_finished <agent> — mark the agent's report as collected now;
+# .harness/asks/<agent>.finished mtime = idle-since
+stamp_finished() {
+  mkdir -p .harness/asks 2>/dev/null && : > ".harness/asks/$1.finished" 2>/dev/null
+  return 0
+}
+
+# has_uncollected <agent> — 0 when the agent has a report nobody collected: a
+# .pending file, or a report that no collected-stamp covers (missing stamp, report
+# newer than the stamp, or a newer ask in flight)
+has_uncollected() {
+  local r="$REPORT_DIR/$1.md" f=".harness/asks/$1.finished" c=".harness/asks/$1.current"
+  [ -f "$r.pending" ] && return 0
+  [ -f "$r" ] || return 1
+  [ -f "$f" ] || return 0
+  [ "$r" -nt "$f" ] && return 0
+  [ -f "$c" ] && [ "$f" -ot "$c" ] && return 0
+  return 1
+}
+
+# log_close <role> <pane> <reason> — event line in progress.jsonl (key `role`, not
+# `agent`, so per-agent ask lookups never match it) + progress.md refresh
+log_close() {
+  [ -n "$3" ] || return 0
+  mkdir -p .harness 2>/dev/null || return 0
+  jq -n -c --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg role "$1" --arg pane "$2" --arg reason "$3" \
+    '{ts: $ts, event: "close", role: $role, pane: $pane, reason: $reason}' >> "$JSONL" 2>/dev/null
+  write_progress_md
+  return 0
+}
+
+# preflight_close <agent> — sets C_PANE; dies when not running / not harness-made,
+# exits 6 for a worker outside this repo
+preflight_close() {
+  local agent=$1
+  C_PANE=$(agent_pane "$agent")
+  [ -n "$C_PANE" ] || die "$agent is not running"
+  check_worker_cwd "$agent" "$(agent_json "$agent")"
+  grep -Fxq -- "$agent $C_PANE" "$PANES_FILE" 2>/dev/null \
+    || die "pane $C_PANE was not created by harness; close it yourself"
+}
+
+# pane_gone <pane> — poll `herdr pane get` until it reports pane_not_found (any other
+# failure, e.g. a socket error, is not proof the pane is gone)
+pane_gone() {
+  local i=0 out
+  while [ "$i" -lt "${HARNESS_CLOSE_POLLS:-10}" ]; do
+    out=$(herdr pane get "$1" 2>&1) || case "$out" in *pane_not_found*) return 0 ;; esac
+    sleep "${HARNESS_CLOSE_INTERVAL:-0.2}"
+    i=$((i + 1))
+  done
+  return 1
+}
+
+# finish_close <agent> <pane> <reason> — herdr pane close (ends the claude process
+# in it), drop the registry line, log. Empty reason = not logged (context reset).
+finish_close() {
+  herdr pane close "$2" >/dev/null || die "pane close failed for $2"
+  pane_gone "$2" || die "pane $2 is still present after close; registry entry kept"
+  unregister "$1" "$2"
+  rm -f ".harness/asks/$1.finished"
+  if [ -n "$3" ]; then
+    mkdir -p .harness/asks 2>/dev/null && printf '%s %s\n' "$(date +%s)" "$3" > ".harness/asks/$1.closed" 2>/dev/null
+  fi
+  log_close "$1" "$2" "$3"
+  echo "closed $1 ($2)"
+}
+
+# close_refusal <agent> <status> — message + 0 when closing now would lose work
+close_refusal() {
+  case "$2" in
+    working|blocked)
+      echo "harness: $1 is $2; not closing (use --force to close anyway)" >&2; return 0 ;;
+  esac
+  if has_uncollected "$1"; then
+    echo "harness: $1 has a report that was not collected (harness report $1); not closing (use --force to close anyway)" >&2
+    return 0
+  fi
+  return 1
+}
+
+# close_one <agent> <force> <skip-missing> — one scoped worker; rc 0 closed/skipped,
+# 4 refused (exits 1/6 through die/check_worker_cwd like the single-agent form)
+close_one() {
+  local agent=$1 force=$2 skip=$3 fields
+  if ! fields=$(agent_fields "$agent"); then
+    [ "$skip" = 1 ] && return 0
+    die "$agent is not running"
+  fi
+  preflight_close "$agent"
+  if [ "$force" != 1 ] && close_refusal "$agent" "${fields%%$TAB*}"; then return 4; fi
+  finish_close "$agent" "$C_PANE" "${CLOSE_REASON:-manual}"
+}
+
+# close_legacy <force> — close old unscoped workers (herdr name = role) whose cwd is this repo
+close_legacy() {
+  local force=$1 a j c pane st rc=0 found=0
+  for a in $AGENTS; do
+    j=$(herdr agent get "$a" 2>/dev/null) || continue
+    c=$(printf '%s' "$j" | jq -r '.result.agent.cwd // empty' 2>/dev/null)
+    if [ -z "$c" ] || ! cwd_in_repo "$c"; then
+      echo "harness: unscoped '$a' is not in this repo; left alone" >&2; continue
+    fi
+    pane=$(printf '%s' "$j" | jq -r '.result.agent.pane_id // empty' 2>/dev/null)
+    st=$(printf '%s' "$j" | jq -r '.result.agent.agent_status // "unknown"' 2>/dev/null)
+    [ -n "$pane" ] || continue
+    found=1
+    case "$st" in working|blocked)
+      if [ "$force" != 1 ]; then
+        echo "harness: legacy $a is $st; not closing (use --force to close anyway)" >&2; rc=4; continue
+      fi ;;
+    esac
+    herdr pane close "$pane" >/dev/null || { echo "harness: pane close failed for $pane" >&2; rc=1; continue; }
+    pane_gone "$pane" || { echo "harness: pane $pane is still present after close" >&2; rc=1; continue; }
+    unregister "$a" "$pane"
+    log_close "$a" "$pane" legacy
+    echo "closed legacy $a ($pane)"
+  done
+  [ "$found" = 1 ] || echo "harness: no legacy unscoped workers for this repo"
+  return "$rc"
+}
+
 cmd_close() {
-  local agent=${1:-} pane
-  [ -n "$agent" ] || usage
-  valid_agent "$agent"
+  local target="" force=0 a rc=0 r
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --force) force=1 ;;
+      --all|--legacy) [ -z "$target" ] || usage; target=$1 ;;
+      -*) usage ;;
+      *) [ -z "$target" ] || usage; target=$1 ;;
+    esac
+    shift
+  done
+  [ -n "$target" ] || usage
+  case "$target" in
+    --legacy) close_legacy "$force"; exit $? ;;
+    --all)
+      for a in $AGENTS; do
+        ( close_one "$a" "$force" 1 ); r=$?
+        # keep the most significant failure: 6 (other repo) > 4 (refused) > 1
+        case "$r" in 0) ;; 6) rc=6 ;; 4) [ "$rc" = 6 ] || rc=4 ;; *) [ "$rc" != 0 ] || rc=$r ;; esac
+      done
+      exit "$rc" ;;
+  esac
+  valid_agent "$target"
+  close_one "$target" "$force" 0
+  exit $?
+}
+
+# maybe_close_after_ask <agent> <rc> — close_after_ask policy, after the ask is logged
+maybe_close_after_ask() {
+  [ "${HARNESS_NO_AUTOCLOSE:-}" != 1 ] || return 0
+  [ "${HARNESS_ROLE:-}" != worker ] || return 0
+  local agent=$1 rc=$2 pol pane
+  pol=$(close_after_policy "$agent")
+  [ "$pol" = on_success ] || return 0
+  case "$rc" in
+    0) ;;
+    5) [ "$agent" = reviewer ] || return 0 ;;
+    *) return 0 ;;
+  esac
+  # a pane harness did not create is never closed automatically (no noise either)
   pane=$(agent_pane "$agent")
-  [ -n "$pane" ] || die "$agent is not running"
-  grep -Fxq -- "$agent $pane" "$PANES_FILE" 2>/dev/null \
-    || die "pane $pane was not created by harness; close it yourself"
-  herdr pane close "$pane" >/dev/null || die "pane close failed for $pane"
-  unregister "$agent" "$pane"
-  echo "closed $agent ($pane)"
+  [ -n "$pane" ] && grep -Fxq -- "$agent $pane" "$PANES_FILE" 2>/dev/null || return 0
+  # best effort: never changes the ask's exit code; messages go to stderr
+  ( CLOSE_REASON=after_ask; close_one "$agent" 0 1 ) >&2 || true
+}
+
+# reap_idle — close this repo's scoped workers that are idle/done, have no
+# uncollected report and no .pending, and whose last collected report is older than
+# idle_ttl_minutes. Workers without a collected-stamp (never asked / unknown) stay.
+reap_idle() {
+  [ "${HARNESS_NO_AUTOCLOSE:-}" != 1 ] || return 0
+  [ "${HARNESS_ROLE:-}" != worker ] || return 0
+  local ttl a f mt now st j c pane
+  ttl=$(idle_ttl_minutes)
+  [ "$ttl" -gt 0 ] || return 0
+  now=$(date +%s)
+  for a in $AGENTS; do
+    f=".harness/asks/$a.finished"
+    [ -f "$f" ] || continue
+    mt=$(file_mtime "$f") || continue
+    [ $((now - mt)) -ge $((ttl * 60)) ] || continue
+    j=$(agent_json "$a") || continue
+    c=$(printf '%s' "$j" | jq -r '.result.agent.cwd // empty' 2>/dev/null)
+    [ -n "$c" ] && cwd_in_repo "$c" || continue
+    st=$(printf '%s' "$j" | jq -r '.result.agent.agent_status // "unknown"' 2>/dev/null)
+    case "$st" in idle|done) ;; *) continue ;; esac
+    has_uncollected "$a" && continue
+    pane=$(printf '%s' "$j" | jq -r '.result.agent.pane_id // empty' 2>/dev/null)
+    [ -n "$pane" ] || continue
+    grep -Fxq -- "$a $pane" "$PANES_FILE" 2>/dev/null || continue
+    ( finish_close "$a" "$pane" ttl ) >&2 || true
+  done
+  return 0
 }
 
 need jq
 # route-log is called by the UserPromptSubmit hook: no herdr needed
 if [ "${1:-}" = route-log ]; then shift; cmd_route_log "$@"; exit 0; fi
+# _mtime prints a file's epoch mtime (tests: fake GNU/BSD stat on PATH)
+if [ "${1:-}" = _mtime ]; then file_mtime "${2:-}"; exit $?; fi
+# _wname prints the scoped herdr name for a role (tests, debugging): no herdr needed
+if [ "${1:-}" = _wname ]; then valid_agent "${2:-}"; wname "$2"; echo; exit 0; fi
 need herdr
 [ "${HERDR_ENV:-}" = 1 ] || die "run Claude inside a herdr pane (HERDR_ENV is not 1)"
 
+case "${1:-}" in
+  spawn|ask|status) ensure_config; reap_idle ;;
+esac
 case "${1:-}" in
   spawn)  shift; cmd_spawn "$@" ;;
   ask)    shift; cmd_ask "$@" ;;

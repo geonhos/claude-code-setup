@@ -354,6 +354,10 @@ flowchart TD
 
 이 로그는 나중에 결정 모델(Kev)을 파인튜닝해 "직접 답변 / 어느 워커" 힌트를 주입하기 위한 학습 데이터다. 배경과 모델 선택 근거는 [`research/2026-10-20-decision-models-kev-vs-laya.md`](research/2026-10-20-decision-models-kev-vs-laya.md), 설계는 [`superpowers/specs/2026-10-20-skill-routing-design.md`](superpowers/specs/2026-10-20-skill-routing-design.md).
 
+## 워커 패널 종료 (close / after-ask / TTL)
+
+`harness close <role>|--all|--legacy [--force]`는 `herdr pane close`로 패널을 닫고 `herdr pane get`으로 사라졌는지 확인한 뒤(남아 있으면 exit 1, 레지스트리 유지) `.harness/panes`에서 지운다. 워커가 working/blocked이거나 수집하지 않은 리포트(`.pending` 포함)가 있으면 exit 4, 다른 저장소의 워커는 exit 6이다. 자동 종료는 두 가지다. (1) `close_after_ask.<role>=on_success`(implementer 기본)이면 ask가 0으로 끝난 뒤(reviewer는 0 또는 5) 닫는다. (2) `idle_ttl_minutes`(기본 30)가 지난 워커는 `ask|spawn|status` 시작 때 닫는다. 수집 여부는 `.harness/asks/<role>.finished`(ask가 0/5로 끝나거나 `harness report`가 리포트를 돌려줄 때 만들고, ask가 시작되면 지운다)로 판단한다. 닫은 이유는 `.harness/asks/<role>.closed`에 남아 `ask --keep`이 이전 컨텍스트가 사라졌다는 안내를 출력한다. 모든 종료는 `progress.jsonl`의 `event: close` 줄(role, reason)로 기록되고 `progress.md`에는 최근 5개가 따로 한 줄로 나온다. `HARNESS_NO_AUTOCLOSE=1`이면 자동 종료가 꺼진다.
+
 ## Exit code
 
 | 코드 | 의미 |

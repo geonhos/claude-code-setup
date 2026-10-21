@@ -404,5 +404,46 @@ check "no jq one stderr line" [ "$(printf '%s\n' "$OUT" | wc -l | tr -d ' ')" -e
 check "no jq mentions jq" grep -q jq <<<"$OUT"
 rm -rf "$JB"
 
+# --- done marker (Stop hook -> harness ask completion) --------------------------------
+doneset() { mkdir -p "$R/.harness/asks"; echo "ask1 100" > "$R/.harness/asks/implementer.current"; }
+stopj() { jq -n -c --arg c "$R" --argjson a "$1" '{hook_event_name:"Stop",agent_type:"implementer",session_id:"S1",cwd:$c,stop_hook_active:$a}'; }
+hvw() { local j=$1; shift; OUT=$(cd "$R" && printf '%s' "$j" | HARNESS_ROLE=worker /bin/bash "$VERIFY" "$@" 2>/dev/null); RC=$?; }
+marker() { [ -f "$R/.harness/done/implementer.ask1" ]; }
+not_marker() { ! marker; }
+
+newrepo; doneset
+hvw "$(stopj false)" stop
+check "done: stop with nothing to verify writes marker" marker
+check "done: marker has session id" grep -q '^S1 ' "$R/.harness/done/implementer.ask1"
+
+newrepo; doneset
+OUT=$(cd "$R" && printf '%s' "$(stopj false)" | env -u HARNESS_ROLE /bin/bash "$VERIFY" stop 2>/dev/null)
+check "done: conductor/solo session writes no marker" not_marker
+
+newrepo; doneset
+lcfg '{"test":"exit 1","maxAttempts":2}'
+hv baseline implementer
+echo change > "$R/new.txt"
+hvw "$(stopj false)" stop
+check "done: blocking stop emits block" [ "$(printf '%s' "$OUT" | jq -r .decision)" = block ]
+check "done: blocking stop writes no marker" not_marker
+hvw "$(stopj true)" stop
+check "done: blocked continuation (stop_hook_active) still blocking: no marker" not_marker
+hvw "$(stopj true)" stop
+check "done: verify gave up at the cap: marker" marker
+
+newrepo; doneset
+hvw '{"agent_type":"analyst","session_id":"S2","cwd":"'"$R"'"}' done analyst
+check "done: analyst has no current ask -> no marker" [ ! -d "$R/.harness/done" ]
+echo "ask9 5" > "$R/.harness/asks/analyst.current"
+hvw '{"agent_type":"analyst","session_id":"S2","cwd":"'"$R"'"}' done analyst
+check "done: analyst marker" [ -f "$R/.harness/done/analyst.ask9" ]
+echo '../x 5' > "$R/.harness/asks/analyst.current"
+rm -rf "$R/.harness/done"
+hvw '{"cwd":"'"$R"'"}' done analyst
+check "done: unsafe ask-id ignored" [ ! -d "$R/.harness/done" ]
+hvw '{"cwd":"'"$R"'"}' done bogus
+check "done: unknown role ignored" [ "$RC" -eq 0 ]
+
 echo "PASS $pass / FAIL $fail"
 [ "$fail" -eq 0 ]

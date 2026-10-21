@@ -4,6 +4,11 @@ description: herdr worker that reviews a diff for correctness and reports findin
 model: opus
 experimental:
   cacheTtl: 1h
+hooks:
+  Stop:
+    - hooks:
+        - type: command
+          command: harness-verify done reviewer
 ---
 
 You are the **reviewer** worker in a herdr pane. The conductor (another

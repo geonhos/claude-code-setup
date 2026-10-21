@@ -5,6 +5,7 @@
 #   harness-verify detect                 print resolved commands as JSON
 #   harness-verify format [file]          PostToolUse hook (reads hook JSON on stdin if no file)
 #   harness-verify stop                   Stop hook (reads hook JSON on stdin)
+#   harness-verify done ROLE              Stop hook, no checks: only the done marker
 #   harness-verify run [lint|test|all]    manual / reviewer: exit 0 pass, 1 fail
 #   harness-verify baseline [agent]       record the start state (harness ask calls it)
 #
@@ -232,9 +233,52 @@ cmd_baseline() {
 
 # --- hooks ---------------------------------------------------------------------
 
-cmd_stop() {
-  local input attempts max files step="" out reason rep pend
+# mark_done ROLE INPUT — completion marker for `harness ask`: the turn really ended.
+# Writes .harness/done/<role>.<ask-id> (ask-id from .harness/asks/<role>.current,
+# written by `harness ask`). Workers only (HARNESS_ROLE=worker); never fatal.
+mark_done() {
+  local role=$1 input=$2 id sid tmp
+  [ "${HARNESS_ROLE:-}" = worker ] || return 0
+  case "$role" in analyst|implementer|reviewer) ;; *) return 0 ;; esac
+  id=$(awk 'NR==1 { print $1 }' ".harness/asks/$role.current" 2>/dev/null)
+  case "$id" in ''|*[!A-Za-z0-9_-]*) return 0 ;; esac
+  sid=$(printf '%s' "$input" | jq -r '.session_id // empty' 2>/dev/null)
+  mkdir -p .harness/done 2>/dev/null || return 0
+  tmp=".harness/done/.$role.$id.$$"
+  printf '%s %s\n' "${sid:-unknown}" "$(date +%s)" > "$tmp" 2>/dev/null \
+    && mv -f "$tmp" ".harness/done/$role.$id" 2>/dev/null
+  rm -f "$tmp"
+  return 0
+}
+
+# cmd_done ROLE — Stop hook for workers without verification (analyst, reviewer)
+cmd_done() {
+  local input
   input=$(cat)
+  enter_root "$(printf '%s' "$input" | jq -r '.cwd // empty' 2>/dev/null)"
+  mark_done "${1:-}" "$input"
+  exit 0
+}
+
+# cmd_stop — verification Stop hook. The done marker is written only when the
+# turn really ends: not when this hook blocks (asks the model to continue).
+cmd_stop() {
+  local input out
+  input=$(cat)
+  # run the verification in a subshell (it exits through many paths) and look at
+  # what it printed: a {"decision":"block"} means the worker continues
+  out=$(STOP_INPUT=$input stop_body)
+  [ -z "$out" ] || printf '%s\n' "$out"
+  if ! printf '%s' "$out" | jq -e '.decision == "block"' >/dev/null 2>&1; then
+    set_agent "$(printf '%s' "$input" | jq -r '.agent_type // empty' 2>/dev/null)"
+    enter_root "$(printf '%s' "$input" | jq -r '.cwd // empty' 2>/dev/null)"
+    mark_done "$AGENT" "$input"
+  fi
+  exit 0
+}
+
+stop_body() {
+  local input=$STOP_INPUT attempts max files step="" out reason rep pend
   set_agent "$(printf '%s' "$input" | jq -r '.agent_type // empty' 2>/dev/null)"
   enter_root "$(printf '%s' "$input" | jq -r '.cwd // empty' 2>/dev/null)"
   if [ "$IS_GIT" != 1 ]; then
@@ -334,9 +378,10 @@ case "${1:-}" in
   detect)   enter_root; cmd_detect ;;
   format)   shift; cmd_format "$@" ;;
   stop)     cmd_stop ;;
+  done)     shift; cmd_done "$@" ;;
   run)      shift; cmd_run "$@" ;;
   baseline) shift; cmd_baseline "$@" ;;
   *)
-    echo "usage: harness-verify detect | format [file] | stop | run [lint|test|all] | baseline [agent]" >&2
+    echo "usage: harness-verify detect | format [file] | stop | done ROLE | run [lint|test|all] | baseline [agent]" >&2
     exit 1 ;;
 esac

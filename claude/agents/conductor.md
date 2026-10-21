@@ -95,17 +95,42 @@ of the progress file.
   text and ask what to answer. After the user answers in the worker pane,
   wait until `harness status` shows idle, then `harness report <worker>` to
   collect the result. Do not re-send the instruction.
-- `3` worker finished without a report. `harness ask <worker> 'Write the
+- `3` worker finished without a report. If the message says the Stop hook
+  never signalled (a worker started before the hook), do not re-ask: run
+  `harness report <worker>` to collect any report, and
+  `harness close <worker>` so the next ask respawns it with the hook.
+  Otherwise `harness ask <worker> 'Write the
   report for the task you just finished.' --via skill` (a follow-up to a
   skill-run ask stays labelled skill). The worker's context is kept
   automatically unless the last ask exited 0 (or 5 for the reviewer); no `--keep` needed.
+- `4` after a turn ended without a report ("maybe waiting on background
+  tasks") or with a report whose Stop hook has not signalled yet: run
+  `harness status`; if idle, `harness report <worker>`; if that exits 3
+  (no report), ask it to write the report.
+  An implementer message "still verifying (Stop hook running)" means its
+  verification outlived the ask timeout: leave `.pending` alone, wait for
+  idle, then `harness report implementer`. A stale `.pending` (hook killed)
+  makes the ask wait the full timeout before exit 5 INTERRUPTED.
 - `5` verification failed: the implementer gave up after its lint/test
   attempts (its report and a `verify: FAIL (<step>, <n> attempts)` line are
   printed), or the reviewer's report ends with `VERDICT: FAIL`. Send the
   failure or the findings to the implementer with `/implement`
   (an implementer whose own last ask exited 5 keeps its context; use `--keep` for any other
-  explicit follow-up, `--fresh` to force a reset).
+  explicit follow-up, `--fresh` to force a reset; `--keep` has no effect after an
+  implementer exit 0, because the pane auto-closed, unless
+  `close_after_ask.implementer=never`; harness prints a `was closed` note).
   If it still fails after 2 such rounds, ask the user.
+- Pane lifecycle: the implementer's pane closes itself after an ask that exits
+  0 (the next ask respawns it), and any worker idle past `idle_ttl_minutes`
+  (default 30) with a collected report is reaped at the next
+  ask/spawn/status. Config is `.harness/config.json` (`close_after_ask`,
+  `idle_ttl_minutes`); `HARNESS_NO_AUTOCLOSE=1` turns both off. Close by hand
+  with `harness close <worker>|--all` (exit 4 = working or uncollected report;
+  `--force` only if the user agrees); `harness close --legacy` closes old
+  unscoped workers of this repo.
+- `6` the worker named for this repo (`<role>-<repo8>`) runs in a directory
+  outside the repo, so nothing was sent. Tell the user; they close that pane
+  (or start Claude from the right directory). Never retarget it yourself.
 - `4` still working, stalled, timed out, or the prompt was not accepted. Run
   `harness status`; if `working`, wait and then `harness report <worker>`; do
   not resend. A worker that hit the subscription usage limit sits waiting for
