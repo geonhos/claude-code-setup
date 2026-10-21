@@ -619,6 +619,25 @@ OUT=$(HERDR_ENV=1 HERDR_PANE_ID=w1:p1 HARNESS_IDLE_GRACE=1 HARNESS_POLL_SEC=0.2 
 check "marker+pending+idle: no grace exit, rc 5 at deadline" [ "$RC" -eq 5 ]
 check "marker+pending+idle: waited to deadline" [ $(( $(date +%s) - t0 )) -ge 3 ]
 
+# .pending + worker still working at the deadline (Stop hook verifying): rc 4, .pending
+# untouched, nothing restored; later idle + verify done -> harness report exits 0
+setup
+echo idle > "$FAKE_DIR/live.$(WN implementer)"
+export FAKE_PROMPT_HOOK="echo working > $FAKE_DIR/live.$(WN implementer); mkdir -p $WORK/.harness/reports; printf '# r\\nstatus: done\\n' > $WORK/.harness/reports/implementer.md.pending"
+run ask implementer "q" --timeout 2000
+check "pending+working at deadline: rc 4" [ "$RC" -eq 4 ]
+check "pending+working: still verifying message" grep -q "still verifying" <<<"$OUT"
+check "pending+working: .pending intact" [ -f "$WORK/.harness/reports/implementer.md.pending" ]
+check "pending+working: not restored" [ ! -e "$WORK/.harness/reports/implementer.md" ]
+run report implementer
+check "report while still working: rc 4" [ "$RC" -eq 4 ]
+check "report while working: .pending intact" [ -f "$WORK/.harness/reports/implementer.md.pending" ]
+echo idle > "$FAKE_DIR/live.$(WN implementer)"
+mv "$WORK/.harness/reports/implementer.md.pending" "$WORK/.harness/reports/implementer.md"
+mkdir -p .harness/verify; printf '{"status":"pass","attempts":1,"step":"","tail":""}' > .harness/verify/implementer.json
+run report implementer
+check "verify done, idle: report rc 0" [ "$RC" -eq 0 ]
+
 # exit-3 message (old worker without the hook) is on stdout and names close
 setup
 touch "$FAKE_DIR/no_stop_hook"

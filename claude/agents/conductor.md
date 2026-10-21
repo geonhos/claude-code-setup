@@ -107,6 +107,10 @@ of the progress file.
   tasks") or with a report whose Stop hook has not signalled yet: run
   `harness status`; if idle, `harness report <worker>`; if that exits 3
   (no report), ask it to write the report.
+  An implementer message "still verifying (Stop hook running)" means its
+  verification outlived the ask timeout: leave `.pending` alone, wait for
+  idle, then `harness report implementer`. A stale `.pending` (hook killed)
+  makes the ask wait the full timeout before exit 5 INTERRUPTED.
 - `5` verification failed: the implementer gave up after its lint/test
   attempts (its report and a `verify: FAIL (<step>, <n> attempts)` line are
   printed), or the reviewer's report ends with `VERDICT: FAIL`. Send the

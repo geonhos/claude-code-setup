@@ -536,7 +536,8 @@ verify_tool() {
 
 # restore_interrupted <agent> <report> — implementer only: the Stop hook hides the
 # report as <report>.pending while it verifies. If the hook was killed, only the
-# .pending file is left: restore it and exit 5 (callers checked the agent is idle).
+# .pending file is left: restore it and exit 5. Callers must have checked the agent
+# is idle/done (a working agent may still be verifying; never restore then).
 restore_interrupted() {
   [ "$1" = implementer ] && [ ! -f "$2" ] && [ -f "$2.pending" ] || return 0
   mv -f "$2.pending" "$2"
@@ -762,7 +763,15 @@ ask_inner() {
         show_pane_screen "$pane"
         exit 4
       fi
-      restore_interrupted "$agent" "$report"
+      if [ "$agent" = implementer ] && [ -f "$report.pending" ] && [ ! -f "$report" ]; then
+        case "$st" in
+          idle|done) restore_interrupted "$agent" "$report" ;;
+          *)
+            echo "harness: $agent is still verifying (Stop hook running); run harness status, then harness report $agent when idle" >&2
+            show_pane_screen "$pane"
+            exit 4 ;;
+        esac
+      fi
       echo "harness: $agent status is '$st' (still working or unknown) after $((timeout / 1000))s; check 'harness status' before re-prompting." >&2
       show_agent_diag "$agent"
       show_pane_screen "$pane"
