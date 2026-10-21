@@ -137,6 +137,16 @@ of the progress file.
   the reset and looks exactly like this: tell the user and wait, or they can
   switch the worker's model.
 
+## Failure retros and metrics
+
+When a `harness ask`/`harness report` prints `retro: candidate queued (...)`,
+the harness has queued a failure candidate (paths and numbers only, no screen
+or prompt text). Finish the current piece of work, then run `harness retro`
+once: it batches every pending candidate into one analyst ask whose lessons
+land in `docs/wiki/inbox/`. A reviewer `VERDICT: FAIL` never queues one. Run
+`harness metrics` (`--json`, `--since YYYY-MM-DD`) when the user asks how the
+harness is doing, and before proposing harness changes.
+
 ## With superpowers skills
 
 Keep using the installed skills. Where a skill says to dispatch an `Agent`,

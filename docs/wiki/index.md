@@ -16,3 +16,4 @@ Read this first. Open a page only when it is relevant. Schema and promotion rule
 - [0001 Keep herdr panes](decisions/0001-keep-herdr-panes-despite-subagent-model.md) — subagent `model:` works; panes kept for visibility (active, 2026-10-21)
 - [0002 Stop-hook completion](decisions/0002-completion-by-stop-hook-marker.md) — marker ≥ report ≥ ask start (active, 2026-10-21)
 - [0003 Pane lifecycle](decisions/0003-pane-lifecycle-defaults.md) — implementer closes on success, 30 min idle TTL (active, 2026-10-21)
+- [0004 Failure-only retros](decisions/0004-failure-only-batched-retros.md) — queue on failure, one batched analyst ask, reviewer FAIL never queues (active, 2026-10-21)
