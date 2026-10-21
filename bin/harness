@@ -466,6 +466,14 @@ retro_snapshot() {
   printf '%s' "$2"
 }
 
+# retro_to_done <candidate-file> — move a processed candidate to done/ and drop its report snapshot
+retro_to_done() {
+  local id
+  id=$(basename "$1" .json)
+  mv -f "$1" "$RETRO_DIR/done/" || return 1
+  rm -f "$RETRO_DIR/reports/$id.md"
+}
+
 # retro_pending_logs — log paths referenced by pending candidates (rotate_logs keeps them)
 retro_pending_logs() {
   ls "$RETRO_DIR"/*.json >/dev/null 2>&1 || return 0
@@ -482,7 +490,8 @@ retro_on_ask() {
   case "$rc" in
     0) ;;
     5) [ "$agent" = reviewer ] || reason="exit 5" ;;
-    1) ;;          # usage / pre-flight error (bad option, worker session refusing): nothing ran
+    1) # a usage error before pre-flight ran nothing; after it (spawn, split, send) it is a failure
+       if [ -n "${ASK_PF:-}" ] && [ -e "$ASK_PF" ]; then reason="exit 1"; fi ;;
     129|130|143) ;; # ask wrapper hung up, interrupted or terminated by the caller, not a harness failure
     *) reason="exit $rc" ;;
   esac
@@ -497,7 +506,8 @@ retro_on_ask() {
   [ ! -f "$REPORT_DIR/$agent.md" ] || rep=$(retro_snapshot "$id" "$REPORT_DIR/$agent.md")
   # the live .harness/task-<role>.md is overwritten by the next ask: point at the log's copy
   bsnap=""; [ -z "${LAST_BRIEF:-}" ] || [ -z "${LAST_LOG:-}" ] || bsnap="$LAST_LOG#brief"
-  retro_write "$id" "$agent" "$reason" "$rc" "$va" "$dur" "$bsnap" "${LAST_LOG:-}" "$rep" || return 0
+  retro_write "$id" "$agent" "$reason" "$rc" "$va" "$dur" "$bsnap" "${LAST_LOG:-}" "$rep" \
+    || { [ -f "$RETRO_DIR/$id.json" ] || rm -f "$RETRO_DIR/reports/$id.md"; return 0; }
   echo "retro: candidate queued ($reason) — run 'harness retro' when the task is done"
 }
 
@@ -586,6 +596,10 @@ rotate_logs() {
     | while IFS= read -r f; do rm -f "$f"; done
   find "$LOG_DIR" -name '*.md' -mtime "+${HARNESS_LOG_DAYS:-14}" 2>/dev/null \
     | grep -vxFf "${keep:-/dev/null}" | while IFS= read -r f; do rm -f "$f"; done
+  # leftover report snapshots (no pending candidate points at them) past the log retention
+  find "$RETRO_DIR/reports" -name '*.md' -mtime "+${HARNESS_LOG_DAYS:-14}" 2>/dev/null | while IFS= read -r f; do
+    [ ! -f "$RETRO_DIR/$(basename "$f" .md).json" ] && rm -f "$f"
+  done
   [ -z "$keep" ] || rm -f "$keep"
   return 0
 }
@@ -823,7 +837,7 @@ ask_finish() {
     || echo "harness: could not write the progress log (ask result unchanged)" >&2
   record_route_delegate "$ASK_AGENT" "${ASK_VIA:-conductor}" "$rc"
   retro_on_ask "$ASK_AGENT" "$rc" || true
-  rm -f "$ASK_TMP"
+  rm -f "$ASK_TMP" "${ASK_PF:-}"
   # a printed report (0, or 5 = failed verification/FAIL verdict) counts as collected
   case "$rc" in 0|5) stamp_finished "$ASK_AGENT" ;; esac
   maybe_close_after_ask "$ASK_AGENT" "$rc"
@@ -846,6 +860,7 @@ cmd_ask() {
   esac
   ASK_TMP=$(mktemp "${TMPDIR:-/tmp}/harness-ask.XXXXXX") || ask_inner "$@"
   ASK_AGENT=$agent ASK_TEXT=$text ASK_DONE=0 ASK_PID=""
+  ASK_PF=".harness/asks/$agent.preflight"; rm -f "$ASK_PF"
   ASK_T0=$(date +%s); ASK_HB=$(git_head); cb=$(ctx_tokens "$agent" 2>/dev/null) || cb=""
   CTX_BEFORE=$cb
   trap 'ask_finish 143' TERM
@@ -878,6 +893,11 @@ ask_inner() {
     esac
   done
   [ "$fresh$keep" != 11 ] || usage
+
+  # pre-flight passed: an exit 1 from here on is an infrastructure failure, not a usage
+  # error, and queues a retro candidate (retro_on_ask looks for this marker file; the ask
+  # runs in a subshell, so a variable would not reach the wrapper)
+  if [ -n "${ASK_PF:-}" ]; then mkdir -p .harness/asks 2>/dev/null; : > "$ASK_PF" 2>/dev/null; fi
 
   if [ "$agent" = implementer ] && ! command -v harness-verify >/dev/null 2>&1; then
     die "harness-verify not found on PATH; run ./install.sh (the implementer's checks would silently not run)"
@@ -1349,7 +1369,8 @@ retro_on_report() {
   id=$(awk 'NR == 1 { print $1 }' ".harness/asks/$agent.current" 2>/dev/null)
   [ -n "$id" ] || return 0
   [ ! -e "$RETRO_DIR/done/$id.json" ] || return 0
-  retro_write "$id" "$agent" "late report" "$rc" "" "" "" "" "$(retro_snapshot "$id" "$report")" late || return 0
+  retro_write "$id" "$agent" "late report" "$rc" "" "" "" "" "$(retro_snapshot "$id" "$report")" late \
+    || { [ -f "$RETRO_DIR/$id.json" ] || rm -f "$RETRO_DIR/reports/$id.md"; return 0; }
   echo "retro: candidate queued (late report) — run 'harness retro' when the task is done"
 }
 
@@ -1363,7 +1384,7 @@ retro_done_from_brief() {
   mkdir -p "$RETRO_DIR/done" 2>/dev/null || return 0
   for id in $(sed -n 's/^### \([^ ]*\) .*/\1/p' .harness/task-retro.md); do
     [ -f "$RETRO_DIR/$id.json" ] || continue
-    mv -f "$RETRO_DIR/$id.json" "$RETRO_DIR/done/" && n=$((n + 1))
+    retro_to_done "$RETRO_DIR/$id.json" && n=$((n + 1))
   done
   [ "$n" -eq 0 ] || echo "retro: $n candidate$([ "$n" -eq 1 ] || echo s) processed (late retro report)"
 }
@@ -1426,7 +1447,7 @@ cmd_retro() {
   if [ "$rc" -eq 0 ]; then
     mkdir -p "$RETRO_DIR/done"
     printf '%s' "$files" | while IFS= read -r f; do
-      [ -n "$f" ] && mv -f "$f" "$RETRO_DIR/done/"
+      [ -n "$f" ] && retro_to_done "$f"
     done
     echo "retro: $n candidate$([ "$n" -eq 1 ] || echo s) processed"
   else

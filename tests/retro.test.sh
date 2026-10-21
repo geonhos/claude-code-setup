@@ -111,6 +111,64 @@ echo idle > "$FAKE_DIR/live.$(WN analyst)"
 OUT=$(HERDR_ENV=1 HERDR_PANE_ID=w1:p1 PATH="$FAKE_BIN:$HERE/../bin:$PATH" FAKE_PROMPT_HOOK='sleep 3' env -u HARNESS_ROLE /bin/bash "$HARNESS" ask analyst "long" 2>&1 & KP=$!; sleep 1; kill -TERM $KP; wait $KP)
 check "kill 143: no candidate" [ "$(ncand)" -eq 0 ]
 
+# 129 (HUP) is the caller ending the wait too: no candidate (130/INT is ignored by background jobs; progress.test.sh covers its exit code)
+{
+  setup
+  echo idle > "$FAKE_DIR/live.$(WN analyst)"
+  OUT=$(HERDR_ENV=1 HERDR_PANE_ID=w1:p1 PATH="$FAKE_BIN:$HERE/../bin:$PATH" FAKE_PROMPT_HOOK='sleep 3' env -u HARNESS_ROLE /bin/bash "$HARNESS" ask analyst "long" 2>&1 & KP=$!; sleep 1; kill -HUP $KP; wait $KP)
+  check "kill HUP: no candidate" [ "$(ncand)" -eq 0 ]
+}
+
+# exit 1 after the ask passed its pre-flight (infrastructure failure) queues a candidate
+setup
+touch "$FAKE_DIR/start_fail"
+run ask analyst "x"
+check "start fail: rc 1" [ "$RC" -eq 1 ]
+check "start fail: candidate" [ "$(ncand)" -eq 1 ]
+check "start fail: reason" [ "$(cand .reason)" = "exit 1" ]
+check "start fail: notice" grep -q "$QUEUED" <<<"$OUT"
+setup
+touch "$FAKE_DIR/split_fail"
+run ask analyst "x"
+check "split fail: rc 1" [ "$RC" -eq 1 ]
+check "split fail: candidate" [ "$(ncand)" -eq 1 ]
+setup   # harness-verify missing: the implementer ask dies after pre-flight
+NOVERIFY_PATH="$FAKE_BIN:$(dirname "$(command -v jq)"):/usr/bin:/bin"
+check "no harness-verify: PATH really lacks it" [ -z "$(PATH="$NOVERIFY_PATH" command -v harness-verify)" ]
+OUT=$(HERDR_ENV=1 HERDR_PANE_ID=w1:p1 PATH="$NOVERIFY_PATH" $GUARD env -u HARNESS_ROLE /bin/bash "$HARNESS" ask implementer "x" 2>&1); RC=$?
+check "no harness-verify: rc 1" [ "$RC" -eq 1 ]
+check "no harness-verify: candidate" [ "$(ncand)" -eq 1 ]
+setup   # usage error before any side effect stays excluded
+run ask analyst "x" --timeout abc
+check "usage (bad timeout): rc 1" [ "$RC" -eq 1 ]
+check "usage (bad timeout): no candidate" [ "$(ncand)" -eq 0 ]
+run ask nosuchagent "x"
+check "usage (bad agent): no candidate" [ "$(ncand)" -eq 0 ]
+
+# report snapshots follow their candidate
+setup
+echo idle > "$FAKE_DIR/live.$(WN analyst)"
+hook analyst '# analyst report\nstatus: blocked\n'
+touch "$FAKE_DIR/no_stop_hook"
+run ask analyst "x" --timeout 2000
+id=$(cand .ask_id)
+mkdir -p .harness/retro/reports; echo r > ".harness/retro/reports/$id.md"
+echo idle > "$FAKE_DIR/live.$(WN analyst)"
+rm -f "$FAKE_DIR/no_stop_hook"; hook analyst '# analyst report\nstatus: done\n'
+run retro
+check "snapshot: retro ok" [ "$RC" -eq 0 ]
+check "snapshot: candidate done" [ -f ".harness/retro/done/$id.json" ]
+check "snapshot: pruned after retro" [ ! -e ".harness/retro/reports/$id.md" ]
+# retro_done_from_brief also prunes
+setup
+mkdir -p .harness/retro/reports .harness/retro/done
+echo '{}' > .harness/retro/x1.json; echo r > .harness/retro/reports/x1.md
+printf '### x1 something\n' > .harness/task-retro.md
+mkdir -p .harness/reports; printf '# a\nstatus: done\n' > .harness/reports/analyst.md
+printf '%s\n' '{"agent":"analyst","exit":4,"instr":"Read .harness/task-retro.md and do it."}' > .harness/progress.jsonl
+run report analyst
+check "late retro: snapshot pruned" [ ! -e .harness/retro/reports/x1.md ]
+
 # --- late report ----------------------------------------------------------------------------
 setup
 echo idle > "$FAKE_DIR/live.$(WN analyst)"
@@ -155,6 +213,17 @@ check "rotate: age-based delete also spares referenced log" [ -f "$keeplog" ]
 rm -f .harness/retro/x.json
 run ask analyst "ok 4"
 check "rotate: unreferenced old log goes" [ ! -f "$keeplog" ]
+# leftover report snapshots: swept only when old AND no pending candidate points at them
+mkdir -p .harness/retro/reports
+echo r > .harness/retro/reports/orphan-old.md
+echo r > .harness/retro/reports/pending-old.md
+echo r > .harness/retro/reports/orphan-fresh.md
+touch -t 202001010000 .harness/retro/reports/orphan-old.md .harness/retro/reports/pending-old.md
+jq -n -c '{ask_id:"pending-old",role:"analyst"}' > .harness/retro/pending-old.json
+run ask analyst "ok 5"
+check "snapshot sweep: old orphan removed" [ ! -f .harness/retro/reports/orphan-old.md ]
+check "snapshot sweep: old but pending kept" [ -f .harness/retro/reports/pending-old.md ]
+check "snapshot sweep: fresh orphan kept" [ -f .harness/retro/reports/orphan-fresh.md ]
 unset HARNESS_LOG_DAYS
 
 # --- no docs/wiki side effects ------------------------------------------------------------------
