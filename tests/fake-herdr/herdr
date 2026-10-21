@@ -35,7 +35,8 @@ case "$sub" in
     ;;
   "pane get")
     # a pane is gone once closed (marker) ; never-closed panes exist
-    if [ -f "$FAKE_DIR/closed.${3:-}" ]; then echo '{"error":{"code":"pane_not_found"}}' >&2; exit 1; fi
+    if [ -f "$FAKE_DIR/get_error" ]; then echo '{"error":{"code":"socket_unavailable"}}'; exit 1; fi
+    if [ -f "$FAKE_DIR/closed.${3:-}" ]; then echo '{"error":{"code":"pane_not_found","message":"pane not found"},"id":"cli:pane:get"}'; exit 1; fi
     echo '{"id":"cli:pane:get","result":{"pane":{"pane_id":"'"${3:-}"'"}},"type":"pane_info"}'
     ;;
   "pane close")

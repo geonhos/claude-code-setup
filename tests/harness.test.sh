@@ -856,7 +856,7 @@ setup
 live_worker implementer idle w1:p2
 export FAKE_PROMPT_HOOK="mkdir -p $WORK/.harness/reports $WORK/.harness/verify; printf '# implementer report\nstatus: partial\n' > $WORK/.harness/reports/implementer.md; printf '{\"status\":\"fail\",\"attempts\":3,\"step\":\"test\",\"tail\":\"x\"}' > $WORK/.harness/verify/implementer.json"
 run ask implementer "one"
-check "exit 5: worker stays" [ "$RC" -eq 5 ] && not_logged "pane close"
+check "exit 5: worker stays" bash -c '[ "$1" -eq 5 ] && ! grep -qF "pane close" "$2"' _ "$RC" "$FAKE_LOG"
 run ask implementer "one-b" --fresh >/dev/null; : > "$FAKE_LOG"
 run ask implementer "fix" --keep
 check "exit 5 then --keep: context kept, no note" not_grep "previous context is gone" <(echo "$OUT")
@@ -873,7 +873,7 @@ check "report interrupted: stamped" [ -f .harness/asks/implementer.finished ]
 
 # 3: starting an ask removes the collected stamp
 setup
-live_worker analyst idle w1:p2; : > /dev/null; mkdir -p .harness/asks; : > .harness/asks/analyst.finished
+live_worker analyst idle w1:p2; mkdir -p .harness/asks; : > .harness/asks/analyst.finished
 export FAKE_PROMPT_HOOK="test ! -e $WORK/.harness/asks/analyst.finished && touch $WORK/no-stamp-in-flight"
 run ask analyst "q" --timeout 1000
 check "ask in flight: no .finished" [ -e "$WORK/no-stamp-in-flight" ]
@@ -888,6 +888,14 @@ check "pane survives: rc 1" [ "$RC" -eq 1 ]
 check "pane survives: message" grep -q "still present" <<<"$OUT"
 check "pane survives: registry kept" grep -q "^analyst w1:p2$" .harness/panes
 check "pane survives: no close event" not_grep '"event":"close"' .harness/progress.jsonl
+
+# 4b: a transient `pane get` error is not proof the pane is gone
+setup
+live_worker analyst idle w1:p2
+touch "$FAKE_DIR/get_error"
+HARNESS_CLOSE_POLLS=2 HARNESS_CLOSE_INTERVAL=0.1 run close analyst
+check "pane get transient error: rc 1" [ "$RC" -eq 1 ]
+check "pane get transient error: registry kept" grep -q "^analyst w1:p2$" .harness/panes
 
 # 5: progress.md separates closes; ask-window lookups ignore them
 setup
