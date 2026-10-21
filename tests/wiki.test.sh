@@ -27,6 +27,11 @@ mk; lint "$W"
 check "valid wiki passes" [ "$RC" -eq 0 ]
 check "valid wiki silent" [ -z "$OUT" ]
 
+lint "$W/"
+check "trailing slash accepted" [ "$RC" -eq 0 ]
+lint "$W//"
+check "double trailing slash accepted" [ "$RC" -eq 0 ]
+
 lint "$W/nope"
 check "missing dir fails" [ "$RC" -eq 1 ]
 

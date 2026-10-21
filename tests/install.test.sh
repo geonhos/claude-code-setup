@@ -246,8 +246,8 @@ check "wiki injection silent for workers" [ -z "$OUT" ]
 i=0; while [ $i -lt 60 ]; do printf -- '- [p%s](gotchas/p%s.md) — hook text to fill space here (active, 2026-10-21)\n' $i $i; i=$((i+1)); done > "$WK/docs/wiki/index.md"
 OUT=$(cd "$WK" && env -u HARNESS_ROLE /bin/bash "$RESUME" </dev/null 2>/dev/null)
 CTX=$(printf '%s' "$OUT" | jq -r .hookSpecificOutput.additionalContext)
-WB=$(printf '%s\n' "$CTX" | awk '/^- \[p/ || /^… see/' | LC_ALL=C wc -c | tr -d ' ')
-check "wiki part capped at 2048 bytes" [ "$WB" -le 2048 ] 
+WB=$(printf '%s\n' "$CTX" | awk '/^Wiki \(active/ || /^- \[p/ || /^… see/' | LC_ALL=C wc -c | tr -d ' ')
+check "wiki part (header included) capped at 2048 bytes" [ "$WB" -le 2048 ] 
 check "wiki truncation note" printf '%s' "$CTX" | grep -qx '… see docs/wiki/index.md'
 check "wiki truncation drops late lines" sh -c '! printf "%s" "$1" | grep -q "p59.md"' _ "$CTX"
 

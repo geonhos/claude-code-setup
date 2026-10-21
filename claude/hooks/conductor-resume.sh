@@ -22,10 +22,11 @@ if [ -s "$f" ]; then
   ctx=${ctx%x}
 fi
 
-# wiki_lines <index> — active lines, capped to WIKI_MAX bytes (byte-wise awk)
+WIKI_HEADER="Wiki (active pages; read docs/wiki/index.md, open a page only when relevant)"
+# wiki_lines <index> — active lines, capped so header + lines fit in WIKI_MAX bytes
 wiki_lines() {
-  LC_ALL=C awk -v max="${WIKI_MAX:-2048}" '
-    BEGIN { note = "… see docs/wiki/index.md"; used = 0 }
+  LC_ALL=C awk -v max="${WIKI_MAX:-2048}" -v hdr="${#WIKI_HEADER}" '
+    BEGIN { max -= hdr + 1; note = "… see docs/wiki/index.md"; used = 0 }
     index($0, "(active,") {
       if (cut) next
       if (used + length($0) + 1 > max - length(note) - 1) { cut = 1; next }
@@ -40,7 +41,7 @@ if [ -s "$w" ]; then
   if [ -n "$wl" ]; then
     [ -z "$ctx" ] || ctx="$ctx
 "
-    ctx="${ctx}Wiki (active pages; read docs/wiki/index.md, open a page only when relevant)
+    ctx="${ctx}$WIKI_HEADER
 $wl
 "
   fi

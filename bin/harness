@@ -561,26 +561,35 @@ restore_interrupted() {
   exit 5
 }
 
-# learned_has_evidence <line> — the bullet cites an ask-id, a commit (7-40 hex with a
-# digit), file:line, or a log/.harness path
+# learned_has_evidence <text> — the bullet cites an ask-id, a commit (7-40 hex with a
+# letter a-f and a digit, standalone), path/file.ext:line (path has a / or an extension),
+# a .harness/ path or a .log file. `step:2`, `host:8080` and bare numbers do not count.
 learned_has_evidence() {
-  printf '%s\n' "$1" | grep -Eq '[0-9]{9,}-[0-9]+-[0-9]+|[A-Za-z][A-Za-z0-9_./-]*:[0-9]+|\.harness/|\.log([^A-Za-z]|$)|(^|[^A-Za-z])log:' && return 0
-  printf '%s\n' "$1" | grep -Eo '(^|[^0-9A-Za-z])[0-9a-f]{7,40}($|[^0-9A-Za-z])' | grep -q '[0-9]' && return 0
+  printf '%s\n' "$1" | grep -Eq '(^|[^0-9])[0-9]{9,}-[0-9]+-[0-9]+|[A-Za-z0-9_.-]*/[A-Za-z0-9_./-]*:[0-9]+|[A-Za-z0-9_-]+\.[A-Za-z][A-Za-z0-9]{0,4}:[0-9]+|\.harness/|\.log([^A-Za-z]|$)' && return 0
+  printf '%s\n' "$1" | grep -Eo '(^|[^0-9A-Za-z])[0-9a-f]{7,40}($|[^0-9A-Za-z])' | grep '[0-9]' | grep -q '[a-f]' && return 0
   return 1
 }
 
 # queue_learned <agent> <report> — copy up to 2 evidence-backed bullets of the
-# report's optional `## Learned` section to docs/wiki/inbox/<date>-<role>-<ask-id>.md.
-# Prints one stdout line when queued; bullets without evidence are dropped with a
-# one-line stderr warning. Never fails the caller (idempotent per ask-id).
+# report's optional `## Learned` section to docs/wiki/inbox/<date>-<role>-<ask-id>.md,
+# only when docs/wiki/ already exists at the repo top level. Indented continuation
+# lines are joined to their bullet. Prints one stdout line when queued; bullets
+# without evidence are dropped with a one-line stderr warning. Never fails the
+# caller (idempotent per role+ask-id; no ask-id -> skipped with a warning).
 queue_learned() {
-  local agent=$1 report=$2 raw line kept="" n=0 dropped=0 askid date out
+  local agent=$1 report=$2 raw line kept="" n=0 dropped=0 askid date out top
   raw=$(awk '
+    function flush() { if (cur != "") print cur; cur = "" }
     /^## Learned[ \t]*$/ { on = 1; next }
-    on && (/^## / || /^VERDICT:/) { on = 0 }
-    on && /^[ \t]*[-*] / { sub(/^[ \t]*[-*] +/, "- "); print }
+    on && (/^## / || /^VERDICT:/) { flush(); on = 0 }
+    on && /^[ \t]*[-*] / { flush(); cur = $0; sub(/^[ \t]*[-*] +/, "- ", cur); next }
+    on && cur != "" && /^[ \t]+[^ \t]/ { t = $0; sub(/^[ \t]+/, "", t); cur = cur " " t; next }
+    on && /^[ \t]*$/ { flush() }
+    END { flush() }
   ' "$report" 2>/dev/null) || return 0
   [ -n "$raw" ] || return 0
+  top=$(git rev-parse --show-toplevel 2>/dev/null) || top=$PWD
+  [ -d "$top/docs/wiki" ] || return 0
   while IFS= read -r line; do
     case "$line" in "- none"|"- None"|"- none."|"- -") continue ;; esac
     if learned_has_evidence "$line"; then
@@ -596,12 +605,16 @@ EOF_LEARNED
   [ "$dropped" -eq 0 ] || echo "harness: wiki: dropped $dropped Learned bullet(s) without evidence (ask-id, commit, file:line or log)" >&2
   [ -n "$kept" ] || return 0
   askid=$(awk 'NR == 1 { print $1 }' ".harness/asks/$agent.current" 2>/dev/null)
-  [ -n "$askid" ] || askid=$(date +%s)
+  if [ -z "$askid" ]; then
+    echo "harness: wiki: no ask-id for $agent; Learned bullets not queued" >&2
+    return 0
+  fi
   date=$(date +%Y-%m-%d)
+  # shellcheck disable=SC2144
+  ls "$top"/docs/wiki/inbox/*-"$agent-$askid".md >/dev/null 2>&1 && return 0
   out="docs/wiki/inbox/$date-$agent-$askid.md"
-  [ ! -e "$out" ] || return 0
-  mkdir -p docs/wiki/inbox 2>/dev/null || return 0
-  { printf -- '---\nrole: %s\nask-id: %s\ndate: %s\n---\n' "$agent" "$askid" "$date"; printf '%s' "$kept"; } > "$out" 2>/dev/null || return 0
+  mkdir -p "$top/docs/wiki/inbox" 2>/dev/null || return 0
+  { printf -- '---\nrole: %s\nask-id: %s\ndate: %s\n---\n' "$agent" "$askid" "$date"; printf '%s' "$kept"; } > "$top/$out" 2>/dev/null || return 0
   n=$(printf '%s' "$kept" | grep -c '^- ')
   echo "wiki: $n lesson$([ "$n" -eq 1 ] || echo s) queued in $out"
 }
@@ -611,6 +624,7 @@ EOF_LEARNED
 # `file: problem` lines, exit 1 on any error (warnings: old inbox items, fluff).
 cmd_wiki_lint() {
   local dir=${1:-docs/wiki} errs=0 f rel p n links l c k v t st
+  while [ "${#dir}" -gt 1 ] && [ "${dir%/}" != "$dir" ]; do dir=${dir%/}; done
   [ -d "$dir" ] || { echo "$dir: wiki directory not found"; return 1; }
   local idx="$dir/index.md"
   err() { echo "$1: $2"; errs=$((errs + 1)); }
