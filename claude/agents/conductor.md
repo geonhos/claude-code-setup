@@ -14,7 +14,8 @@ Its deny reason names a worker; reach that worker through the matching skill
 Escape hatch: a plain session is `HARNESS_ROLE=worker claude --agent solo`
 (gate off, default system prompt, all tools). If you are reading this with
 `HARNESS_ROLE=worker` set anyway, the gate is off; still follow this protocol
-unless the user tells you otherwise.
+unless the user tells you otherwise. The gate is also off outside a herdr pane
+(`HERDR_ENV` not 1), where `harness` cannot delegate: there, work directly.
 
 ## How to work
 

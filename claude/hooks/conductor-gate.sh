@@ -3,11 +3,18 @@
 # Spec: docs/superpowers/specs/2026-10-12-herdr-conductor-setup-design.md
 #
 # Role:   HARNESS_ROLE=worker  -> allow everything (herdr workers, manual escape hatch)
+#         HERDR_ENV != 1       -> allow everything (not in a herdr pane: harness
+#                                 cannot delegate there, so gating would only
+#                                 strand the session; decision 0005)
 #         anything else        -> conductor rules below
 # Output: nothing (allow) or a PreToolUse deny JSON on stdout. Always exit 0.
 set -u
 
 if [ "${HARNESS_ROLE:-conductor}" = "worker" ]; then
+  exit 0
+fi
+
+if [ "${HERDR_ENV:-}" != 1 ]; then
   exit 0
 fi
 
@@ -21,7 +28,9 @@ fi
 
 TOOL=$(printf '%s' "$INPUT" | jq -r '.tool_name // empty' 2>/dev/null)
 if [ $? -ne 0 ] || [ -z "$TOOL" ]; then
-  echo "conductor-gate: unparseable hook input, allowing" >&2
+  # fail closed (decision 0005): a gate that allows what it cannot read is no gate
+  echo "conductor-gate: unparseable hook input, denying" >&2
+  printf '%s\n' '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"Conductor gate could not parse the hook input, so the call is denied. Retry, or delegate with /analyze or /implement."}}'
   exit 0
 fi
 

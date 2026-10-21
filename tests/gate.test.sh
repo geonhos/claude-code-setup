@@ -9,7 +9,7 @@ fail=0
 
 # run_gate ROLE JSON -> prints the gate's stdout; returns the gate's exit code
 run_gate() {
-  printf '%s' "$2" | HARNESS_ROLE="$1" /bin/bash "$GATE" 2>/dev/null
+  printf '%s' "$2" | HERDR_ENV=1 HARNESS_ROLE="$1" /bin/bash "$GATE" 2>/dev/null
 }
 
 # decision ROLE JSON -> prints allow|deny, or exit=<rc> when the gate exits
@@ -298,7 +298,7 @@ expect allow $C "mcp move in .harness"    "$(tool mcp__filesystem__move_file '{"
 # --- hardening: jq missing fails closed (spec 5) ----------------------------
 JQBIN=$(mktemp -d)
 for b in cat awk sed tr grep; do ln -s "$(command -v $b)" "$JQBIN/$b"; done
-nojq() { printf '%s' "$2" | PATH="$JQBIN" HARNESS_ROLE="$1" /bin/bash "$GATE" 2>/dev/null; }
+nojq() { printf '%s' "$2" | PATH="$JQBIN" HERDR_ENV=1 HARNESS_ROLE="$1" /bin/bash "$GATE" 2>/dev/null; }
 got=$(nojq conductor "$(bcmd 'ls')")
 if [ "$got" = '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"Conductor gate requires jq. Install jq, or run a worker session."}}' ]
 then report ok "no jq: conductor denied" deny deny x; else report bad "no jq: conductor denied" deny "$got" "$(bcmd 'ls')"; fi
@@ -523,8 +523,33 @@ expect allow $C "TodoWrite"               "$(tool TodoWrite '{"todos":[]}')"
 expect allow $C "MCP tool"                "$(tool mcp__context7__query-docs '{"q":"x"}')"
 
 # --- robustness ------------------------------------------------------------
-expect allow $C "garbage input"           'not json at all'
-expect allow $C "missing tool_name"       '{"tool_input":{}}'
+# unparseable input fails closed (decision 0005)
+expect deny  $C "garbage input"           'not json at all'
+expect deny  $C "missing tool_name"       '{"tool_input":{}}'
+expect deny  $C "empty input"             ''
+expect allow $W "worker garbage input"    'not json at all'
+
+# --- outside herdr: gate is off (decision 0005) ------------------------------
+# off_herdr ENVSPEC JSON -> allow|deny; ENVSPEC is passed to env (e.g. -u HERDR_ENV)
+off_herdr() {
+  local out
+  out=$(printf '%s' "$2" | env $1 HARNESS_ROLE=conductor /bin/bash "$GATE" 2>/dev/null)
+  if [ -z "$out" ]; then echo allow; else printf '%s' "$out" | jq -r '.hookSpecificOutput.permissionDecision'; fi
+}
+offchk() {
+  local got
+  got=$(off_herdr "$2" "$3")
+  if [ "$got" = "$1" ]; then report ok "$4" "$1" "$got" "$3"; else report bad "$4" "$1" "$got" "$3"; fi
+}
+offchk allow "-u HERDR_ENV" "$(tool Edit '{"file_path":"src/a.ts","old_string":"a","new_string":"b"}')" "no HERDR_ENV: Edit src"
+offchk allow "-u HERDR_ENV" "$(tool Read '{"file_path":"/repo/src/a.ts"}')"                          "no HERDR_ENV: Read src"
+offchk allow "-u HERDR_ENV" "$(bcmd 'npm test')"                                                    "no HERDR_ENV: Bash"
+offchk allow "-u HERDR_ENV" "$(tool Agent '{"prompt":"x"}')"                                        "no HERDR_ENV: Agent"
+offchk allow "-u HERDR_ENV" 'not json at all'                                                       "no HERDR_ENV: garbage"
+offchk allow "HERDR_ENV=0"  "$(tool Edit '{"file_path":"src/a.ts","old_string":"a","new_string":"b"}')" "HERDR_ENV=0: Edit src"
+offchk allow "HERDR_ENV="   "$(bcmd 'npm test')"                                                    "HERDR_ENV empty: Bash"
+offchk deny  "HERDR_ENV=1"  "$(tool Edit '{"file_path":"src/a.ts","old_string":"a","new_string":"b"}')" "HERDR_ENV=1: Edit src"
+expect_reason "Conductor gate could not parse" "reason: unparseable" 'not json at all'
 
 # --- deny output shape -------------------------------------------------------
 expect_reason "Conductor cannot edit"   "reason: write" "$(tool Write '{"file_path":"src/a.ts","content":"x"}')"
