@@ -726,7 +726,7 @@ sleep 1; : > .harness/asks/analyst.finished
 run close analyst
 check "close collected report: rc 0" [ "$RC" -eq 0 ]
 check "close logs event" grep -q '"event":"close","role":"analyst","pane":"w1:p2","reason":"manual"' .harness/progress.jsonl
-check "close shows in progress.md" grep -q "close analyst (manual)" .harness/progress.md
+check "close shows in progress.md" grep -q "^Recent closes (max 5): .* analyst (manual)" .harness/progress.md
 
 # --all: closes idle ones, rc 4 when one is refused; other-repo -> 6
 setup
@@ -831,6 +831,76 @@ run close --legacy
 check "legacy working: rc 4" [ "$RC" -eq 4 ]
 run spawn analyst
 check "migration hint mentions --legacy" grep -q "harness close --legacy" <<<"$OUT"
+
+# --- review fixes: --keep note, stamps, race, pane gone, progress.md ------------------
+# 1: --keep after an auto-close prints the note; no note without --keep; exit 5 keeps the worker
+setup
+live_worker implementer idle w1:p2
+export FAKE_PROMPT_HOOK="$(REPORT_HOOK implementer)"
+run ask implementer "one"
+check "keep note: first ask closes" [ "$RC" -eq 0 ]
+run ask implementer "two" --keep
+check "keep note: rc 0" [ "$RC" -eq 0 ]
+check "keep note: printed" grep -q "harness: note: implementer was closed (after_ask) — previous context is gone; running on a fresh worker" <<<"$OUT"
+setup
+live_worker implementer idle w1:p2
+run ask implementer "one"
+run ask implementer "two"
+check "no note without --keep" not_grep "previous context is gone" <(echo "$OUT")
+setup
+live_worker analyst idle w1:p2; stale analyst 90
+export FAKE_PROMPT_HOOK="$(REPORT_HOOK analyst)"
+run ask analyst "q" --keep
+check "keep note after ttl reap" grep -q "analyst was closed (ttl)" <<<"$OUT"
+setup
+live_worker implementer idle w1:p2
+export FAKE_PROMPT_HOOK="mkdir -p $WORK/.harness/reports $WORK/.harness/verify; printf '# implementer report\nstatus: partial\n' > $WORK/.harness/reports/implementer.md; printf '{\"status\":\"fail\",\"attempts\":3,\"step\":\"test\",\"tail\":\"x\"}' > $WORK/.harness/verify/implementer.json"
+run ask implementer "one"
+check "exit 5: worker stays" [ "$RC" -eq 5 ] && not_logged "pane close"
+run ask implementer "one-b" --fresh >/dev/null; : > "$FAKE_LOG"
+run ask implementer "fix" --keep
+check "exit 5 then --keep: context kept, no note" not_grep "previous context is gone" <(echo "$OUT")
+check "exit 5 then --keep: no /clear" not_logged "/clear"
+unset FAKE_PROMPT_HOOK
+
+# 2: harness report on an interrupted verify stamps .finished
+setup
+live_worker implementer idle w1:p2
+mkdir -p .harness/reports; echo "# r" > .harness/reports/implementer.md.pending
+run report implementer
+check "report interrupted: rc 5" [ "$RC" -eq 5 ]
+check "report interrupted: stamped" [ -f .harness/asks/implementer.finished ]
+
+# 3: starting an ask removes the collected stamp
+setup
+live_worker analyst idle w1:p2; : > /dev/null; mkdir -p .harness/asks; : > .harness/asks/analyst.finished
+export FAKE_PROMPT_HOOK="test ! -e $WORK/.harness/asks/analyst.finished && touch $WORK/no-stamp-in-flight"
+run ask analyst "q" --timeout 1000
+check "ask in flight: no .finished" [ -e "$WORK/no-stamp-in-flight" ]
+unset FAKE_PROMPT_HOOK
+
+# 4: pane still present after close -> failure, registry kept
+setup
+live_worker analyst idle w1:p2
+touch "$FAKE_DIR/close_noop"
+HARNESS_CLOSE_POLLS=2 HARNESS_CLOSE_INTERVAL=0.1 run close analyst
+check "pane survives: rc 1" [ "$RC" -eq 1 ]
+check "pane survives: message" grep -q "still present" <<<"$OUT"
+check "pane survives: registry kept" grep -q "^analyst w1:p2$" .harness/panes
+check "pane survives: no close event" not_grep '"event":"close"' .harness/progress.jsonl
+
+# 5: progress.md separates closes; ask-window lookups ignore them
+setup
+mkdir -p .harness
+i=0; while [ $i -lt 20 ]; do echo '{"ts":"t","event":"close","role":"implementer","pane":"p","reason":"after_ask"}' >> .harness/progress.jsonl; i=$((i + 1)); done
+echo '{"ts":"t0","agent":"analyst","exit":0,"summary":"S"}' | cat - .harness/progress.jsonl > .harness/j && mv .harness/j .harness/progress.jsonl
+live_worker analyst idle w1:p2
+export FAKE_PROMPT_HOOK="$(REPORT_HOOK analyst)"
+run ask analyst "q"
+check "progress.md: asks listed" grep -q "analyst exit 0" .harness/progress.md
+check "progress.md: no close line in asks" not_grep "^- .* close " .harness/progress.md
+check "progress.md: closes line capped at 5" [ "$(grep '^Recent closes' .harness/progress.md | tr ';' '\n' | wc -l | tr -d ' ')" -le 5 ]
+unset FAKE_PROMPT_HOOK
 
 echo "PASS $pass / FAIL $fail"
 [ "$fail" -eq 0 ]

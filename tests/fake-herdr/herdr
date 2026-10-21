@@ -33,10 +33,18 @@ case "$sub" in
     fi
     echo '{"id":"cli:pane:split","result":{"pane":{"pane_id":"w1:p2"}},"type":"pane_split"}'
     ;;
+  "pane get")
+    # a pane is gone once closed (marker) ; never-closed panes exist
+    if [ -f "$FAKE_DIR/closed.${3:-}" ]; then echo '{"error":{"code":"pane_not_found"}}' >&2; exit 1; fi
+    echo '{"id":"cli:pane:get","result":{"pane":{"pane_id":"'"${3:-}"'"}},"type":"pane_info"}'
+    ;;
   "pane close")
+    # $FAKE_DIR/close_noop => the pane survives `pane close`
+    [ -f "$FAKE_DIR/close_noop" ] || touch "$FAKE_DIR/closed.${3:-}"
     # closing a pane ends the agent living in it
     for f in "$FAKE_DIR"/pane.*; do
       [ -f "$f" ] || continue
+      [ ! -f "$FAKE_DIR/close_noop" ] || continue
       if [ "$(cat "$f")" = "${3:-}" ]; then
         n=${f##*/pane.}
         rm -f "$FAKE_DIR/live.$n" "$f" "$FAKE_DIR/session.$n"
@@ -65,6 +73,7 @@ case "$sub" in
       echo '{"error":{"code":"agent_not_ready"}}' >&2; exit 1
     fi
     echo idle > "$FAKE_DIR/live.$name"
+    rm -f "$FAKE_DIR"/closed.*
     echo "sess-$name-s$$" > "$FAKE_DIR/session.$name"
     prev=""
     for a in "$@"; do

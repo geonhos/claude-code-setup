@@ -28,7 +28,7 @@ change yourself (`harness ask` refuses to run in a worker session anyway).
    harness ask implementer 'Read .harness/task-implementer.md and do it.' --via skill
    ```
 
-   Use `--keep` only for a follow-up that needs its previous conversation.
+   Use `--keep` only for a follow-up that needs its previous conversation. It has no effect after an implementer ask that exited 0: the pane auto-closed, so the next ask runs on a fresh worker (harness prints a `was closed` note), unless `close_after_ask.implementer` is `never` in `.harness/config.json`.
 3. Handle the exit code as conductor.md's "Exit codes from `harness ask`"
    section says. In particular `5` means its lint/test checks failed after
    retries: send the printed failure back with another `/implement` (its
