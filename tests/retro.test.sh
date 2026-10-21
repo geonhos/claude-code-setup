@@ -112,12 +112,12 @@ OUT=$(HERDR_ENV=1 HERDR_PANE_ID=w1:p1 PATH="$FAKE_BIN:$HERE/../bin:$PATH" FAKE_P
 check "kill 143: no candidate" [ "$(ncand)" -eq 0 ]
 
 # 129 (HUP) is the caller ending the wait too: no candidate (130/INT is ignored by background jobs; progress.test.sh covers its exit code)
-for sig in HUP; do
+{
   setup
   echo idle > "$FAKE_DIR/live.$(WN analyst)"
-  OUT=$(HERDR_ENV=1 HERDR_PANE_ID=w1:p1 PATH="$FAKE_BIN:$HERE/../bin:$PATH" FAKE_PROMPT_HOOK='sleep 3' env -u HARNESS_ROLE /bin/bash "$HARNESS" ask analyst "long" 2>&1 & KP=$!; sleep 1; kill -$sig $KP; wait $KP)
-  check "kill $sig: no candidate" [ "$(ncand)" -eq 0 ]
-done
+  OUT=$(HERDR_ENV=1 HERDR_PANE_ID=w1:p1 PATH="$FAKE_BIN:$HERE/../bin:$PATH" FAKE_PROMPT_HOOK='sleep 3' env -u HARNESS_ROLE /bin/bash "$HARNESS" ask analyst "long" 2>&1 & KP=$!; sleep 1; kill -HUP $KP; wait $KP)
+  check "kill HUP: no candidate" [ "$(ncand)" -eq 0 ]
+}
 
 # exit 1 after the ask passed its pre-flight (infrastructure failure) queues a candidate
 setup
@@ -133,7 +133,9 @@ run ask analyst "x"
 check "split fail: rc 1" [ "$RC" -eq 1 ]
 check "split fail: candidate" [ "$(ncand)" -eq 1 ]
 setup   # harness-verify missing: the implementer ask dies after pre-flight
-OUT=$(HERDR_ENV=1 HERDR_PANE_ID=w1:p1 PATH="$FAKE_BIN:/usr/bin:/bin" $GUARD env -u HARNESS_ROLE /bin/bash "$HARNESS" ask implementer "x" 2>&1); RC=$?
+NOVERIFY_PATH="$FAKE_BIN:$(dirname "$(command -v jq)"):/usr/bin:/bin"
+check "no harness-verify: PATH really lacks it" [ -z "$(PATH="$NOVERIFY_PATH" command -v harness-verify)" ]
+OUT=$(HERDR_ENV=1 HERDR_PANE_ID=w1:p1 PATH="$NOVERIFY_PATH" $GUARD env -u HARNESS_ROLE /bin/bash "$HARNESS" ask implementer "x" 2>&1); RC=$?
 check "no harness-verify: rc 1" [ "$RC" -eq 1 ]
 check "no harness-verify: candidate" [ "$(ncand)" -eq 1 ]
 setup   # usage error before any side effect stays excluded
@@ -211,6 +213,17 @@ check "rotate: age-based delete also spares referenced log" [ -f "$keeplog" ]
 rm -f .harness/retro/x.json
 run ask analyst "ok 4"
 check "rotate: unreferenced old log goes" [ ! -f "$keeplog" ]
+# leftover report snapshots: swept only when old AND no pending candidate points at them
+mkdir -p .harness/retro/reports
+echo r > .harness/retro/reports/orphan-old.md
+echo r > .harness/retro/reports/pending-old.md
+echo r > .harness/retro/reports/orphan-fresh.md
+touch -t 202001010000 .harness/retro/reports/orphan-old.md .harness/retro/reports/pending-old.md
+jq -n -c '{ask_id:"pending-old",role:"analyst"}' > .harness/retro/pending-old.json
+run ask analyst "ok 5"
+check "snapshot sweep: old orphan removed" [ ! -f .harness/retro/reports/orphan-old.md ]
+check "snapshot sweep: old but pending kept" [ -f .harness/retro/reports/pending-old.md ]
+check "snapshot sweep: fresh orphan kept" [ -f .harness/retro/reports/orphan-fresh.md ]
 unset HARNESS_LOG_DAYS
 
 # --- no docs/wiki side effects ------------------------------------------------------------------
