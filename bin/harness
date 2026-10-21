@@ -8,6 +8,7 @@
 #   harness status
 #   harness close  <agent>|--all|--legacy [--force]
 #   harness route-log '<json>'   append one line to .harness/routing.jsonl (never fails)
+#   harness retro [--dry-run]    one batched analyst ask over the queued failure candidates
 #
 # Exit codes for `ask`: 0 report printed · 1 usage/setup error · 2 worker blocked
 #                       6 worker runs outside this repo (cwd check); nothing was sent
@@ -71,6 +72,7 @@ usage:
   harness close  <agent>|--all|--legacy [--force]
   harness wiki-lint [DIR]
   harness route-log '<json>'
+  harness retro [--dry-run]
 agents: $AGENTS
 EOF
   exit 1
@@ -1337,6 +1339,64 @@ retro_on_report() {
   echo "retro: candidate queued (late report) — run 'harness retro' when the task is done"
 }
 
+# --- harness retro ---------------------------------------------------------------------------
+# cmd_retro [--dry-run] — one analyst ask over every pending candidate. The brief
+# (.harness/task-retro.md) holds ask-ids, reasons, numbers and file paths only.
+cmd_retro() {
+  local dry=0 f n=0 top brief=.harness/task-retro.md rc files=""
+  case "${1:-}" in '') ;; --dry-run) dry=1 ;; *) usage ;; esac
+  [ $# -le 1 ] || usage
+  for f in "$RETRO_DIR"/*.json; do
+    [ -f "$f" ] || continue
+    files="$files$f
+"
+    n=$((n + 1))
+  done
+  if [ "$n" -eq 0 ]; then echo "retro: nothing pending"; return 0; fi
+  top=$(git rev-parse --show-toplevel 2>/dev/null) || top=$PWD
+  mkdir -p .harness || die "cannot create .harness/"
+  {
+    printf '# Task: failure retro (%s candidate%s)\n\n' "$n" "$([ "$n" -eq 1 ] || echo s)"
+    printf 'Read-only analysis of failed asks. Evidence lives in the files listed per candidate; open only those.\n\n'
+    printf '## Candidates\n\n'
+    printf '%s' "$files" | while IFS= read -r f; do
+      [ -n "$f" ] || continue
+      jq -r '"### \(.ask_id) — \(.role), \(.reason)\n- exit: \(.exit // "?") · verify attempts: \(.verify_attempts // "-") · duration: \(.duration_s // "?")s · late: \(.late)\n- log: \(.log // "-")\n- brief: \(.brief // "-")\n- report: \(.report // "-")\n"' "$f" 2>/dev/null
+    done
+    printf '## What to write\n\n'
+    printf 'For each candidate (or one note per group of candidates with the same cause) write at most 120 words as:\n\n'
+    printf -- '- **Symptom:** what failed, observable.\n- **Cause:** the verified cause, or "unknown" with what was ruled out.\n- **Next time:** one concrete action.\n- **Evidence:** ask-id plus file:line or a log path. Mandatory; a note without it is dropped.\n\n'
+    printf 'Before writing, read `docs/wiki/index.md`. If an existing gotcha already covers the cause, write only a one-line note "recurrence of <page>" (with the Evidence line) instead of a new lesson; this feeds the 2+ recurrence promotion rule in AGENTS.md.\n\n'
+    printf '## Output\n\n'
+    if [ -d "$top/docs/wiki" ]; then
+      printf 'One file per note: `docs/wiki/inbox/<YYYY-MM-DD>-retro-<ask-id>.md` (the first ask-id of the group), starting with the header lines `role: retro`, `ask-id: <id>`, `date: <YYYY-MM-DD>` between `---` lines.\n'
+    else
+      printf 'This repo has no docs/wiki: one file per note in `.harness/retro/inbox/<YYYY-MM-DD>-retro-<ask-id>.md`. Do not create docs/wiki.\n'
+    fi
+    printf 'Do not edit wiki pages, index.md or log.md. No fluff, no success stories, no prompt or screen text copied from the logs.\n'
+  } > "$brief" || die "cannot write $brief"
+  if [ "$dry" = 1 ]; then
+    printf '%s' "$files" | while IFS= read -r f; do
+      [ -n "$f" ] || continue
+      jq -r '"\(.ask_id)\t\(.role)\t\(.reason)"' "$f" 2>/dev/null
+    done
+    echo "retro: $n candidate$([ "$n" -eq 1 ] || echo s) pending; brief: $brief (dry run, no ask sent)"
+    return 0
+  fi
+  "$BASH" "$0" ask analyst 'Read .harness/task-retro.md and do it.' --via retro --fresh
+  rc=$?
+  if [ "$rc" -eq 0 ]; then
+    mkdir -p "$RETRO_DIR/done"
+    printf '%s' "$files" | while IFS= read -r f; do
+      [ -n "$f" ] && mv -f "$f" "$RETRO_DIR/done/"
+    done
+    echo "retro: $n candidate$([ "$n" -eq 1 ] || echo s) processed"
+  else
+    echo "retro: analyst ask exited $rc; $n candidate$([ "$n" -eq 1 ] || echo s) stay pending" >&2
+  fi
+  return "$rc"
+}
+
 need jq
 # route-log is called by the UserPromptSubmit hook: no herdr needed
 if [ "${1:-}" = route-log ]; then shift; cmd_route_log "$@"; exit 0; fi
@@ -1346,6 +1406,8 @@ if [ "${1:-}" = _mtime ]; then file_mtime "${2:-}"; exit $?; fi
 if [ "${1:-}" = _wname ]; then valid_agent "${2:-}"; wname "$2"; echo; exit 0; fi
 # wiki-lint is pure file checking: no herdr needed
 if [ "${1:-}" = wiki-lint ]; then shift; cmd_wiki_lint "$@"; exit $?; fi
+# retro and metrics read files only; retro's ask is a separate `harness ask` process
+if [ "${1:-}" = retro ]; then shift; cmd_retro "$@"; exit $?; fi
 need herdr
 [ "${HERDR_ENV:-}" = 1 ] || die "run Claude inside a herdr pane (HERDR_ENV is not 1)"
 

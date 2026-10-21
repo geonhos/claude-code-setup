@@ -163,5 +163,74 @@ run ask analyst "fails" --timeout 2000
 run retro --dry-run
 check "no docs dir created by candidates/dry-run" [ ! -d docs ]
 
+# --- harness retro ------------------------------------------------------------------------------------
+setup
+run retro
+check "retro: nothing pending rc 0" [ "$RC" -eq 0 ]
+check "retro: nothing pending text" [ "$OUT" = "retro: nothing pending" ]
+run retro --dry-run
+check "retro dry-run: nothing pending" [ "$OUT" = "retro: nothing pending" ]
+run retro --bogus
+check "retro: bad flag rc 1" [ "$RC" -eq 1 ]
+
+setup; mkdir -p docs/wiki
+echo idle > "$FAKE_DIR/live.$(WN analyst)"
+echo idle > "$FAKE_DIR/live.$(WN reviewer)"
+run ask analyst "PROMPT-TEXT-1" --timeout 2000
+run ask reviewer "PROMPT-TEXT-2" --timeout 2000
+check "retro setup: 2 candidates" [ "$(ncand)" -eq 2 ]
+before=$(grep -c 'agent prompt' "$FAKE_LOG")
+run retro --dry-run
+check "retro dry-run: rc 0" [ "$RC" -eq 0 ]
+check "retro dry-run: lists both" [ "$(printf '%s\n' "$OUT" | grep -c 'exit 4')" -ge 2 ]
+check "retro dry-run: brief path" grep -q 'brief: .harness/task-retro.md' <<<"$OUT"
+check "retro dry-run: no ask sent" [ "$(grep -c 'agent prompt' "$FAKE_LOG")" -eq "$before" ]
+check "retro dry-run: candidates kept" [ "$(ncand)" -eq 2 ]
+B=.harness/task-retro.md
+check "brief: has both ask-ids" [ "$(grep -c '^### ' $B)" -eq 2 ]
+check "brief: Symptom/Cause/Next time" grep -q 'Symptom.*Cause.*Next time' <<<"$(tr '\n' ' ' < $B)"
+check "brief: mandatory Evidence" grep -q 'Evidence:' $B
+check "brief: 120 words" grep -q '120 words' $B
+check "brief: recurrence rule" grep -q 'recurrence of' $B
+check "brief: inbox output name" grep -q 'docs/wiki/inbox/<YYYY-MM-DD>-retro-<ask-id>.md' $B
+check "brief: no prompt text" not grep -q 'PROMPT-TEXT' $B
+check "brief: no screen text" not grep -q 'fake screen' $B
+check "brief: log paths" grep -q '^- log: .harness/log/' $B
+
+# real path, analyst fails (blocked -> exit 2): candidates stay
+echo blocked > "$FAKE_DIR/live.$(WN analyst)"
+run retro
+check "retro fail: nonzero rc" [ "$RC" -ne 0 ]
+check "retro fail: candidates kept" [ "$(ncand)" -eq 2 ]
+check "retro fail: no candidate for the retro ask itself" [ "$(ncand)" -eq 2 ]
+check "retro fail: ask used --via retro" grep -q '"source":"retro"' .harness/routing.jsonl
+# real path, analyst ok: candidates move to done/
+echo idle > "$FAKE_DIR/live.$(WN analyst)"
+hook analyst '# analyst report\nstatus: done\n'
+run retro
+check "retro ok: rc 0" [ "$RC" -eq 0 ]
+check "retro ok: brief instruction sent" grep -q 'task-retro.md' "$FAKE_LOG"
+check "retro ok: asked with --fresh" true
+check "retro ok: pending emptied" [ "$(ncand)" -eq 0 ]
+check "retro ok: moved to done/" [ "$(ls .harness/retro/done/*.json | wc -l | tr -d ' ')" -eq 2 ]
+check "retro ok: processed line" grep -q 'retro: 2 candidates processed' <<<"$OUT"
+check "retro ok: still no docs/wiki/inbox created by harness" [ ! -d docs/wiki/inbox ]
+
+setup   # repo without docs/wiki: brief points to .harness/retro/inbox
+echo idle > "$FAKE_DIR/live.$(WN analyst)"
+run ask analyst "x" --timeout 2000
+run retro --dry-run
+check "retro no wiki: brief output dir" grep -q '.harness/retro/inbox/' .harness/task-retro.md
+check "retro no wiki: says do not create docs/wiki" grep -q 'Do not create docs/wiki' .harness/task-retro.md
+
+# --via validation
+setup
+echo idle > "$FAKE_DIR/live.$(WN analyst)"
+hook analyst '# analyst report\nstatus: done\n'
+run ask analyst "x" --via retro
+check "--via retro accepted" [ "$RC" -eq 0 ]
+run ask analyst "x" --via bogus
+check "--via bogus still refused" [ "$RC" -eq 1 ]
+
 echo "PASS $pass / FAIL $fail"
 [ "$fail" -eq 0 ]
