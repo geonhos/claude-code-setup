@@ -711,11 +711,11 @@ ask_inner() {
     echo "harness: prompt did not settle: $out" >&2
   fi
 
-  local st grace=${HARNESS_IDLE_GRACE:-30} poll=${HARNESS_POLL_SEC:-2}
+  local has_marker has_pending st grace=${HARNESS_IDLE_GRACE:-30} poll=${HARNESS_POLL_SEC:-2}
   local deadline=$((ask_start + (timeout + 999) / 1000)) idle_since="" now
   case "$grace" in ''|*[!0-9]*) grace=30 ;; esac
   while :; do
-    if ask_complete "$agent" "$ask_id" "$report" "$ask_start"; then
+    if ask_complete "$agent" "$ask_id" "$report"; then
       finish_report "$agent" "$report" "$pane"
     fi
     st=$(agent_status "$agent")
@@ -726,9 +726,21 @@ ask_inner() {
         show_pane_screen "$pane"
         exit 2 ;;
       idle|done)
-        [ -n "$idle_since" ] || idle_since=$now
-        if [ $((now - idle_since)) -ge "$grace" ]; then
-          ask_idle_giveup "$agent" "$report" "$pane" "$prompt_failed" "$out" "$ask_id"
+        # Idle grace applies only to a worker whose Stop hook never fired.
+        # Marker, no .pending: the turn ended (maybe waiting on background tasks);
+        # keep waiting. No marker, .pending: the implementer's verification is
+        # still running; keep waiting. Marker + .pending: hook ended, leftover
+        # .pending means it was interrupted: grace, then restore (exit 5).
+        has_marker=0; has_pending=0
+        [ -f ".harness/done/$agent.$ask_id" ] && has_marker=1
+        [ "$agent" = implementer ] && [ -f "$report.pending" ] && has_pending=1
+        if [ "$has_marker$has_pending" = 10 ] || [ "$has_marker$has_pending" = 01 ]; then
+          idle_since=""
+        else
+          [ -n "$idle_since" ] || idle_since=$now
+          if [ $((now - idle_since)) -ge "$grace" ]; then
+            ask_idle_giveup "$agent" "$report" "$pane" "$prompt_failed" "$out"
+          fi
         fi ;;
       working) idle_since="" ;;
       *)
@@ -738,6 +750,11 @@ ask_inner() {
         exit 4 ;;
     esac
     if [ "$now" -ge "$deadline" ]; then
+      if [ -f ".harness/done/$agent.$ask_id" ] && [ ! -f "$report.pending" ]; then
+        echo "harness: $agent's turn ended without a report (maybe waiting on background tasks); check harness status / harness report $agent" >&2
+        show_pane_screen "$pane"
+        exit 4
+      fi
       restore_interrupted "$agent" "$report"
       echo "harness: $agent status is '$st' (still working or unknown) after $((timeout / 1000))s; check 'harness status' before re-prompting." >&2
       show_agent_diag "$agent"
@@ -748,25 +765,39 @@ ask_inner() {
   done
 }
 
-# file_mtime <file> — epoch seconds (BSD stat, then GNU stat)
+# digits_only <string> — succeed only for a non-empty all-digit string
+digits_only() {
+  case "$1" in ''|*[!0-9]*) return 1 ;; esac
+}
+
+# file_mtime <file> — epoch seconds. GNU `stat -c %Y` first (BSD/macOS stat has no
+# -c and fails); `stat -f %m` second (on GNU, -f is filesystem mode and prints junk,
+# so every result is validated as all digits).
 file_mtime() {
-  stat -f %m "$1" 2>/dev/null || stat -c %Y "$1" 2>/dev/null
-}
-
-# ask_complete <agent> <ask-id> <report> <start> — the worker's Stop hook marked
-# this ask done and the report was (re)written no earlier than the ask start
-ask_complete() {
   local mt
-  [ -f ".harness/done/$1.$2" ] && [ -f "$3" ] || return 1
-  mt=$(file_mtime "$3") || return 1
-  case "$mt" in ''|*[!0-9]*) return 1 ;; esac
-  [ "$mt" -ge "$4" ]
+  mt=$(stat -c %Y "$1" 2>/dev/null) && digits_only "$mt" && { echo "$mt"; return 0; }
+  mt=$(stat -f %m "$1" 2>/dev/null) && digits_only "$mt" && { echo "$mt"; return 0; }
+  return 1
 }
 
-# ask_idle_giveup — herdr says idle/done, but no completion marker plus fresh
-# report showed up within the grace period
+# ask_complete <agent> <ask-id> <report> — the worker's Stop hook marked this ask
+# done AFTER the report was last written (marker epoch >= report mtime, so a marker
+# from an earlier turn never completes a later report), and the report is not older
+# than this ask's start (.harness/asks/<agent>.current).
+ask_complete() {
+  local marker=".harness/done/$1.$2" cur=".harness/asks/$1.current" mt me
+  [ -f "$marker" ] && [ -f "$3" ] || return 1
+  [ -f "$cur" ] && [ ! "$3" -ot "$cur" ] || return 1
+  mt=$(file_mtime "$3") || return 1
+  me=$(awk 'NR==1 { print $2 }' "$marker" 2>/dev/null)
+  digits_only "$me" || return 1
+  [ "$me" -ge "$mt" ]
+}
+
+# ask_idle_giveup — herdr says idle/done and the worker's Stop hook never signalled
+# this ask (an old worker without the hook): no marker showed up within the grace
 ask_idle_giveup() {
-  local agent=$1 report=$2 pane=$3 prompt_failed=$4 out=$5 ask_id=$6
+  local agent=$1 report=$2 pane=$3 prompt_failed=$4 out=$5
   restore_interrupted "$agent" "$report"
   if [ "$prompt_failed" = 1 ]; then
     echo "harness: prompt was not accepted by herdr: $out" >&2
@@ -774,12 +805,11 @@ ask_idle_giveup() {
     show_pane_screen "$pane"
     exit 4
   fi
-  if [ -f ".harness/done/$agent.$ask_id" ]; then
-    echo "harness: $agent finished but wrote no report at $report" >&2
-  elif [ -f "$report" ]; then
-    echo "harness: $agent is idle but its Stop hook never signalled completion; a report exists. Collect it with: harness report $agent (a worker started before this version needs a respawn to get the hook)" >&2
+  local hint="its Stop hook never signalled completion (a worker started before the hook needs a respawn: harness close $agent, or close the pane)"
+  if [ -f "$report" ]; then
+    echo "harness: $agent is idle but $hint; a report exists. Collect it with: harness report $agent; respawn with: harness close $agent to load the Stop hook"
   else
-    echo "harness: $agent finished but wrote no report at $report" >&2
+    echo "harness: $agent finished but wrote no report at $report; $hint"
   fi
   show_pane_screen "$pane"
   exit 3
@@ -832,6 +862,8 @@ cmd_close() {
 need jq
 # route-log is called by the UserPromptSubmit hook: no herdr needed
 if [ "${1:-}" = route-log ]; then shift; cmd_route_log "$@"; exit 0; fi
+# _mtime prints a file's epoch mtime (tests: fake GNU/BSD stat on PATH)
+if [ "${1:-}" = _mtime ]; then file_mtime "${2:-}"; exit $?; fi
 # _wname prints the scoped herdr name for a role (tests, debugging): no herdr needed
 if [ "${1:-}" = _wname ]; then valid_agent "${2:-}"; wname "$2"; echo; exit 0; fi
 need herdr

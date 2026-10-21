@@ -122,7 +122,9 @@ check "route: text --via source skill" [ "$(rj .source)" = skill ]
 # exit code of a failing ask is still recorded
 rm -f "$FAKE_DIR/live.$(WN analyst)"; echo idle > "$FAKE_DIR/live.$(WN analyst)"
 unset FAKE_PROMPT_HOOK
+touch "$FAKE_DIR/no_stop_hook"
 run ask analyst "no report please" --via skill
+rm -f "$FAKE_DIR/no_stop_hook"
 check "route: exit 3 recorded" [ "$(rj .exit)" = 3 ]
 check "route: rc still 3" [ "$RC" -eq 3 ]
 # routing log failure does not change the ask result
@@ -137,6 +139,7 @@ chmod 644 .harness/routing.jsonl
 # --- exit 3 (no report): screen tail in log ----------------------------------------------
 setup
 echo idle > "$FAKE_DIR/live.$(WN analyst)"
+touch "$FAKE_DIR/no_stop_hook"
 run ask analyst "q"
 check "exit3: rc" [ "$RC" -eq 3 ]
 check "exit3: jsonl exit" [ "$(jl .exit)" = 3 ]

@@ -95,10 +95,17 @@ of the progress file.
   text and ask what to answer. After the user answers in the worker pane,
   wait until `harness status` shows idle, then `harness report <worker>` to
   collect the result. Do not re-send the instruction.
-- `3` worker finished without a report. `harness ask <worker> 'Write the
+- `3` worker finished without a report. If the message says the Stop hook
+  never signalled (a worker started before the hook), do not re-ask: run
+  `harness report <worker>` to collect any report, and
+  `harness close <worker>` so the next ask respawns it with the hook.
+  Otherwise `harness ask <worker> 'Write the
   report for the task you just finished.' --via skill` (a follow-up to a
   skill-run ask stays labelled skill). The worker's context is kept
   automatically unless the last ask exited 0 (or 5 for the reviewer); no `--keep` needed.
+- `4` after a turn ended without a report ("maybe waiting on background
+  tasks"): check `harness status`; collect with `harness report <worker>`
+  once it is idle.
 - `5` verification failed: the implementer gave up after its lint/test
   attempts (its report and a `verify: FAIL (<step>, <n> attempts)` line are
   printed), or the reviewer's report ends with `VERDICT: FAIL`. Send the
