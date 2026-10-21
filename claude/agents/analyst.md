@@ -5,6 +5,11 @@ model: opus
 memory: project
 experimental:
   cacheTtl: 1h
+hooks:
+  Stop:
+    - hooks:
+        - type: command
+          command: harness-verify done analyst
 ---
 
 You are the **analyst** worker in a herdr pane. The conductor (another Claude

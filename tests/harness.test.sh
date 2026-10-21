@@ -20,13 +20,14 @@ setup() {
   mkdir -p "$FAKE_DIR"
   : > "$FAKE_LOG"
   unset FAKE_PROMPT_HOOK
+  export HARNESS_IDLE_GRACE=1 HARNESS_POLL_SEC=0.2
   cd "$WORK" || exit 1
 }
 
 # run ARGS... -> sets OUT, RC  (killed by SIGALRM after 5s so a hang fails fast)
 GUARD="perl -e alarm(5);exec(@ARGV)"
 run() {
-  OUT=$(HERDR_ENV=1 HERDR_PANE_ID=w1:p1 PATH="$FAKE_BIN:$HERE/../bin:$PATH" $GUARD env -u HARNESS_ROLE /bin/bash "$HARNESS" "$@" 2>&1)
+  OUT=$(HERDR_ENV=1 HERDR_PANE_ID=w1:p1 HARNESS_IDLE_GRACE=1 HARNESS_POLL_SEC=0.2 PATH="$FAKE_BIN:$HERE/../bin:$PATH" $GUARD env -u HARNESS_ROLE /bin/bash "$HARNESS" "$@" 2>&1)
   RC=$?
 }
 
@@ -208,7 +209,7 @@ check "no report: screen" grep -q "fake screen line" <<<"$OUT"
 setup
 echo idle > "$FAKE_DIR/live.$(WN reviewer)"
 export FAKE_PROMPT_HOOK="echo working > $FAKE_DIR/live.$(WN reviewer)"
-run ask reviewer "review"
+run ask reviewer "review" --timeout 1000
 check "working rc" [ "$RC" -eq 4 ]
 check "working message" grep -q "still working" <<<"$OUT"
 
@@ -537,6 +538,65 @@ echo idle > "$FAKE_DIR/live.analyst"
 run spawn analyst
 check "migration hint printed" grep -q "old unscoped worker 'analyst'" <<<"$OUT"
 check "migration: old worker not closed" [ -f "$FAKE_DIR/live.analyst" ]
+
+# --- ask: completion = Stop-hook marker for this ask + fresh report ------------------
+REPORT_HOOK() { echo "mkdir -p $WORK/.harness/reports && printf '# $1 report\nstatus: done\n' > $WORK/.harness/reports/$1.md"; }
+
+# marker + fresh report -> 0; ask-id and start epoch recorded for the hook
+setup
+export FAKE_PROMPT_HOOK="$(REPORT_HOOK analyst)"
+run ask analyst "q"
+check "marker+report: rc 0" [ "$RC" -eq 0 ]
+check "marker: current ask file" grep -Eq '^[0-9]+-[0-9]+-[0-9]+ [0-9]+$' .harness/asks/analyst.current
+check "marker: file named after ask-id" [ -f ".harness/done/analyst.$(cut -d' ' -f1 .harness/asks/analyst.current)" ]
+
+# idle without marker (hook never fires) -> waits the grace period, then 3
+setup
+touch "$FAKE_DIR/no_stop_hook"
+export FAKE_PROMPT_HOOK="$(REPORT_HOOK analyst)"
+t0=$(date +%s)
+run ask analyst "q"
+check "idle w/o marker: rc 3" [ "$RC" -eq 3 ]
+check "idle w/o marker: waited for grace" [ $(( $(date +%s) - t0 )) -ge 1 ]
+check "idle w/o marker: hint to harness report" grep -q "harness report analyst" <<<"$OUT"
+
+# marker for a different ask-id is ignored
+setup
+touch "$FAKE_DIR/no_stop_hook"
+export FAKE_PROMPT_HOOK="$(REPORT_HOOK analyst); mkdir -p $WORK/.harness/done; echo s > $WORK/.harness/done/analyst.other-id"
+run ask analyst "q"
+check "other ask-id marker ignored: rc 3" [ "$RC" -eq 3 ]
+
+# marker but the report is older than the ask (stale) -> not accepted
+setup
+export FAKE_PROMPT_HOOK="mkdir -p $WORK/.harness/reports; printf 'OLD\n' > $WORK/.harness/reports/analyst.md; touch -t 200001010000 $WORK/.harness/reports/analyst.md"
+run ask analyst "q"
+check "stale report mtime: rc 3" [ "$RC" -eq 3 ]
+check "stale report mtime: not printed" not_grep "OLD" <(printf '%s' "$OUT" | grep -v '^harness:')
+
+# marker arrives while the worker is idle-looking only after a delay
+# (Stop hook fires later than herdr's idle): still accepted within the grace
+setup
+export FAKE_PROMPT_HOOK="touch $FAKE_DIR/no_stop_hook; $(REPORT_HOOK analyst); ( sleep 0.4; id=\$(cut -d' ' -f1 $WORK/.harness/asks/analyst.current); echo s > $WORK/.harness/done/analyst.\$id ) >/dev/null 2>&1 &"
+run ask analyst "q"
+check "late marker within grace: rc 0" [ "$RC" -eq 0 ]
+
+# worker 'working' (e.g. waiting on background subagents) never yields 3 before the timeout
+setup
+echo idle > "$FAKE_DIR/live.$(WN analyst)"
+export FAKE_PROMPT_HOOK="echo working > $FAKE_DIR/live.$(WN analyst)"
+t0=$(date +%s)
+run ask analyst "q" --timeout 2000
+check "working past grace: rc 4 not 3" [ "$RC" -eq 4 ]
+check "working past grace: waited for timeout" [ $(( $(date +%s) - t0 )) -ge 2 ]
+
+# old markers are cleaned on the next ask
+setup
+mkdir -p .harness/done && echo s > .harness/done/analyst.old-1
+export FAKE_PROMPT_HOOK="$(REPORT_HOOK analyst)"
+run ask analyst "q"
+check "old marker removed" [ ! -e .harness/done/analyst.old-1 ]
+unset FAKE_PROMPT_HOOK
 
 echo "PASS $pass / FAIL $fail"
 [ "$fail" -eq 0 ]

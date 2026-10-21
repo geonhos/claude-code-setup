@@ -693,6 +693,15 @@ ask_inner() {
     exit 2
   fi
 
+  # Completion = the worker's Stop hook wrote .harness/done/<agent>.<ask-id>
+  # AND the report is newer than this ask. herdr's idle/done is only a hint.
+  local ask_id ask_start
+  ask_id="$(date +%s)-$$-$RANDOM"
+  rm -f ".harness/done/$agent".* 2>/dev/null
+  mkdir -p .harness/asks .harness/done
+  ask_start=$(date +%s)
+  printf '%s %s\n' "$ask_id" "$ask_start" > ".harness/asks/$agent.current"
+
   # The instruction goes in herdr's positional text slot, which is what keeps
   # dash-leading text from being parsed as an option. Do not add `--`: real
   # herdr rejects it.
@@ -702,33 +711,78 @@ ask_inner() {
     echo "harness: prompt did not settle: $out" >&2
   fi
 
-  local st
-  st=$(agent_status "$agent")
-  case "$st" in
-    blocked)
-      echo "harness: $agent is blocked (needs an answer)." >&2
-      show_pane_screen "$pane"
-      exit 2 ;;
-    idle|done)
-      restore_interrupted "$agent" "$report"
-      if [ -f "$report" ]; then
-        finish_report "$agent" "$report" "$pane"
-      fi
-      if [ "$prompt_failed" = 1 ]; then
-        echo "harness: prompt was not accepted by herdr: $out" >&2
+  local st grace=${HARNESS_IDLE_GRACE:-30} poll=${HARNESS_POLL_SEC:-2}
+  local deadline=$((ask_start + (timeout + 999) / 1000)) idle_since="" now
+  case "$grace" in ''|*[!0-9]*) grace=30 ;; esac
+  while :; do
+    if ask_complete "$agent" "$ask_id" "$report" "$ask_start"; then
+      finish_report "$agent" "$report" "$pane"
+    fi
+    st=$(agent_status "$agent")
+    now=$(date +%s)
+    case "$st" in
+      blocked)
+        echo "harness: $agent is blocked (needs an answer)." >&2
+        show_pane_screen "$pane"
+        exit 2 ;;
+      idle|done)
+        [ -n "$idle_since" ] || idle_since=$now
+        if [ $((now - idle_since)) -ge "$grace" ]; then
+          ask_idle_giveup "$agent" "$report" "$pane" "$prompt_failed" "$out" "$ask_id"
+        fi ;;
+      working) idle_since="" ;;
+      *)
+        echo "harness: $agent status is '$st' (still working or unknown); check 'harness status' before re-prompting." >&2
         show_agent_diag "$agent"
         show_pane_screen "$pane"
-        exit 4
-      fi
-      echo "harness: $agent finished but wrote no report at $report" >&2
-      show_pane_screen "$pane"
-      exit 3 ;;
-    *)
-      echo "harness: $agent status is '$st' (still working or unknown); check 'harness status' before re-prompting." >&2
+        exit 4 ;;
+    esac
+    if [ "$now" -ge "$deadline" ]; then
+      restore_interrupted "$agent" "$report"
+      echo "harness: $agent status is '$st' (still working or unknown) after $((timeout / 1000))s; check 'harness status' before re-prompting." >&2
       show_agent_diag "$agent"
       show_pane_screen "$pane"
-      exit 4 ;;
-  esac
+      exit 4
+    fi
+    sleep "$poll"
+  done
+}
+
+# file_mtime <file> — epoch seconds (BSD stat, then GNU stat)
+file_mtime() {
+  stat -f %m "$1" 2>/dev/null || stat -c %Y "$1" 2>/dev/null
+}
+
+# ask_complete <agent> <ask-id> <report> <start> — the worker's Stop hook marked
+# this ask done and the report was (re)written no earlier than the ask start
+ask_complete() {
+  local mt
+  [ -f ".harness/done/$1.$2" ] && [ -f "$3" ] || return 1
+  mt=$(file_mtime "$3") || return 1
+  case "$mt" in ''|*[!0-9]*) return 1 ;; esac
+  [ "$mt" -ge "$4" ]
+}
+
+# ask_idle_giveup — herdr says idle/done, but no completion marker plus fresh
+# report showed up within the grace period
+ask_idle_giveup() {
+  local agent=$1 report=$2 pane=$3 prompt_failed=$4 out=$5 ask_id=$6
+  restore_interrupted "$agent" "$report"
+  if [ "$prompt_failed" = 1 ]; then
+    echo "harness: prompt was not accepted by herdr: $out" >&2
+    show_agent_diag "$agent"
+    show_pane_screen "$pane"
+    exit 4
+  fi
+  if [ -f ".harness/done/$agent.$ask_id" ]; then
+    echo "harness: $agent finished but wrote no report at $report" >&2
+  elif [ -f "$report" ]; then
+    echo "harness: $agent is idle but its Stop hook never signalled completion; a report exists. Collect it with: harness report $agent (a worker started before this version needs a respawn to get the hook)" >&2
+  else
+    echo "harness: $agent finished but wrote no report at $report" >&2
+  fi
+  show_pane_screen "$pane"
+  exit 3
 }
 
 cmd_report() {

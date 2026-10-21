@@ -10,6 +10,9 @@
 #         $FAKE_DIR/cwd.<agent>     cwd reported by `agent get` (default: the caller's $PWD)
 #         $FAKE_CLEAR               ok (default): `agent prompt <a> /clear` assigns a new session id
 #                                   stuck: /clear is accepted but the session id never changes
+#         $FAKE_DIR/no_stop_hook    exists => the worker's Stop hook does not fire after a prompt
+#         (otherwise, when the agent ends the prompt idle/done, `harness-verify done <role>` runs
+#          from the caller's cwd with HARNESS_ROLE=worker, like the real Stop hook)
 #         $FAKE_PROMPT_HOOK         shell snippet run when `agent prompt` is called (not for /clear)
 set -u
 : "${FAKE_DIR:?FAKE_DIR must be set}"
@@ -89,6 +92,14 @@ case "$sub" in
     if [ -n "${FAKE_PROMPT_HOOK:-}" ]; then
       /bin/bash -c "$FAKE_PROMPT_HOOK"
     fi
+    case "$(cat "$FAKE_DIR/live.$name" 2>/dev/null)" in
+      idle|done)
+        if [ ! -f "$FAKE_DIR/no_stop_hook" ]; then
+          role=${name%-*}
+          printf '{"hook_event_name":"Stop","session_id":"sess-%s","agent_type":"%s","cwd":"%s","stop_hook_active":false}' "$role" "$role" "$PWD" \
+            | HARNESS_ROLE=worker /bin/bash "$(dirname "$0")/../../bin/harness-verify" done "$role"
+        fi ;;
+    esac
     echo '{"id":"cli:agent:prompt","result":{},"type":"agent_prompt"}'
     ;;
   "agent read")
