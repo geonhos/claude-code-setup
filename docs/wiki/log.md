@@ -6,3 +6,4 @@
 - 2026-10-21 · conductor · v11 review fixes · decision 0004: exit 1/129/130 excluded, stable candidate paths, privacy brief, dry-run writes nothing
 - 2026-10-21 · conductor · plan gate-opt-in · decision 0005 gate only inside herdr, fail closed on bad input; gotcha daemon-inherits-worker-env
 - 2026-10-21 · implementer · retro review fixes · decision 0004: exit 1 after pre-flight queues a candidate; report snapshots pruned with their candidate
+- 2026-10-21 · implementer · implementer asks wait 29 min · /implement passes --timeout 1740000 with Bash timeout 1800000 (p95 1706s); analyst/reviewer unchanged

@@ -69,8 +69,9 @@ router that will later suggest the route.
    For long briefs, write them to `.harness/task-<worker>.md` (the gate allows
    writes under `.harness/`) and send
    `harness ask <worker> 'Read .harness/task-<worker>.md and do it.' --via skill`. Always
-   call `harness ask` with the Bash tool timeout raised (timeout: 660000, a
-   little above the worker wait of 600000) or
+   call `harness ask` with the Bash tool timeout raised (analyst/reviewer:
+   timeout 660000, a little above the worker wait of 600000; implementer:
+   `--timeout 1740000` with Bash timeout 1800000) or
    in the background; the worker may take minutes.
    `harness ask` clears a live worker's context before each task (the
    implementer always; analyst/reviewer when their context is large). Add
