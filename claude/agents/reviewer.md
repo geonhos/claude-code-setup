@@ -53,6 +53,9 @@ status: done | partial | blocked
 - commands you ran (harness-verify run all, tests, build, app smoke) → result
 ## Open questions
 - ≤ 3 bullets, or "none"
+## Learned
+- (optional, ≤ 2 bullets) a reusable lesson, each citing evidence: ask-id,
+  commit, file:line or log. Omit the section if there is none.
 
 VERDICT: PASS
 ```

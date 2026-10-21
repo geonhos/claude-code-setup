@@ -31,6 +31,7 @@ run() {
   RC=$?
 }
 
+not() { ! "$@"; }
 check() { # check LABEL CONDITION...
   local label=$1; shift
   if "$@"; then pass=$((pass + 1)); else fail=$((fail + 1)); echo "FAIL [$label]: $OUT"; fi
@@ -253,6 +254,84 @@ check "report unknown agent rc" [ "$RC" -eq 1 ]
 
 run
 check "usage lists report" grep -q "harness report" <<<"$OUT"
+
+# --- report: ## Learned -> docs/wiki/inbox -------------------------------------------
+setup
+mkdir -p .harness/reports .harness/asks docs/wiki
+printf '1700000000-123-456 1700000000\n' > .harness/asks/analyst.current
+printf '# analyst report\nstatus: done\n## Learned\n- stat -f is GNU-hostile (bin/harness:815)\n- vague claim with no proof\n- fixed in commit 79a1964\n## Open questions\n- none\n' > .harness/reports/analyst.md
+run report analyst
+check "learned rc" [ "$RC" -eq 0 ]
+check "learned queue line" grep -q '^wiki: 2 lessons queued in docs/wiki/inbox/' <<<"$OUT"
+Q=$(ls docs/wiki/inbox/*-analyst-1700000000-123-456.md 2>/dev/null | head -1)
+check "learned file named by role+ask-id" [ -n "$Q" ]
+check "learned header" grep -q '^role: analyst' "$Q"
+check "learned header ask-id" grep -q '^ask-id: 1700000000-123-456' "$Q"
+check "learned keeps evidence bullet" grep -q 'bin/harness:815' "$Q"
+check "learned caps at 2 bullets" [ "$(grep -c '^- ' "$Q")" -eq 2 ]
+check "learned drops bullet without evidence" not grep -q 'vague claim' "$Q"
+run report analyst
+check "learned warns on dropped bullet" grep -q 'dropped 1 Learned bullet' <<<"$OUT"
+check "learned idempotent (one file)" [ "$(ls docs/wiki/inbox | wc -l | tr -d ' ')" -eq 1 ]
+check "learned second run no queue line" not grep -q '^wiki:' <<<"$OUT"
+
+setup
+mkdir -p .harness/reports docs/wiki
+printf '# analyst report\nstatus: done\n## Learned\n- none\n## Open questions\n- none\n' > .harness/reports/analyst.md
+run report analyst
+check "learned none: nothing queued" [ ! -d docs/wiki/inbox ]
+check "learned none: no wiki line" not grep -q '^wiki:' <<<"$OUT"
+printf '# analyst report\nstatus: done\n## Learned\n- no proof here at all\n' > .harness/reports/analyst.md
+run report analyst
+check "learned all dropped: nothing queued" [ ! -d docs/wiki/inbox ]
+printf '# analyst report\nstatus: done\n' > .harness/reports/analyst.md
+run report analyst
+check "no Learned section: nothing queued" [ ! -d docs/wiki/inbox ]
+mkdir -p .harness/reports .harness/asks
+printf '1700000001-1-2 1700000001\n' > .harness/asks/reviewer.current
+printf '# reviewer report\nstatus: done\n## Learned\n- race seen in .harness/progress.jsonl\nVERDICT: PASS\n' > .harness/reports/reviewer.md
+run report reviewer
+check "learned before VERDICT: rc 0" [ "$RC" -eq 0 ]
+check "learned reviewer queued" [ "$(ls docs/wiki/inbox/*-reviewer-* 2>/dev/null | wc -l | tr -d ' ')" -eq 1 ]
+check "reviewer VERDICT still last line" [ "$(printf '%s\n' "$OUT" | tail -1)" = "VERDICT: PASS" ]
+
+# learned: continuation lines, evidence strictness, idempotency, no ask-id, no docs/wiki
+learned_case() { # learned_case BODY -> fresh wiki repo, report, sets OUT/RC and Q (count of queued files)
+  setup
+  mkdir -p .harness/reports .harness/asks docs/wiki
+  printf '1700000002-9-9 1700000002\n' > .harness/asks/analyst.current
+  printf '# analyst report\nstatus: done\n## Learned\n%b## Open questions\n- none\n' "$1" > .harness/reports/analyst.md
+  run report analyst
+  Q=$(ls docs/wiki/inbox/ 2>/dev/null | wc -l | tr -d ' ')
+}
+learned_case '- wrapped lesson that\n  cites tests/x.sh:42 on the next line\n'
+check "learned continuation evidence kept" [ "$Q" -eq 1 ]
+check "learned continuation joined" grep -q 'that cites tests/x.sh:42' docs/wiki/inbox/*.md
+for ok in 'see 1700000000-123-456' 'bin/harness:815' 'foo.sh:12' 'commit 79a1964' 'commit deadbee1' 'in .harness/progress.jsonl' 'see run.log'; do
+  learned_case "- $ok\n"
+  check "evidence accepted: $ok" [ "$Q" -eq 1 ]
+done
+for bad in 'step:2' 'host:8080' 'about 12345678 items' 'deadbeef word' 'abcdefabc' 'v1.2 notes'; do
+  learned_case "- $bad\n"
+  check "evidence rejected: $bad" [ "$Q" -eq 0 ]
+done
+learned_case '- see bin/harness:1\n'
+run report analyst
+check "learned idempotent by ask-id (different date)" [ "$(ls docs/wiki/inbox | wc -l | tr -d ' ')" -eq 1 ]
+mv docs/wiki/inbox/*.md docs/wiki/inbox/2020-01-01-analyst-1700000002-9-9.md
+run report analyst
+check "learned idempotent ignores date prefix" [ "$(ls docs/wiki/inbox | wc -l | tr -d ' ')" -eq 1 ]
+learned_case '- see bin/harness:1\n'
+rm -rf docs .harness/asks/analyst.current; mkdir -p docs/wiki
+run report analyst
+check "learned no ask-id: nothing queued" [ ! -d docs/wiki/inbox ]
+check "learned no ask-id: warns" grep -q 'no ask-id' <<<"$OUT"
+setup
+mkdir -p .harness/reports .harness/asks
+printf '1700000002-9-9 1700000002\n' > .harness/asks/analyst.current
+printf '# analyst report\nstatus: done\n## Learned\n- see bin/harness:1\n' > .harness/reports/analyst.md
+run report analyst
+check "learned without docs/wiki: nothing created" [ ! -d docs ]
 
 # --- ask: missing instruction ------------------------------------------------------
 setup
