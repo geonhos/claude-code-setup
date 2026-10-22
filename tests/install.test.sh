@@ -326,6 +326,7 @@ check "runner: TERM exits 143" [ "$TRC" -eq 143 ]
 sleep 0.5
 check "runner: TERM kills suite children" sh -c '! kill -0 "$(cat "$1/b.pid")" 2>/dev/null' _ "$D"
 kill "$(cat "$D/b.pid")" 2>/dev/null || true
+check "runner: HARNESS_TESTS_DIR notice names dir and wiki-lint skip" sh -c 'grep -q "HARNESS_TESTS_DIR set: running suites from $1; wiki-lint skipped" "$2"' _ "$D" "$D.out"
 
 echo "PASS $pass / FAIL $fail"
 [ "$fail" -eq 0 ]

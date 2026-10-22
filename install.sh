@@ -37,6 +37,7 @@ if [ "${1:-}" = "--test" ]; then
   limit=${HARNESS_TEST_TIMEOUT:-300}
   case "$limit" in ''|*[!0-9]*) limit=300 ;; esac
   if [ -n "${HARNESS_TESTS_DIR:-}" ]; then
+    echo "install: HARNESS_TESTS_DIR set: running suites from $tests_dir; wiki-lint skipped" >&2
     names=""
     for f in "$tests_dir"/*.test.sh; do
       [ -e "$f" ] || continue
@@ -83,6 +84,7 @@ if [ "${1:-}" = "--test" ]; then
   report() {  # report NAME — print its block, record failure
     local r
     r=$(cat "$tdir/$1.rc")
+    rm -f "$tdir/$1.pid"  # finished: its pid may be reused, kill_all must not touch it
     echo "=== $1 ==="; cat "$tdir/$1.out"
     if [ "$r" != 0 ]; then rc=1; failed="$failed $1"; echo "--- $1 FAILED (exit $r) ---"; fi
   }
