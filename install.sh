@@ -47,7 +47,7 @@ if [ "${1:-}" = "--test" ]; then
   else
     names="gate harness verify progress route install wiki retro wikilint"
   fi
-  tdir=$(mktemp -d)
+  tdir=$(mktemp -d "${TMPDIR:-/tmp}/harness-tests.XXXXXX")
   descendants() {  # descendants PID — every transitive child, one per line
     local c
     for c in $(pgrep -P "$1" 2>/dev/null || true); do echo "$c"; descendants "$c"; done
@@ -70,6 +70,7 @@ if [ "${1:-}" = "--test" ]; then
   trap 'rm -rf "$tdir"' EXIT
   trap 'kill_all; exit 130' INT
   trap 'kill_all; exit 143' TERM
+  trap 'kill_all; exit 129' HUP
   run_one() {  # run_one NAME — output to $tdir/NAME.out, exit code to $tdir/NAME.rc (always written)
     set +e  # a failing suite must still record its exit code
     case "$1" in
@@ -79,12 +80,13 @@ if [ "${1:-}" = "--test" ]; then
     local r=$?
     echo "$r" > "$tdir/$1.rc.tmp"
     mv "$tdir/$1.rc.tmp" "$tdir/$1.rc"
+    rm -f "$tdir/$1.pid"  # finished: bash reaps us, so the pid may be reused; kill_all must not see it
   }
   rc=0; failed=""
   report() {  # report NAME — print its block, record failure
     local r
     r=$(cat "$tdir/$1.rc")
-    rm -f "$tdir/$1.pid"  # finished: its pid may be reused, kill_all must not touch it
+    rm -f "$tdir/$1.pid"  # backstop: run_one may finish before the parent wrote the pid file
     echo "=== $1 ==="; cat "$tdir/$1.out"
     if [ "$r" != 0 ]; then rc=1; failed="$failed $1"; echo "--- $1 FAILED (exit $r) ---"; fi
   }
@@ -102,10 +104,10 @@ if [ "${1:-}" = "--test" ]; then
     done
     still=""; nrun=0; now=$(date +%s)
     for n in $running; do
-      pid=$(cat "$tdir/$n.pid")
+      pid=$(cat "$tdir/$n.pid" 2>/dev/null || true)  # gone once run_one has finished
       if [ -f "$tdir/$n.rc" ]; then
         report "$n"
-      elif ! kill -0 "$pid" 2>/dev/null; then
+      elif [ -z "$pid" ] || ! kill -0 "$pid" 2>/dev/null; then
         if [ ! -f "$tdir/$n.rc" ]; then  # died without recording (e.g. killed from outside)
           echo "suite process $pid vanished without an exit code" >> "$tdir/$n.out"
           echo 1 > "$tdir/$n.rc"

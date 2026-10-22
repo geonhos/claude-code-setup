@@ -328,5 +328,38 @@ check "runner: TERM kills suite children" sh -c '! kill -0 "$(cat "$1/b.pid")" 2
 kill "$(cat "$D/b.pid")" 2>/dev/null || true
 check "runner: HARNESS_TESTS_DIR notice names dir and wiki-lint skip" sh -c 'grep -q "HARNESS_TESTS_DIR set: running suites from $1; wiki-lint skipped" "$2"' _ "$D" "$D.out"
 
+# HUP to the runner behaves like TERM: suites killed, exit 129
+D=$ROOT/rn-hup; mk_suites "$D" hanging
+printf '#!/bin/bash\nsleep 61 &\necho $! > "%s/b.pid"\nwait\n' "$D" > "$D/b.test.sh"
+HARNESS_TESTS_DIR="$D" /bin/bash "$RUNNER" --test > "$D.out" 2>&1 &
+RP=$!
+i=0; while [ ! -s "$D/b.pid" ] && [ "$i" -lt 50 ]; do sleep 0.1; i=$((i+1)); done
+kill -HUP "$RP"
+( sleep 40; kill -KILL "$RP" 2>/dev/null ) & WD=$!
+wait "$RP"; HRC=$?
+kill "$WD" 2>/dev/null; wait "$WD" 2>/dev/null
+check "runner: HUP exits 129" [ "$HRC" -eq 129 ]
+sleep 0.5
+check "runner: HUP kills suite children" sh -c '! kill -0 "$(cat "$1/b.pid")" 2>/dev/null' _ "$D"
+kill "$(cat "$D/b.pid")" 2>/dev/null || true
+
+# a finished suite's .pid file is removed, so kill_all cannot hit a reused pid.
+# Suite b polls the runner's tdir (under TMPDIR=$D/tmp) while a is done and b still runs.
+D=$ROOT/rn-pid; mkdir -p "$D/tmp"
+printf '#!/bin/bash\nexit 0\n' > "$D/a.test.sh"
+cat > "$D/b.test.sh" <<EOS
+#!/bin/bash
+i=0
+while [ \$i -lt 100 ]; do
+  for t in "$D"/tmp/harness-tests.*; do
+    if [ -f "\$t/a.rc" ] && [ ! -e "\$t/a.pid" ]; then echo gone > "$D/result"; exit 0; fi
+  done
+  sleep 0.1; i=\$((i+1))
+done
+echo stuck > "$D/result"
+EOS
+guard run_runner "$D" TMPDIR="$D/tmp"
+check "runner: finished suite's pid file removed while others run" grep -qx gone "$D/result"
+
 echo "PASS $pass / FAIL $fail"
 [ "$fail" -eq 0 ]

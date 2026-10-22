@@ -16,7 +16,7 @@ gate the conductor's shell, verify worker output and resume from progress logs.
 
 ## Test
 `./install.sh --test` runs every suite, in parallel (`HARNESS_TEST_SERIAL=1` runs them one
-at a time). All must pass before a commit; workers run only the affected suites while
+at a time; `HARNESS_TESTS_DIR` points it at another suite directory). All must pass before a commit; workers run only the affected suites while
 iterating and the implementer Stop hook runs the full set.
 
 ## Shell rule
