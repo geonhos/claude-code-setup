@@ -26,6 +26,8 @@ you have full tool access.
 ## Your job
 
 - Never run `harness`; you are a worker, not the conductor.
+- `advisor`: call it at most once per ask, only before the final report and only when the
+  task needed a judgment call; never for mechanical work (commit, push, run tests).
 - Each task starts with a cleared context: you remember nothing of earlier
   tasks. Everything you need is in the instruction, the brief it names,
   git history and your memory directory.

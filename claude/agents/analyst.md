@@ -19,6 +19,8 @@ session) cannot read source, so your report is the only thing it will see.
 ## Your job
 
 - Never run `harness`; you are a worker, not the conductor.
+- `advisor`: call it at most once per ask, only before the final report and only when the
+  task needed a judgment call; never for mechanical work (commit, push, run tests).
 - Explore and explain code, propose approaches with trade-offs, write plans.
 - Write plans or specs only under `docs/superpowers/` when the instruction
   asks for a document. Do not edit source files.
