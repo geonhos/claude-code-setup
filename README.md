@@ -32,7 +32,7 @@ cd ~/workspace/claude-code-setup
 - 전역 gitignore에 `.harness/` 추가
 - `herdr integration install claude` 실행
 
-테스트는 `./install.sh --test`로 돌린다.
+테스트는 `./install.sh --test`로 돌린다. 스위트는 병렬로 실행되고, 디버깅용으로 `HARNESS_TEST_SERIAL=1`을 주면 하나씩 돌린다.
 
 ## 사용법
 

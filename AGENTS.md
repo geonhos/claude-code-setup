@@ -15,7 +15,9 @@ gate the conductor's shell, verify worker output and resume from progress logs.
 - `docs/` — `wiki/` (durable knowledge), `superpowers/plans/`, `research/`
 
 ## Test
-`./install.sh --test` runs every suite. All must pass before a commit.
+`./install.sh --test` runs every suite, in parallel (`HARNESS_TEST_SERIAL=1` runs them one
+at a time). All must pass before a commit; workers run only the affected suites while
+iterating and the implementer Stop hook runs the full set.
 
 ## Shell rule
 Scripts must run on macOS default bash 3.2: no `declare -A`, no `mapfile`, no
