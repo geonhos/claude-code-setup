@@ -131,6 +131,8 @@ of the progress file.
   with `harness close <worker>|--all` (exit 4 = working or uncollected report;
   `--force` only if the user agrees); `harness close --legacy` closes old
   unscoped workers of this repo.
+  After merging changes to agent prompts or hooks (`claude/agents/*.md`), run
+  `harness close <worker>` (or `--all`): a kept pane keeps the old ones and `/clear` does not reload them.
 - `6` the worker named for this repo (`<role>-<repo8>`) runs in a directory
   outside the repo, so nothing was sent. Tell the user; they close that pane
   (or start Claude from the right directory). Never retarget it yourself.

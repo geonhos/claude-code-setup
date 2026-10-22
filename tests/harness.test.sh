@@ -881,6 +881,26 @@ run ask implementer "do it"
 check "default: ask rc 0" [ "$RC" -eq 0 ]
 check "default: implementer pane kept" not_logged "pane close"
 check "default: config template says never" jq -e '.close_after_ask.implementer=="never"' .harness/config.json
+# config migration: untouched pre-ADR-0006 template is rewritten; edited / new files are not
+OLDCFG=$(jq -n '.' >/dev/null; sed 's/"implementer": "never"/"implementer": "on_success"/' <<'EOC'
+{
+  "_doc": "close_after_ask.<role>: never | on_success (close the worker after `harness ask` exits 0; reviewer: 0 or 5). idle_ttl_minutes: close this repo's workers idle longer than N minutes after their last collected report (0 = off). HARNESS_NO_AUTOCLOSE=1 disables both. Env overrides: HARNESS_CLOSE_AFTER_ASK_<ROLE>, HARNESS_IDLE_TTL_MINUTES.",
+  "close_after_ask": { "analyst": "never", "implementer": "never", "reviewer": "never" },
+  "idle_ttl_minutes": 30
+}
+EOC
+)
+setup; mkdir -p .harness; printf '%s\n' "$OLDCFG" > .harness/config.json
+run status
+check "migrate: old template -> implementer never" jq -e '.close_after_ask.implementer=="never"' .harness/config.json
+cp .harness/config.json "$WORK/new.json"; run status
+check "migrate: new template untouched" cmp -s .harness/config.json "$WORK/new.json"
+setup; mkdir -p .harness; printf '%s\n' "$OLDCFG" | sed 's/"idle_ttl_minutes": 30/"idle_ttl_minutes": 31/' > .harness/config.json
+cp .harness/config.json "$WORK/edited.json"; run status
+check "migrate: edited old file untouched" cmp -s .harness/config.json "$WORK/edited.json"
+setup; mkdir -p .harness; printf '%s\n' "$OLDCFG" > .harness/config.json
+OUT=$(HERDR_ENV=1 PATH="$FAKE_BIN:$HERE/../bin:$PATH" HARNESS_ROLE=worker /bin/bash "$HARNESS" status 2>&1)
+check "migrate: worker session does not rewrite" jq -e '.close_after_ask.implementer=="on_success"' .harness/config.json
 export HARNESS_CLOSE_AFTER_ASK_IMPLEMENTER=on_success
 setup
 live_worker implementer idle w1:p2

@@ -69,7 +69,7 @@ usage() {
   cat >&2 <<EOF
 usage:
   harness spawn  <agent> [--direction right|down]
-  harness ask    <agent> '<instruction>' [--timeout MS] [--fresh|--keep] [--via skill|conductor|retro]
+  harness ask    <agent> '<instruction>' [--timeout MS (default: implementer 1740000, others 600000)] [--fresh|--keep] [--via skill|conductor|retro]
   harness report <agent>
   harness status
   harness close  <agent>|--all|--legacy [--force]
@@ -1133,21 +1133,33 @@ cmd_status() {
 # --- pane lifecycle: close, after-ask policy, idle TTL ------------------------------------
 CONFIG_FILE=".harness/config.json"
 
-# ensure_config — create the documented default config when absent (never fatal)
-ensure_config() {
-  [ -e "$CONFIG_FILE" ] && return 0
-  # Workers never create .harness/ (stray dirs break harness-verify's root lookup);
-  # read-only `status` does not start a project; ask/spawn from a conductor do.
-  [ "${HARNESS_ROLE:-}" != worker ] || return 0
-  [ "${1:-}" != status ] || [ -d .harness ] || return 0
-  mkdir -p .harness 2>/dev/null || return 0
-  cat > "$CONFIG_FILE" 2>/dev/null <<'EOC'
+# config_template — the documented default config (what ensure_config writes)
+config_template() {
+  cat <<'EOC'
 {
   "_doc": "close_after_ask.<role>: never | on_success (close the worker after `harness ask` exits 0; reviewer: 0 or 5). idle_ttl_minutes: close this repo's workers idle longer than N minutes after their last collected report (0 = off). HARNESS_NO_AUTOCLOSE=1 disables both. Env overrides: HARNESS_CLOSE_AFTER_ASK_<ROLE>, HARNESS_IDLE_TTL_MINUTES.",
   "close_after_ask": { "analyst": "never", "implementer": "never", "reviewer": "never" },
   "idle_ttl_minutes": 30
 }
 EOC
+}
+
+# ensure_config — create the documented default config when absent (never fatal).
+# An existing file that is byte-for-byte the pre-ADR-0006 template (implementer
+# on_success) is rewritten once with the current one; any edited file is left alone.
+ensure_config() {
+  # Workers never create .harness/ (stray dirs break harness-verify's root lookup);
+  # read-only `status` does not start a project; ask/spawn from a conductor do.
+  [ "${HARNESS_ROLE:-}" != worker ] || return 0
+  if [ -e "$CONFIG_FILE" ]; then
+    local old
+    old=$(config_template | sed 's/"implementer": "never"/"implementer": "on_success"/')
+    [ "$(cat "$CONFIG_FILE" 2>/dev/null)" = "$old" ] && config_template > "$CONFIG_FILE" 2>/dev/null
+    return 0
+  fi
+  [ "${1:-}" != status ] || [ -d .harness ] || return 0
+  mkdir -p .harness 2>/dev/null || return 0
+  config_template > "$CONFIG_FILE" 2>/dev/null
   return 0
 }
 
