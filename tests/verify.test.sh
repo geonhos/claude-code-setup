@@ -247,32 +247,44 @@ check "stop hides report while verifying" [ "$(result status)" = pass ]
 check "stop pass restores report" [ "$(cat "$R/.harness/reports/implementer.md")" = rep ]
 check "stop pass no pending" [ ! -e "$R/.harness/reports/implementer.md.pending" ]
 
-# stop/ask from a subdirectory of the repo: root is the git toplevel
+# root = nearest .harness above the hook cwd, up to the git toplevel
+# hvat DIR JSON ARGS... -> run as a worker with process cwd DIR
+hvat() { local d=$1 j=$2; shift 2; OUT=$(cd "$d" && printf '%s' "$j" | HARNESS_ROLE=worker /bin/bash "$VERIFY" "$@" 2>/dev/null); RC=$?; }
+stopat() { jq -n -c --arg c "$1" '{hook_event_name:"Stop",agent_type:"implementer",session_id:"s1",cwd:$c,stop_hook_active:false}'; }
+
+# retro case: .harness at the toplevel, worker ended its turn in R/sub/deep
+newrepo
+mkdir -p "$R/sub/deep" "$R/.harness/asks" "$R/.harness/reports"
+echo "ask1 100" > "$R/.harness/asks/implementer.current"; echo rep > "$R/.harness/reports/implementer.md"
+cfg '{"test":"echo tests-ran"}'
+hv baseline; echo c > "$R/new.txt"
+hvat "$R" "$(stopat "$R/sub/deep")" stop
+check "deep: marker at .harness root" [ -e "$R/.harness/done/implementer.ask1" ]
+check "deep: result at .harness root" [ "$(result status)" = pass ]
+check "deep: no .harness in subdirs" [ ! -e "$R/sub/.harness" ] && [ ! -e "$R/sub/deep/.harness" ]
+
+# subdir conductor: .harness + config in R/pkg, hook cwd R/pkg/src
+newrepo
+mkdir -p "$R/pkg/src" "$R/pkg/.harness/asks" "$R/pkg/.harness/reports" "$R/pkg/.claude"
+printf '%s' '{"test":"echo tests-ran > ran.out"}' > "$R/pkg/.claude/harness.json"
+echo "ask2 100" > "$R/pkg/.harness/asks/implementer.current"; echo rep > "$R/pkg/.harness/reports/implementer.md"
+hvat "$R/pkg" "" baseline
+check "pkg: baseline in pkg" [ -s "$R/pkg/.harness/verify/implementer.base" ]
+echo c > "$R/pkg/new.txt"
+hvat "$R/pkg/src" "$(stopat "$R/pkg/src")" stop
+check "pkg: marker in pkg" [ -e "$R/pkg/.harness/done/implementer.ask2" ]
+check "pkg: config found, test ran in pkg" [ -s "$R/pkg/ran.out" ]
+check "pkg: verify state in pkg" [ "$(jq -r .status "$R/pkg/.harness/verify/implementer.json")" = pass ]
+check "pkg: nothing in toplevel .harness" [ ! -e "$R/.harness" ]
+hvat "$R/pkg/src" "" detect
+check "pkg: detect from src finds test" [ "$(printf '%s' "$OUT" | jq -r .test)" = "echo tests-ran > ran.out" ]
+
+# no .harness up to the toplevel: root is the hook cwd
 newrepo
 mkdir -p "$R/sub/deep"
-SUBR=$R; R="$R/sub"
-cfg '{"test":"echo tests-ran"}'
-RT=$SUBR
-R=$RT; cfg '{"test":"echo tests-ran"}'
-mkdir -p "$RT/.harness/reports"; echo rep > "$RT/.harness/reports/implementer.md"
-hv baseline
-check "sub: baseline at toplevel" [ -s "$RT/.harness/verify/implementer.base" ]
-check "sub: no state in subdir" [ ! -e "$RT/sub/.harness/verify" ]
-echo c > "$RT/new.txt"
-stopsub() { jq -n -c --arg c "$RT/sub" '{hook_event_name:"Stop",agent_type:"implementer",cwd:$c,stop_hook_active:false}'; }
-hvin "$(stopsub)" stop
-check "sub: stop result at toplevel" [ "$(result status)" = pass ]
-check "sub: no result in subdir" [ ! -e "$RT/sub/.harness/verify/implementer.json" ]
-cfg '{"test":"exit 1","maxAttempts":1}'
-hvin "$(stopsub)" stop
-check "sub: stop fail blocks" [ "$(printf '%s' "$OUT" | jq -r .decision)" = block ]
-check "sub: report deleted at toplevel" [ ! -e "$RT/.harness/reports/implementer.md" ]
-cfg '{"lint":"printf \"%s\\n\" {files} > files.out","test":"true"}'
-hv baseline; echo z > "$RT/z.txt"
-hvin "$(stopsub)" stop
-check "sub: files relative to toplevel" grep -qx 'z.txt' "$RT/files.out"
-hvin "$(postjson Write "$RT/z.txt")" format
-check "sub: format rc ok" [ "$RC" -eq 0 ]
+hvat "$R/sub/deep" "" baseline
+check "none: state at hook cwd" [ -s "$R/sub/deep/.harness/verify/implementer.base" ]
+check "none: nothing above" [ ! -e "$R/sub/.harness" ] && [ ! -e "$R/.harness" ]
 
 # stop: staged at baseline, edited + re-added -> must run
 newrepo
