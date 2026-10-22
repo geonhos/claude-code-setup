@@ -79,13 +79,13 @@ ask 전에 살아 있는 워커의 컨텍스트를 `/clear`로 비운다. 새 �
 
 ## 검증 루프
 
-`.harness/`(리포트, 패널, 검증 상태)는 conductor를 실행한 디렉터리에 만들어진다. 워커와 훅도 같은 디렉터리(훅의 `cwd`)를 쓰며, git toplevel은 쓰지 않는다.
+`.harness/`(리포트, 패널, 검증 상태)는 conductor를 실행한 디렉터리에 만들어진다. 훅은 워커의 `cwd`에서 git toplevel까지 올라가며 가장 가까운 `.harness/`를 루트로 쓴다(없으면 `cwd`).
 
 implementer는 자기 작업을 스스로 판정하지 않는다. `claude/agents/implementer.md`의 훅이 `harness-verify`를 루프 안에서 돌린다. `PostToolUse` 훅이 수정한 파일마다 포맷을 적용하고 파일 단위 lint 오류를 돌려주며, `Stop` 훅은 변경분 전체에 lint와 테스트를 돌려서 실패하면 실패 출력과 함께 워커를 되돌려 보낸다. 최대 `maxAttempts`회(기본 3)까지 반복하고, 검증하는 동안은 리포트를 숨기며 실패할 때마다 리포트를 지운다. 횟수를 다 쓰면 리포트를 그대로 둔다.
 `harness ask implementer`는 `./install.sh`로 설치한 `harness-verify`가 있어야 하고(없으면 exit 1), 먼저 baseline을 기록한다. 재시도 상한까지 검증에 실패하면 exit **5**(리포트와 `verify: FAIL (<step>, <n> attempts)` 줄)로 종료한다. `harness report`도 같은 검사를 한다.
 reviewer는 `harness-verify run all [--base <ref>]`(`main`과의 merge base 이후 바뀐 파일과 커밋하지 않은 파일)를 돌리고, 설정돼 있으면 앱을 스모크 체크한 뒤, 리포트 마지막에 `VERDICT: PASS` 또는 `VERDICT: FAIL`을 적는다(FAIL이면 exit 5, 없으면 exit 3).
 
-명령은 명시적인 설정에서만 가져오고, 키마다 먼저 찾은 쪽이 이긴다. 순서는 `.harness/verify.local.json`, `.claude/harness.json`이다. 언어나 프로젝트 유형을 자동으로 감지하지 않는다. 없는 키는 그 단계를 건너뛰고, 설정이 아예 없으면 `skipped`(Stop 훅은 통과)다. conductor는 `.claude/harness.json`이 있는 디렉터리에서 실행해야 한다(기준은 cwd이고 git toplevel이 아니다). 이 저장소는 `{"test": "./install.sh --test"}`를 쓴다.
+명령은 명시적인 설정에서만 가져오고, 키마다 먼저 찾은 쪽이 이긴다. 순서는 `.harness/verify.local.json`, `.claude/harness.json`이다. 언어나 프로젝트 유형을 자동으로 감지하지 않는다. 없는 키는 그 단계를 건너뛰고, 설정이 아예 없으면 `skipped`(Stop 훅은 통과)다. conductor는 `.claude/harness.json`이 있는 디렉터리에서 실행해야 한다(`.harness/`와 같은 루트 기준이고, git toplevel이 아니다). 이 저장소는 `{"test": "./install.sh --test"}`를 쓴다.
 
 ```json
 { "format": "prettier --write {files}", "lint": "eslint {files}", "test": "npm test",

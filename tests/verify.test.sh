@@ -247,31 +247,61 @@ check "stop hides report while verifying" [ "$(result status)" = pass ]
 check "stop pass restores report" [ "$(cat "$R/.harness/reports/implementer.md")" = rep ]
 check "stop pass no pending" [ ! -e "$R/.harness/reports/implementer.md.pending" ]
 
-# stop/ask from a subdirectory of the repo: root is the cwd
+# root = nearest .harness above the hook cwd, up to the git toplevel
+# hvat DIR JSON ARGS... -> run as a worker with process cwd DIR
+hvat() { local d=$1 j=$2; shift 2; OUT=$(cd "$d" && printf '%s' "$j" | HARNESS_ROLE=worker /bin/bash "$VERIFY" "$@" 2>/dev/null); RC=$?; }
+stopat() { jq -n -c --arg c "$1" '{hook_event_name:"Stop",agent_type:"implementer",session_id:"s1",cwd:$c,stop_hook_active:false}'; }
+
+# retro case: .harness at the toplevel, worker ended its turn in R/sub/deep
+newrepo
+mkdir -p "$R/sub/deep" "$R/.harness/asks" "$R/.harness/reports"
+echo "ask1 100" > "$R/.harness/asks/implementer.current"; echo rep > "$R/.harness/reports/implementer.md"
+cfg '{"test":"echo tests-ran"}'
+hv baseline; echo c > "$R/new.txt"
+hvat "$R" "$(stopat "$R/sub/deep")" stop
+check "deep: marker at .harness root" [ -e "$R/.harness/done/implementer.ask1" ]
+check "deep: result at .harness root" [ "$(result status)" = pass ]
+check "deep: no .harness in subdirs" [ ! -e "$R/sub/.harness" ] && [ ! -e "$R/sub/deep/.harness" ]
+
+# subdir conductor: .harness + config in R/pkg, hook cwd R/pkg/src
+newrepo
+mkdir -p "$R/pkg/src" "$R/pkg/.harness/asks" "$R/pkg/.harness/reports" "$R/pkg/.claude"
+printf '%s' '{"test":"echo tests-ran > ran.out"}' > "$R/pkg/.claude/harness.json"
+echo "ask2 100" > "$R/pkg/.harness/asks/implementer.current"; echo rep > "$R/pkg/.harness/reports/implementer.md"
+hvat "$R/pkg" "" baseline
+check "pkg: baseline in pkg" [ -s "$R/pkg/.harness/verify/implementer.base" ]
+echo c > "$R/pkg/new.txt"
+hvat "$R/pkg/src" "$(stopat "$R/pkg/src")" stop
+check "pkg: marker in pkg" [ -e "$R/pkg/.harness/done/implementer.ask2" ]
+check "pkg: config found, test ran in pkg" [ -s "$R/pkg/ran.out" ]
+check "pkg: verify state in pkg" [ "$(jq -r .status "$R/pkg/.harness/verify/implementer.json")" = pass ]
+check "pkg: nothing in toplevel .harness" [ ! -e "$R/.harness" ]
+hvat "$R/pkg/src" "" detect
+check "pkg: detect from src finds test" [ "$(printf '%s' "$OUT" | jq -r .test)" = "echo tests-ran > ran.out" ]
+
+# no .harness up to the toplevel: root is the hook cwd
 newrepo
 mkdir -p "$R/sub/deep"
-echo '{"test":"echo tests-ran"}' > "$R/sub/deep/c.json"
-SUBR=$R; R="$R/sub"
-cfg '{"test":"echo tests-ran"}'
-mkdir -p "$R/.harness/reports"; echo rep > "$R/.harness/reports/implementer.md"
-hv baseline
-check "sub: baseline in cwd" [ -s "$R/.harness/verify/implementer.base" ]
-check "sub: no state at toplevel" [ ! -e "$SUBR/.harness/verify" ]
+hvat "$R/sub/deep" "" baseline
+check "none: state at hook cwd" [ -s "$R/sub/deep/.harness/verify/implementer.base" ]
+check "none: nothing above" [ ! -e "$R/sub/.harness" ] && [ ! -e "$R/.harness" ]
+
+# stray .harness (config only, no asks/) in a subdir must not capture the root
+newrepo
+mkdir -p "$R/tests/.harness" "$R/.harness/asks" "$R/.harness/reports" "$R/.claude"
+echo '{}' > "$R/tests/.harness/config.json"
+printf '%s' '{"test":"false"}' > "$R/.claude/harness.json"
+echo "ask3 100" > "$R/.harness/asks/implementer.current"; echo rep > "$R/.harness/reports/implementer.md"
+hvat "$R" "" baseline
 echo c > "$R/new.txt"
-hvin "$(stopjson)" stop
-check "sub: stop result in cwd" [ "$(result status)" = pass ]
-check "sub: no result at toplevel" [ ! -e "$SUBR/.harness/verify/implementer.json" ]
-cfg '{"test":"exit 1","maxAttempts":1}'
-hvin "$(stopjson)" stop
-check "sub: stop fail blocks" [ "$(printf '%s' "$OUT" | jq -r .decision)" = block ]
-check "sub: report deleted in cwd" [ ! -e "$R/.harness/reports/implementer.md" ]
-cfg '{"lint":"printf \"%s\\n\" {files} > files.out","test":"true"}'
-hv baseline; echo z > "$R/z.txt"; echo y > "$SUBR/outside.txt"
-hvin "$(stopjson)" stop
-check "sub: files relative to cwd" grep -qx 'z.txt' "$R/files.out"
-check "sub: files exclude outside cwd" not_grep -q outside "$R/files.out"
-hvin "$(postjson Write "$R/z.txt")" format
-check "sub: format rc ok" [ "$RC" -eq 0 ]
+hvat "$R/tests" "$(stopat "$R/tests")" stop
+check "stray: failing test blocks (config from real root)" [ "$(printf '%s' "$OUT" | jq -r .decision)" = block ]
+check "stray: state at real root" [ "$(jq -r .status "$R/.harness/verify/implementer.json")" = fail ]
+check "stray: no verify dir in stray" [ ! -e "$R/tests/.harness/verify" ]
+printf '%s' '{"test":"true"}' > "$R/.claude/harness.json"
+hvat "$R/tests" "$(stopat "$R/tests")" stop
+check "stray: marker at real root" [ -e "$R/.harness/done/implementer.ask3" ]
+check "stray: no done dir in stray" [ ! -e "$R/tests/.harness/done" ]
 
 # stop: staged at baseline, edited + re-added -> must run
 newrepo
@@ -444,6 +474,25 @@ hvw '{"cwd":"'"$R"'"}' done analyst
 check "done: unsafe ask-id ignored" [ ! -d "$R/.harness/done" ]
 hvw '{"cwd":"'"$R"'"}' done bogus
 check "done: unknown role ignored" [ "$RC" -eq 0 ]
+
+# hook cwd = a repo subdir: marker still lands at the repo root
+newrepo; doneset; mkdir -p "$R/.harness/deep"
+hvw "$(jq -n -c --arg c "$R/.harness/deep" '{agent_type:"analyst",session_id:"S3",cwd:$c}')" done analyst
+check "done: subdir cwd, no analyst ask -> still no marker" [ ! -d "$R/.harness/done" ]
+echo "ask7 5" > "$R/.harness/asks/analyst.current"
+hvw "$(jq -n -c --arg c "$R/.harness/deep" '{agent_type:"analyst",session_id:"S3",cwd:$c}')" done analyst
+check "done: subdir cwd writes marker at toplevel" [ -f "$R/.harness/done/analyst.ask7" ]
+check "done: no marker under subdir" [ ! -e "$R/.harness/deep/.harness" ]
+hvw "$(jq -n -c --arg c "$R/.harness/deep" '{agent_type:"implementer",session_id:"S3",cwd:$c}')" stop
+check "done: stop from subdir writes marker at toplevel" marker
+
+# missing .current -> one stderr warning, exit 0
+newrepo
+ERR=$(cd "$R" && printf '{"cwd":"%s"}' "$R" | HARNESS_ROLE=worker /bin/bash "$VERIFY" done analyst 2>&1 >/dev/null); RC=$?
+check "done: missing .current exits 0" [ "$RC" -eq 0 ]
+check "done: missing .current warns on stderr" [ "$(printf '%s\n' "$ERR" | grep -c 'no .harness/asks/analyst.current')" -eq 1 ]
+ERR=$(cd "$R" && printf '{"cwd":"%s"}' "$R" | env -u HARNESS_ROLE /bin/bash "$VERIFY" done analyst 2>&1 >/dev/null)
+check "done: non-worker no warning" [ -z "$ERR" ]
 
 echo "PASS $pass / FAIL $fail"
 [ "$fail" -eq 0 ]

@@ -23,20 +23,35 @@ fi
 STATE_REL=".harness/verify"
 IS_GIT=0
 ROOT=$PWD
+HOOK_CWD=$PWD
 AGENT=implementer
 STEP_OUT=""
 RAN=0
 
-# enter_root [dir] — the root is the cwd (hook stdin cwd, else the process cwd);
-# every .harness/ path is relative to it, like bin/harness. Never the git toplevel.
+# enter_root [dir] — the root is the nearest directory at or above the cwd (hook
+# stdin cwd, else the process cwd) that contains .harness/asks/, searched up to the
+# git toplevel inclusive. `harness ask` writes asks/ (conductor side only); plain
+# .harness/ dirs also appear as strays (ensure_config in old versions), so they do
+# not count. None found, or outside git: the cwd itself. bin/harness keeps
+# .harness/ in the conductor's cwd, which may be a repo subdir; a worker that ended
+# its turn deeper (cd src) must still land on that same .harness/.
 enter_root() {
+  local top d
   [ -z "${1:-}" ] || cd "$1" 2>/dev/null || true
-  ROOT=$(pwd -P)
+  HOOK_CWD=$(pwd -P)
   if [ "$(git rev-parse --is-inside-work-tree 2>/dev/null)" = true ]; then
     IS_GIT=1
+    top=$(cd "$(git rev-parse --show-toplevel 2>/dev/null)" 2>/dev/null && pwd -P)
+    d=$HOOK_CWD
+    while [ -n "$top" ]; do
+      if [ -d "$d/.harness/asks" ]; then cd "$d" 2>/dev/null || true; break; fi
+      [ "$d" = "$top" ] || [ "$d" = / ] && break
+      d=$(dirname "$d")
+    done
   else
     IS_GIT=0
   fi
+  ROOT=$(pwd -P)
 }
 
 # set_agent NAME — only plain names are used in state file paths
@@ -240,6 +255,10 @@ mark_done() {
   local role=$1 input=$2 id sid tmp
   [ "${HARNESS_ROLE:-}" = worker ] || return 0
   case "$role" in analyst|implementer|reviewer) ;; *) return 0 ;; esac
+  if [ ! -f ".harness/asks/$role.current" ]; then
+    echo "harness-verify: no .harness/asks/$role.current under root $ROOT (hook cwd $HOOK_CWD); done marker not written (root has no ask for $role, or no .harness/asks/ between the hook cwd and the git toplevel)" >&2
+    return 0
+  fi
   id=$(awk 'NR==1 { print $1 }' ".harness/asks/$role.current" 2>/dev/null)
   case "$id" in ''|*[!A-Za-z0-9_-]*) return 0 ;; esac
   sid=$(printf '%s' "$input" | jq -r '.session_id // empty' 2>/dev/null)
