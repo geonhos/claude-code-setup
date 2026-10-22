@@ -256,5 +256,110 @@ install_in "$T"
 check "resume hook still once after rerun" [ "$(jq --arg r "$RESUME" '[.hooks.SessionStart[]? | select(any(.hooks[]?; .command==$r))] | length' "$S")" -eq 1 ]
 check "other SessionStart still once" [ "$(jq '[.hooks.SessionStart[]? | select(any(.hooks[]?; .command=="/opt/session.sh"))] | length' "$S")" -eq 1 ]
 
+# --- test runner (install.sh --test) against scratch suites -----------------
+# INSTALL_SH can point at another copy of the script (used to show the tests red).
+RUNNER=${INSTALL_SH:-$REPO/install.sh}
+# guard BODY...: run with a hard 40 s bound (a hang fails the check instead of the suite)
+guard() {
+  "$@" & local p=$!
+  ( sleep 40; kill -KILL "$p" 2>/dev/null ) & local w=$!
+  wait "$p" 2>/dev/null; local r=$?
+  kill "$w" 2>/dev/null; wait "$w" 2>/dev/null
+  return $r
+}
+mk_suites() {  # mk_suites DIR [failing|hanging]
+  local d=$1; mkdir -p "$d"
+  printf '#!/bin/bash\necho ok-a\n' > "$d/a.test.sh"
+  printf '#!/bin/bash\necho ok-c\n' > "$d/c.test.sh"
+  case "${2:-}" in
+    failing) printf '#!/bin/bash\necho boom-b\nexit 1\n' > "$d/b.test.sh" ;;
+    hanging) printf '#!/bin/bash\necho start-b\nsleep 60 &\necho $! > "%s/bg.pid"\nsleep 60 &\necho $! > "%s/fg.pid"\nwait\n' "$d" "$d" > "$d/b.test.sh" ;;
+    *)       printf '#!/bin/bash\necho ok-b\n' > "$d/b.test.sh" ;;
+  esac
+}
+run_runner() {  # run_runner DIR [ENV=VAL...] — sets RRC, output in DIR.out
+  local d=$1; shift
+  env HARNESS_TESTS_DIR="$d" "$@" /bin/bash "$RUNNER" --test > "$d.out" 2>&1
+  echo $? > "$d.rc"
+}
+for mode in parallel serial; do
+  ser=0; [ "$mode" = serial ] && ser=1
+  D=$ROOT/rn-ok-$mode; mk_suites "$D" ok
+  guard run_runner "$D" HARNESS_TEST_SERIAL=$ser; RRC=$(cat "$D.rc" 2>/dev/null || echo 137)
+  check "runner $mode: all pass exits 0" [ "$RRC" -eq 0 ]
+  check "runner $mode: all blocks printed" sh -c 'grep -q ok-a "$1" && grep -q ok-b "$1" && grep -q ok-c "$1"' _ "$D.out"
+  check "runner $mode: no FAILED line when green" not_grep -q FAILED "$D.out"
+
+  D=$ROOT/rn-fail-$mode; mk_suites "$D" failing
+  start=$(date +%s)
+  guard run_runner "$D" HARNESS_TEST_SERIAL=$ser; RRC=$(cat "$D.rc" 2>/dev/null || echo 137)
+  check "runner $mode: failing suite exits non-zero" [ "$RRC" -ne 0 ] && [ "$RRC" -lt 128 ]
+  check "runner $mode: FAILED line names the suite" grep -qx 'FAILED suites: b' "$D.out"
+  check "runner $mode: failing suite block printed" sh -c 'grep -q "boom-b" "$1" && grep -q "b FAILED (exit 1)" "$1"' _ "$D.out"
+  check "runner $mode: other suites still printed" sh -c 'grep -q ok-a "$1" && grep -q ok-c "$1"' _ "$D.out"
+  check "runner $mode: failing run finishes quickly" [ $(( $(date +%s) - start )) -lt 20 ]
+
+  D=$ROOT/rn-hang-$mode; mk_suites "$D" hanging
+  start=$(date +%s)
+  guard run_runner "$D" HARNESS_TEST_SERIAL=$ser HARNESS_TEST_TIMEOUT=2; RRC=$(cat "$D.rc" 2>/dev/null || echo 137)
+  check "runner $mode: hung suite exits non-zero" [ "$RRC" -ne 0 ] && [ "$RRC" -lt 128 ]
+  check "runner $mode: hung suite reported timed out" grep -q 'b timed out after 2s' "$D.out"
+  check "runner $mode: timeout run ends quickly" [ $(( $(date +%s) - start )) -lt 15 ]
+  check "runner $mode: timeout names FAILED suite" grep -qx 'FAILED suites: b' "$D.out"
+  check "runner $mode: other suites ran despite hang" sh -c 'grep -q ok-a "$1" && grep -q ok-c "$1"' _ "$D.out"
+  sleep 0.5
+  check "runner $mode: hung suite's descendants killed" sh -c '! kill -0 "$(cat "$1/bg.pid")" 2>/dev/null && ! kill -0 "$(cat "$1/fg.pid")" 2>/dev/null' _ "$D"
+  kill "$(cat "$D/bg.pid" 2>/dev/null)" "$(cat "$D/fg.pid" 2>/dev/null)" 2>/dev/null || true
+done
+
+# TERM to the runner kills the running suites and exits 143
+D=$ROOT/rn-term; mk_suites "$D" hanging
+printf '#!/bin/bash\nsleep 61 &\necho $! > "%s/b.pid"\nwait\n' "$D" > "$D/b.test.sh"
+HARNESS_TESTS_DIR="$D" /bin/bash "$RUNNER" --test > "$D.out" 2>&1 &
+RP=$!
+i=0; while [ ! -s "$D/b.pid" ] && [ "$i" -lt 50 ]; do sleep 0.1; i=$((i+1)); done
+kill -TERM "$RP"
+( sleep 40; kill -KILL "$RP" 2>/dev/null ) & WD=$!
+wait "$RP"; TRC=$?
+kill "$WD" 2>/dev/null; wait "$WD" 2>/dev/null
+check "runner: TERM exits 143" [ "$TRC" -eq 143 ]
+sleep 0.5
+check "runner: TERM kills suite children" sh -c '! kill -0 "$(cat "$1/b.pid")" 2>/dev/null' _ "$D"
+kill "$(cat "$D/b.pid")" 2>/dev/null || true
+check "runner: HARNESS_TESTS_DIR notice names dir and wiki-lint skip" sh -c 'grep -q "HARNESS_TESTS_DIR set: running suites from $1; wiki-lint skipped" "$2"' _ "$D" "$D.out"
+
+# HUP to the runner behaves like TERM: suites killed, exit 129
+D=$ROOT/rn-hup; mk_suites "$D" hanging
+printf '#!/bin/bash\nsleep 61 &\necho $! > "%s/b.pid"\nwait\n' "$D" > "$D/b.test.sh"
+HARNESS_TESTS_DIR="$D" /bin/bash "$RUNNER" --test > "$D.out" 2>&1 &
+RP=$!
+i=0; while [ ! -s "$D/b.pid" ] && [ "$i" -lt 50 ]; do sleep 0.1; i=$((i+1)); done
+kill -HUP "$RP"
+( sleep 40; kill -KILL "$RP" 2>/dev/null ) & WD=$!
+wait "$RP"; HRC=$?
+kill "$WD" 2>/dev/null; wait "$WD" 2>/dev/null
+check "runner: HUP exits 129" [ "$HRC" -eq 129 ]
+sleep 0.5
+check "runner: HUP kills suite children" sh -c '! kill -0 "$(cat "$1/b.pid")" 2>/dev/null' _ "$D"
+kill "$(cat "$D/b.pid")" 2>/dev/null || true
+
+# a finished suite's .pid file is removed, so kill_all cannot hit a reused pid.
+# Suite b polls the runner's tdir (under TMPDIR=$D/tmp) while a is done and b still runs.
+D=$ROOT/rn-pid; mkdir -p "$D/tmp"
+printf '#!/bin/bash\nexit 0\n' > "$D/a.test.sh"
+cat > "$D/b.test.sh" <<EOS
+#!/bin/bash
+i=0
+while [ \$i -lt 100 ]; do
+  for t in "$D"/tmp/harness-tests.*; do
+    if [ -f "\$t/a.rc" ] && [ ! -e "\$t/a.pid" ]; then echo gone > "$D/result"; exit 0; fi
+  done
+  sleep 0.1; i=\$((i+1))
+done
+echo stuck > "$D/result"
+EOS
+guard run_runner "$D" TMPDIR="$D/tmp"
+check "runner: finished suite's pid file removed while others run" grep -qx gone "$D/result"
+
 echo "PASS $pass / FAIL $fail"
 [ "$fail" -eq 0 ]

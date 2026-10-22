@@ -6,7 +6,9 @@
 # Idempotent. Re-run after pulling changes.
 #
 #   ./install.sh          install
-#   ./install.sh --test   run the test suites and exit
+#   ./install.sh --test   run the test suites (in parallel) and exit
+#                         HARNESS_TEST_SERIAL=1 runs them one at a time;
+#                         HARNESS_TEST_TIMEOUT=N caps each suite (default 300 s)
 #
 # Overridable for tests: CLAUDE_DIR, BIN_DIR, GIT_IGNORE, SKIP_HERDR_INTEGRATION=1
 set -eu
@@ -25,17 +27,106 @@ die() { echo "install: $*" >&2; exit 1; }
 need() { command -v "$1" >/dev/null 2>&1 || die "$1 is required but not on PATH"; }
 
 if [ "${1:-}" = "--test" ]; then
-  rc=0
-  /bin/bash "$REPO/tests/gate.test.sh"    || rc=1
-  /bin/bash "$REPO/tests/harness.test.sh" || rc=1
-  /bin/bash "$REPO/tests/verify.test.sh"  || rc=1
-  /bin/bash "$REPO/tests/progress.test.sh" || rc=1
-  /bin/bash "$REPO/tests/route.test.sh"   || rc=1
-  /bin/bash "$REPO/tests/install.test.sh" || rc=1
-  /bin/bash "$REPO/tests/wiki.test.sh"    || rc=1
-  /bin/bash "$REPO/tests/retro.test.sh"   || rc=1
-  # lint the real wiki so a bad page fails CI
-  /bin/bash "$REPO/bin/harness" wiki-lint "$REPO/docs/wiki" || { echo "wiki-lint FAILED"; rc=1; }
+  # Suites run in parallel (each buffers to its own file; output is printed per
+  # suite in finish order). HARNESS_TEST_SERIAL=1 runs them one by one, still
+  # running every suite. Each suite has a wall-clock limit (HARNESS_TEST_TIMEOUT,
+  # seconds, default 300); a suite over it has its process tree killed and is
+  # reported as failed. HARNESS_TESTS_DIR points the runner at another directory
+  # of *.test.sh files (used by the runner's own tests; skips the wiki-lint step).
+  tests_dir=${HARNESS_TESTS_DIR:-$REPO/tests}
+  limit=${HARNESS_TEST_TIMEOUT:-300}
+  case "$limit" in ''|*[!0-9]*) limit=300 ;; esac
+  if [ -n "${HARNESS_TESTS_DIR:-}" ]; then
+    echo "install: HARNESS_TESTS_DIR set: running suites from $tests_dir; wiki-lint skipped" >&2
+    names=""
+    for f in "$tests_dir"/*.test.sh; do
+      [ -e "$f" ] || continue
+      b=$(basename "$f"); names="$names ${b%.test.sh}"
+    done
+    names=${names# }
+  else
+    names="gate harness verify progress route install wiki retro wikilint"
+  fi
+  tdir=$(mktemp -d "${TMPDIR:-/tmp}/harness-tests.XXXXXX")
+  descendants() {  # descendants PID — every transitive child, one per line
+    local c
+    for c in $(pgrep -P "$1" 2>/dev/null || true); do echo "$c"; descendants "$c"; done
+  }
+  killtree() {  # killtree PID — stop PID first (so it cannot record a result), then its tree
+    local rest
+    rest=$(descendants "$1" | tr '\n' ' ')
+    kill -TERM "$1" 2>/dev/null || true
+    [ -z "$rest" ] || kill -TERM $rest 2>/dev/null || true
+    sleep 0.3
+    kill -KILL "$1" $rest 2>/dev/null || true
+  }
+  kill_all() {
+    local f
+    for f in "$tdir"/*.pid; do
+      [ -e "$f" ] || continue
+      killtree "$(cat "$f")"
+    done
+  }
+  trap 'rm -rf "$tdir"' EXIT
+  trap 'kill_all; exit 130' INT
+  trap 'kill_all; exit 143' TERM
+  trap 'kill_all; exit 129' HUP
+  run_one() {  # run_one NAME — output to $tdir/NAME.out, exit code to $tdir/NAME.rc (always written)
+    set +e  # a failing suite must still record its exit code
+    case "$1" in
+      wikilint) /bin/bash "$REPO/bin/harness" wiki-lint "$REPO/docs/wiki" ;;  # the real wiki: a bad page fails CI
+      *) /bin/bash "$tests_dir/$1.test.sh" ;;
+    esac > "$tdir/$1.out" 2>&1
+    local r=$?
+    echo "$r" > "$tdir/$1.rc.tmp"
+    mv "$tdir/$1.rc.tmp" "$tdir/$1.rc"
+    rm -f "$tdir/$1.pid"  # finished: bash reaps us, so the pid may be reused; kill_all must not see it
+  }
+  rc=0; failed=""
+  report() {  # report NAME — print its block, record failure
+    local r
+    r=$(cat "$tdir/$1.rc")
+    rm -f "$tdir/$1.pid"  # backstop: run_one may finish before the parent wrote the pid file
+    echo "=== $1 ==="; cat "$tdir/$1.out"
+    if [ "$r" != 0 ]; then rc=1; failed="$failed $1"; echo "--- $1 FAILED (exit $r) ---"; fi
+  }
+  maxjobs=1000
+  [ "${HARNESS_TEST_SERIAL:-0}" != 1 ] || maxjobs=1
+  queue=$names; running=""; nrun=0
+  while [ -n "$queue" ] || [ -n "$running" ]; do
+    while [ -n "$queue" ] && [ "$nrun" -lt "$maxjobs" ]; do
+      n=${queue%% *}
+      case "$queue" in *" "*) queue=${queue#* } ;; *) queue="" ;; esac
+      run_one "$n" &
+      echo $! > "$tdir/$n.pid"
+      date +%s > "$tdir/$n.start"
+      running="$running $n"; nrun=$((nrun + 1))
+    done
+    still=""; nrun=0; now=$(date +%s)
+    for n in $running; do
+      pid=$(cat "$tdir/$n.pid" 2>/dev/null || true)  # gone once run_one has finished
+      if [ -f "$tdir/$n.rc" ]; then
+        report "$n"
+      elif [ -z "$pid" ] || ! kill -0 "$pid" 2>/dev/null; then
+        if [ ! -f "$tdir/$n.rc" ]; then  # died without recording (e.g. killed from outside)
+          echo "suite process $pid vanished without an exit code" >> "$tdir/$n.out"
+          echo 1 > "$tdir/$n.rc"
+        fi
+        report "$n"
+      elif [ $((now - $(cat "$tdir/$n.start"))) -ge "$limit" ]; then
+        killtree "$pid"
+        echo "suite $n timed out after ${limit}s (killed)" >> "$tdir/$n.out"
+        echo 124 > "$tdir/$n.rc"
+        report "$n"
+      else
+        still="$still $n"; nrun=$((nrun + 1))
+      fi
+    done
+    running=${still# }
+    [ -z "$queue" ] && [ -z "$running" ] || sleep 0.2
+  done
+  wait
+  [ -z "$failed" ] || echo "FAILED suites:$failed"
   exit $rc
 fi
 

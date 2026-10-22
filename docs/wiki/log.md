@@ -7,3 +7,4 @@
 - 2026-10-21 · conductor · plan gate-opt-in · decision 0005 gate only inside herdr, fail closed on bad input; gotcha daemon-inherits-worker-env
 - 2026-10-21 · implementer · retro review fixes · decision 0004: exit 1 after pre-flight queues a candidate; report snapshots pruned with their candidate
 - 2026-10-21 · implementer · implementer asks wait 29 min · /implement passes --timeout 1740000 with Bash timeout 1800000 (p95 1706s); analyst/reviewer unchanged
+- 2026-10-22 · implementer · verify speed · install.sh --test runs suites in parallel (HARNESS_TEST_SERIAL=1 for serial); harness/retro tests set HARNESS_CLEAR_INTERVAL=0; implementer runs affected suites, Stop hook runs all
