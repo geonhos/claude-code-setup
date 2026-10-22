@@ -247,30 +247,31 @@ check "stop hides report while verifying" [ "$(result status)" = pass ]
 check "stop pass restores report" [ "$(cat "$R/.harness/reports/implementer.md")" = rep ]
 check "stop pass no pending" [ ! -e "$R/.harness/reports/implementer.md.pending" ]
 
-# stop/ask from a subdirectory of the repo: root is the cwd
+# stop/ask from a subdirectory of the repo: root is the git toplevel
 newrepo
 mkdir -p "$R/sub/deep"
-echo '{"test":"echo tests-ran"}' > "$R/sub/deep/c.json"
 SUBR=$R; R="$R/sub"
 cfg '{"test":"echo tests-ran"}'
-mkdir -p "$R/.harness/reports"; echo rep > "$R/.harness/reports/implementer.md"
+RT=$SUBR
+R=$RT; cfg '{"test":"echo tests-ran"}'
+mkdir -p "$RT/.harness/reports"; echo rep > "$RT/.harness/reports/implementer.md"
 hv baseline
-check "sub: baseline in cwd" [ -s "$R/.harness/verify/implementer.base" ]
-check "sub: no state at toplevel" [ ! -e "$SUBR/.harness/verify" ]
-echo c > "$R/new.txt"
-hvin "$(stopjson)" stop
-check "sub: stop result in cwd" [ "$(result status)" = pass ]
-check "sub: no result at toplevel" [ ! -e "$SUBR/.harness/verify/implementer.json" ]
+check "sub: baseline at toplevel" [ -s "$RT/.harness/verify/implementer.base" ]
+check "sub: no state in subdir" [ ! -e "$RT/sub/.harness/verify" ]
+echo c > "$RT/new.txt"
+stopsub() { jq -n -c --arg c "$RT/sub" '{hook_event_name:"Stop",agent_type:"implementer",cwd:$c,stop_hook_active:false}'; }
+hvin "$(stopsub)" stop
+check "sub: stop result at toplevel" [ "$(result status)" = pass ]
+check "sub: no result in subdir" [ ! -e "$RT/sub/.harness/verify/implementer.json" ]
 cfg '{"test":"exit 1","maxAttempts":1}'
-hvin "$(stopjson)" stop
+hvin "$(stopsub)" stop
 check "sub: stop fail blocks" [ "$(printf '%s' "$OUT" | jq -r .decision)" = block ]
-check "sub: report deleted in cwd" [ ! -e "$R/.harness/reports/implementer.md" ]
+check "sub: report deleted at toplevel" [ ! -e "$RT/.harness/reports/implementer.md" ]
 cfg '{"lint":"printf \"%s\\n\" {files} > files.out","test":"true"}'
-hv baseline; echo z > "$R/z.txt"; echo y > "$SUBR/outside.txt"
-hvin "$(stopjson)" stop
-check "sub: files relative to cwd" grep -qx 'z.txt' "$R/files.out"
-check "sub: files exclude outside cwd" not_grep -q outside "$R/files.out"
-hvin "$(postjson Write "$R/z.txt")" format
+hv baseline; echo z > "$RT/z.txt"
+hvin "$(stopsub)" stop
+check "sub: files relative to toplevel" grep -qx 'z.txt' "$RT/files.out"
+hvin "$(postjson Write "$RT/z.txt")" format
 check "sub: format rc ok" [ "$RC" -eq 0 ]
 
 # stop: staged at baseline, edited + re-added -> must run
@@ -444,6 +445,25 @@ hvw '{"cwd":"'"$R"'"}' done analyst
 check "done: unsafe ask-id ignored" [ ! -d "$R/.harness/done" ]
 hvw '{"cwd":"'"$R"'"}' done bogus
 check "done: unknown role ignored" [ "$RC" -eq 0 ]
+
+# hook cwd = a repo subdir: marker still lands at the repo root
+newrepo; doneset; mkdir -p "$R/.harness/deep"
+hvw "$(jq -n -c --arg c "$R/.harness/deep" '{agent_type:"analyst",session_id:"S3",cwd:$c}')" done analyst
+check "done: subdir cwd, no analyst ask -> still no marker" [ ! -d "$R/.harness/done" ]
+echo "ask7 5" > "$R/.harness/asks/analyst.current"
+hvw "$(jq -n -c --arg c "$R/.harness/deep" '{agent_type:"analyst",session_id:"S3",cwd:$c}')" done analyst
+check "done: subdir cwd writes marker at toplevel" [ -f "$R/.harness/done/analyst.ask7" ]
+check "done: no marker under subdir" [ ! -e "$R/.harness/deep/.harness" ]
+hvw "$(jq -n -c --arg c "$R/.harness/deep" '{agent_type:"implementer",session_id:"S3",cwd:$c}')" stop
+check "done: stop from subdir writes marker at toplevel" marker
+
+# missing .current -> one stderr warning, exit 0
+newrepo
+ERR=$(cd "$R" && printf '{"cwd":"%s"}' "$R" | HARNESS_ROLE=worker /bin/bash "$VERIFY" done analyst 2>&1 >/dev/null); RC=$?
+check "done: missing .current exits 0" [ "$RC" -eq 0 ]
+check "done: missing .current warns on stderr" [ "$(printf '%s\n' "$ERR" | grep -c 'no .harness/asks/analyst.current')" -eq 1 ]
+ERR=$(cd "$R" && printf '{"cwd":"%s"}' "$R" | env -u HARNESS_ROLE /bin/bash "$VERIFY" done analyst 2>&1 >/dev/null)
+check "done: non-worker no warning" [ -z "$ERR" ]
 
 echo "PASS $pass / FAIL $fail"
 [ "$fail" -eq 0 ]

@@ -1080,7 +1080,7 @@ ask_idle_giveup() {
     show_pane_screen "$pane"
     exit 4
   fi
-  local hint="its Stop hook never signalled completion (a worker started before the hook needs a respawn: harness close $agent, or close the pane)"
+  local hint="its Stop hook never signalled completion (a worker started before the hook needs a respawn: harness close $agent, or close the pane; or the Stop hook ran from a directory without .harness: check the worker's cwd)"
   if [ -f "$report" ]; then
     echo "harness: $agent is idle but $hint; a report exists. Collect it with: harness report $agent; respawn with: harness close $agent to load the Stop hook"
   else

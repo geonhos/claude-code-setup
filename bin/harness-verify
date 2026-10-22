@@ -27,16 +27,20 @@ AGENT=implementer
 STEP_OUT=""
 RAN=0
 
-# enter_root [dir] — the root is the cwd (hook stdin cwd, else the process cwd);
-# every .harness/ path is relative to it, like bin/harness. Never the git toplevel.
+# enter_root [dir] — the root is the git toplevel of the cwd (hook stdin cwd, else
+# the process cwd); outside git it is the cwd. A worker that ended its turn in a
+# subdir (cd .harness) must still find .harness/asks at the repo root.
 enter_root() {
+  local top
   [ -z "${1:-}" ] || cd "$1" 2>/dev/null || true
-  ROOT=$(pwd -P)
   if [ "$(git rev-parse --is-inside-work-tree 2>/dev/null)" = true ]; then
+    top=$(git rev-parse --show-toplevel 2>/dev/null)
+    [ -z "$top" ] || cd "$top" 2>/dev/null || true
     IS_GIT=1
   else
     IS_GIT=0
   fi
+  ROOT=$(pwd -P)
 }
 
 # set_agent NAME — only plain names are used in state file paths
@@ -240,6 +244,10 @@ mark_done() {
   local role=$1 input=$2 id sid tmp
   [ "${HARNESS_ROLE:-}" = worker ] || return 0
   case "$role" in analyst|implementer|reviewer) ;; *) return 0 ;; esac
+  if [ ! -f ".harness/asks/$role.current" ]; then
+    echo "harness-verify: no .harness/asks/$role.current under $PWD; done marker not written (Stop hook ran outside the repo root?)" >&2
+    return 0
+  fi
   id=$(awk 'NR==1 { print $1 }' ".harness/asks/$role.current" 2>/dev/null)
   case "$id" in ''|*[!A-Za-z0-9_-]*) return 0 ;; esac
   sid=$(printf '%s' "$input" | jq -r '.session_id // empty' 2>/dev/null)
