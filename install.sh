@@ -6,7 +6,8 @@
 # Idempotent. Re-run after pulling changes.
 #
 #   ./install.sh          install
-#   ./install.sh --test   run the test suites and exit
+#   ./install.sh --test   run the test suites (in parallel) and exit
+#                         HARNESS_TEST_SERIAL=1 runs them one at a time
 #
 # Overridable for tests: CLAUDE_DIR, BIN_DIR, GIT_IGNORE, SKIP_HERDR_INTEGRATION=1
 set -eu
@@ -25,17 +26,40 @@ die() { echo "install: $*" >&2; exit 1; }
 need() { command -v "$1" >/dev/null 2>&1 || die "$1 is required but not on PATH"; }
 
 if [ "${1:-}" = "--test" ]; then
-  rc=0
-  /bin/bash "$REPO/tests/gate.test.sh"    || rc=1
-  /bin/bash "$REPO/tests/harness.test.sh" || rc=1
-  /bin/bash "$REPO/tests/verify.test.sh"  || rc=1
-  /bin/bash "$REPO/tests/progress.test.sh" || rc=1
-  /bin/bash "$REPO/tests/route.test.sh"   || rc=1
-  /bin/bash "$REPO/tests/install.test.sh" || rc=1
-  /bin/bash "$REPO/tests/wiki.test.sh"    || rc=1
-  /bin/bash "$REPO/tests/retro.test.sh"   || rc=1
-  # lint the real wiki so a bad page fails CI
-  /bin/bash "$REPO/bin/harness" wiki-lint "$REPO/docs/wiki" || { echo "wiki-lint FAILED"; rc=1; }
+  # Suites run in parallel (each buffers to its own file; output is printed
+  # per suite in finish order). HARNESS_TEST_SERIAL=1 runs them one by one.
+  tdir=$(mktemp -d)
+  trap 'rm -rf "$tdir"' EXIT
+  names="gate harness verify progress route install wiki retro wikilint"
+  run_one() {  # run_one NAME — output to $tdir/NAME.out, exit code to $tdir/NAME.rc
+    case "$1" in
+      wikilint) /bin/bash "$REPO/bin/harness" wiki-lint "$REPO/docs/wiki" ;;  # the real wiki: a bad page fails CI
+      *) /bin/bash "$REPO/tests/$1.test.sh" ;;
+    esac > "$tdir/$1.out" 2>&1
+    echo $? > "$tdir/$1.rc.tmp"
+    mv "$tdir/$1.rc.tmp" "$tdir/$1.rc"
+  }
+  rc=0; failed=""
+  report() {  # report NAME — print its block, record failure
+    echo "=== $1 ==="; cat "$tdir/$1.out"
+    if [ "$(cat "$tdir/$1.rc")" != 0 ]; then rc=1; failed="$failed $1"; echo "--- $1 FAILED (exit $(cat "$tdir/$1.rc")) ---"; fi
+  }
+  if [ "${HARNESS_TEST_SERIAL:-0}" = 1 ]; then
+    for n in $names; do run_one "$n"; report "$n"; done
+  else
+    for n in $names; do run_one "$n" & done
+    pending=$names
+    while [ -n "$pending" ]; do
+      still=""
+      for n in $pending; do
+        if [ -f "$tdir/$n.rc" ]; then report "$n"; else still="$still $n"; fi
+      done
+      pending=${still# }
+      [ -z "$pending" ] || sleep 0.2
+    done
+    wait
+  fi
+  [ -z "$failed" ] || echo "FAILED suites:$failed"
   exit $rc
 fi
 

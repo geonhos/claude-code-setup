@@ -20,7 +20,7 @@ setup() {
   mkdir -p "$FAKE_DIR"
   : > "$FAKE_LOG"
   unset FAKE_PROMPT_HOOK
-  export HARNESS_IDLE_GRACE=1 HARNESS_POLL_SEC=0.2
+  export HARNESS_IDLE_GRACE=1 HARNESS_POLL_SEC=0.2 HARNESS_CLEAR_INTERVAL=0
   cd "$WORK" || exit 1
 }
 
