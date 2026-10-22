@@ -8,3 +8,5 @@
 - 2026-10-21 · implementer · retro review fixes · decision 0004: exit 1 after pre-flight queues a candidate; report snapshots pruned with their candidate
 - 2026-10-21 · implementer · implementer asks wait 29 min · /implement passes --timeout 1740000 with Bash timeout 1800000 (p95 1706s); analyst/reviewer unchanged
 - 2026-10-22 · implementer · verify speed · install.sh --test runs suites in parallel (HARNESS_TEST_SERIAL=1 for serial); harness/retro tests set HARNESS_CLEAR_INTERVAL=0; implementer runs affected suites, Stop hook runs all
+- 2026-10-23 · implementer · v14b worker speed · decision 0006 keep implementer pane (default never), supersedes 0003 default; worker prompts cap advisor to one call per ask
+- 2026-10-23 · implementer · role-aware ask timeout · harness ask defaults to 1740000 ms for implementer, 600000 for analyst/reviewer; --timeout no longer needed

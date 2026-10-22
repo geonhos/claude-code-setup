@@ -179,6 +179,17 @@ run ask implementer "do it" --timeout 1000
 check "ask reuse: no spawn" not_logged "agent start"
 check "ask custom timeout" logged "--wait --timeout 1000"
 check "ask stale report replaced" [ "$OUT" = "NEW" ]
+# role-aware default timeout: implementer 1740000, reviewer 600000, explicit wins
+: > "$FAKE_LOG"
+run ask implementer "do it"
+check "default timeout: implementer 1740000" logged "--wait --timeout 1740000"
+: > "$FAKE_LOG"
+echo idle > "$FAKE_DIR/live.$(WN reviewer)"
+export FAKE_PROMPT_HOOK="mkdir -p $WORK/.harness/reports && printf 'R\n' > $WORK/.harness/reports/reviewer.md"
+run ask reviewer "review"
+check "default timeout: reviewer 600000" logged "--wait --timeout 600000"
+check "default timeout: reviewer not 1740000" not_logged "--timeout 1740000"
+unset FAKE_PROMPT_HOOK
 
 # --- ask: blocked before prompt --------------------------------------------------
 setup
@@ -862,7 +873,35 @@ echo '{"idle_ttl_minutes": 60}' > .harness/config.json
 run status
 check "ttl: config lowers ttl" logged "pane close w1:p2"
 
-# implementer on_success closes after ask 0, not after 5; analyst never; env override
+# default: implementer pane is kept (ADR 0006); config/env on_success closes after ask 0, not after 5
+setup
+live_worker implementer idle w1:p2
+export FAKE_PROMPT_HOOK="$(REPORT_HOOK implementer)"
+run ask implementer "do it"
+check "default: ask rc 0" [ "$RC" -eq 0 ]
+check "default: implementer pane kept" not_logged "pane close"
+check "default: config template says never" jq -e '.close_after_ask.implementer=="never"' .harness/config.json
+# config migration: untouched pre-ADR-0006 template is rewritten; edited / new files are not
+OLDCFG=$(jq -n '.' >/dev/null; sed 's/"implementer": "never"/"implementer": "on_success"/' <<'EOC'
+{
+  "_doc": "close_after_ask.<role>: never | on_success (close the worker after `harness ask` exits 0; reviewer: 0 or 5). idle_ttl_minutes: close this repo's workers idle longer than N minutes after their last collected report (0 = off). HARNESS_NO_AUTOCLOSE=1 disables both. Env overrides: HARNESS_CLOSE_AFTER_ASK_<ROLE>, HARNESS_IDLE_TTL_MINUTES.",
+  "close_after_ask": { "analyst": "never", "implementer": "never", "reviewer": "never" },
+  "idle_ttl_minutes": 30
+}
+EOC
+)
+setup; mkdir -p .harness; printf '%s\n' "$OLDCFG" > .harness/config.json
+run status
+check "migrate: old template -> implementer never" jq -e '.close_after_ask.implementer=="never"' .harness/config.json
+cp .harness/config.json "$WORK/new.json"; run status
+check "migrate: new template untouched" cmp -s .harness/config.json "$WORK/new.json"
+setup; mkdir -p .harness; printf '%s\n' "$OLDCFG" | sed 's/"idle_ttl_minutes": 30/"idle_ttl_minutes": 31/' > .harness/config.json
+cp .harness/config.json "$WORK/edited.json"; run status
+check "migrate: edited old file untouched" cmp -s .harness/config.json "$WORK/edited.json"
+setup; mkdir -p .harness; printf '%s\n' "$OLDCFG" > .harness/config.json
+OUT=$(HERDR_ENV=1 PATH="$FAKE_BIN:$HERE/../bin:$PATH" HARNESS_ROLE=worker /bin/bash "$HARNESS" status 2>&1)
+check "migrate: worker session does not rewrite" jq -e '.close_after_ask.implementer=="on_success"' .harness/config.json
+export HARNESS_CLOSE_AFTER_ASK_IMPLEMENTER=on_success
 setup
 live_worker implementer idle w1:p2
 export FAKE_PROMPT_HOOK="mkdir -p $WORK/.harness/reports; printf '# implementer report\nstatus: done\n' > $WORK/.harness/reports/implementer.md"
@@ -894,7 +933,7 @@ live_worker implementer idle w1:p2
 export FAKE_PROMPT_HOOK="$(REPORT_HOOK implementer)"
 HARNESS_NO_AUTOCLOSE=1 run ask implementer "do it"
 check "after_ask: HARNESS_NO_AUTOCLOSE=1 keeps worker" not_logged "pane close"
-unset FAKE_PROMPT_HOOK
+unset FAKE_PROMPT_HOOK HARNESS_CLOSE_AFTER_ASK_IMPLEMENTER
 
 # --legacy: only same-repo unscoped workers
 setup
@@ -915,6 +954,7 @@ check "migration hint mentions --legacy" grep -q "harness close --legacy" <<<"$O
 
 # --- review fixes: --keep note, stamps, race, pane gone, progress.md ------------------
 # 1: --keep after an auto-close prints the note; no note without --keep; exit 5 keeps the worker
+export HARNESS_CLOSE_AFTER_ASK_IMPLEMENTER=on_success
 setup
 live_worker implementer idle w1:p2
 export FAKE_PROMPT_HOOK="$(REPORT_HOOK implementer)"
@@ -942,7 +982,7 @@ run ask implementer "one-b" --fresh >/dev/null; : > "$FAKE_LOG"
 run ask implementer "fix" --keep
 check "exit 5 then --keep: context kept, no note" not_grep "previous context is gone" <(echo "$OUT")
 check "exit 5 then --keep: no /clear" not_logged "/clear"
-unset FAKE_PROMPT_HOOK
+unset FAKE_PROMPT_HOOK HARNESS_CLOSE_AFTER_ASK_IMPLEMENTER
 
 # 2: harness report on an interrupted verify stamps .finished
 setup

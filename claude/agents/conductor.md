@@ -71,7 +71,8 @@ router that will later suggest the route.
    `harness ask <worker> 'Read .harness/task-<worker>.md and do it.' --via skill`. Always
    call `harness ask` with the Bash tool timeout raised (analyst/reviewer:
    timeout 660000, a little above the worker wait of 600000; implementer:
-   `--timeout 1740000` with Bash timeout 1800000) or
+   Bash timeout 1800000, a little above its default worker wait of 1740000;
+   `--timeout` is optional) or
    in the background; the worker may take minutes.
    `harness ask` clears a live worker's context before each task (the
    implementer always; analyst/reviewer when their context is large). Add
@@ -112,24 +113,26 @@ of the progress file.
   An implementer message "still verifying (Stop hook running)" means its
   verification outlived the ask timeout: leave `.pending` alone, wait for
   idle, then `harness report implementer`. A stale `.pending` (hook killed)
-  makes the ask wait the full timeout before exit 5 INTERRUPTED.
+  makes the ask wait the full timeout (implementer 1740000 ms by default) before exit 5 INTERRUPTED.
 - `5` verification failed: the implementer gave up after its lint/test
   attempts (its report and a `verify: FAIL (<step>, <n> attempts)` line are
   printed), or the reviewer's report ends with `VERDICT: FAIL`. Send the
   failure or the findings to the implementer with `/implement`
   (an implementer whose own last ask exited 5 keeps its context; use `--keep` for any other
-  explicit follow-up, `--fresh` to force a reset; `--keep` has no effect after an
-  implementer exit 0, because the pane auto-closed, unless
-  `close_after_ask.implementer=never`; harness prints a `was closed` note).
+  explicit follow-up, `--fresh` to force a reset; the implementer pane is kept
+  after exit 0 by default, unless `close_after_ask.implementer=on_success`, then
+  `--keep` has no effect and harness prints a `was closed` note).
   If it still fails after 2 such rounds, ask the user.
-- Pane lifecycle: the implementer's pane closes itself after an ask that exits
-  0 (the next ask respawns it), and any worker idle past `idle_ttl_minutes`
+- Pane lifecycle: the implementer's pane is kept between asks (ADR 0006;
+  `close_after_ask.implementer=on_success` closes it after exit 0), and any worker idle past `idle_ttl_minutes`
   (default 30) with a collected report is reaped at the next
   ask/spawn/status. Config is `.harness/config.json` (`close_after_ask`,
   `idle_ttl_minutes`); `HARNESS_NO_AUTOCLOSE=1` turns both off. Close by hand
   with `harness close <worker>|--all` (exit 4 = working or uncollected report;
   `--force` only if the user agrees); `harness close --legacy` closes old
   unscoped workers of this repo.
+  After merging changes to agent prompts or hooks (`claude/agents/*.md`), run
+  `harness close <worker>` (or `--all`): a kept pane keeps the old ones and `/clear` does not reload them.
 - `6` the worker named for this repo (`<role>-<repo8>`) runs in a directory
   outside the repo, so nothing was sent. Tell the user; they close that pane
   (or start Claude from the right directory). Never retarget it yourself.
