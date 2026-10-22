@@ -2,7 +2,7 @@
 # Tests for `harness route-log` and claude/hooks/conductor-route.sh.
 # Run: /bin/bash tests/route.test.sh
 set -u
-unset HARNESS_ROUTE_LOG HARNESS_JSONL_MAX
+unset HARNESS_ROUTE_LOG HARNESS_JSONL_MAX HARNESS_ROLE
 HERE=$(cd "$(dirname "$0")" && pwd)
 REPO=$(cd "$HERE/.." && pwd)
 HARNESS="$REPO/bin/harness"

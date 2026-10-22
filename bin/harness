@@ -526,6 +526,10 @@ cmd_route_log() {
   if [ -z "$line" ]; then
     echo "harness: route-log: not a single JSON object (ignored)" >&2; return 0
   fi
+  # workers never create .harness/ (a conductor's first prompt still may)
+  if [ ! -d .harness ] && [ "${HARNESS_ROLE:-}" = worker ]; then
+    echo "harness: route-log: no .harness/ in $PWD (ignored)" >&2; return 0
+  fi
   mkdir -p .harness 2>/dev/null || { echo "harness: route-log: cannot create .harness/" >&2; return 0; }
   stamp=$(date +%Y%m%d-%H%M%S)
   if [ -f "$ROUTE_JSONL" ] && [ -r "$ROUTE_JSONL" ] && [ "$(wc -c < "$ROUTE_JSONL" | tr -d ' ')" -gt "${HARNESS_JSONL_MAX:-1048576}" ]; then
@@ -1129,6 +1133,10 @@ CONFIG_FILE=".harness/config.json"
 # ensure_config — create the documented default config when absent (never fatal)
 ensure_config() {
   [ -e "$CONFIG_FILE" ] && return 0
+  # Workers never create .harness/ (stray dirs break harness-verify's root lookup);
+  # read-only `status` does not start a project; ask/spawn from a conductor do.
+  [ "${HARNESS_ROLE:-}" != worker ] || return 0
+  [ "${1:-}" != status ] || [ -d .harness ] || return 0
   mkdir -p .harness 2>/dev/null || return 0
   cat > "$CONFIG_FILE" 2>/dev/null <<'EOC'
 {
@@ -1588,7 +1596,7 @@ need herdr
 [ "${HERDR_ENV:-}" = 1 ] || die "run Claude inside a herdr pane (HERDR_ENV is not 1)"
 
 case "${1:-}" in
-  spawn|ask|status) ensure_config; reap_idle ;;
+  spawn|ask|status) ensure_config "$1"; reap_idle ;;
 esac
 case "${1:-}" in
   spawn)  shift; cmd_spawn "$@" ;;

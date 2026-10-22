@@ -991,5 +991,28 @@ check "progress.md: no close line in asks" not_grep "^- .* close " .harness/prog
 check "progress.md: closes line capped at 5" [ "$(grep '^Recent closes' .harness/progress.md | tr ';' '\n' | wc -l | tr -d ' ')" -le 5 ]
 unset FAKE_PROMPT_HOOK
 
+# stray .harness: workers and read-only status never create it; a conductor ask does
+setup
+OUT=$(HERDR_ENV=1 PATH="$FAKE_BIN:$HERE/../bin:$PATH" HARNESS_ROLE=worker /bin/bash "$HARNESS" status 2>&1); RC=$?
+check "stray: worker status creates no .harness" [ ! -e .harness ]
+setup
+run status
+check "stray: status without .harness creates none" [ ! -e .harness ]
+setup
+live_worker analyst idle w1:p2
+export FAKE_PROMPT_HOOK="$(REPORT_HOOK analyst)"
+OUT=$(HERDR_ENV=1 HERDR_PANE_ID=w1:p1 HARNESS_IDLE_GRACE=1 HARNESS_POLL_SEC=0.2 PATH="$FAKE_BIN:$HERE/../bin:$PATH" $GUARD env HARNESS_ROLE=worker /bin/bash "$HARNESS" ask analyst "q" 2>&1)
+check "stray: worker ask creates no config.json" [ ! -e .harness/config.json ]
+unset FAKE_PROMPT_HOOK
+setup
+live_worker analyst idle w1:p2
+export FAKE_PROMPT_HOOK="$(REPORT_HOOK analyst)"
+run ask analyst "q"
+check "stray: conductor ask creates config" [ -s .harness/config.json ]
+unset FAKE_PROMPT_HOOK
+setup
+OUT=$(env -u HERDR_ENV HARNESS_ROLE=worker /bin/bash "$HARNESS" route-log '{"event":"x"}' 2>&1)
+check "stray: worker route-log creates none" [ ! -e .harness ]
+
 echo "PASS $pass / FAIL $fail"
 [ "$fail" -eq 0 ]

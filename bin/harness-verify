@@ -29,8 +29,10 @@ STEP_OUT=""
 RAN=0
 
 # enter_root [dir] — the root is the nearest directory at or above the cwd (hook
-# stdin cwd, else the process cwd) that contains .harness/, searched up to the git
-# toplevel inclusive. None found, or outside git: the cwd itself. bin/harness keeps
+# stdin cwd, else the process cwd) that contains .harness/asks/, searched up to the
+# git toplevel inclusive. `harness ask` writes asks/ (conductor side only); plain
+# .harness/ dirs also appear as strays (ensure_config in old versions), so they do
+# not count. None found, or outside git: the cwd itself. bin/harness keeps
 # .harness/ in the conductor's cwd, which may be a repo subdir; a worker that ended
 # its turn deeper (cd src) must still land on that same .harness/.
 enter_root() {
@@ -42,8 +44,8 @@ enter_root() {
     top=$(cd "$(git rev-parse --show-toplevel 2>/dev/null)" 2>/dev/null && pwd -P)
     d=$HOOK_CWD
     while [ -n "$top" ]; do
-      if [ -d "$d/.harness" ]; then cd "$d" 2>/dev/null || true; break; fi
-      [ "$d" = "$top" ] && break
+      if [ -d "$d/.harness/asks" ]; then cd "$d" 2>/dev/null || true; break; fi
+      [ "$d" = "$top" ] || [ "$d" = / ] && break
       d=$(dirname "$d")
     done
   else
@@ -254,7 +256,7 @@ mark_done() {
   [ "${HARNESS_ROLE:-}" = worker ] || return 0
   case "$role" in analyst|implementer|reviewer) ;; *) return 0 ;; esac
   if [ ! -f ".harness/asks/$role.current" ]; then
-    echo "harness-verify: no .harness/asks/$role.current under $ROOT (hook cwd $HOOK_CWD); done marker not written (no .harness/ between the hook cwd and the git toplevel?)" >&2
+    echo "harness-verify: no .harness/asks/$role.current under root $ROOT (hook cwd $HOOK_CWD); done marker not written (root has no ask for $role, or no .harness/asks/ between the hook cwd and the git toplevel)" >&2
     return 0
   fi
   id=$(awk 'NR==1 { print $1 }' ".harness/asks/$role.current" 2>/dev/null)

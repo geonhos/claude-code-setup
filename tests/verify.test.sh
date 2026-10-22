@@ -286,6 +286,23 @@ hvat "$R/sub/deep" "" baseline
 check "none: state at hook cwd" [ -s "$R/sub/deep/.harness/verify/implementer.base" ]
 check "none: nothing above" [ ! -e "$R/sub/.harness" ] && [ ! -e "$R/.harness" ]
 
+# stray .harness (config only, no asks/) in a subdir must not capture the root
+newrepo
+mkdir -p "$R/tests/.harness" "$R/.harness/asks" "$R/.harness/reports" "$R/.claude"
+echo '{}' > "$R/tests/.harness/config.json"
+printf '%s' '{"test":"false"}' > "$R/.claude/harness.json"
+echo "ask3 100" > "$R/.harness/asks/implementer.current"; echo rep > "$R/.harness/reports/implementer.md"
+hvat "$R" "" baseline
+echo c > "$R/new.txt"
+hvat "$R/tests" "$(stopat "$R/tests")" stop
+check "stray: failing test blocks (config from real root)" [ "$(printf '%s' "$OUT" | jq -r .decision)" = block ]
+check "stray: state at real root" [ "$(jq -r .status "$R/.harness/verify/implementer.json")" = fail ]
+check "stray: no verify dir in stray" [ ! -e "$R/tests/.harness/verify" ]
+printf '%s' '{"test":"true"}' > "$R/.claude/harness.json"
+hvat "$R/tests" "$(stopat "$R/tests")" stop
+check "stray: marker at real root" [ -e "$R/.harness/done/implementer.ask3" ]
+check "stray: no done dir in stray" [ ! -e "$R/tests/.harness/done" ]
+
 # stop: staged at baseline, edited + re-added -> must run
 newrepo
 cfg '{"test":"echo tests-ran > ran.out"}'
