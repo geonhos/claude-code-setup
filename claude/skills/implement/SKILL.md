@@ -25,10 +25,10 @@ change yourself (`harness ask` refuses to run in a worker session anyway).
 2. Run, with the Bash tool timeout raised to 1800000 or in the background:
 
    ```
-   harness ask implementer 'Read .harness/task-implementer.md and do it.' --via skill --timeout 1740000
+   harness ask implementer 'Read .harness/task-implementer.md and do it.' --via skill
    ```
 
-   Why: implementer p95 is above the 600000 default wait, and the Bash foreground cap is 1800000, so the ask waits 29 min.
+   Why: harness waits 1740000 ms (29 min) for the implementer by default (p95 is above the 600000 analyst/reviewer wait), so no `--timeout` is needed; the Bash foreground cap is 1800000, which must be raised to cover it.
 
    Use `--keep` only for a follow-up that needs its previous conversation. The implementer pane is kept between asks (ADR 0006; context is cleared with /clear before every implementer ask, `--keep` skips that). It closes after an exit-0 ask only if `close_after_ask.implementer` is `on_success`; the idle TTL still reaps it.
 3. Handle the exit code as conductor.md's "Exit codes from `harness ask`"

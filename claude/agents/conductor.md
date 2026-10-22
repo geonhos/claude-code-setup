@@ -71,7 +71,8 @@ router that will later suggest the route.
    `harness ask <worker> 'Read .harness/task-<worker>.md and do it.' --via skill`. Always
    call `harness ask` with the Bash tool timeout raised (analyst/reviewer:
    timeout 660000, a little above the worker wait of 600000; implementer:
-   `--timeout 1740000` with Bash timeout 1800000) or
+   Bash timeout 1800000, a little above its default worker wait of 1740000;
+   `--timeout` is optional) or
    in the background; the worker may take minutes.
    `harness ask` clears a live worker's context before each task (the
    implementer always; analyst/reviewer when their context is large). Add
@@ -112,7 +113,7 @@ of the progress file.
   An implementer message "still verifying (Stop hook running)" means its
   verification outlived the ask timeout: leave `.pending` alone, wait for
   idle, then `harness report implementer`. A stale `.pending` (hook killed)
-  makes the ask wait the full timeout before exit 5 INTERRUPTED.
+  makes the ask wait the full timeout (implementer 1740000 ms by default) before exit 5 INTERRUPTED.
 - `5` verification failed: the implementer gave up after its lint/test
   attempts (its report and a `verify: FAIL (<step>, <n> attempts)` line are
   printed), or the reviewer's report ends with `VERDICT: FAIL`. Send the

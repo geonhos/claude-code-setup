@@ -179,6 +179,17 @@ run ask implementer "do it" --timeout 1000
 check "ask reuse: no spawn" not_logged "agent start"
 check "ask custom timeout" logged "--wait --timeout 1000"
 check "ask stale report replaced" [ "$OUT" = "NEW" ]
+# role-aware default timeout: implementer 1740000, reviewer 600000, explicit wins
+: > "$FAKE_LOG"
+run ask implementer "do it"
+check "default timeout: implementer 1740000" logged "--wait --timeout 1740000"
+: > "$FAKE_LOG"
+echo idle > "$FAKE_DIR/live.$(WN reviewer)"
+export FAKE_PROMPT_HOOK="mkdir -p $WORK/.harness/reports && printf 'R\n' > $WORK/.harness/reports/reviewer.md"
+run ask reviewer "review"
+check "default timeout: reviewer 600000" logged "--wait --timeout 600000"
+check "default timeout: reviewer not 1740000" not_logged "--timeout 1740000"
+unset FAKE_PROMPT_HOOK
 
 # --- ask: blocked before prompt --------------------------------------------------
 setup

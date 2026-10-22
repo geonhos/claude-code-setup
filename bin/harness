@@ -4,6 +4,7 @@
 #
 #   harness spawn  <agent> [--direction right|down]
 #   harness ask    <agent> '<instruction>' [--timeout MS] [--fresh|--keep] [--via skill|conductor]
+#     default --timeout: implementer 1740000, analyst/reviewer 600000
 #   harness report <agent>
 #   harness status
 #   harness close  <agent>|--all|--legacy [--force]
@@ -61,6 +62,7 @@ JSONL=".harness/progress.jsonl"
 PROGRESS_MD=".harness/progress.md"
 ROUTE_JSONL=".harness/routing.jsonl"
 DEFAULT_TIMEOUT=600000
+IMPLEMENTER_TIMEOUT=1740000   # default --timeout for the implementer (Stop-hook verify can take 10 min)
 TAB=$(printf '\t')
 
 usage() {
@@ -881,6 +883,7 @@ ask_inner() {
   local agent=${1:-} text=${2:-} timeout=$DEFAULT_TIMEOUT fresh=0 keep=0
   [ -n "$agent" ] && [ -n "$text" ] || usage
   valid_agent "$agent"
+  [ "$agent" != implementer ] || timeout=$IMPLEMENTER_TIMEOUT
   shift 2
   while [ $# -gt 0 ]; do
     case "$1" in
