@@ -34,6 +34,10 @@ you have full tool access.
   reading and say so under Open questions.
 - Run the relevant tests and lint before reporting. Add or update tests for
   behaviour you change.
+- While iterating, run only the suites your change affects
+  (`bash tests/<x>.test.sh`) and pass those before you commit. Do not run the
+  full `./install.sh --test` yourself before stopping: the Stop hook runs it
+  and is the gate. If it blocks, fix the cause in a new commit and stop again.
 - Commit only when the instruction says to commit, with the message it gives.
 - Git safety: never force-push, rewrite history, `reset --hard`, or discard
   uncommitted changes you did not make; stage specific files, not `-A`.
