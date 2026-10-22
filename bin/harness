@@ -35,7 +35,7 @@
 # reviewer when ctx > HARNESS_CTX_RESET (default 120000) or with --fresh;
 # --keep skips it. Reset = /clear, else close + respawn.
 # Pane lifecycle (config: .harness/config.json, created on first use; env overrides):
-#   close_after_ask.<role> never|on_success (implementer on_success, others never);
+#   close_after_ask.<role> never|on_success (default never for all roles);
 #     env HARNESS_CLOSE_AFTER_ASK_<ROLE>. on_success = ask exit 0 (reviewer: 0 or 5).
 #   idle_ttl_minutes (default 30, 0 = off; env HARNESS_IDLE_TTL_MINUTES): at the start
 #     of ask|spawn|status, scoped workers of this repo idle longer than that since
@@ -1141,7 +1141,7 @@ ensure_config() {
   cat > "$CONFIG_FILE" 2>/dev/null <<'EOC'
 {
   "_doc": "close_after_ask.<role>: never | on_success (close the worker after `harness ask` exits 0; reviewer: 0 or 5). idle_ttl_minutes: close this repo's workers idle longer than N minutes after their last collected report (0 = off). HARNESS_NO_AUTOCLOSE=1 disables both. Env overrides: HARNESS_CLOSE_AFTER_ASK_<ROLE>, HARNESS_IDLE_TTL_MINUTES.",
-  "close_after_ask": { "analyst": "never", "implementer": "on_success", "reviewer": "never" },
+  "close_after_ask": { "analyst": "never", "implementer": "never", "reviewer": "never" },
   "idle_ttl_minutes": 30
 }
 EOC
@@ -1152,7 +1152,6 @@ EOC
 close_after_policy() {
   local up v def=never
   up=$(printf %s "$1" | tr 'a-z' 'A-Z')
-  [ "$1" = implementer ] && def=on_success
   eval "v=\${HARNESS_CLOSE_AFTER_ASK_$up:-}"
   [ -n "$v" ] || v=$(jq -r --arg r "$1" '.close_after_ask[$r] // empty' "$CONFIG_FILE" 2>/dev/null)
   case "$v" in never|on_success) echo "$v" ;; *) echo "$def" ;; esac

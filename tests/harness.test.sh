@@ -862,7 +862,15 @@ echo '{"idle_ttl_minutes": 60}' > .harness/config.json
 run status
 check "ttl: config lowers ttl" logged "pane close w1:p2"
 
-# implementer on_success closes after ask 0, not after 5; analyst never; env override
+# default: implementer pane is kept (ADR 0006); config/env on_success closes after ask 0, not after 5
+setup
+live_worker implementer idle w1:p2
+export FAKE_PROMPT_HOOK="$(REPORT_HOOK implementer)"
+run ask implementer "do it"
+check "default: ask rc 0" [ "$RC" -eq 0 ]
+check "default: implementer pane kept" not_logged "pane close"
+check "default: config template says never" jq -e '.close_after_ask.implementer=="never"' .harness/config.json
+export HARNESS_CLOSE_AFTER_ASK_IMPLEMENTER=on_success
 setup
 live_worker implementer idle w1:p2
 export FAKE_PROMPT_HOOK="mkdir -p $WORK/.harness/reports; printf '# implementer report\nstatus: done\n' > $WORK/.harness/reports/implementer.md"
@@ -894,7 +902,7 @@ live_worker implementer idle w1:p2
 export FAKE_PROMPT_HOOK="$(REPORT_HOOK implementer)"
 HARNESS_NO_AUTOCLOSE=1 run ask implementer "do it"
 check "after_ask: HARNESS_NO_AUTOCLOSE=1 keeps worker" not_logged "pane close"
-unset FAKE_PROMPT_HOOK
+unset FAKE_PROMPT_HOOK HARNESS_CLOSE_AFTER_ASK_IMPLEMENTER
 
 # --legacy: only same-repo unscoped workers
 setup
@@ -915,6 +923,7 @@ check "migration hint mentions --legacy" grep -q "harness close --legacy" <<<"$O
 
 # --- review fixes: --keep note, stamps, race, pane gone, progress.md ------------------
 # 1: --keep after an auto-close prints the note; no note without --keep; exit 5 keeps the worker
+export HARNESS_CLOSE_AFTER_ASK_IMPLEMENTER=on_success
 setup
 live_worker implementer idle w1:p2
 export FAKE_PROMPT_HOOK="$(REPORT_HOOK implementer)"
@@ -942,7 +951,7 @@ run ask implementer "one-b" --fresh >/dev/null; : > "$FAKE_LOG"
 run ask implementer "fix" --keep
 check "exit 5 then --keep: context kept, no note" not_grep "previous context is gone" <(echo "$OUT")
 check "exit 5 then --keep: no /clear" not_logged "/clear"
-unset FAKE_PROMPT_HOOK
+unset FAKE_PROMPT_HOOK HARNESS_CLOSE_AFTER_ASK_IMPLEMENTER
 
 # 2: harness report on an interrupted verify stamps .finished
 setup

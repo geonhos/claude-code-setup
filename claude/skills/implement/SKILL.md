@@ -30,7 +30,7 @@ change yourself (`harness ask` refuses to run in a worker session anyway).
 
    Why: implementer p95 is above the 600000 default wait, and the Bash foreground cap is 1800000, so the ask waits 29 min.
 
-   Use `--keep` only for a follow-up that needs its previous conversation. It has no effect after an implementer ask that exited 0: the pane auto-closed, so the next ask runs on a fresh worker (harness prints a `was closed` note), unless `close_after_ask.implementer` is `never` in `.harness/config.json`.
+   Use `--keep` only for a follow-up that needs its previous conversation. The implementer pane is kept between asks (ADR 0006; context is cleared with /clear before every implementer ask, `--keep` skips that). It closes after an exit-0 ask only if `close_after_ask.implementer` is `on_success`; the idle TTL still reaps it.
 3. Handle the exit code as conductor.md's "Exit codes from `harness ask`"
    section says. In particular `5` means its lint/test checks failed after
    retries: send the printed failure back with another `/implement` (its

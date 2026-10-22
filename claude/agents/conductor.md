@@ -118,12 +118,12 @@ of the progress file.
   printed), or the reviewer's report ends with `VERDICT: FAIL`. Send the
   failure or the findings to the implementer with `/implement`
   (an implementer whose own last ask exited 5 keeps its context; use `--keep` for any other
-  explicit follow-up, `--fresh` to force a reset; `--keep` has no effect after an
-  implementer exit 0, because the pane auto-closed, unless
-  `close_after_ask.implementer=never`; harness prints a `was closed` note).
+  explicit follow-up, `--fresh` to force a reset; the implementer pane is kept
+  after exit 0 by default, unless `close_after_ask.implementer=on_success`, then
+  `--keep` has no effect and harness prints a `was closed` note).
   If it still fails after 2 such rounds, ask the user.
-- Pane lifecycle: the implementer's pane closes itself after an ask that exits
-  0 (the next ask respawns it), and any worker idle past `idle_ttl_minutes`
+- Pane lifecycle: the implementer's pane is kept between asks (ADR 0006;
+  `close_after_ask.implementer=on_success` closes it after exit 0), and any worker idle past `idle_ttl_minutes`
   (default 30) with a collected report is reaped at the next
   ask/spawn/status. Config is `.harness/config.json` (`close_after_ask`,
   `idle_ttl_minutes`); `HARNESS_NO_AUTOCLOSE=1` turns both off. Close by hand
