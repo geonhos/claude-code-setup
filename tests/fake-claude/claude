@@ -1,0 +1,44 @@
+#!/bin/bash
+# Fake `claude -p` for tests/headless.test.sh. Not a real client.
+# $FAKE_CLAUDE_MODE: success|noreport|error|maxturns|slow<N>|hang|hangpre|nostart|junk
+# $FAKE_PERM sets init permissionMode (default auto). hangpre sleeps before any output.
+#   success   init + tool_use + result success; writes the report via $FAKE_REPORT_CMD
+#   noreport  like success, no report      error  result is_error (rc 1)
+#   maxturns  error_max_turns (rc 1)       slow<N> sleeps N*0.1s, then success
+#   hang      sleeps until killed (TERM -> rc 143)   nostart  rc 127, no output
+#   junk      non-JSON and unknown event types mixed in, then success
+# argv (%q) and stdin go to $FAKE_LOG; $FAKE_DIR/claude.n counts runs (session sess-<n>).
+set -u
+: "${FAKE_LOG:?}"; : "${FAKE_DIR:?}"
+mode=${FAKE_CLAUDE_MODE:-success}
+{ printf 'claude: '; printf '%q ' "$@"; printf '\n'; } >> "$FAKE_LOG"
+input=$(cat)
+printf 'claude stdin: %s\n' "$input" >> "$FAKE_LOG"
+[ "$mode" != nostart ] || exit 127
+n=$(( $(cat "$FAKE_DIR/claude.n" 2>/dev/null || echo 0) + 1 )); echo "$n" > "$FAKE_DIR/claude.n"
+sid=sess-$n
+resume=""; prev=""
+for a in "$@"; do [ "$prev" != --resume ] || resume=$a; prev=$a; done
+[ -z "$resume" ] || sid=$resume
+[ "$mode" != hangpre ] || { trap 'exit 143' TERM; while :; do sleep 0.1; done; }
+ev() { printf '%s\n' "$1"; }
+ev '{"type":"system","subtype":"hook_started","hook_event":"Stop","hook_name":"Stop"}'
+ev '{"type":"system","subtype":"init","model":"fake-model","permissionMode":"'"${FAKE_PERM:-auto}"'","cwd":"'"$PWD"'","session_id":"'"$sid"'"}'
+ev '{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Bash","input":{"command":"echo hi"}}],"usage":{"input_tokens":10,"cache_creation_input_tokens":20,"cache_read_input_tokens":30}},"session_id":"'"$sid"'"}'
+result() { # subtype is_error
+  ev '{"type":"result","subtype":"'"$1"'","is_error":'"$2"',"num_turns":3,"duration_ms":1500,"total_cost_usd":0.0123,"session_id":"'"$sid"'","permission_denials":[{"tool_name":"Bash"}]}'
+}
+case "$mode" in
+  hang) trap 'exit 143' TERM; while :; do sleep 0.1; done ;;
+  slow*) sleep "$(awk -v n="${mode#slow}" 'BEGIN { printf "%.1f", n * 0.1 }')"
+         [ -z "${FAKE_REPORT_CMD:-}" ] || /bin/bash -c "$FAKE_REPORT_CMD"
+         result success false; exit 0 ;;
+  junk) ev 'this is not json'; ev '{"type":"future_event","x":1}'; ev '{"type":"rate_limit_event"}'; ev '{broken' ;;
+esac
+case "$mode" in
+  error) result error_during_execution true; exit 1 ;;
+  maxturns) result error_max_turns true; exit 1 ;;
+  noreport) result success false; exit 0 ;;
+  *) [ -z "${FAKE_REPORT_CMD:-}" ] || /bin/bash -c "$FAKE_REPORT_CMD"
+     result success false; exit 0 ;;
+esac

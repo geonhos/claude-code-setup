@@ -12,3 +12,5 @@ verified_by: tests/harness-ask.test.sh; live reviewer ask exit 0 (2026-10-21)
 **Decision.** `harness ask` writes `.harness/asks/<role>.current` (ask-id, start). The worker Stop hook writes `.harness/done/<role>.<ask-id>` unless it is blocking. An ask is complete when marker epoch ≥ report mtime ≥ ask start. herdr status is secondary: blocked → 2; idle with no marker and no `.pending` → 30s grace → 3; anything else waits until the deadline.
 
 **Consequences.** A worker that genuinely finishes without a report now waits for the full timeout (exit 4) instead of 30s. Workers started before a hook change need a respawn. Same-second report/marker ordering is indistinguishable (accepted).
+
+Not used for `runner=headless` roles; completion there = process exit (0007).

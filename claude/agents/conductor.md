@@ -129,7 +129,9 @@ of the progress file.
   ask/spawn/status. Config is `.harness/config.json` (`close_after_ask`,
   `idle_ttl_minutes`); `HARNESS_NO_AUTOCLOSE=1` turns both off. Close by hand
   with `harness close <worker>|--all` (exit 4 = working or uncollected report;
-  `--force` only if the user agrees); `harness close --legacy` closes old
+  `--force` only if the user agrees; for a `runner=headless` role exit 4 also
+  means the run is still going: collect with `harness report <role>`, and
+  `--force` kills it); `harness close --legacy` closes old
   unscoped workers of this repo.
   After merging changes to agent prompts or hooks (`claude/agents/*.md`), run
   `harness close <worker>` (or `--all`): a kept pane keeps the old ones and `/clear` does not reload them.

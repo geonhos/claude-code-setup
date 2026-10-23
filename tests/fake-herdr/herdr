@@ -17,6 +17,7 @@
 #         $FAKE_DIR/no_stop_hook    exists => the worker's Stop hook does not fire after a prompt
 #         (otherwise, when the agent ends the prompt idle/done, `harness-verify done <role>` runs
 #          from the caller's cwd with HARNESS_ROLE=worker, like the real Stop hook)
+#         $FAKE_DIR/no_run          exists => `pane run` does nothing (shell not at a prompt)
 #         $FAKE_PROMPT_HOOK         shell snippet run when `agent prompt` is called (not for /clear)
 set -u
 : "${FAKE_DIR:?FAKE_DIR must be set}"
@@ -41,7 +42,7 @@ case "$sub" in
     # a pane is gone once closed (marker) ; never-closed panes exist
     if [ -f "$FAKE_DIR/get_error" ]; then echo '{"error":{"code":"socket_unavailable"}}'; exit 1; fi
     if [ -f "$FAKE_DIR/closed.${3:-}" ]; then echo '{"error":{"code":"pane_not_found","message":"pane not found"},"id":"cli:pane:get"}'; exit 1; fi
-    echo '{"id":"cli:pane:get","result":{"pane":{"pane_id":"'"${3:-}"'"}},"type":"pane_info"}'
+    echo '{"id":"cli:pane:get","result":{"pane":{"pane_id":"'"${3:-}"'","cwd":"'"${FAKE_CWD:-$PWD}"'"}},"type":"pane_info"}'
     ;;
   "pane close")
     # $FAKE_DIR/close_noop => the pane survives `pane close`
@@ -150,8 +151,15 @@ case "$sub" in
     echo "fake screen line 2"
     ;;
   "pane read")
-    echo "fake screen line 1"
-    echo "fake screen line 2"
+    if [ -f "$FAKE_DIR/run.out" ]; then cat "$FAKE_DIR/run.out"; else
+      echo "fake screen line 1"
+      echo "fake screen line 2"
+    fi
+    ;;
+  "pane run")
+    # headless viewer pane: run the command detached, like a real pane shell ($FAKE_NO_RUN => nothing happens)
+    [ -f "$FAKE_DIR/no_run" ] || { ( cd "$PWD" && HARNESS_ROLE=worker bash -c "${*:4}" ) >"$FAKE_DIR/run.out" 2>&1 & }
+    echo '{"id":"cli:pane:run","result":{},"type":"pane_run"}'
     ;;
   *)
     echo "fake herdr: unhandled '$*'" >&2; exit 1

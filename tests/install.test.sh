@@ -87,6 +87,8 @@ check "installed output lists route hook" grep -q 'route hook' "$T/out.txt"
 check "installed output lists skills" grep -q '^  skills  ' "$T/out.txt"
 check "harness symlink" [ "$(readlink "$BIN_DIR/harness")" = "$REPO/bin/harness" ]
 check "harness-verify symlink" [ "$(readlink "$BIN_DIR/harness-verify")" = "$REPO/bin/harness-verify" ]
+check "harness-run symlink" [ "$(readlink "$BIN_DIR/harness-run")" = "$REPO/bin/harness-run" ]
+check "harness-view symlink" [ "$(readlink "$BIN_DIR/harness-view")" = "$REPO/bin/harness-view" ]
 check "CLAUDE.md not created" [ ! -e "$CLAUDE_DIR/CLAUDE.md" ]
 check "global gitignore has .harness/" grep -qx '.harness/' "$GIT_IGNORE"
 check "global gitignore keeps old lines" grep -qx 'node_modules/' "$GIT_IGNORE"

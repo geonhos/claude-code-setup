@@ -409,13 +409,24 @@ num_or_null() { case "${1:-}" in ''|*[!0-9]*) echo null ;; *) echo "$1" ;; esac;
 record_progress() {
   local agent=$1 text=$2 rc=$3 t0=$4 hb=$5 out=$6 cb=${7:-}
   local report="$REPORT_DIR/$agent.md" vj=.harness/verify/implementer.json
-  local now ts stamp ha sess ca status="" summary="" verify="" logf n brief sha="" va="" clr=none
+  local now ts stamp ha sess ca status="" summary="" verify="" logf n brief sha="" va="" clr=none hl='{}'
   now=$(date +%s)
   [ ! -s ".harness/asks/$agent.clear" ] || clr=$(sed -n 1p ".harness/asks/$agent.clear")
   case "$clr" in ok|retry|respawn|none) ;; *) clr=none ;; esac
   ts=$(date -u +%Y-%m-%dT%H:%M:%SZ)
   stamp=$(date +%Y%m%d-%H%M%S)
-  ha=$(git_head); sess=$(agent_session "$agent"); ca=$(ctx_tokens "$agent")
+  ha=$(git_head)
+  if use_hl "$agent"; then
+    # headless: session and context come from the run's exit.json, not herdr
+    hl=$(hl_progress_obj "$agent" "$t0")
+    sess=$(printf '%s' "$hl" | jq -r '.session // empty' 2>/dev/null)
+    ca=$(printf '%s' "$hl" | jq -r '.ctx_after // empty' 2>/dev/null)
+    cb=$(sed -n 's/^ctx_before=//p' ".harness/asks/$agent.run" 2>/dev/null | head -n 1)
+    clr=none
+    hl=$(printf '%s' "$hl" | jq -c 'del(.session, .ctx_after)' 2>/dev/null) || hl='{}'
+  else
+    sess=$(agent_session "$agent"); ca=$(ctx_tokens "$agent")
+  fi
   if [ -f "$report" ]; then
     status=$(sed -n 's/^status: *//p' "$report" | head -n 1)
     summary=$(sed -n 's/^# *//p' "$report" | head -n 1)
@@ -440,6 +451,14 @@ record_progress() {
       printf '\n## Report\n\n'; cat "$report"
     else
       printf '\n## Screen / output (no report)\n\n'; cat "$out"
+      if [ "$hl" != '{}' ]; then
+        printf '\n## Viewer pane (last 40 lines)\n\n'
+        herdr pane read "$(hl_registered_pane "$agent")" 2>/dev/null | tail -n 40
+      fi
+    fi
+    if [ "$hl" != '{}' ]; then
+      printf '\n## Run\n\n'
+      printf '%s' "$hl" | jq -r '"result \(.result // "-"), turns \(.turns // "-"), cost $\(.cost_usd // "-"), stream \(.stream_log // "-")"' 2>/dev/null
     fi
   } > "$logf" || return 1
 
@@ -451,11 +470,12 @@ record_progress() {
     --arg instr "$(printf '%s' "$text" | tr '\n' ' ' | cut -c1-160)" \
     --argjson exit "$rc" --arg verify "$verify" --argjson dur "$((now - t0))" \
     --arg hb "$hb" --arg ha "$ha" --argjson cb "$(num_or_null "$cb")" --argjson ca "$(num_or_null "$ca")" \
-    --arg status "$status" --arg summary "$summary" --arg sha "$sha" --argjson va "$(num_or_null "$va")" --arg clr "$clr" '
+    --arg status "$status" --arg summary "$summary" --arg sha "$sha" --argjson va "$(num_or_null "$va")" --arg clr "$clr" \
+    --argjson hl "$hl" '
     def nz: if . == "" then null else . end;
     {ts: $ts, agent: $agent, session: ($session | nz), instr: $instr, exit: $exit,
      verify: ($verify | nz), verify_attempts: $va, dur_s: $dur, head_before: ($hb | nz), head_after: ($ha | nz),
-     ctx_before: $cb, ctx_after: $ca, clear: $clr, status: ($status | nz), summary: ($summary | nz), report_sha: ($sha | nz)}' >> "$JSONL" || return 1
+     ctx_before: $cb, ctx_after: $ca, clear: $clr, status: ($status | nz), summary: ($summary | nz), report_sha: ($sha | nz)} + $hl' >> "$JSONL" || return 1
 
   LAST_LOG=$logf LAST_BRIEF=$brief
   rotate_logs "$logf"
@@ -484,10 +504,11 @@ retro_write() {
   jq -n -c --arg id "$1" --arg role "$2" --arg reason "$3" --argjson exit "$(num_or_null "$4")" \
     --argjson va "$(num_or_null "$5")" --argjson dur "$(num_or_null "$6")" --arg brief "$7" --arg log "$8" \
     --arg report "$9" --argjson late "$([ -n "$late" ] && echo true || echo false)" \
-    --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" '
+    --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg stream "${RETRO_STREAM:-}" '
     def nz: if . == "" then null else . end;
     {ask_id: $id, role: $role, reason: $reason, exit: $exit, verify_attempts: $va, duration_s: $dur,
-     brief: ($brief | nz), log: ($log | nz), report: ($report | nz), late: $late, ts: $ts}' > "$f.tmp.$$" 2>/dev/null \
+     brief: ($brief | nz), log: ($log | nz), report: ($report | nz), late: $late, ts: $ts}
+    + (if $stream != "" then {stream_log: $stream} else {} end)' > "$f.tmp.$$" 2>/dev/null \
     && mv -f "$f.tmp.$$" "$f" || { rm -f "$f.tmp.$$"; return 1; }
 }
 
@@ -510,7 +531,7 @@ retro_to_done() {
 # retro_pending_logs — log paths referenced by pending candidates (rotate_logs keeps them)
 retro_pending_logs() {
   ls "$RETRO_DIR"/*.json >/dev/null 2>&1 || return 0
-  jq -r '.log // empty' "$RETRO_DIR"/*.json 2>/dev/null
+  jq -r '.log // empty, .stream_log // empty' "$RETRO_DIR"/*.json 2>/dev/null
 }
 
 # retro_on_ask <agent> <rc> — after an ask is logged: queue a candidate when it is a
@@ -539,6 +560,7 @@ retro_on_ask() {
   [ ! -f "$REPORT_DIR/$agent.md" ] || rep=$(retro_snapshot "$id" "$REPORT_DIR/$agent.md")
   # the live .harness/task-<role>.md is overwritten by the next ask: point at the log's copy
   bsnap=""; [ -z "${LAST_BRIEF:-}" ] || [ -z "${LAST_LOG:-}" ] || bsnap="$LAST_LOG#brief"
+  RETRO_STREAM=""; ! use_hl "$agent" || RETRO_STREAM=$(jq -r '.stream_log // empty' ".harness/asks/$agent.exit.json" 2>/dev/null)
   retro_write "$id" "$agent" "$reason" "$rc" "$va" "$dur" "$bsnap" "${LAST_LOG:-}" "$rep" \
     || { [ -f "$RETRO_DIR/$id.json" ] || rm -f "$RETRO_DIR/reports/$id.md"; return 0; }
   echo "retro: candidate queued ($reason) — run 'harness retro' when the task is done"
@@ -615,10 +637,12 @@ archive_late() {
   logf="$LOG_DIR/$stamp-$agent-late.md"; n=1
   while [ -e "$logf" ]; do n=$((n + 1)); logf="$LOG_DIR/$stamp-$agent-late-$n.md"; done
   { printf '# %s late report %s (not logged by any ask)\n\n## Report\n\n' "$agent" "$ts"; cat "$report"; } > "$logf" || return 1
-  jq -n -c --arg ts "$ts" --arg agent "$agent" --arg status "$status" --arg summary "$summary" --arg sha "$sha" '
+  local hl='{}'
+  if use_hl "$agent"; then hl=$(hl_progress_obj "$agent" "" | jq -c 'del(.session, .ctx_after)' 2>/dev/null) || hl='{}'; fi
+  jq -n -c --arg ts "$ts" --arg agent "$agent" --arg status "$status" --arg summary "$summary" --arg sha "$sha" --argjson hl "$hl" '
     def nz: if . == "" then null else . end;
     {ts: $ts, agent: $agent, exit: null, late: true, status: ($status | nz),
-     summary: ($summary | nz), report_sha: ($sha | nz)}' >> "$JSONL" || return 1
+     summary: ($summary | nz), report_sha: ($sha | nz)} + $hl' >> "$JSONL" || return 1
   write_progress_md
   return 0
 }
@@ -638,6 +662,20 @@ rotate_logs() {
     [ ! -f "$RETRO_DIR/$(basename "$f" .md).json" ] && rm -f "$f"
   done
   [ -z "$keep" ] || rm -f "$keep"
+  # raw headless streams: gzip once a day old (the run is long over), drop with the logs.
+  # A stream a pending retro candidate names is never gzipped or deleted (compared by base
+  # name without .gz: the candidate says X.jsonl, the file may already be X.jsonl.gz).
+  local stems
+  stems=$(mktemp "${TMPDIR:-/tmp}/harness-stems.XXXXXX") || stems=""
+  retro_pending_logs | sed 's/\.gz$//; s|.*/||' > "${stems:-/dev/null}" 2>/dev/null
+  find "$LOG_DIR" -name '*.jsonl' -mtime +0 2>/dev/null | while IFS= read -r f; do
+    grep -qxF -- "$(basename "$f")" "${stems:-/dev/null}" || gzip -f "$f" 2>/dev/null
+  done
+  find "$LOG_DIR" \( -name '*.jsonl' -o -name '*.jsonl.gz' \) -mtime "+${HARNESS_LOG_DAYS:-14}" 2>/dev/null \
+    | while IFS= read -r f; do
+        grep -qxF -- "$(basename "$f" .gz)" "${stems:-/dev/null}" || rm -f "$f"
+      done
+  [ -z "$stems" ] || rm -f "$stems"
   return 0
 }
 
@@ -669,7 +707,9 @@ write_progress_md() {
     done
     printf '## Workers\n'
     for a in $AGENTS; do
-      if fields=$(agent_fields "$a"); then
+      if use_hl "$a"; then
+        q=$(hl_status_line "$a" progress)
+      elif fields=$(agent_fields "$a"); then
         if [ "$a" = "$known" ]; then c=$knownctx; else c=$(ctx_tokens "$a"); fi
         q="$a ${fields%%$TAB*} ctx $(fmt_ctx "$c")"
       else
@@ -898,7 +938,8 @@ cmd_ask() {
   ASK_TMP=$(mktemp "${TMPDIR:-/tmp}/harness-ask.XXXXXX") || ask_inner "$@"
   ASK_AGENT=$agent ASK_TEXT=$text ASK_DONE=0 ASK_PID=""
   ASK_PF=".harness/asks/$agent.preflight"; rm -f "$ASK_PF" ".harness/asks/$agent.clear"
-  ASK_T0=$(date +%s); ASK_HB=$(git_head); cb=$(ctx_tokens "$agent" 2>/dev/null) || cb=""
+  ASK_T0=$(date +%s); ASK_HB=$(git_head); cb=""
+  use_hl "$agent" || cb=$(ctx_tokens "$agent" 2>/dev/null) || cb=""
   CTX_BEFORE=$cb
   trap 'ask_finish 143' TERM
   trap 'ask_finish 130' INT
@@ -940,6 +981,9 @@ ask_inner() {
   if [ "$agent" = implementer ] && ! command -v harness-verify >/dev/null 2>&1; then
     die "harness-verify not found on PATH; run ./install.sh (the implementer's checks would silently not run)"
   fi
+
+  # headless roles (ADR 0007) never touch herdr agents: run claude -p in a viewer pane
+  if is_headless "$agent"; then ask_headless "$agent" "$text" "$timeout" "$fresh" "$keep"; fi
 
   local pane existed=0
   agent_fields "$agent" >/dev/null && existed=1
@@ -1133,6 +1177,7 @@ cmd_report() {
   [ -n "$agent" ] || usage
   valid_agent "$agent"
   local report="$REPORT_DIR/$agent.md" fields
+  if use_hl "$agent"; then report_headless "$agent"; fi
   fields=$(agent_fields "$agent")
   ! agent_fields "$agent" >/dev/null || check_worker_cwd "$agent" "$(agent_json "$agent")"
   if [ "${fields%%$TAB*}" = working ]; then
@@ -1153,7 +1198,9 @@ cmd_report() {
 cmd_status() {
   local a fields
   for a in $AGENTS; do
-    if fields=$(agent_fields "$a"); then
+    if use_hl "$a"; then
+      hl_status_line "$a" status
+    elif fields=$(agent_fields "$a"); then
       printf '%-12s %-8s %-8s %s\n' "$a" "${fields%%$TAB*}" "${fields#*$TAB}" "$(fmt_ctx "$(ctx_tokens "$a")")"
     else
       printf '%-12s %s\n' "$a" "-"
@@ -1231,13 +1278,14 @@ has_uncollected() {
   return 1
 }
 
-# log_close <role> <pane> <reason> — event line in progress.jsonl (key `role`, not
+# log_close <role> <pane> <reason> [runner] — event line in progress.jsonl (key `role`, not
 # `agent`, so per-agent ask lookups never match it) + progress.md refresh
 log_close() {
   [ -n "$3" ] || return 0
   mkdir -p .harness 2>/dev/null || return 0
-  jq -n -c --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg role "$1" --arg pane "$2" --arg reason "$3" \
-    '{ts: $ts, event: "close", role: $role, pane: $pane, reason: $reason}' >> "$JSONL" 2>/dev/null
+  jq -n -c --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg role "$1" --arg pane "$2" --arg reason "$3" --arg runner "${4:-}" \
+    '{ts: $ts, event: "close", role: $role, pane: $pane, reason: $reason}
+     + (if $runner != "" then {runner: $runner} else {} end)' >> "$JSONL" 2>/dev/null
   write_progress_md
   return 0
 }
@@ -1296,6 +1344,7 @@ close_refusal() {
 # 4 refused (exits 1/6 through die/check_worker_cwd like the single-agent form)
 close_one() {
   local agent=$1 force=$2 skip=$3 fields
+  if use_hl "$agent"; then close_headless "$agent" "$force" "$skip"; return $?; fi
   if ! fields=$(agent_fields "$agent"); then
     [ "$skip" = 1 ] && return 0
     die "$agent is not running"
@@ -1372,6 +1421,10 @@ maybe_close_after_ask() {
     5) [ "$agent" = reviewer ] || return 0 ;;
     *) return 0 ;;
   esac
+  if use_hl "$agent"; then
+    ( CLOSE_REASON=after_ask; close_headless "$agent" 0 1 ) >&2 || true
+    return 0
+  fi
   # a pane harness did not create is never closed automatically (no noise either)
   pane=$(agent_pane "$agent")
   [ -n "$pane" ] && grep -Fxq -- "$agent $pane" "$PANES_FILE" 2>/dev/null || return 0
@@ -1394,6 +1447,13 @@ reap_idle() {
     [ -f "$f" ] || continue
     mt=$(file_mtime "$f") || continue
     [ $((now - mt)) -ge $((ttl * 60)) ] || continue
+    if use_hl "$a"; then
+      pane=$(hl_registered_pane "$a"); [ -n "$pane" ] || continue
+      hl_alive "$a" && continue
+      has_uncollected "$a" && continue
+      ( hl_finish_close "$a" "$pane" ttl ) >&2 || true
+      continue
+    fi
     j=$(agent_json "$a") || continue
     c=$(printf '%s' "$j" | jq -r '.result.agent.cwd // empty' 2>/dev/null)
     [ -n "$c" ] && cwd_in_repo "$c" || continue
@@ -1445,13 +1505,16 @@ retro_done_from_brief() {
 # retro_brief <n> <candidate-files> <toplevel> — the retro brief on stdout: ask-ids,
 # reasons, numbers and file paths only.
 retro_brief() {
-  local n=$1 files=$2 top=$3 f
+  local n=$1 files=$2 top=$3 f sl
   printf '# Task: failure retro (%s candidate%s)\n\n' "$n" "$([ "$n" -eq 1 ] || echo s)"
   printf 'Read-only analysis of failed asks. Evidence lives in the files listed per candidate; open only those.\n\n'
   printf '## Candidates\n\n'
   printf '%s' "$files" | while IFS= read -r f; do
     [ -n "$f" ] || continue
-    jq -r '"### \(.ask_id) — \(.role), \(.reason)\n- exit: \(.exit // "?") · verify attempts: \(.verify_attempts // "-") · duration: \(.duration_s // "?")s · late: \(.late)\n- log: \(.log // "-")\n- brief: \(.brief // "-" | if endswith("#brief") then "\(.[:-6]) (its `## Brief` section; the live task file was overwritten since)" else . end)\n- report: \(.report // "-")\n"' "$f" 2>/dev/null
+    sl=$(jq -r '.stream_log // empty' "$f" 2>/dev/null)
+    # rotate_logs gzips old streams: point at the .gz when only that exists
+    if [ -n "$sl" ] && [ ! -e "$sl" ] && [ -e "$sl.gz" ]; then sl="$sl.gz"; fi
+    jq -r --arg sl "$sl" '"### \(.ask_id) — \(.role), \(.reason)\n- exit: \(.exit // "?") · verify attempts: \(.verify_attempts // "-") · duration: \(.duration_s // "?")s · late: \(.late)\n- log: \(.log // "-")\(if $sl != "" then "\n- stream: \($sl) (raw claude -p stream-json\(if $sl | endswith(".gz") then ", gzip: use gzip -dc" else "" end); read only the lines you need)" else "" end)\n- brief: \(.brief // "-" | if endswith("#brief") then "\(.[:-6]) (its `## Brief` section; the live task file was overwritten since)" else . end)\n- report: \(.report // "-")\n"' "$f" 2>/dev/null
   done
   printf '## What to write\n\n'
   printf 'For each candidate (or one note per group of candidates with the same cause) write at most 120 words as:\n\n'
@@ -1590,7 +1653,13 @@ cmd_metrics() {
       { total: role_stat($rs), clear: clear_stat($rs),
         roles: (["analyst", "implementer", "reviewer"] | map(. as $r | {key: $r, value: role_stat($rs | map(select(.agent == $r)))}) | from_entries) }
       | .roles.implementer.verify_failure_rate = pct(.roles.implementer.exit5; .roles.implementer.asks)
-      | .roles.reviewer.fail_rate = pct(.roles.reviewer.exit5; .roles.reviewer.asks);
+      | .roles.reviewer.fail_rate = pct(.roles.reviewer.exit5; .roles.reviewer.asks)
+      | .by_runner = ($rs | group_by("\(.agent)/\(.runner // "pane")")
+          | map({key: "\(.[0].agent)/\(.[0].runner // "pane")",
+                 value: (role_stat(.) + {cost_usd_sum: (map(.cost_usd | select(type == "number")) | add // 0),
+                   cost_usd_median: (map(select(.late != true) | .cost_usd | select(type == "number")) | median),
+                   startup_s_median: (map(select(.late != true) | .startup_s | select(type == "number")) | median)})})
+          | from_entries);
     (rows) as $all
     | (if $since == "" then $now - 28 * 86400 else ($since + "T00:00:00Z" | fromdateiso8601) end) as $start
     | ($now - $start) as $len
@@ -1624,6 +1693,10 @@ cmd_metrics() {
           row("reviewer FAIL rate"; (.current.roles.reviewer.fail_rate | pc); (.prev.roles.reviewer.fail_rate | pc)),
           (["analyst", "implementer", "reviewer"][] as $r | row("duration median / p95  \($r)"; (.current.roles[$r] | dur); (.prev.roles[$r] | dur))),
           "",
+          (if ((.current.by_runner | keys) + (.prev.by_runner | keys) | any(endswith("/headless"))) then
+            "  runner split (agent/runner: asks, abnormal, duration median, cost sum, startup median)",
+            ((.current.by_runner | to_entries[]) | "    \(.key | pad(24)) \(.value.asks) asks · abn \(.value.abnormal) · \(.value | dur) · $\(.value.cost_usd_sum) · startup \(.value.startup_s_median | f)s")
+           else empty end),
           "  exits current:  \(.current.total.exit | dist)",
           "  exits previous: \(.prev.total.exit | dist)",
           "",
@@ -1632,6 +1705,302 @@ cmd_metrics() {
             "wiki: pages active \(.wiki.pages.active) · stale \(.wiki.pages.stale) · draft \(.wiki.pages.draft) · superseded \(.wiki.pages.superseded) · other \(.wiki.pages.other)",
             "wiki: inbox \(.wiki.inbox_items) item(s), oldest \(.wiki.inbox_oldest_days | if . == null then "-" else "\(.)d" end) · index \(.wiki.index_lines) lines · SessionStart wiki \(.wiki.session_start_bytes) bytes" end) ]
       | .[] end'
+}
+
+# --- headless runner (ADR 0007) --------------------------------------------------------------
+# runner.<role> = headless: `harness ask` writes the instruction to a file and runs
+# `harness-run` (claude -p, stream-json) in a kept viewer pane. Completion = the run's
+# .harness/asks/<role>.exit.json carrying this ask-id; no herdr agent, no Stop-hook marker.
+
+# runner_of <role> — headless|pane (env HARNESS_RUNNER_<ROLE>, then config runner.<role>, then pane)
+runner_of() {
+  local up v
+  up=$(printf %s "$1" | tr 'a-z' 'A-Z')
+  eval "v=\${HARNESS_RUNNER_$up:-}"
+  [ -n "$v" ] || v=$(jq -r --arg r "$1" '.runner[$r] // empty' "$CONFIG_FILE" 2>/dev/null)
+  case "$v" in headless) echo headless ;; *) echo pane ;; esac
+}
+
+# use_hl <role> — this role is handled by the headless code: configured so, or (runner flipped
+# back to pane) a headless run is still alive. A leftover .run / exit.json is not enough, and
+# herdr answers never decide it.
+use_hl() {
+  [ "$(runner_of "$1")" != headless ] || return 0
+  hl_alive "$1"
+}
+is_headless() { [ "$(runner_of "$1")" = headless ]; }
+
+# hl_registered_pane <role> — the viewer pane in .harness/panes (last line for the role)
+hl_registered_pane() { awk -v r="$1" '$1 == r { p = $2 } END { if (p != "") print p }' "$PANES_FILE" 2>/dev/null; }
+
+# hl_alive <role> — a harness-run for the role is running (pid file, live harness-run process)
+hl_alive() {
+  local f=".harness/asks/$1.pid" id pid
+  [ -f "$f" ] || return 1
+  read -r id pid < "$f"
+  digits_only "${pid:-}" && kill -0 "$pid" 2>/dev/null || return 1
+  ps -p "$pid" -o command= 2>/dev/null | grep -q 'harness-run'
+}
+# hl_last_session <role> — session id of the role's latest headless progress line that has one
+hl_last_session() {
+  [ -f "$JSONL" ] || return 1
+  grep -v '"event":"close"' "$JSONL" 2>/dev/null | tail -n 200 \
+    | jq -R -r --arg a "$1" 'fromjson? | select(type == "object" and .agent == $a and .runner == "headless" and ((.session // "") != "")) | .session' 2>/dev/null \
+    | tail -n 1 | grep .
+}
+hl_pid() { awk 'NR == 1 { print $2 }' ".harness/asks/$1.pid" 2>/dev/null; }
+# hl_done <role> <ask-id> — exit.json exists for that ask
+hl_done() { grep -q "\"ask_id\":\"$2\"" ".harness/asks/$1.exit.json" 2>/dev/null; }
+
+# hl_pane <role> — print the role's viewer pane: reuse the registered one while it exists in
+# this repo, else split a plain shell pane (no herdr agent) and register it
+hl_pane() {
+  local role=$1 pane out c dir
+  if herdr agent get "$(wname "$role")" >/dev/null 2>&1; then
+    die "a pane-mode $role worker is live; close it first: harness close $role"
+  fi
+  pane=$(hl_registered_pane "$role")
+  if [ -n "$pane" ]; then
+    if out=$(herdr pane get "$pane" 2>/dev/null); then
+      c=$(printf '%s' "$out" | jq -r '.result.pane.cwd // empty' 2>/dev/null)
+      if [ -z "$c" ] || cwd_in_repo "$c"; then printf '%s\n' "$pane"; return 0; fi
+    fi
+    unregister "$role" "$pane"
+  fi
+  dir=$(pick_direction)
+  if ! out=$(herdr pane split --current --direction "$dir" --cwd "$PWD" --env HARNESS_ROLE=worker --env CLAUDE_CODE_AUTO_COMPACT_WINDOW=160000 --no-focus 2>&1); then
+    die "pane split failed: $out"
+  fi
+  pane=$(printf '%s' "$out" | jq -r '.result.pane.pane_id // empty' 2>/dev/null)
+  [ -n "$pane" ] || die "pane split returned no pane id: $out"
+  mkdir -p "$(dirname "$PANES_FILE")"
+  printf '%s %s\n' "$role" "$pane" >> "$PANES_FILE"
+  printf '%s\n' "$pane"
+}
+
+# hl_progress_obj <role> <t0> — extra progress.jsonl fields of the role's last run, as one
+# JSON object (keys session / ctx_after are consumed by the caller)
+hl_progress_obj() {
+  local role=$1 t0=${2:-} ej=".harness/asks/$1.exit.json" id resume=false
+  id=$(awk 'NR == 1 { print $1 }' ".harness/asks/$role.current" 2>/dev/null)
+  [ -z "$(sed -n 's/^resume=//p' ".harness/asks/$role.run" 2>/dev/null | head -n 1)" ] || resume=true
+  if [ -f "$ej" ] && { [ -z "$id" ] || hl_done "$role" "$id"; }; then
+    jq -c --argjson resume "$resume" --argjson t0 "$(num_or_null "$t0")" '
+      {runner: "headless", cost_usd: (.cost_usd // null), turns: (.num_turns // null), result: (.result // null),
+       denials: (.denials // null), stream_log: (.stream_log // null), resume: $resume,
+       startup_s: (if (.t_init | type) == "number" and $t0 != null then (.t_init - $t0) else null end),
+       session: (.session_id // ""), ctx_after: (.ctx // "")}' "$ej" 2>/dev/null && return 0
+  fi
+  jq -n -c --argjson resume "$resume" '{runner: "headless", resume: $resume, session: "", ctx_after: ""}'
+}
+
+# hl_status_line <role> status|progress — one line for `harness status` / progress.md
+hl_status_line() {
+  local role=$1 mode=$2 pane st el ctx
+  pane=$(hl_registered_pane "$role")
+  if [ -z "$pane" ]; then
+    if [ "$mode" = status ]; then printf '%-12s %s\n' "$role" "-"; else printf '%s -' "$role"; fi
+    return 0
+  fi
+  ctx=$(jq -r '.ctx // empty' ".harness/asks/$role.exit.json" 2>/dev/null)
+  if hl_alive "$role"; then
+    st=running
+    el=$(( $(date +%s) - $(awk 'NR == 1 { print $2 }' ".harness/asks/$role.current" 2>/dev/null || echo 0) ))
+  else
+    st=idle; el=""
+  fi
+  if [ "$mode" = status ]; then
+    if [ "$st" = running ]; then printf '%-12s %-8s %-8s hl %ss\n' "$role" "$st" "$pane" "$el"
+    else printf '%-12s %-8s %-8s hl ctx %s\n' "$role" "$st" "$pane" "$(fmt_ctx "$ctx")"; fi
+  else
+    printf '%s %s ctx %s hl' "$role" "$st" "$(fmt_ctx "$ctx")"
+  fi
+}
+
+# hl_collect <role> — a finished run (exit.json present): print the report or explain, exit.
+# First match wins (spec §3). Never returns.
+hl_collect() {
+  local role=$1 ej=".harness/asks/$1.exit.json" report="$REPORT_DIR/$1.md" cur=".harness/asks/$1.current"
+  local rc res iserr killed sid tinit pane perm
+  rc=$(jq -r '.rc // empty' "$ej" 2>/dev/null); res=$(jq -r '.result // empty' "$ej" 2>/dev/null)
+  iserr=$(jq -r '.is_error // false' "$ej" 2>/dev/null); killed=$(jq -r '.killed // empty' "$ej" 2>/dev/null)
+  sid=$(jq -r '(.session_id // "") | .[0:8]' "$ej" 2>/dev/null); tinit=$(jq -r '.t_init // empty' "$ej" 2>/dev/null)
+  pane=$(hl_registered_pane "$role")
+  perm=$(jq -r '.perm // empty' "$ej" 2>/dev/null)
+  if [ -n "$perm" ] && [ "$perm" != auto ]; then
+    echo "harness: warning: $role ran with permission mode '$perm', not auto; tools may have been denied (see the viewer pane)" >&2
+  fi
+  restore_interrupted "$role" "$report"
+  if [ -f "$report" ] && { [ ! -f "$cur" ] || [ ! "$report" -ot "$cur" ]; }; then
+    if { [ -n "$rc" ] && [ "$rc" != 0 ]; } || [ "$iserr" = true ]; then
+      echo "harness: note: $role's run ended with ${res:-no result} (rc ${rc:-?}) but wrote a report" >&2
+    fi
+    finish_report "$role" "$report" "${pane:--}"
+  fi
+  if [ "$res" = error_max_turns ]; then
+    echo "harness: $role stopped at the max-turns limit without a report; continue with: harness ask $role '...' --keep"
+    hl_view_tail "$pane"; exit 3
+  fi
+  if [ -n "$killed" ]; then
+    echo "harness: $role's run was killed ($killed); --keep resumes session ${sid:-?}"
+    exit 3
+  fi
+  if [ "$rc" = 127 ] || [ -z "$tinit" ]; then
+    echo "harness: $role's claude did not start (rc ${rc:-?}):" >&2
+    tail -n 20 ".harness/asks/$role.err" 2>/dev/null >&2
+    exit 1
+  fi
+  if [ "$iserr" = true ] || [ -n "$res" -a "$res" != success ] || { [ -n "$rc" ] && [ "$rc" != 0 ]; }; then
+    echo "harness: $role's worker ended with ${res:-error} (rc ${rc:-?}) and wrote no report"
+    tail -n 20 ".harness/asks/$role.err" 2>/dev/null
+    hl_view_tail "$pane"; exit 3
+  fi
+  echo "harness: $role finished without a report at $report; collect: harness report $role"
+  hl_view_tail "$pane"; exit 3
+}
+hl_view_tail() { [ -z "${1:-}" ] || herdr pane read "$1" 2>/dev/null | tail -n 30; return 0; }
+
+# ask_headless <role> <text> <timeout-ms> <fresh> <keep> — the whole headless ask; always exits
+ask_headless() {
+  local role=$1 text=$2 timeout=$3 keep=$5 pane id start resume="" sid max_s ctxb="" report="$REPORT_DIR/$1.md"
+  local a=".harness/asks/$role" now deadline poll=${HARNESS_POLL_SEC:-2} start_s=${HARNESS_HL_START_S:-15} s0
+  mkdir -p .harness/asks .harness/done "$REPORT_DIR" "$LOG_DIR"
+  if hl_alive "$role"; then
+    echo "harness: $role is still running (pid $(hl_pid "$role")); nothing sent. Collect with: harness report $role; stop: harness close $role --force" >&2
+    exit 4
+  fi
+  pane=$(hl_pane "$role") || exit $?
+  if [ "$keep" = 1 ]; then
+    sid=$(sed -n 1p "$a.session" 2>/dev/null)
+    if [ -n "$sid" ]; then
+      resume=$sid
+      ctxb=$(jq -r '.ctx // empty' "$a.exit.json" 2>/dev/null)
+    elif sid=$(hl_last_session "$role") && [ -n "$sid" ]; then
+      # the previous run died before it reported a session: fall back to the last good one
+      resume=$sid
+      echo "harness: note: the previous run recorded no session; resuming the last successful one from progress.jsonl (${sid:0:8})"
+    else
+      echo "harness: note: no previous session for $role — running fresh"
+    fi
+  fi
+  # a session file left by an earlier run must never be mistaken for this run's
+  rm -f "$a.session"
+  if [ -f "$report" ]; then
+    archive_late "$role" "$report" || {
+      echo "harness: could not archive the leftover report; kept as $report.unlogged" >&2
+      mv -f "$report" "$report.unlogged"
+    }
+  fi
+  rm -f "$report"
+  id="$(date +%s)-$$-$RANDOM"; start=$(date +%s)
+  printf '%s %s\n' "$id" "$start" > "$a.current"
+  rm -f "$a.finished" "$a.exit.json" "$a.pid"
+  if [ "$role" = implementer ]; then verify_tool baseline implementer 2>/dev/null || rm -f .harness/verify/implementer.json; fi
+  max_s=${HARNESS_HL_MAX_S:-}
+  digits_only "$max_s" || { max_s=$(jq -r '.headless_max_minutes // empty' "$CONFIG_FILE" 2>/dev/null); digits_only "$max_s" && max_s=$((max_s * 60)) || max_s=3600; }
+  printf '%s\n' "$text" > "$a.prompt"
+  printf 'resume=%s\nmax_s=%s\nctx_before=%s\n' "$resume" "$max_s" "$ctxb" > "$a.run"
+  if ! herdr pane run "$pane" "$(printf 'harness-run %q %q %q' "$role" "$id" "$(pwd -P)")" >/dev/null 2>&1; then
+    echo "harness: pane run failed for $pane" >&2
+    exit 1
+  fi
+  # the run announces itself with its pid file; a pane whose shell is busy never does
+  s0=$(date +%s)
+  until grep -q "^$id " "$a.pid" 2>/dev/null || hl_done "$role" "$id"; do
+    if [ $(( $(date +%s) - s0 )) -ge "$start_s" ]; then
+      echo "harness: $role's run did not start in $start_s s (is the pane $pane at a shell prompt?)" >&2
+      show_pane_screen "$pane"
+      exit 1
+    fi
+    sleep "$poll"
+  done
+  deadline=$((start + (timeout + 999) / 1000))
+  while :; do
+    if hl_done "$role" "$id"; then hl_collect "$role"; fi
+    if ! hl_alive "$role"; then
+      sleep 0.3
+      if hl_done "$role" "$id"; then hl_collect "$role"; fi
+      sid=$(sed -n 1p "$a.session" 2>/dev/null | cut -c1-8)
+      if [ -n "$sid" ]; then
+        echo "harness: $role's run is gone without a result (killed?); --keep resumes session $sid"
+      else
+        echo "harness: $role's run is gone without a result (killed?); it recorded no session (--keep resumes the last successful one, if any)"
+      fi
+      exit 3
+    fi
+    now=$(date +%s)
+    if [ "$now" -ge "$deadline" ]; then
+      echo "harness: $role is still running (pid $(hl_pid "$role"), $((now - start))s); collect: harness report $role; stop: harness close $role --force" >&2
+      exit 4
+    fi
+    sleep "$poll"
+  done
+}
+
+# report_headless <role> — `harness report` for a headless role; always exits
+report_headless() {
+  local role=$1 report="$REPORT_DIR/$1.md"
+  if hl_alive "$role"; then
+    echo "harness: $role is still running (pid $(hl_pid "$role")); wait, then run: harness report $role" >&2
+    exit 4
+  fi
+  if [ ! -f ".harness/asks/$role.exit.json" ]; then
+    echo "harness: no finished run for $role" >&2
+    exit 3
+  fi
+  if [ -f "$report" ]; then
+    retro_on_report "$role" "$report" || true
+    archive_late "$role" "$report" || true
+  fi
+  stamp_finished "$role"
+  hl_collect "$role"
+}
+
+# hl_kill <role> — stop the role's run: TERM the runner (it kills its tree and writes
+# exit.json killed:signal), wait up to 5 s, then kill the tree
+hl_kill() {
+  local role=$1 pid i=0 id
+  pid=$(hl_pid "$role"); id=$(awk 'NR == 1 { print $1 }' ".harness/asks/$role.pid" 2>/dev/null)
+  digits_only "$pid" || return 0
+  kill -TERM "$pid" 2>/dev/null
+  while [ "$i" -lt 50 ]; do
+    hl_alive "$role" || return 0
+    sleep 0.1; i=$((i + 1))
+  done
+  kill_tree "$pid"; kill -KILL "$pid" 2>/dev/null
+  return 0
+}
+
+# hl_finish_close <role> <pane> <reason> — close the viewer pane, drop the registry line, log
+hl_finish_close() {
+  herdr pane close "$2" >/dev/null || die "pane close failed for $2"
+  pane_gone "$2" || die "pane $2 is still present after close; registry entry kept"
+  unregister "$1" "$2"
+  rm -f ".harness/asks/$1.finished"
+  log_close "$1" "$2" "$3" headless
+  echo "closed $1 ($2)"
+}
+
+# close_headless <role> <force> <skip-missing> — close_one for a headless role
+close_headless() {
+  local role=$1 force=$2 skip=$3 pane reason=${CLOSE_REASON:-manual}
+  pane=$(hl_registered_pane "$role")
+  if [ -z "$pane" ]; then
+    [ "$skip" = 1 ] && return 0
+    die "$role is not running"
+  fi
+  if hl_alive "$role"; then
+    if [ "$force" != 1 ]; then
+      echo "harness: $role has a run in progress (pid $(hl_pid "$role")); not closing (use --force to kill it)" >&2
+      return 4
+    fi
+    hl_kill "$role"
+    reason=force_kill
+  elif [ "$force" != 1 ] && has_uncollected "$role"; then
+    echo "harness: $role has a report that was not collected (harness report $role); not closing (use --force to close anyway)" >&2
+    return 4
+  fi
+  hl_finish_close "$role" "$pane" "$reason"
 }
 
 need jq

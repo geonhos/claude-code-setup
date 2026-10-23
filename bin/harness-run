@@ -1,0 +1,122 @@
+#!/bin/bash
+# harness-run <role> <ask-id> <root> — run ONE headless worker ask inside a viewer pane.
+# Started by `harness ask` through `herdr pane run`; not for the conductor (the gate
+# only matches `harness`, and this refuses to run without HARNESS_ROLE=worker).
+# Reads  .harness/asks/<role>.prompt  and  .run (resume=, max_s=).
+# Writes .harness/asks/<role>.pid / .session / .err / .exit.json (atomic) and the raw
+# stream .harness/log/<stamp>-<role>.jsonl. Completion = exit.json for this ask-id.
+role=${1:-}; id=${2:-}; root=${3:-}
+if [ "${HARNESS_ROLE:-}" != worker ]; then
+  echo "harness-run: refusing to run without HARNESS_ROLE=worker (this is for panes started by 'harness ask')" >&2
+  exit 1
+fi
+if [ -z "$role" ] || [ -z "$id" ] || [ -z "$root" ]; then
+  echo "usage: harness-run <role> <ask-id> <root>" >&2; exit 1
+fi
+cd "$root" || { echo "harness-run: cannot cd to $root" >&2; exit 1; }
+export HARNESS_ROLE=worker
+
+A=.harness/asks
+prompt=$A/$role.prompt
+pidf=$A/$role.pid
+errf=$A/$role.err
+rcf=$A/$role.rc
+exitf=$A/$role.exit.json
+sessf=$A/$role.session
+tinit=$A/$role.tinit
+wdflag=$A/$role.wdflag
+sigflag=$A/$role.sigflag
+mkdir -p .harness/log "$A"
+raw=.harness/log/$(date +%Y%m%d-%H%M%S)-$role.jsonl
+
+resume=$(sed -n 's/^resume=//p' "$A/$role.run" 2>/dev/null | head -1)
+max_s=$(sed -n 's/^max_s=//p' "$A/$role.run" 2>/dev/null | head -1)
+case "$max_s" in ''|*[!0-9]*) max_s=3600 ;; esac
+
+kill_tree() {
+  local c
+  for c in $(pgrep -P "$1" 2>/dev/null); do kill_tree "$c"; done
+  kill "$1" 2>/dev/null
+  return 0
+}
+
+rm -f "$rcf" "$tinit" "$wdflag" "$sigflag" "$exitf" "$sessf"
+echo "$id $$" > "$pidf"
+: > "$raw"
+printf '=== %s ask %s %s ===\n' "$role" "$id" "$(date '+%H:%M:%S')"
+
+pipe=""; wd=""
+on_signal() {
+  : > "$sigflag"
+  [ -z "$pipe" ] || kill_tree "$pipe"
+}
+trap on_signal TERM INT HUP
+
+# pipeline in its own subshell: kill_tree on $pipe reaches claude, awk and the viewer
+(
+  { claude -p --agent "$role" --output-format stream-json --verbose --include-hook-events \
+      --disallowedTools=AskUserQuestion ${resume:+--resume "$resume"} < "$prompt" 2> "$errf"
+    echo $? > "$rcf"; } \
+  | awk -v raw="$raw" -v ti="$tinit" -v sf="$sessf" '
+      { print > raw; fflush(raw) }
+      !t && /"subtype":"init"/ {
+        t = 1; system("date +%s > \"" ti "\"")
+        # the session id of this run, as soon as it is known
+        if (match($0, /"session_id":"[^"]*"/)) { print substr($0, RSTART + 14, RLENGTH - 15) > sf; close(sf) }
+      }
+      { print; fflush() }' \
+  | { harness-view || cat >/dev/null; }
+) &
+pipe=$!
+# the watchdog ticks once a second; it ends with this runner (a SIGKILLed harness-run must not
+# leave it behind) and only kills the pipeline while that is still this runner's child
+runner=$$
+( n=0
+  while [ "$n" -lt "$max_s" ]; do
+    sleep 1; n=$((n + 1))
+    kill -0 "$runner" 2>/dev/null || exit 0
+  done
+  [ "$(ps -o ppid= -p "$pipe" 2>/dev/null | tr -d ' ')" = "$runner" ] || exit 0
+  : > "$wdflag"; kill_tree "$pipe" ) >/dev/null 2>&1 &
+wd=$!
+
+wait "$pipe" 2>/dev/null
+while kill -0 "$pipe" 2>/dev/null; do wait "$pipe" 2>/dev/null || sleep 0.1; done
+kill_tree "$wd" 2>/dev/null
+wait "$wd" 2>/dev/null
+
+killed=""
+[ ! -e "$wdflag" ] || killed=watchdog
+[ -n "$killed" ] || [ ! -e "$sigflag" ] || killed=signal
+rc=""
+[ -f "$rcf" ] && rc=$(cat "$rcf")
+case "$rc" in ''|*[!0-9]*) rc=143 ;; esac
+[ -z "$killed" ] || [ "$rc" != 0 ] || rc=143
+t_init=""
+[ -f "$tinit" ] && t_init=$(cat "$tinit")
+
+tmp=$exitf.tmp.$$
+jq -R -n -c --arg id "$id" --argjson rc "$rc" --arg killed "$killed" --arg raw "$raw" --arg ti "$t_init" '
+  [inputs | fromjson? | select(type == "object")] as $e
+  | ([$e[] | select(.type == "system" and .subtype == "init")] | first) as $init
+  | ([$e[] | select(.type == "result")] | last) as $r
+  | ([$e[] | select(.type == "assistant") | .message.usage?] | map(select(. != null)) | last) as $u
+  | {ask_id: $id, rc: $rc,
+     result: ($r.subtype // null), is_error: ($r.is_error // null),
+     num_turns: ($r.num_turns // null), cost_usd: ($r.total_cost_usd // null),
+     duration_ms: ($r.duration_ms // null),
+     session_id: ($init.session_id // $r.session_id // null),
+     denials: (if $r then (($r.permission_denials // []) | length) else null end),
+     perm: ($init.permissionMode // null),
+     killed: (if $killed == "" then null else $killed end),
+     stream_log: $raw,
+     ctx: (if $u then (($u.input_tokens // 0) + ($u.cache_creation_input_tokens // 0) + ($u.cache_read_input_tokens // 0)) else null end),
+     stop_hook: any($e[]; .type == "system" and .subtype == "hook_started" and .hook_event == "Stop"),
+     t_init: (if $ti == "" then null else ($ti | tonumber) end)}
+' < "$raw" > "$tmp" 2>/dev/null || printf '{"ask_id":"%s","rc":%s,"killed":null,"stream_log":"%s"}\n' "$id" "$rc" "$raw" > "$tmp"
+sid=$(jq -r '.session_id // empty' "$tmp" 2>/dev/null)
+[ -z "$sid" ] || printf '%s\n' "$sid" > "$sessf"
+mv "$tmp" "$exitf"
+rm -f "$pidf" "$rcf" "$tinit" "$wdflag" "$sigflag"
+printf '=== exit %s ===\n' "$rc"
+exit 0
