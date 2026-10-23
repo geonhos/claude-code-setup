@@ -658,10 +658,20 @@ rotate_logs() {
     [ ! -f "$RETRO_DIR/$(basename "$f" .md).json" ] && rm -f "$f"
   done
   [ -z "$keep" ] || rm -f "$keep"
-  # raw headless streams: gzip once a day old (the run is long over), drop with the logs
-  find "$LOG_DIR" -name '*.jsonl' -mtime +0 -exec gzip -f {} + 2>/dev/null
+  # raw headless streams: gzip once a day old (the run is long over), drop with the logs.
+  # A stream a pending retro candidate names is never gzipped or deleted (compared by base
+  # name without .gz: the candidate says X.jsonl, the file may already be X.jsonl.gz).
+  local stems
+  stems=$(mktemp "${TMPDIR:-/tmp}/harness-stems.XXXXXX") || stems=""
+  retro_pending_logs | sed 's/\.gz$//; s|.*/||' > "${stems:-/dev/null}" 2>/dev/null
+  find "$LOG_DIR" -name '*.jsonl' -mtime +0 2>/dev/null | while IFS= read -r f; do
+    grep -qxF -- "$(basename "$f")" "${stems:-/dev/null}" || gzip -f "$f" 2>/dev/null
+  done
   find "$LOG_DIR" \( -name '*.jsonl' -o -name '*.jsonl.gz' \) -mtime "+${HARNESS_LOG_DAYS:-14}" 2>/dev/null \
-    | while IFS= read -r f; do grep -qxF -- "$f" <(retro_pending_logs) || rm -f "$f"; done
+    | while IFS= read -r f; do
+        grep -qxF -- "$(basename "$f" .gz)" "${stems:-/dev/null}" || rm -f "$f"
+      done
+  [ -z "$stems" ] || rm -f "$stems"
   return 0
 }
 
@@ -1491,13 +1501,16 @@ retro_done_from_brief() {
 # retro_brief <n> <candidate-files> <toplevel> — the retro brief on stdout: ask-ids,
 # reasons, numbers and file paths only.
 retro_brief() {
-  local n=$1 files=$2 top=$3 f
+  local n=$1 files=$2 top=$3 f sl
   printf '# Task: failure retro (%s candidate%s)\n\n' "$n" "$([ "$n" -eq 1 ] || echo s)"
   printf 'Read-only analysis of failed asks. Evidence lives in the files listed per candidate; open only those.\n\n'
   printf '## Candidates\n\n'
   printf '%s' "$files" | while IFS= read -r f; do
     [ -n "$f" ] || continue
-    jq -r '"### \(.ask_id) — \(.role), \(.reason)\n- exit: \(.exit // "?") · verify attempts: \(.verify_attempts // "-") · duration: \(.duration_s // "?")s · late: \(.late)\n- log: \(.log // "-")\(if .stream_log then "\n- stream: \(.stream_log) (raw claude -p stream-json; read only the lines you need)" else "" end)\n- brief: \(.brief // "-" | if endswith("#brief") then "\(.[:-6]) (its `## Brief` section; the live task file was overwritten since)" else . end)\n- report: \(.report // "-")\n"' "$f" 2>/dev/null
+    sl=$(jq -r '.stream_log // empty' "$f" 2>/dev/null)
+    # rotate_logs gzips old streams: point at the .gz when only that exists
+    if [ -n "$sl" ] && [ ! -e "$sl" ] && [ -e "$sl.gz" ]; then sl="$sl.gz"; fi
+    jq -r --arg sl "$sl" '"### \(.ask_id) — \(.role), \(.reason)\n- exit: \(.exit // "?") · verify attempts: \(.verify_attempts // "-") · duration: \(.duration_s // "?")s · late: \(.late)\n- log: \(.log // "-")\(if $sl != "" then "\n- stream: \($sl) (raw claude -p stream-json\(if $sl | endswith(".gz") then ", gzip: use gzip -dc" else "" end); read only the lines you need)" else "" end)\n- brief: \(.brief // "-" | if endswith("#brief") then "\(.[:-6]) (its `## Brief` section; the live task file was overwritten since)" else . end)\n- report: \(.report // "-")\n"' "$f" 2>/dev/null
   done
   printf '## What to write\n\n'
   printf 'For each candidate (or one note per group of candidates with the same cause) write at most 120 words as:\n\n'

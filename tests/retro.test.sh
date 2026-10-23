@@ -226,6 +226,37 @@ check "snapshot sweep: old but pending kept" [ -f .harness/retro/reports/pending
 check "snapshot sweep: fresh orphan kept" [ -f .harness/retro/reports/orphan-fresh.md ]
 unset HARNESS_LOG_DAYS
 
+# --- raw streams named by a pending candidate are never gzipped or deleted -------------------
+setup; mkdir -p docs/wiki
+echo idle > "$FAKE_DIR/live.$(WN analyst)"
+hook analyst '# analyst report\nstatus: done\n'
+mkdir -p .harness/log .harness/retro
+echo '{}' > .harness/log/20200101-000000-analyst.jsonl      # pending, plain
+echo '{}' > .harness/log/20200102-000000-analyst.jsonl      # not referenced
+echo '{}' | gzip > .harness/log/20200103-000000-analyst.jsonl.gz   # pending, candidate says .jsonl
+echo '{}' | gzip > .harness/log/20200104-000000-analyst.jsonl.gz   # not referenced
+touch -t 202001010000 .harness/log/2020010*-analyst.jsonl* 
+jq -n -c '{ask_id:"s1",role:"analyst",stream_log:".harness/log/20200101-000000-analyst.jsonl"}' > .harness/retro/s1.json
+jq -n -c '{ask_id:"s3",role:"analyst",stream_log:".harness/log/20200103-000000-analyst.jsonl"}' > .harness/retro/s3.json
+export HARNESS_LOG_DAYS=1
+run ask analyst "ok"
+check "stream rotate: pending plain stream not gzipped" [ -f .harness/log/20200101-000000-analyst.jsonl ]
+check "stream rotate: pending stream (gz on disk) survives age delete" [ -f .harness/log/20200103-000000-analyst.jsonl.gz ]
+check "stream rotate: unreferenced plain stream gone" [ ! -e .harness/log/20200102-000000-analyst.jsonl ]
+check "stream rotate: unreferenced gz stream gone" [ ! -e .harness/log/20200104-000000-analyst.jsonl.gz ]
+unset HARNESS_LOG_DAYS
+# without age deletion, an unreferenced day-old stream is gzipped, a pending one is not
+echo '{}' > .harness/log/20200105-000000-analyst.jsonl
+perl -e 'utime(time - 2 * 86400, time - 2 * 86400, @ARGV)' .harness/log/20200105-000000-analyst.jsonl
+run ask analyst "ok 2"
+check "stream gzip: unreferenced day-old stream gzipped" [ -f .harness/log/20200105-000000-analyst.jsonl.gz ] 
+check "stream gzip: pending stream stays plain" [ -f .harness/log/20200101-000000-analyst.jsonl ]
+# the brief points a .jsonl candidate at the .gz that exists
+run retro --dry-run
+check "retro brief: plain stream path as is" grep -q 'stream: .harness/log/20200101-000000-analyst.jsonl ' <<<"$OUT"
+check "retro brief: .jsonl resolved to .gz" grep -q 'stream: .harness/log/20200103-000000-analyst.jsonl.gz' <<<"$OUT"
+check "retro brief: gz hint" grep -q 'gzip -dc' <<<"$OUT"
+
 # --- no docs/wiki side effects ------------------------------------------------------------------
 setup
 echo idle > "$FAKE_DIR/live.$(WN analyst)"
