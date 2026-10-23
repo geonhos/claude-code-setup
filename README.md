@@ -44,13 +44,18 @@ cd ~/workspace/claude-code-setup
 ```
 harness spawn  <agent> [--direction right|down]
 harness ask    <agent> '<instruction>' [--timeout MS] [--fresh|--keep] [--via skill|conductor|retro]   # exit 2 blocked · 3 no report · 4 still working · 5 verification failed · 6 worker runs outside this repo
-harness report <agent>                                   # print existing report (same exit codes as ask), 3 none, 4 still working, 6 worker runs outside this repo (worker names are `<role>-<repo8>`)
+harness report <agent>|<ask-id>                                   # print existing report (same exit codes as ask), 3 none, 4 still working, 6 worker runs outside this repo (worker names are `<role>-<repo8>`)
+harness ask    <analyst|reviewer> '<instruction>' --worktree [--base REF]   # headless 전용: ask마다 detached git worktree(~/.cache/harness/wt/<repo8>/<role>-<id8>), 병렬 ask 가능 (ADR 0008)
 harness status
 harness retro  [--dry-run]                               # 실패한 ask의 후보(.harness/retro/)를 analyst 한 번에 묶어 회고 → docs/wiki/inbox/
 harness metrics [--since YYYY-MM-DD] [--json]            # progress.jsonl·위키 기반 지표 (최근 28일 vs 직전 28일)
-harness close  <agent>|--all|--legacy [--force]          # exit 4 when working/blocked or the report is uncollected (--force overrides); --legacy closes old unscoped workers of this repo
+harness close  <agent>|<ask-id>|--all|--legacy [--force]          # exit 4 when working/blocked or the report is uncollected (--force overrides); --legacy closes old unscoped workers of this repo
 harness route-log '<json>'                               # append one line to .harness/routing.jsonl (used by the hook and by ask)
 ```
+
+## 병렬 ask: `--worktree` (ADR 0008)
+
+`runner`가 `headless`인 analyst·reviewer는 `--worktree [--base REF]`로 ask마다 자기 작업 트리(`git worktree add --detach`, 브랜치·머지 없음)를 받는다. 경로는 `~/.cache/harness/wt/<repo8>/<role>-<id8>`(`.harness/` 밖). ask-id는 시작할 때 stderr에 찍히고 `harness report <ask-id>`·`harness close <ask-id> [--force]`·`harness status`에 쓴다. 진행 로그·routing·retro는 메인 루트에 그대로 쌓인다(progress.jsonl에 `wt`/`base`/`ask_id`). 리포트를 정상 수집(exit 0/5)했고 작업 트리가 깨끗하면 자동 제거, 아니면 `close`나 idle TTL 때까지 유지. 동시에 `max_parallel`(기본 3, `HARNESS_MAX_PARALLEL`)개까지, 넘으면 exit 4. implementer·pane 러너에 쓰면 exit 1.
 
 ## 워커 패널 자동 종료
 
