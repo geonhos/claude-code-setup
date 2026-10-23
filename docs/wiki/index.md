@@ -12,6 +12,7 @@ Read this first. Open a page only when it is relevant. Schema and promotion rule
 - [Deadline restore race](gotchas/deadline-restore-race.md) — false INTERRUPTED when ask hits the deadline mid-verify (active, 2026-10-21)
 - [AGENTS.md needs a CLAUDE.md import](gotchas/agents-md-ignored-when-claude-md-exists.md) — CLAUDE.md must start with `@AGENTS.md`; no symlink (active, 2026-10-21)
 - [Daemon inherits worker env](gotchas/daemon-inherits-worker-env.md) — a Claude daemon started in a worker pane makes every hosted session a worker, gate off (active, 2026-10-21)
+- [Docs-only skip scope](gotchas/docs-only-asks-skip-the-suite.md) — Stop hook skips the suite only for `docs/`/`.harness/`; wiki → wiki-lint only (active, 2026-10-23)
 
 ## Decisions
 - [0001 Keep herdr panes](decisions/0001-keep-herdr-panes-despite-subagent-model.md) — subagent `model:` works; panes kept for visibility (active, 2026-10-21)

@@ -268,6 +268,7 @@ check "reset impl: rc 0" [ "$RC" -eq 0 ]
 check "reset impl: /clear sent" logged "agent prompt $(WN implementer) /clear"
 check "reset impl: no --wait on /clear" not_logged "/clear --wait"
 check "reset impl: no respawn" not_logged "pane close"
+check "reset impl: progress clear ok" [ "$(jl .clear)" = ok ]
 check "reset impl: real prompt after clear" [ "$(grep -n "agent prompt $(WN implementer) /clear" "$FAKE_LOG" | cut -d: -f1)" -lt "$(grep -n "agent prompt $(WN implementer) do" "$FAKE_LOG" | cut -d: -f1)" ]
 
 setup; gitwork
@@ -280,12 +281,67 @@ check "reset stuck: rc 0" [ "$RC" -eq 0 ]
 check "reset stuck: pane closed" logged "pane close w1:p5"
 check "reset stuck: respawned" logged "agent start $(WN implementer)"
 check "reset stuck: ask output is the report" [ "$OUT" = "$(printf '# r\nstatus: done')" ]
+check "reset stuck: /clear sent twice (one retry)" [ "$(grep -c "agent prompt $(WN implementer) /clear" "$FAKE_LOG")" -eq 2 ]
+check "reset stuck: progress clear respawn" [ "$(jl .clear)" = respawn ]
+unset FAKE_CLEAR
+
+# sid never changes and the pane is busy (working) after the first /clear: no second /clear, respawn
+setup; gitwork
+echo idle > "$FAKE_DIR/live.$(WN implementer)"; echo w1:p5 > "$FAKE_DIR/pane.$(WN implementer)"
+mkdir -p .harness; echo "implementer w1:p5" > .harness/panes
+export FAKE_CLEAR=stuckbusy
+hook_report implementer '# r\nstatus: done\n'
+run ask implementer "do it"
+check "reset busy: rc 0" [ "$RC" -eq 0 ]
+check "reset busy: exactly one /clear (no retry while busy)" [ "$(grep -c "agent prompt $(WN implementer) /clear" "$FAKE_LOG")" -eq 1 ]
+check "reset busy: pane closed" logged "pane close w1:p5"
+check "reset busy: progress clear respawn" [ "$(jl .clear)" = respawn ]
+unset FAKE_CLEAR
+
+# sid changes late (30 polls ~ 15 s at the default 0.5 s interval): still ok, no retry, no respawn
+setup; gitwork
+echo idle > "$FAKE_DIR/live.$(WN implementer)"; echo w1:p5 > "$FAKE_DIR/pane.$(WN implementer)"
+mkdir -p .harness; echo "implementer w1:p5" > .harness/panes
+export FAKE_CLEAR=late30; unset HARNESS_CLEAR_POLLS   # default poll count (60)
+hook_report implementer '# r\nstatus: done\n'
+run ask implementer "do it"
+check "reset late: rc 0" [ "$RC" -eq 0 ]
+check "reset late: one /clear" [ "$(grep -c "agent prompt $(WN implementer) /clear" "$FAKE_LOG")" -eq 1 ]
+check "reset late: no respawn" not_logged "pane close"
+check "reset late: progress clear ok" [ "$(jl .clear)" = ok ]
+unset FAKE_CLEAR
+
+# session id changes but the status stays working: still a successful clear (no retry, no respawn)
+setup; gitwork
+echo idle > "$FAKE_DIR/live.$(WN implementer)"; echo w1:p5 > "$FAKE_DIR/pane.$(WN implementer)"
+mkdir -p .harness; echo "implementer w1:p5" > .harness/panes
+export FAKE_CLEAR=sidonly
+hook_report implementer '# r\nstatus: done\n'
+run ask implementer "do it"
+check "reset sid-only: rc 0" [ "$RC" -eq 0 ]
+check "reset sid-only: one /clear" [ "$(grep -c "agent prompt $(WN implementer) /clear" "$FAKE_LOG")" -eq 1 ]
+check "reset sid-only: no respawn" not_logged "pane close"
+check "reset sid-only: progress clear ok" [ "$(jl .clear)" = ok ]
+unset FAKE_CLEAR
+
+# only the second /clear takes effect: retry, no respawn
+setup; gitwork
+echo idle > "$FAKE_DIR/live.$(WN implementer)"; echo w1:p5 > "$FAKE_DIR/pane.$(WN implementer)"
+mkdir -p .harness; echo "implementer w1:p5" > .harness/panes
+export FAKE_CLEAR=second
+hook_report implementer '# r\nstatus: done\n'
+run ask implementer "do it"
+check "reset retry: rc 0" [ "$RC" -eq 0 ]
+check "reset retry: /clear sent twice" [ "$(grep -c "agent prompt $(WN implementer) /clear" "$FAKE_LOG")" -eq 2 ]
+check "reset retry: no respawn" not_logged "pane close"
+check "reset retry: progress clear retry" [ "$(jl .clear)" = retry ]
 unset FAKE_CLEAR
 
 setup; gitwork
 hook_report implementer '# r\nstatus: done\n'
 run ask implementer "do it"
 check "reset: fresh spawn needs no clear" not_logged "/clear"
+check "reset: fresh spawn progress clear none" [ "$(jl .clear)" = none ]
 
 setup; gitwork
 echo idle > "$FAKE_DIR/live.$(WN implementer)"

@@ -122,6 +122,51 @@ changed_files() {
   done
 }
 
+# change_class -> docs-only|wiki|code: what the ask changed since its baseline.
+# Paths = committed since the baseline HEAD + staged + unstaged (git diff BASE,
+# deletions included) + untracked. Source committed in an EARLIER ask is not
+# "since baseline" (the baseline is per ask), so it never counts. Every path under
+# docs/ or .harness/ -> docs-only (wiki when any is under docs/wiki/); anything else
+# (AGENTS.md, README.md and agents/*.md included: tests read them) -> code.
+# docs/ and .harness/ are ROOT's (the cwd's): paths are listed from the git toplevel
+# with rename detection off (a move into docs/ lists the source path too), and any
+# path outside ROOT counts as code.
+change_class() {
+  local base f top rel wiki=0 any=0
+  base=$(sed -n 1p "$STATE_REL/$AGENT.base" 2>/dev/null)
+  [ -n "$base" ] || { echo code; return; }
+  git rev-parse --verify -q "$base^{commit}" >/dev/null 2>&1 || { echo code; return; }
+  top=$(git rev-parse --show-toplevel 2>/dev/null) || { echo code; return; }
+  top=$(cd "$top" && pwd -P)
+  # prefix of ROOT (the cwd) inside the toplevel: "" at the top, "pkg/" in a subdir
+  rel=$(git rev-parse --show-prefix 2>/dev/null)
+  while IFS= read -r f; do
+    [ -n "$f" ] || continue
+    any=1
+    case "$f" in
+      "$rel"docs/wiki/*) wiki=1 ;;
+      "$rel"docs/*|"$rel".harness/*) ;;
+      *) echo code; return ;;
+    esac
+  done <<EOF_PATHS
+$({ git -c core.quotepath=off diff --no-renames --name-only "$base" 2>/dev/null
+    git -c core.quotepath=off -C "$top" ls-files --others --exclude-standard 2>/dev/null; } | sort -u)
+EOF_PATHS
+  [ "$any" = 1 ] || { echo code; return; }
+  if [ "$wiki" = 1 ]; then echo wiki; else echo docs-only; fi
+}
+
+# harness_bin -> path of the sibling `harness` (symlink-resolved), else PATH
+harness_bin() {
+  local s=${BASH_SOURCE[0]} d
+  while [ -h "$s" ]; do
+    d=$(cd "$(dirname "$s")" && pwd); s=$(readlink "$s")
+    case "$s" in /*) ;; *) s="$d/$s" ;; esac
+  done
+  d=$(cd "$(dirname "$s")" && pwd)
+  if [ -x "$d/harness" ]; then printf '%s\n' "$d/harness"; else command -v harness; fi
+}
+
 # quote_files -> stdin lines to one shell-quoted, space-separated string
 quote_files() {
   local f out=""
@@ -297,7 +342,7 @@ cmd_stop() {
 }
 
 stop_body() {
-  local input=$STOP_INPUT attempts max files step="" out reason rep pend
+  local input=$STOP_INPUT attempts max files step="" out reason rep pend cls hb
   set_agent "$(printf '%s' "$input" | jq -r '.agent_type // empty' 2>/dev/null)"
   enter_root "$(printf '%s' "$input" | jq -r '.cwd // empty' 2>/dev/null)"
   if [ "$IS_GIT" != 1 ]; then
@@ -316,7 +361,21 @@ stop_body() {
   files=$(changed_files)
 
   RAN=0
-  if ! run_step lint "$files"; then
+  cls=$(change_class)
+  if [ "$cls" = wiki ]; then
+    # docs/wiki changed: only the wiki checks run, no lint / test suite
+    hb=$(harness_bin)
+    if [ -n "$hb" ] && ! out=$("$hb" wiki-lint 2>&1); then step=wiki-lint; fi
+    if [ -z "$step" ]; then
+      [ ! -f "$pend" ] || mv -f "$pend" "$rep"
+      write_result skipped "skipped (docs-only)" "" "$attempts"
+      exit 0
+    fi
+  elif [ "$cls" = docs-only ]; then
+    [ ! -f "$pend" ] || mv -f "$pend" "$rep"
+    write_result skipped "skipped (docs-only)" "" "$attempts"
+    exit 0
+  elif ! run_step lint "$files"; then
     step=lint; out=$STEP_OUT
   elif ! run_step test "$files"; then
     step=test; out=$STEP_OUT

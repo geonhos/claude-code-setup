@@ -361,5 +361,14 @@ EOS
 guard run_runner "$D" TMPDIR="$D/tmp"
 check "runner: finished suite's pid file removed while others run" grep -qx gone "$D/result"
 
+# runner discovers suites by glob: hyphenated names run, helper files (no .test.sh) do not
+D=$ROOT/rn-glob; mk_suites "$D"
+printf '#!/bin/bash\necho ok-hy\n' > "$D/x-y.test.sh"
+printf 'echo helper-ran\n' > "$D/x-lib.sh"
+HARNESS_TESTS_DIR="$D" /bin/bash "$RUNNER" --test > "$D.out" 2>&1
+check "runner glob: hyphenated suite runs" grep -qx '=== x-y ===' "$D.out"
+check "runner glob: helper not run" not_grep helper-ran "$D.out"
+check "runner: no hardcoded suite list" not_grep 'names="gate' "$RUNNER"
+
 echo "PASS $pass / FAIL $fail"
 [ "$fail" -eq 0 ]

@@ -10,3 +10,4 @@
 - 2026-10-22 · implementer · verify speed · install.sh --test runs suites in parallel (HARNESS_TEST_SERIAL=1 for serial); harness/retro tests set HARNESS_CLEAR_INTERVAL=0; implementer runs affected suites, Stop hook runs all
 - 2026-10-23 · implementer · v14b worker speed · decision 0006 keep implementer pane (default never), supersedes 0003 default; worker prompts cap advisor to one call per ask
 - 2026-10-23 · implementer · role-aware ask timeout · harness ask defaults to 1740000 ms for implementer, 600000 for analyst/reviewer; --timeout no longer needed
+- 2026-10-23 · implementer · v15 ask latency · Stop hook skips suite for docs/.harness-only asks (wiki → wiki-lint); harness suite split in 3 + glob discovery; /clear succeeds on new session id (60 polls), one retry, then respawn; progress.jsonl `clear` field
