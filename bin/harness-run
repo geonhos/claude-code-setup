@@ -40,7 +40,7 @@ kill_tree() {
   return 0
 }
 
-rm -f "$rcf" "$tinit" "$wdflag" "$sigflag" "$exitf"
+rm -f "$rcf" "$tinit" "$wdflag" "$sigflag" "$exitf" "$sessf"
 echo "$id $$" > "$pidf"
 : > "$raw"
 printf '=== %s ask %s %s ===\n' "$role" "$id" "$(date '+%H:%M:%S')"
@@ -57,14 +57,27 @@ trap on_signal TERM INT HUP
   { claude -p --agent "$role" --output-format stream-json --verbose --include-hook-events \
       --disallowedTools=AskUserQuestion ${resume:+--resume "$resume"} < "$prompt" 2> "$errf"
     echo $? > "$rcf"; } \
-  | awk -v raw="$raw" -v ti="$tinit" '
+  | awk -v raw="$raw" -v ti="$tinit" -v sf="$sessf" '
       { print > raw; fflush(raw) }
-      !t && /"subtype":"init"/ { t = 1; system("date +%s > \"" ti "\"") }
+      !t && /"subtype":"init"/ {
+        t = 1; system("date +%s > \"" ti "\"")
+        # the session id of this run, as soon as it is known
+        if (match($0, /"session_id":"[^"]*"/)) { print substr($0, RSTART + 14, RLENGTH - 15) > sf; close(sf) }
+      }
       { print; fflush() }' \
   | { harness-view || cat >/dev/null; }
 ) &
 pipe=$!
-( sleep "$max_s"; : > "$wdflag"; kill_tree "$pipe" ) >/dev/null 2>&1 &
+# the watchdog ticks once a second; it ends with this runner (a SIGKILLed harness-run must not
+# leave it behind) and only kills the pipeline while that is still this runner's child
+runner=$$
+( n=0
+  while [ "$n" -lt "$max_s" ]; do
+    sleep 1; n=$((n + 1))
+    kill -0 "$runner" 2>/dev/null || exit 0
+  done
+  [ "$(ps -o ppid= -p "$pipe" 2>/dev/null | tr -d ' ')" = "$runner" ] || exit 0
+  : > "$wdflag"; kill_tree "$pipe" ) >/dev/null 2>&1 &
 wd=$!
 
 wait "$pipe" 2>/dev/null

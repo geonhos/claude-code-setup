@@ -12,3 +12,4 @@
 - 2026-10-23 · implementer · role-aware ask timeout · harness ask defaults to 1740000 ms for implementer, 600000 for analyst/reviewer; --timeout no longer needed
 - 2026-10-23 · implementer · v15 ask latency · Stop hook skips suite for docs/.harness-only asks (wiki → wiki-lint); harness suite split in 3 + glob discovery; /clear succeeds on new session id (60 polls), one retry, then respawn; progress.jsonl `clear` field
 - 2026-10-23 · implementer · v16 headless runner pilot · decision 0007: runner.<role> headless (claude -p in a viewer pane, harness-run/harness-view), completion = exit.json, gate denies .harness/log/*.jsonl; pane mode unchanged
+- 2026-10-23 · implementer · v16 round 2 · 0007: use_hl needs a live run, pending-retro streams kept, --keep session fallback, start-check failure is exit 1

@@ -456,6 +456,10 @@ record_progress() {
         herdr pane read "$(hl_registered_pane "$agent")" 2>/dev/null | tail -n 40
       fi
     fi
+    if [ "$hl" != '{}' ]; then
+      printf '\n## Run\n\n'
+      printf '%s' "$hl" | jq -r '"result \(.result // "-"), turns \(.turns // "-"), cost $\(.cost_usd // "-"), stream \(.stream_log // "-")"' 2>/dev/null
+    fi
   } > "$logf" || return 1
 
   # rotate the jsonl first so the new line lands in the fresh file
@@ -1718,11 +1722,11 @@ runner_of() {
 }
 
 # use_hl <role> — this role is handled by the headless code: configured so, or (runner flipped
-# back to pane) it still has a headless run recorded and no live pane-mode worker
+# back to pane) a headless run is still alive. A leftover .run / exit.json is not enough, and
+# herdr answers never decide it.
 use_hl() {
   [ "$(runner_of "$1")" != headless ] || return 0
-  [ -f ".harness/asks/$1.run" ] || return 1
-  ! agent_fields "$1" >/dev/null 2>&1
+  hl_alive "$1"
 }
 is_headless() { [ "$(runner_of "$1")" = headless ]; }
 
@@ -1736,6 +1740,13 @@ hl_alive() {
   read -r id pid < "$f"
   digits_only "${pid:-}" && kill -0 "$pid" 2>/dev/null || return 1
   ps -p "$pid" -o command= 2>/dev/null | grep -q 'harness-run'
+}
+# hl_last_session <role> — session id of the role's latest headless progress line that has one
+hl_last_session() {
+  [ -f "$JSONL" ] || return 1
+  grep -v '"event":"close"' "$JSONL" 2>/dev/null | tail -n 200 \
+    | jq -R -r --arg a "$1" 'fromjson? | select(type == "object" and .agent == $a and .runner == "headless" and ((.session // "") != "")) | .session' 2>/dev/null \
+    | tail -n 1 | grep .
 }
 hl_pid() { awk 'NR == 1 { print $2 }' ".harness/asks/$1.pid" 2>/dev/null; }
 # hl_done <role> <ask-id> — exit.json exists for that ask
@@ -1810,11 +1821,15 @@ hl_status_line() {
 # First match wins (spec §3). Never returns.
 hl_collect() {
   local role=$1 ej=".harness/asks/$1.exit.json" report="$REPORT_DIR/$1.md" cur=".harness/asks/$1.current"
-  local rc res iserr killed sid tinit pane
+  local rc res iserr killed sid tinit pane perm
   rc=$(jq -r '.rc // empty' "$ej" 2>/dev/null); res=$(jq -r '.result // empty' "$ej" 2>/dev/null)
   iserr=$(jq -r '.is_error // false' "$ej" 2>/dev/null); killed=$(jq -r '.killed // empty' "$ej" 2>/dev/null)
   sid=$(jq -r '(.session_id // "") | .[0:8]' "$ej" 2>/dev/null); tinit=$(jq -r '.t_init // empty' "$ej" 2>/dev/null)
   pane=$(hl_registered_pane "$role")
+  perm=$(jq -r '.perm // empty' "$ej" 2>/dev/null)
+  if [ -n "$perm" ] && [ "$perm" != auto ]; then
+    echo "harness: warning: $role ran with permission mode '$perm', not auto; tools may have been denied (see the viewer pane)" >&2
+  fi
   restore_interrupted "$role" "$report"
   if [ -f "$report" ] && { [ ! -f "$cur" ] || [ ! "$report" -ot "$cur" ]; }; then
     if { [ -n "$rc" ] && [ "$rc" != 0 ]; } || [ "$iserr" = true ]; then
@@ -1860,10 +1875,16 @@ ask_headless() {
     if [ -n "$sid" ]; then
       resume=$sid
       ctxb=$(jq -r '.ctx // empty' "$a.exit.json" 2>/dev/null)
+    elif sid=$(hl_last_session "$role") && [ -n "$sid" ]; then
+      # the previous run died before it reported a session: fall back to the last good one
+      resume=$sid
+      echo "harness: note: the previous run recorded no session; resuming the last successful one from progress.jsonl (${sid:0:8})"
     else
       echo "harness: note: no previous session for $role — running fresh"
     fi
   fi
+  # a session file left by an earlier run must never be mistaken for this run's
+  rm -f "$a.session"
   if [ -f "$report" ]; then
     archive_late "$role" "$report" || {
       echo "harness: could not archive the leftover report; kept as $report.unlogged" >&2
@@ -1899,7 +1920,12 @@ ask_headless() {
     if ! hl_alive "$role"; then
       sleep 0.3
       if hl_done "$role" "$id"; then hl_collect "$role"; fi
-      echo "harness: $role's run is gone without a result (killed?); --keep resumes session $(sed -n 1p "$a.session" 2>/dev/null | cut -c1-8)"
+      sid=$(sed -n 1p "$a.session" 2>/dev/null | cut -c1-8)
+      if [ -n "$sid" ]; then
+        echo "harness: $role's run is gone without a result (killed?); --keep resumes session $sid"
+      else
+        echo "harness: $role's run is gone without a result (killed?); it recorded no session (--keep resumes the last successful one, if any)"
+      fi
       exit 3
     fi
     now=$(date +%s)

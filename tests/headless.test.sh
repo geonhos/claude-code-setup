@@ -176,6 +176,73 @@ hrun ask analyst "q"
 check "env overrides config: pane" logged "agent start"
 unset HARNESS_RUNNER_ANALYST FAKE_PROMPT_HOOK
 
+# 14. permission mode other than auto: warning; ## Run line in the ask log
+hsetup; export FAKE_PERM=default
+hrun ask analyst "q"
+check "perm: warning printed" grep -qi "warning.*permission.*default" <<<"$OUT"
+unset FAKE_PERM
+hsetup
+hrun ask analyst "q"
+check "perm auto: no warning" not_grep "permission mode" <(printf '%s' "$OUT")
+logf=$(ls .harness/log/*-analyst.md | head -n 1)
+check "run line: section in the log" grep -q '^## Run' "$logf"
+check "run line: result turns cost stream" grep -Eq 'result success.*turns 3.*cost.*0\.01.*stream .*\.jsonl' "$logf"
+
+# 15. a run that dies before init: no stale session id suggested; --keep falls back explicitly
+hsetup
+hrun ask analyst "first"
+check "stale sid: first run wrote sess-1" [ "$(cat .harness/asks/analyst.session)" = sess-1 ]
+export FAKE_CLAUDE_MODE=hangpre
+( hrun ask analyst "second" --timeout 60000; echo "$OUT" > "$WORK/ask2.out" ) &
+bg=$!
+i=0; while [ $i -lt 50 ] && ! grep -q . .harness/asks/analyst.pid 2>/dev/null; do sleep 0.2; i=$((i + 1)); done
+check "stale sid: cleared at ask start" [ ! -s .harness/asks/analyst.session ]
+kill -9 "$(awk 'NR == 1 { print $2 }' .harness/asks/analyst.pid)"
+pkill -f "fake-claude/claude" 2>/dev/null
+wait "$bg"
+OUT=$(cat "$WORK/ask2.out")
+check "stale sid: run gone reported" grep -q "gone without a result" <<<"$OUT"
+check "stale sid: old session not suggested" not_grep "sess-1" <(printf '%s' "$OUT")
+export FAKE_CLAUDE_MODE=success
+hrun ask analyst "third" --keep
+check "stale sid: --keep resumes the last successful session" logged "--resume sess-1"
+check "stale sid: --keep says where it came from" grep -q "progress.jsonl" <<<"$OUT"
+
+# 16. watchdog does not outlive an killed harness-run
+hsetup; export FAKE_CLAUDE_MODE=hang HARNESS_HL_MAX_S=4
+( hrun ask analyst "q" --timeout 60000 ) &
+bg=$!
+i=0; while [ $i -lt 50 ] && ! grep -q . .harness/asks/analyst.pid 2>/dev/null; do sleep 0.2; i=$((i + 1)); done
+rid=$(awk 'NR == 1 { print $1 }' .harness/asks/analyst.pid)
+kill -9 "$(awk 'NR == 1 { print $2 }' .harness/asks/analyst.pid)"
+pkill -f "fake-claude/claude" 2>/dev/null
+sleep 2.5
+check "watchdog orphan: gone once harness-run is" not pgrep -f "harness-run analyst $rid"
+pkill -f "harness-run analyst $rid" 2>/dev/null
+wait "$bg"
+unset HARNESS_HL_MAX_S
+
+# 17. use_hl: only a live headless run (or config) selects the headless code
+hsetup; export FAKE_CLAUDE_MODE=hang
+( hrun ask analyst "q" --timeout 60000 ) &
+bg=$!
+i=0; while [ $i -lt 50 ] && ! grep -q . .harness/asks/analyst.pid 2>/dev/null; do sleep 0.2; i=$((i + 1)); done
+export HARNESS_RUNNER_ANALYST=pane
+hrun status
+check "use_hl: live headless run under runner=pane still shown as hl" grep -Eq 'analyst +running .* hl' <<<"$OUT"
+hrun close analyst --force
+check "use_hl: live run closed headless (force_kill)" grep -q force_kill .harness/progress.jsonl
+wait "$bg"
+export HARNESS_RUNNER_ANALYST=headless FAKE_CLAUDE_MODE=success
+hrun ask analyst "again"
+export HARNESS_RUNNER_ANALYST=pane
+hrun status
+check "use_hl: leftover .run, dead pid, runner=pane: not an hl line" not_grep " hl" <(printf '%s' "$OUT")
+hrun close analyst
+check "use_hl: leftover .run under runner=pane: close is pane behaviour (no viewer pane closed)" not_grep "closed analyst" <(printf '%s' "$OUT")
+check "use_hl: leftover .run under runner=pane: viewer pane left registered" grep -q '^analyst ' .harness/panes
+export HARNESS_RUNNER_ANALYST=headless
+
 # status
 hsetup
 hrun ask analyst "q"
