@@ -1526,7 +1526,7 @@ retro_brief() {
   else
     printf 'This repo has no docs/wiki: one file per note in `.harness/retro/inbox/<YYYY-MM-DD>-retro-<ask-id>.md`. Do not create docs/wiki.\n'
   fi
-  printf 'Skip any ask-id that already appears in a file under the inbox (a previous retro may have finished after its ask timed out).\n'
+  printf 'Skip any ask-id that already has a retro note in the inbox (a file named `*-retro-<ask-id>.md`; a previous retro may have finished after its ask timed out). Other inbox files, such as a role'"'"'s late Learned harvest, do not count.\n'
   printf 'Do not edit wiki pages, index.md or log.md. No fluff, no success stories.\n'
   printf 'Inbox files are committed to git: never copy prompt text, screen text, secrets, tokens, keys or URLs with credentials from the logs; paraphrase the observable symptom.\n'
 }

@@ -300,7 +300,9 @@ check "brief: no prompt text" not grep -q 'PROMPT-TEXT' $B
 check "brief: no screen text" not grep -q 'fake screen' $B
 check "brief: log paths" grep -q '^- log: .harness/log/' $B
 check "brief: inbox is committed / no secrets" grep -q 'committed to git: never copy prompt text, screen text, secrets, tokens' $B
-check "brief: skip ask-ids already in inbox" grep -q 'Skip any ask-id that already appears' $B
+check "brief: skip only ask-ids with a retro note" grep -qF 'already has a retro note in the inbox (a file named `*-retro-<ask-id>.md`' $B
+check "brief: other inbox files do not skip" grep -q 'harvest.*do not count' $B
+check "brief: no any-inbox-file skip rule" not grep -q 'already appears in a file' $B
 check "brief: evidence not only rotating paths" grep -q 'rotate away' $B
 
 # real path, analyst fails (blocked -> exit 2): candidates stay
