@@ -10,6 +10,7 @@
 #         $FAKE_DIR/cwd.<agent>     cwd reported by `agent get` (default: the caller's $PWD)
 #         $FAKE_CLEAR               ok (default): `agent prompt <a> /clear` assigns a new session id
 #                                   stuck: /clear is accepted but the session id never changes
+#                                   stuckbusy: like stuck, and the status becomes working (the pane is busy)
 #                                   late<N>: the new session id appears at the N-th `agent get` after /clear
 #                                   sidonly: the session id changes but the status becomes working for the next 3 `agent get`s
 #                                   second: the first /clear is ignored, the second one works
@@ -114,6 +115,7 @@ case "$sub" in
       echo "$nclear" > "$FAKE_DIR/clear.n.$name"
       case "${FAKE_CLEAR:-ok}" in
         stuck) ;;
+        stuckbusy) echo working > "$FAKE_DIR/live.$name" ;;
         sidonly) echo "sess-$name-c$$-$RANDOM" > "$FAKE_DIR/session.$name"
                  echo working > "$FAKE_DIR/live.$name"; echo 3 > "$FAKE_DIR/idle.pending.$name" ;;
         late*) echo "${FAKE_CLEAR#late}" > "$FAKE_DIR/clear.pending.$name" ;;

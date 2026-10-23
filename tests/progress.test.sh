@@ -285,6 +285,19 @@ check "reset stuck: /clear sent twice (one retry)" [ "$(grep -c "agent prompt $(
 check "reset stuck: progress clear respawn" [ "$(jl .clear)" = respawn ]
 unset FAKE_CLEAR
 
+# sid never changes and the pane is busy (working) after the first /clear: no second /clear, respawn
+setup; gitwork
+echo idle > "$FAKE_DIR/live.$(WN implementer)"; echo w1:p5 > "$FAKE_DIR/pane.$(WN implementer)"
+mkdir -p .harness; echo "implementer w1:p5" > .harness/panes
+export FAKE_CLEAR=stuckbusy
+hook_report implementer '# r\nstatus: done\n'
+run ask implementer "do it"
+check "reset busy: rc 0" [ "$RC" -eq 0 ]
+check "reset busy: exactly one /clear (no retry while busy)" [ "$(grep -c "agent prompt $(WN implementer) /clear" "$FAKE_LOG")" -eq 1 ]
+check "reset busy: pane closed" logged "pane close w1:p5"
+check "reset busy: progress clear respawn" [ "$(jl .clear)" = respawn ]
+unset FAKE_CLEAR
+
 # sid changes late (30 polls ~ 15 s at the default 0.5 s interval): still ok, no retry, no respawn
 setup; gitwork
 echo idle > "$FAKE_DIR/live.$(WN implementer)"; echo w1:p5 > "$FAKE_DIR/pane.$(WN implementer)"
