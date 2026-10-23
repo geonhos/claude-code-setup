@@ -119,7 +119,14 @@ physical() {
 }
 
 # readable_rel / writable_rel REL -> 0 when the repo-relative path is allowed
+# raw_stream_rel REL -> 0 for a headless run's raw stream (.harness/log/*.jsonl[.gz]); it
+# holds source the conductor must not see (ADR 0007)
+raw_stream_rel() {
+  case "$1" in .harness/log/*.jsonl|.harness/log/*.jsonl.*) return 0 ;; esac
+  return 1
+}
 readable_rel() {
+  raw_stream_rel "$1" && return 1
   case "$1" in
     .harness|.harness/*|docs|docs/*|*.md) return 0 ;;
   esac
@@ -278,6 +285,7 @@ bodyfile_ok() {
   has_expansion "$v" && return 1
   p=$(rel "$v") || return 1
   p=$(physrel "$v") || return 1
+  raw_stream_rel "$p" && return 1
   case "$p" in .harness/*|docs/*) return 0 ;; esac
   return 1
 }
@@ -438,6 +446,7 @@ cat_ls_segment_ok() {
       shift
       for tok in "$@"; do        # symlink-resolved: must stay in .harness/ or docs/
         p=$(physrel "$tok") || return 1
+        raw_stream_rel "$p" && return 1
         case "$p" in .harness|.harness/*|docs|docs/*) ;; *) return 1 ;; esac
       done ;;
   esac
@@ -486,7 +495,10 @@ case "$TOOL" in
   Read)
     readable "$(field file_path)" || deny "$MSG_READ" ;;
   Grep)
-    readable "$(field path)" || deny "$MSG_READ" ;;
+    readable "$(field path)" || deny "$MSG_READ"
+    # a directory search would read the raw streams under .harness/log
+    GRP=$(physrel "$(field path)") || deny "$MSG_READ"
+    case "$GRP" in .harness|.harness/log) deny "$MSG_READ" ;; esac ;;
   Glob)
     PATTERN=$(field pattern)
     case "$PATTERN" in *..*|/*|'~'*) deny "$MSG_READ" ;; esac
