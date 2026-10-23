@@ -29,8 +29,13 @@ sessf=$A/$role.session
 tinit=$A/$role.tinit
 wdflag=$A/$role.wdflag
 sigflag=$A/$role.sigflag
-mkdir -p .harness/log "$A"
-raw=.harness/log/$(date +%Y%m%d-%H%M%S)-$role.jsonl
+# a worktree ask keeps its raw stream in the MAIN checkout's log dir (log_dir=, absolute) and tags
+# the file name (log_tag=) so same-role asks never collide; plain asks use ./.harness/log
+logd=$(sed -n 's/^log_dir=//p' "$A/$role.run" 2>/dev/null | head -1)
+logt=$(sed -n 's/^log_tag=//p' "$A/$role.run" 2>/dev/null | head -1)
+[ -n "$logd" ] || logd=.harness/log
+mkdir -p "$logd" "$A"
+raw=$logd/$(date +%Y%m%d-%H%M%S)-$role${logt:+-$logt}.jsonl
 
 resume=$(sed -n 's/^resume=//p' "$A/$role.run" 2>/dev/null | head -1)
 max_s=$(sed -n 's/^max_s=//p' "$A/$role.run" 2>/dev/null | head -1)
