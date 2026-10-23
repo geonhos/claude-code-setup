@@ -29,8 +29,13 @@ sessf=$A/$role.session
 tinit=$A/$role.tinit
 wdflag=$A/$role.wdflag
 sigflag=$A/$role.sigflag
-mkdir -p .harness/log "$A"
-raw=.harness/log/$(date +%Y%m%d-%H%M%S)-$role.jsonl
+# a worktree ask keeps its raw stream in the MAIN checkout's log dir (log_dir=, absolute) and tags
+# the file name (log_tag=) so same-role asks never collide; plain asks use ./.harness/log
+logd=$(sed -n 's/^log_dir=//p' "$A/$role.run" 2>/dev/null | head -1)
+logt=$(sed -n 's/^log_tag=//p' "$A/$role.run" 2>/dev/null | head -1)
+[ -n "$logd" ] || logd=.harness/log
+mkdir -p "$logd" "$A"
+raw=$logd/$(date +%Y%m%d-%H%M%S)-$role${logt:+-$logt}.jsonl
 
 resume=$(sed -n 's/^resume=//p' "$A/$role.run" 2>/dev/null | head -1)
 max_s=$(sed -n 's/^max_s=//p' "$A/$role.run" 2>/dev/null | head -1)
@@ -46,8 +51,7 @@ kill_tree() {
   return 0
 }
 
-rm -f "$rcf" "$tinit" "$wdflag" "$sigflag" "$exitf" "$sessf"
-echo "$id $$" > "$pidf"
+rm -f "$rcf" "$tinit" "$wdflag" "$sigflag" "$exitf" "$sessf" "$pidf"
 : > "$raw"
 printf '=== %s ask %s %s ===\n' "$role" "$id" "$(date '+%H:%M:%S')"
 
@@ -74,8 +78,12 @@ trap on_signal TERM INT HUP
   | { harness-view || cat >/dev/null; }
 ) &
 pipe=$!
-# the pipeline's process group, recorded at start (3rd field; readers only use the first two)
+# the pipeline's process group, recorded at start (3rd field; readers only use the first two).
+# The pid file is the "I can be stopped" announcement: written only now that the TERM trap is
+# installed and the pipeline exists, so a close racing the start still finds sigflag + a pipe to kill
 echo "$id $$ $pipe" > "$pidf"
+# a TERM that arrived between the fork and `pipe=$!` found no pipe to kill
+[ ! -e "$sigflag" ] || kill_tree "$pipe"
 # the watchdog ticks once a second; it ends with this runner (a SIGKILLed harness-run must not
 # leave it behind, and it then reaps the orphaned pipeline's process group) and kills it on
 # timeout only while it is still this runner's child

@@ -78,6 +78,16 @@ router that will later suggest the route.
    implementer always; analyst/reviewer when their context is large). Add
    `--fresh` to force a clear for a new topic, or `--keep` for a follow-up
    that needs the previous conversation.
+   Parallel asks: analyst/reviewer on the headless runner take `--worktree [--base REF]`
+   (own detached checkout, own report; max 3 at once, a 4th exits 4). Give each a
+   distinct brief `.harness/task-<role>-<slug>.md`, start each `harness ask … --worktree`
+   as its own background Bash call, and collect with `harness report <ask-id>` (the
+   ask-id is on stderr at start). Not for the implementer or pane-mode roles (exit 1).
+   A worktree ask returns its `.harness/*.md` outputs (detail files, designs) in the main
+   `.harness/` (a clashing name gets an `.<id8>.md` suffix); any other edit it made comes
+   back only as `.harness/wt/<ask-id>.patch` (stderr warning) to apply via /implement. A worktree with a saved patch is never auto-reaped: it stays
+   `kept` in `harness status` until `harness close <ask-id>` (`--force` only if it holds
+   more than the patch); the patch file outlives the close.
 3. Read only the report that `harness ask` prints. Decide: done, iterate with
    another skill call, or ask the user.
 4. Keep your own output short. Relay the report's substance to the user, not

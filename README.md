@@ -44,13 +44,18 @@ cd ~/workspace/claude-code-setup
 ```
 harness spawn  <agent> [--direction right|down]
 harness ask    <agent> '<instruction>' [--timeout MS] [--fresh|--keep] [--via skill|conductor|retro]   # exit 2 blocked · 3 no report · 4 still working · 5 verification failed · 6 worker runs outside this repo
-harness report <agent>                                   # print existing report (same exit codes as ask), 3 none, 4 still working, 6 worker runs outside this repo (worker names are `<role>-<repo8>`)
+harness report <agent>|<ask-id>                                   # print existing report (same exit codes as ask), 3 none, 4 still working, 6 worker runs outside this repo (worker names are `<role>-<repo8>`)
+harness ask    <analyst|reviewer> '<instruction>' --worktree [--base REF]   # headless 전용: ask마다 detached git worktree(~/.cache/harness/wt/<repo8>/<role>-<id8>), 병렬 ask 가능 (ADR 0008)
 harness status
 harness retro  [--dry-run]                               # 실패한 ask의 후보(.harness/retro/)를 analyst 한 번에 묶어 회고 → docs/wiki/inbox/
 harness metrics [--since YYYY-MM-DD] [--json]            # progress.jsonl·위키 기반 지표 (최근 28일 vs 직전 28일)
-harness close  <agent>|--all|--legacy [--force]          # exit 4 when working/blocked or the report is uncollected (--force overrides); --legacy closes old unscoped workers of this repo
+harness close  <agent>|<ask-id>|--all|--legacy [--force]          # exit 4 when working/blocked or the report is uncollected (--force overrides); --legacy closes old unscoped workers of this repo
 harness route-log '<json>'                               # append one line to .harness/routing.jsonl (used by the hook and by ask)
 ```
+
+## 병렬 ask: `--worktree` (ADR 0008)
+
+`runner`가 `headless`인 analyst·reviewer는 `--worktree [--base REF]`로 ask마다 자기 작업 트리(`git worktree add --detach`, 브랜치·머지 없음)를 받는다. 경로는 `~/.cache/harness/wt/<repo8>/<role>-<id8>`(`.harness/` 밖). ask-id는 시작할 때 stderr에 찍히고 `harness report <ask-id>`·`harness close <ask-id> [--force]`·`harness status`에 쓴다. 진행 로그·routing·retro는 메인 루트에 그대로 쌓인다(progress.jsonl에 `wt`/`base`/`ask_id`). 리포트를 정상 수집(exit 0/5)했고 작업 트리가 깨끗하면 자동 제거, 아니면 유지. 패치가 저장된 작업 트리는 자동으로 절대 지워지지 않고(idle TTL·LOG_DAYS 포함) `harness status`에 `kept`+패치 경로로 남아 `harness close <ask-id>`를 기다린다(저장된 패치 외 변경이 더 있을 때만 `--force`). 패치 파일은 close 뒤에도 남고 HARNESS_LOG_DAYS 후 정리된다. 패치 없는 깨끗한 kept는 idle TTL로 정리될 수 있다. 동시에 `max_parallel`(기본 3, `HARNESS_MAX_PARALLEL`)개까지, 넘으면 exit 4. implementer·pane 러너에 쓰면 exit 1. 작업 트리 안의 `.harness/*.md` 산출물은 끝날 때 메인 `.harness/`로 복사되고(예약 이름 `goal.md`·`progress.md`·`task-*.md`와 심볼릭 링크는 제외; 메인 쪽이 그사이 바뀌었으면 `<name>.<id8>.md`), 그 밖의 변경은 `.harness/wt/<ask-id>.patch`로 저장되며 작업 트리는 유지된다. `HARNESS_WT_ROOT`는 저장소 밖 절대경로여야 하고, `--base`는 `--worktree`와 함께만 쓴다.
 
 ## 워커 패널 자동 종료
 
