@@ -1,4 +1,7 @@
 #!/bin/bash
+# The body is one brace group: bash parses the whole file before running any of it, so a
+# tool that rewrites this file in place cannot corrupt a run in progress (wiki: gotchas).
+{
 # harness — conductor-side wrapper around herdr for named Claude workers.
 # Spec: docs/superpowers/specs/2026-10-12-herdr-conductor-setup-design.md
 #
@@ -1737,7 +1740,7 @@ hl_registered_pane() { awk -v r="$1" '$1 == r { p = $2 } END { if (p != "") prin
 hl_alive() {
   local f=".harness/asks/$1.pid" id pid
   [ -f "$f" ] || return 1
-  read -r id pid < "$f"
+  read -r id pid _ < "$f"
   digits_only "${pid:-}" && kill -0 "$pid" 2>/dev/null || return 1
   ps -p "$pid" -o command= 2>/dev/null | grep -q 'harness-run'
 }
@@ -1870,7 +1873,7 @@ hl_view_tail() { [ -z "${1:-}" ] || herdr pane read "$1" 2>/dev/null | tail -n 3
 # ask_headless <role> <text> <timeout-ms> <fresh> <keep> — the whole headless ask; always exits
 ask_headless() {
   local role=$1 text=$2 timeout=$3 keep=$5 pane id start resume="" sid max_s ctxb="" report="$REPORT_DIR/$1.md"
-  local a=".harness/asks/$role" now deadline poll=${HARNESS_POLL_SEC:-2} start_s=${HARNESS_HL_START_S:-15} s0
+  local a=".harness/asks/$role" now deadline poll=${HARNESS_POLL_SEC:-2} start_s=${HARNESS_HL_START_S:-15} s0 g
   mkdir -p .harness/asks .harness/done "$REPORT_DIR" "$LOG_DIR"
   if hl_alive "$role"; then
     echo "harness: $role is still running (pid $(hl_pid "$role")); nothing sent. Collect with: harness report $role; stop: harness close $role --force" >&2
@@ -1927,7 +1930,8 @@ ask_headless() {
   while :; do
     if hl_done "$role" "$id"; then hl_collect "$role"; fi
     if ! hl_alive "$role"; then
-      sleep 0.3
+      # the runner may still be writing exit.json (jq, mv) as its pid disappears: give it ~3 s
+      g=0; while [ "$g" -lt 30 ] && ! hl_done "$role" "$id"; do sleep 0.1; g=$((g + 1)); done
       if hl_done "$role" "$id"; then hl_collect "$role"; fi
       sid=$(sed -n 1p "$a.session" 2>/dev/null | cut -c1-8)
       if [ -n "$sid" ]; then
@@ -1985,7 +1989,8 @@ hl_finish_close() {
   herdr pane close "$2" >/dev/null || die "pane close failed for $2"
   pane_gone "$2" || die "pane $2 is still present after close; registry entry kept"
   unregister "$1" "$2"
-  rm -f ".harness/asks/$1.finished"
+  # a close ends the conversation: --keep must not resume a session across it
+  rm -f ".harness/asks/$1.finished" ".harness/asks/$1.session"
   log_close "$1" "$2" "$3" headless
   echo "closed $1 ($2)"
 }
@@ -2039,3 +2044,5 @@ case "${1:-}" in
   close)  shift; cmd_close "$@" ;;
   *)      usage ;;
 esac
+exit $?
+}

@@ -1,4 +1,7 @@
 #!/bin/bash
+# The body is one brace group: bash parses the whole file before running any of it, so a
+# tool that rewrites this file in place cannot corrupt a run in progress (wiki: gotchas).
+{
 # harness-run <role> <ask-id> <root> — run ONE headless worker ask inside a viewer pane.
 # Started by `harness ask` through `herdr pane run`; not for the conductor (the gate
 # only matches `harness`, and this refuses to run without HARNESS_ROLE=worker).
@@ -33,6 +36,9 @@ resume=$(sed -n 's/^resume=//p' "$A/$role.run" 2>/dev/null | head -1)
 max_s=$(sed -n 's/^max_s=//p' "$A/$role.run" 2>/dev/null | head -1)
 case "$max_s" in ''|*[!0-9]*) max_s=3600 ;; esac
 
+# job control: the background pipeline becomes its own process group (pgid == its pid), which
+# is what the watchdog reaps after a SIGKILLed runner
+set -m
 kill_tree() {
   local c
   for c in $(pgrep -P "$1" 2>/dev/null); do kill_tree "$c"; done
@@ -57,7 +63,7 @@ trap on_signal TERM INT HUP
   { claude -p --agent "$role" --output-format stream-json --verbose --include-hook-events \
       --disallowedTools=AskUserQuestion ${resume:+--resume "$resume"} < "$prompt" 2> "$errf"
     echo $? > "$rcf"; } \
-  | awk -v raw="$raw" -v ti="$tinit" -v sf="$sessf" '
+  | awk -v raw="$raw" -v ti="$tinit" -v sf="$sessf" -v hrid="$role:$id" '
       { print > raw; fflush(raw) }
       !t && /"subtype":"init"/ {
         t = 1; system("date +%s > \"" ti "\"")
@@ -68,20 +74,36 @@ trap on_signal TERM INT HUP
   | { harness-view || cat >/dev/null; }
 ) &
 pipe=$!
+# the pipeline's process group, recorded at start (3rd field; readers only use the first two)
+echo "$id $$ $pipe" > "$pidf"
 # the watchdog ticks once a second; it ends with this runner (a SIGKILLed harness-run must not
-# leave it behind, and it then reaps the orphaned pipeline by run identity) and kills it on
+# leave it behind, and it then reaps the orphaned pipeline's process group) and kills it on
 # timeout only while it is still this runner's child
 runner=$$
+runner_alive() {
+  local st
+  st=$(ps -o stat= -p "$runner" 2>/dev/null | tr -d ' ')
+  [ -n "$st" ] && [ "${st#Z}" = "$st" ]   # a zombie runner is dead
+}
+group_members() {
+  ps -ax -o pgid= -o stat= 2>/dev/null | awk -v g="$1" '$1 == g && $2 !~ /^Z/ { n++ } END { print n + 0 }'
+}
+# reap_group <pgid> — only a group with a member carrying this run's identity ("harness-run
+# <role> <ask-id> " or the awk stage's hrid=<role>:<ask-id>) is touched; TERM, wait up to 3 s, KILL
+reap_group() {
+  local g=$1 i=0
+  ps -ax -o pgid= -o command= 2>/dev/null \
+    | awk -v g="$g" -v a="harness-run $role $id " -v b="hrid=$role:$id" \
+        '$1 == g && (index($0, a) || index($0, b)) { f = 1 } END { exit !f }' || return 0
+  kill -TERM -- "-$g" 2>/dev/null
+  while [ "$i" -lt 30 ] && [ "$(group_members "$g")" != 0 ]; do sleep 0.1; i=$((i + 1)); done
+  [ "$(group_members "$g")" = 0 ] || kill -KILL -- "-$g" 2>/dev/null
+  return 0
+}
 ( n=0
   while [ "$n" -lt "$max_s" ]; do
     sleep 1; n=$((n + 1))
-    if ! kill -0 "$runner" 2>/dev/null; then
-      # the runner is gone (SIGKILLed): its pipeline is orphaned (ppid 1) and nobody else
-      # will stop it. Kill it only while the process still carries this run's identity
-      # (its command line holds "harness-run <role> <ask-id>"), never by a bare pid
-      ps -o command= -p "$pipe" 2>/dev/null | grep -qF "harness-run $role $id " && kill_tree "$pipe"
-      exit 0
-    fi
+    if ! runner_alive; then reap_group "$pipe"; exit 0; fi
   done
   [ "$(ps -o ppid= -p "$pipe" 2>/dev/null | tr -d ' ')" = "$runner" ] || exit 0
   : > "$wdflag"; kill_tree "$pipe" ) >/dev/null 2>&1 &
@@ -127,3 +149,5 @@ mv "$tmp" "$exitf"
 rm -f "$pidf" "$rcf" "$tinit" "$wdflag" "$sigflag"
 printf '=== exit %s ===\n' "$rc"
 exit 0
+exit $?
+}

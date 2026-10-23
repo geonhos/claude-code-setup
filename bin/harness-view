@@ -1,4 +1,7 @@
 #!/bin/bash
+# The body is one brace group: bash parses the whole file before running any of it, so a
+# tool that rewrites this file in place cannot corrupt a run in progress (wiki: gotchas).
+{
 # harness-view — render a `claude -p --output-format stream-json` stream (stdin) as a human view.
 # Never fails on odd input: non-JSON lines and unknown event types print nothing.
 c=0
@@ -34,3 +37,5 @@ exec jq -R --unbuffered -r --arg c "$c" '
     else empty end
   ) catch empty
 '
+exit $?
+}

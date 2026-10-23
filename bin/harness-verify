@@ -1,4 +1,7 @@
 #!/bin/bash
+# The body is one brace group: bash parses the whole file before running any of it, so a
+# tool that rewrites this file in place cannot corrupt a run in progress (wiki: gotchas).
+{
 # harness-verify — computational checks (format, lint, test) for harness workers.
 # Spec: docs/superpowers/specs/2026-10-18-verification-loop-design.md
 #
@@ -463,3 +466,5 @@ case "${1:-}" in
     echo "usage: harness-verify detect | format [file] | stop | done ROLE | run [lint|test|all] | baseline [agent]" >&2
     exit 1 ;;
 esac
+exit $?
+}

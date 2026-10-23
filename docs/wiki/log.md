@@ -13,3 +13,4 @@
 - 2026-10-23 · implementer · v15 ask latency · Stop hook skips suite for docs/.harness-only asks (wiki → wiki-lint); harness suite split in 3 + glob discovery; /clear succeeds on new session id (60 polls), one retry, then respawn; progress.jsonl `clear` field
 - 2026-10-23 · implementer · v16 headless runner pilot · decision 0007: runner.<role> headless (claude -p in a viewer pane, harness-run/harness-view), completion = exit.json, gate denies .harness/log/*.jsonl; pane mode unchanged
 - 2026-10-23 · implementer · v16 round 2 · 0007: use_hl needs a live run, pending-retro streams kept, --keep session fallback, start-check failure is exit 1
+- 2026-10-23 · implementer · v17 round 2 · gotcha in-place-edit-breaks-running-scripts; bin/* brace-wrapped; harness-run reaps the pipeline process group (TERM, 3 s, KILL; zombie runner = dead); close drops .session; exit.json grace ~3 s

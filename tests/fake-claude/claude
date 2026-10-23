@@ -1,6 +1,6 @@
 #!/bin/bash
 # Fake `claude -p` for tests/headless.test.sh. Not a real client.
-# $FAKE_CLAUDE_MODE: success|noreport|error|maxturns|slow<N>|hang|hangpre|nostart|junk
+# $FAKE_CLAUDE_MODE: success|noreport|error|maxturns|slow<N>|hang|hangterm|hangpre|nostart|junk
 # $FAKE_PERM sets init permissionMode (default auto). hangpre sleeps before any output.
 #   success   init + tool_use + result success; writes the report via $FAKE_REPORT_CMD
 #   noreport  like success, no report      error  result is_error (rc 1)
@@ -16,11 +16,13 @@ input=$(cat)
 printf 'claude stdin: %s\n' "$input" >> "$FAKE_LOG"
 [ "$mode" != nostart ] || exit 127
 echo $$ > "$FAKE_DIR/claude.pid"
+echo $$ >> "$FAKE_DIR/claude.pids"   # every run, so tests kill exactly their own
 n=$(( $(cat "$FAKE_DIR/claude.n" 2>/dev/null || echo 0) + 1 )); echo "$n" > "$FAKE_DIR/claude.n"
 sid=sess-$n
 resume=""; prev=""
 for a in "$@"; do [ "$prev" != --resume ] || resume=$a; prev=$a; done
 [ -z "$resume" ] || sid=$resume
+[ "$mode" != hangterm ] || { trap '' TERM; while :; do sleep 0.1; done; }   # ignores TERM: only KILL stops it
 [ "$mode" != hangpre ] || { trap 'exit 143' TERM; while :; do sleep 0.1; done; }
 ev() { printf '%s\n' "$1"; }
 ev '{"type":"system","subtype":"hook_started","hook_event":"Stop","hook_name":"Stop"}'
