@@ -86,7 +86,7 @@ usage() {
 usage:
   harness spawn  <agent> [--direction right|down]
   harness ask    <agent> '<instruction>' [--timeout MS (default: implementer 1740000, others 600000)] [--fresh|--keep] [--via skill|conductor|retro]
-  harness ask    <analyst|reviewer> '<instruction>' --worktree [--base REF] ...   (headless roles only)
+  harness ask    <analyst|reviewer> '<instruction>' --worktree [--base REF] ...   (headless roles only; --base needs --worktree)
   harness report <agent>|<ask-id>
   harness status
   harness close  <agent>|<ask-id>|--all|--legacy [--force]
@@ -208,18 +208,41 @@ show_agent_diag() {
   fi
 }
 
-# unregister <agent> <pane> — drop that line from the pane registry
+# lock_take <dir> — mkdir lock (portable); a lock older than ~10 s is taken over
+lock_take() {
+  local d=$1 i=0
+  while ! mkdir "$d" 2>/dev/null; do
+    i=$((i + 1))
+    if [ "$i" -ge 200 ]; then rm -rf "$d"; i=0; fi
+    sleep 0.05
+  done
+}
+lock_drop() { rmdir "$1" 2>/dev/null || rm -rf "$1"; }
+
+# unregister <agent> <pane> — drop that line from the pane registry (under the registry lock:
+# parallel worktree asks register and unregister at the same time)
 unregister() {
-  local tmp rc
+  local tmp rc lock="$PANES_FILE.lock"
   [ -f "$PANES_FILE" ] || return 0
-  tmp=$(mktemp "$PANES_FILE.XXXXXX") || die "cannot create temp file next to $PANES_FILE"
+  lock_take "$lock"
+  tmp=$(mktemp "$PANES_FILE.XXXXXX") || { lock_drop "$lock"; die "cannot create temp file next to $PANES_FILE"; }
   grep -Fxv -- "$1 $2" "$PANES_FILE" > "$tmp"
   rc=$?
   if [ "$rc" -gt 1 ]; then
-    rm -f "$tmp"
+    rm -f "$tmp"; lock_drop "$lock"
     die "cannot rewrite $PANES_FILE"
   fi
   mv "$tmp" "$PANES_FILE"
+  lock_drop "$lock"
+}
+
+# register <agent> <pane> — append that line to the pane registry (under the same lock)
+register() {
+  local lock="$PANES_FILE.lock"
+  mkdir -p "$(dirname "$PANES_FILE")"
+  lock_take "$lock"
+  printf '%s %s\n' "$1" "$2" >> "$PANES_FILE"
+  lock_drop "$lock"
 }
 
 # Terminal cells are roughly twice as tall as wide; a pane is "wide" when
@@ -271,8 +294,7 @@ cmd_spawn() {
   pane=$(printf '%s' "$out" | jq -r '.result.pane.pane_id // empty' 2>/dev/null)
   [ -n "$pane" ] || die "pane split returned no pane id: $out"
 
-  mkdir -p "$(dirname "$PANES_FILE")"
-  printf '%s %s\n' "$agent" "$pane" >> "$PANES_FILE"
+  register "$agent" "$pane"
   rm -f ".harness/asks/$agent.finished"
 
   if ! out=$(herdr agent start "$(wname "$agent")" --kind claude --pane "$pane" -- --agent "$agent" 2>&1); then
@@ -648,21 +670,22 @@ record_route_delegate() {
 archive_late() {
   local agent=$1 report=$2 sha last ts stamp logf n status summary
   sha=$(file_sum "$report")
-  last=$(grep -v '"event":"close"' "$JSONL" 2>/dev/null | tail -n 200 | jq -R -r --arg a "$agent" 'fromjson? | select(type == "object" and .agent == $a) | .report_sha // ""' 2>/dev/null | tail -n 1)
+  # keyed by role + ask: a worktree ask is compared with its own ask-id only, a plain one with plain lines
+  last=$(grep -v '"event":"close"' "$JSONL" 2>/dev/null | tail -n 200 | jq -R -r --arg a "$agent" --arg id "${ASK_ID:-}" 'fromjson? | select(type == "object" and .agent == $a and (.ask_id // "") == $id) | .report_sha // ""' 2>/dev/null | tail -n 1)
   [ -z "$sha" ] || [ "$sha" != "$last" ] || return 0
   ts=$(date -u +%Y-%m-%dT%H:%M:%SZ); stamp=$(date +%Y%m%d-%H%M%S)
   status=$(sed -n 's/^status: *//p' "$report" | head -n 1)
   summary=$(sed -n 's/^# *//p' "$report" | head -n 1)
   mkdir -p "$LOG_DIR" || return 1
-  logf="$LOG_DIR/$stamp-$agent-late.md"; n=1
-  while [ -e "$logf" ]; do n=$((n + 1)); logf="$LOG_DIR/$stamp-$agent-late-$n.md"; done
+  logf="$LOG_DIR/$stamp-$agent${ASK_WT:+-$ASK_ID8}-late.md"; n=1
+  while [ -e "$logf" ]; do n=$((n + 1)); logf="$LOG_DIR/$stamp-$agent${ASK_WT:+-$ASK_ID8}-late-$n.md"; done
   { printf '# %s late report %s (not logged by any ask)\n\n## Report\n\n' "$agent" "$ts"; cat "$report"; } > "$logf" || return 1
   local hl='{}'
   if use_hl "$agent"; then hl=$(hl_progress_obj "$agent" "" | jq -c 'del(.session, .ctx_after)' 2>/dev/null) || hl='{}'; fi
-  jq -n -c --arg ts "$ts" --arg agent "$agent" --arg status "$status" --arg summary "$summary" --arg sha "$sha" --argjson hl "$hl" '
+  jq -n -c --arg ts "$ts" --arg agent "$agent" --arg status "$status" --arg summary "$summary" --arg sha "$sha" --arg askid "${ASK_ID:-}" --argjson hl "$hl" '
     def nz: if . == "" then null else . end;
     {ts: $ts, agent: $agent, exit: null, late: true, status: ($status | nz),
-     summary: ($summary | nz), report_sha: ($sha | nz)} + $hl' >> "$JSONL" || return 1
+     summary: ($summary | nz), report_sha: ($sha | nz), ask_id: ($askid | nz)} + $hl' >> "$JSONL" || return 1
   write_progress_md
   return 0
 }
@@ -938,7 +961,7 @@ ask_finish() {
   rm -f "$ASK_TMP" "${ASK_PF:-}" "$ASK_DIR/$ASK_AGENT.clear"
   if [ -n "$ASK_WT" ]; then
     # a worktree ask has no role slot to stamp or close: collect, then remove the checkout when clean
-    ( wt_after_ask "$rc" ) >&2 || true
+    ( wt_after_ask "$rc" ) || true
     exit "$rc"
   fi
   # a printed report (0, or 5 = failed verification/FAIL verdict) counts as collected
@@ -1446,6 +1469,13 @@ cmd_close() {
         # keep the most significant failure: 6 (other repo) > 4 (refused) > 1
         case "$r" in 0) ;; 6) rc=6 ;; 4) [ "$rc" = 6 ] || rc=4 ;; *) [ "$rc" != 0 ] || rc=$r ;; esac
       done
+      # worktree asks too (a live run is refused unless --force, like a plain worker)
+      for a in $WT_DIR/*.json; do
+        [ -f "$a" ] || continue
+        case "$(jq -r '.state // empty' "$a" 2>/dev/null)" in running|kept|creating) ;; *) continue ;; esac
+        ( close_wt "$a" "$force" ); r=$?
+        case "$r" in 0) ;; 6) rc=6 ;; 4) [ "$rc" = 6 ] || rc=4 ;; *) [ "$rc" != 0 ] || rc=$r ;; esac
+      done
       exit "$rc" ;;
   esac
   case " $AGENTS " in
@@ -1830,8 +1860,7 @@ hl_pane() {
   fi
   pane=$(printf '%s' "$out" | jq -r '.result.pane.pane_id // empty' 2>/dev/null)
   [ -n "$pane" ] || die "pane split returned no pane id: $out"
-  mkdir -p "$(dirname "$PANES_FILE")"
-  printf '%s %s\n' "${ASK_KEY:-$role}" "$pane" >> "$PANES_FILE"
+  register "${ASK_KEY:-$role}" "$pane"
   printf '%s\n' "$pane"
 }
 
@@ -2078,26 +2107,46 @@ ask_ref() { if [ -n "$ASK_WT" ]; then printf '%s' "$ASK_ID"; else printf '%s' "$
 # ask_wt_parse <agent> <text> [opts...] — sets ASK_WT_WANT/ASK_BASE; usage errors exit 1 here,
 # before any file access, so they queue no retro candidate
 ask_wt_parse() {
-  local agent=$1 keep=0 base=""
+  local agent=$1 keep=0 base="" has_base=0 want=0
   shift 2
   ASK_WT_WANT=0
   while [ $# -gt 0 ]; do
     case "$1" in
       --timeout|--via) shift; [ $# -eq 0 ] || shift ;;
-      --worktree) ASK_WT_WANT=1; shift ;;
-      --base) ASK_WT_WANT=1; [ $# -ge 2 ] || die "--base needs a ref"; base=$2; shift 2 ;;
+      --worktree) want=1; shift ;;
+      --base) has_base=1; [ $# -ge 2 ] || die "--base needs a ref"; base=$2; shift 2 ;;
       --keep) keep=1; shift ;;
       *) shift ;;
     esac
   done
-  [ "$ASK_WT_WANT" = 1 ] || return 0
+  [ "$has_base" = 0 ] || [ "$want" = 1 ] || die "--base is only with --worktree (usage: harness ask <analyst|reviewer> '<instruction>' --worktree [--base REF])"
+  [ "$want" = 1 ] || return 0
+  ASK_WT_WANT=1
   case "$agent" in
     analyst|reviewer) ;;
     *) die "--worktree is for the headless analyst and reviewer only (not $agent)" ;;
   esac
   is_headless "$agent" || die "--worktree needs the headless runner for $agent (config runner.$agent=headless or HARNESS_RUNNER_$(printf %s "$agent" | tr 'a-z' 'A-Z')=headless)"
   [ "$keep" = 0 ] || die "--keep cannot be combined with --worktree (every worktree ask is a fresh session)"
+  wt_root_check
   ASK_BASE=$(git rev-parse --verify --quiet "${base:-HEAD}^{commit}") || die "--base: '${base:-HEAD}' is not a commit"
+}
+
+# wt_root_check — HARNESS_WT_ROOT must be absolute, outside the git toplevel and outside .harness/
+# (a checkout inside the repo would show up in its own status and in every search of it)
+wt_root_check() {
+  local top p
+  case "$WT_HOME" in /*) ;; *) die "HARNESS_WT_ROOT must be an absolute path (got '$WT_HOME')" ;; esac
+  case "$WT_HOME" in */.harness|*/.harness/*) die "HARNESS_WT_ROOT must not be inside a .harness/ directory (got '$WT_HOME')" ;; esac
+  top=$(git rev-parse --show-toplevel 2>/dev/null) || return 0
+  # resolve symlinks through the nearest existing ancestor (the root itself may not exist yet)
+  local rest="" d=$WT_HOME real
+  while [ ! -d "$d" ] && [ "$d" != / ]; do rest="/${d##*/}$rest"; d=${d%/*}; [ -n "$d" ] || d=/; done
+  real=$(cd "$d" 2>/dev/null && pwd -P)${rest}
+  for p in "$top" "$(cd "$top" && pwd -P)" "$(pwd -P)"; do
+    case "$WT_HOME/" in "$p"/*) die "HARNESS_WT_ROOT must be outside the repository (got '$WT_HOME', repo $top)" ;; esac
+    case "$real/" in "$p"/*) die "HARNESS_WT_ROOT must be outside the repository (got '$WT_HOME', repo $top)" ;; esac
+  done
 }
 
 wt_max_parallel() {
@@ -2140,12 +2189,21 @@ wt_capacity_check() {
   fi
 }
 
-# wt_update <key> <value> — set a string field of this ask's registry entry (tmp + mv)
+# wt_update <key> <value> — set a string field of this ask's registry entry (tmp + mv, under a
+# lock). A terminal state (closed by `close`, reaped) is never overwritten by another state: a
+# `close --force` racing the ask's own wrap-up wins.
 wt_update() {
-  local reg="$WT_DIR/$ASK_ID.json" tmp
+  local reg="$WT_DIR/$ASK_ID.json" tmp cur rc=0
   [ -f "$reg" ] || return 0
-  tmp=$(mktemp "$reg.XXXXXX") || return 1
-  if jq --arg k "$1" --arg v "$2" '.[$k] = $v' "$reg" > "$tmp" 2>/dev/null; then mv "$tmp" "$reg"; else rm -f "$tmp"; return 1; fi
+  lock_take "$reg.lock"
+  if [ "$1" = state ]; then
+    cur=$(jq -r '.state // empty' "$reg" 2>/dev/null)
+    case "$cur" in closed|reaped) [ "$2" = "$cur" ] || { lock_drop "$reg.lock"; return 0; } ;; esac
+  fi
+  tmp=$(mktemp "$reg.XXXXXX") || { lock_drop "$reg.lock"; return 1; }
+  if jq --arg k "$1" --arg v "$2" '.[$k] = $v' "$reg" > "$tmp" 2>/dev/null; then mv "$tmp" "$reg"; else rm -f "$tmp"; rc=1; fi
+  lock_drop "$reg.lock"
+  return "$rc"
 }
 
 # wt_lookup <ref> — print the registry file of an ask-id, an id8, or role@id8
@@ -2169,40 +2227,139 @@ wt_load() {
   ASK_DIR="$ASK_WT/.harness/asks"; REPORT_DIR="$ASK_WT/.harness/reports"
 }
 
-# wt_create — git worktree add --detach, per-ask dirs, brief copy, memory link, registry
+# wt_copy_in <rel> — copy a main-root .harness/ file into the worktree; records top-level .md
+# files (sha) in $WT_DIR/<ask-id>.in so copy-back can tell what the worker changed
+wt_copy_in() {
+  local rel=$1
+  mkdir -p "$ASK_WT/$(dirname "$rel")" && cp "$rel" "$ASK_WT/$rel" || return 1
+  case "$rel" in .harness/*/*) ;; .harness/*.md) printf '%s %s\n' "$(file_sum "$rel")" "${rel#.harness/}" >> "$WT_DIR/$ASK_ID.in" ;; esac
+  return 0
+}
+
+# wt_create — git worktree add --detach, per-ask dirs, brief copy, memory link, registry.
+# The registry entry is written first (state creating); a failing later step removes the checkout.
 wt_create() {
-  local out mm f rel
+  local out
   mkdir -p "$WT_DIR" "$WT_HOME/$REPO8" || return 1
   if ! out=$(git worktree add --detach "$ASK_WT" "$ASK_BASE" 2>&1); then
     echo "harness: git worktree add failed: $out" >&2
     return 1
   fi
+  jq -n -c --arg id "$ASK_ID" --arg id8 "$ASK_ID8" --arg role "$ASK_AGENT" --arg path "$ASK_WT" --arg base "$ASK_BASE" \
+    --argjson pid "$$" --argjson cs "$(date +%s)" --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+    '{id: $id, id8: $id8, role: $role, path: $path, base: $base, branch: null, pane: "", pid: $pid, created: $ts, created_s: $cs, state: "creating"}' \
+    > "$WT_DIR/$ASK_ID.json" || { wt_create_undo; return 1; }
+  if ! wt_create_rest; then
+    echo "harness: could not prepare the worktree $ASK_WT; removed it" >&2
+    wt_create_undo
+    return 1
+  fi
+  wt_update state running
+  echo "harness: ask $ASK_ID ($ASK_AGENT@$ASK_ID8) in $ASK_WT (base ${ASK_BASE:0:8}); collect: harness report $ASK_ID; stop: harness close $ASK_ID --force" >&2
+}
+
+wt_create_undo() {
+  rm -f "$ASK_WT/.claude/agent-memory" 2>/dev/null
+  git worktree remove --force "$ASK_WT" >/dev/null 2>&1 || rm -rf "$ASK_WT"
+  git worktree prune 2>/dev/null
+  wt_update state closed
+  return 0
+}
+
+wt_create_rest() {
+  local mm f rel seen="" q r
   mkdir -p "$ASK_DIR" "$REPORT_DIR" || return 1
   mm="$(pwd -P)/.claude/agent-memory"
   mkdir -p "$mm" "$ASK_WT/.claude" 2>/dev/null
-  { [ -e "$ASK_WT/.claude/agent-memory" ] || [ -L "$ASK_WT/.claude/agent-memory" ]; } || ln -s "$mm" "$ASK_WT/.claude/agent-memory"
-  # the brief (and any other .harness/ file the instruction names) is not in git: copy it in
+  { [ -e "$ASK_WT/.claude/agent-memory" ] || [ -L "$ASK_WT/.claude/agent-memory" ]; } || ln -s "$mm" "$ASK_WT/.claude/agent-memory" || return 1
+  : > "$WT_DIR/$ASK_ID.in" || return 1
+  # the brief (and any other .harness/ file the instruction names) is not in git: copy it in; each
+  # copied .harness/*.md is scanned once more for .harness/ files it names (a spec, a design)
   for rel in $(printf '%s\n' "$ASK_TEXT" | grep -oE '\.harness/[A-Za-z0-9._/-]+\.(md|json)' | sort -u) .harness/verify.local.json; do
     case "$rel" in *..*) continue ;; esac
     [ -f "$rel" ] || continue
-    mkdir -p "$ASK_WT/$(dirname "$rel")" && cp "$rel" "$ASK_WT/$rel"
+    wt_copy_in "$rel" || return 1
+    seen="$seen $rel"
   done
-  jq -n -c --arg id "$ASK_ID" --arg id8 "$ASK_ID8" --arg role "$ASK_AGENT" --arg path "$ASK_WT" --arg base "$ASK_BASE" \
-    --argjson pid "$$" --argjson cs "$(date +%s)" --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-    '{id: $id, id8: $id8, role: $role, path: $path, base: $base, branch: null, pane: "", pid: $pid, created: $ts, created_s: $cs, state: "running"}' \
-    > "$WT_DIR/$ASK_ID.json" || return 1
-  echo "harness: ask $ASK_ID ($ASK_AGENT@$ASK_ID8) in $ASK_WT (base ${ASK_BASE:0:8}); collect: harness report $ASK_ID; stop: harness close $ASK_ID --force" >&2
+  for q in $seen; do
+    case "$q" in *.md) ;; *) continue ;; esac
+    for r in $(grep -oE '\.harness/[A-Za-z0-9._/-]+\.(md|json)' "$q" 2>/dev/null | sort -u); do
+      case "$r" in *..*) continue ;; esac
+      case " $seen " in *" $r "*) continue ;; esac
+      [ -f "$r" ] || continue
+      wt_copy_in "$r" || return 1
+    done
+  done
+  return 0
+}
+
+# wt_copy_back — new or changed top-level <wt>/.harness/*.md files (detail files, designs) go back
+# to the main .harness/. Task and report files are harness's own; a file the main root changed
+# since the copy-in is not overwritten: the worker's version lands in <name>.<id8>.md.
+wt_copy_back() {
+  local f name base_sha cur_sha dest sum in="$WT_DIR/$ASK_ID.in"
+  for f in "$ASK_WT"/.harness/*.md; do
+    [ -f "$f" ] || continue
+    name=${f##*/}
+    case "$name" in task-*|progress.md) continue ;; esac
+    sum=$(file_sum "$f")
+    base_sha=$(awk -v n="$name" '$2 == n { print $1 }' "$in" 2>/dev/null | tail -n 1)
+    if [ -n "$base_sha" ] && [ "$base_sha" = "$sum" ]; then continue; fi         # the copied-in brief, untouched
+    if [ -z "$base_sha" ] && git -C "$ASK_WT" ls-files --error-unmatch ".harness/$name" >/dev/null 2>&1 \
+       && git -C "$ASK_WT" diff --quiet -- ".harness/$name" 2>/dev/null; then continue; fi   # tracked, untouched
+    dest=".harness/$name"
+    if [ -f "$dest" ]; then
+      cur_sha=$(file_sum "$dest")
+      [ "$cur_sha" != "$sum" ] || continue
+      if [ "$cur_sha" != "$base_sha" ]; then dest=".harness/${name%.md}.$ASK_ID8.md"; fi
+    fi
+    mkdir -p .harness && cp "$f" "$dest" || continue
+    if [ "$dest" = ".harness/$name" ]; then
+      echo "harness: $ASK_KEY wrote $dest (copied back from the worktree)"
+    else
+      echo "harness: $ASK_KEY wrote $dest (main .harness/$name changed meanwhile; not overwritten)"
+    fi
+  done
+}
+
+# wt_patch — any other change in the worktree (tracked or untracked, outside .harness/) is saved
+# as $WT_DIR/<ask-id>.patch in the main root. Sets WT_PATCH to the path, or "" when there is none.
+wt_patch() {
+  local p="$WT_DIR/$ASK_ID.patch" msg
+  WT_PATCH=""
+  rm -f "$p"
+  [ -d "$ASK_WT" ] || return 0
+  wt_clean "$ASK_WT" && return 0
+  # add warns (rc 1) about the ignored .harness/ pathspec although it staged everything else
+  git -C "$ASK_WT" add -A -- . ':!.harness' ':!.claude/agent-memory' >/dev/null 2>&1
+  git -C "$ASK_WT" diff --cached --binary HEAD > "$p" 2>/dev/null
+  if [ -s "$p" ]; then
+    WT_PATCH=$p
+    msg="harness: $ASK_KEY changed files outside .harness/; saved as a patch: $p (apply it via /implement; worktree kept)"
+    echo "$msg"; echo "$msg" >&2
+  else
+    rm -f "$p"
+  fi
+  return 0
+}
+
+# wt_finalize — before any removal: keep the report, bring results back, patch other edits
+wt_finalize() {
+  [ ! -f "$REPORT_DIR/$ASK_AGENT.md" ] || cp "$REPORT_DIR/$ASK_AGENT.md" "$WT_DIR/$ASK_ID.report.md" 2>/dev/null
+  [ -d "$ASK_WT" ] || return 0
+  wt_copy_back
+  wt_patch
 }
 
 # wt_clean <path> — no modified or untracked files (ignoring the agent-memory link harness made)
 wt_clean() {
   [ -d "$1" ] || return 1
-  ! git -C "$1" status --porcelain --untracked-files=all 2>/dev/null | grep -v '^?? \.claude/agent-memory$' | grep -q .
+  ! git -C "$1" status --porcelain --untracked-files=all 2>/dev/null | grep -vE '^\?\? (\.claude/agent-memory|\.harness/.*)$' | grep -q .
 }
 
 # wt_remove <force> <state> — remove this ask's checkout (agent-memory link first), prune, close its pane
 wt_remove() {
-  local force=$1 state=$2 link="$ASK_WT/.claude/agent-memory" target="" pane reg="$WT_DIR/$ASK_ID.json"
+  local force=$1 state=$2 link="$ASK_WT/.claude/agent-memory" target="" pane out reg="$WT_DIR/$ASK_ID.json"
   if [ -d "$ASK_WT" ]; then
     if [ -L "$link" ]; then target=$(readlink "$link"); rm -f "$link"; fi
     if [ "$force" = 1 ]; then out=$(git worktree remove --force "$ASK_WT" 2>&1); else out=$(git worktree remove "$ASK_WT" 2>&1); fi || {
@@ -2221,8 +2378,9 @@ wt_remove() {
   return 0
 }
 
-# wt_after_ask <rc> — after an ask (or a late `harness report`): save the report, then remove the
-# checkout when the report was collected (rc 0/5) and the tree is clean; else keep it
+# wt_after_ask <rc> — after an ask (or a late `harness report`): save the report, bring results back
+# (.harness/*.md files, other edits as a patch), then remove the checkout when the report was
+# collected (rc 0/5) and nothing is left in it; else keep it. Prints notes on stdout (the ask output).
 wt_after_ask() {
   local rc=$1 reg="$WT_DIR/$ASK_ID.json" role=$ASK_AGENT g=0
   [ -f "$reg" ] || return 0
@@ -2231,13 +2389,15 @@ wt_after_ask() {
     while [ "$g" -lt 30 ] && wt_run_alive "$ASK_WT" "$role"; do sleep 0.1; g=$((g + 1)); done
   fi
   if wt_run_alive "$ASK_WT" "$role"; then wt_update state running; return 0; fi
-  [ ! -f "$REPORT_DIR/$role.md" ] || cp "$REPORT_DIR/$role.md" "$WT_DIR/$ASK_ID.report.md" 2>/dev/null
+  wt_finalize
   case "$rc" in
     0|5)
-      if wt_clean "$ASK_WT"; then
-        wt_remove 0 collected && return 0
-      else
-        echo "harness: worktree $ASK_WT has changes; kept (harness close $ASK_ID --force removes it)" >&2
+      if [ -z "$WT_PATCH" ]; then
+        if wt_clean "$ASK_WT"; then
+          wt_remove 0 collected && return 0
+        else
+          echo "harness: worktree $ASK_WT has changes; kept (harness close $ASK_ID --force removes it)" >&2
+        fi
       fi ;;
     *) echo "harness: ask $ASK_ID ended with exit $rc; worktree $ASK_WT kept (harness report $ASK_ID, or harness close $ASK_ID --force)" >&2 ;;
   esac
@@ -2256,7 +2416,7 @@ report_wt() {
     exit 3
   fi
   ( report_headless "$ASK_AGENT" ); rc=$?
-  case "$rc" in 4) ;; *) wt_after_ask "$rc" >&2 ;; esac
+  case "$rc" in 4) ;; *) wt_after_ask "$rc" ;; esac
   exit "$rc"
 }
 
@@ -2272,7 +2432,17 @@ close_wt() {
     fi
     hl_kill "$ASK_AGENT"
   fi
-  [ ! -f "$REPORT_DIR/$ASK_AGENT.md" ] || cp "$REPORT_DIR/$ASK_AGENT.md" "$WT_DIR/$ASK_ID.report.md" 2>/dev/null
+  if [ "$force" = 1 ]; then
+    # discarding the checkout is the point of --force: keep the report and the .harness/*.md results only
+    [ ! -f "$REPORT_DIR/$ASK_AGENT.md" ] || cp "$REPORT_DIR/$ASK_AGENT.md" "$WT_DIR/$ASK_ID.report.md" 2>/dev/null
+    [ ! -d "$ASK_WT" ] || wt_copy_back
+  else
+    wt_finalize
+    if [ -n "$WT_PATCH" ]; then
+      echo "harness: $ASK_KEY not closed: its other changes are in $WT_PATCH (use --force to discard the checkout)" >&2
+      return 4
+    fi
+  fi
   if ! wt_remove "$force" closed; then
     echo "harness: $ASK_KEY not closed (use --force to discard its changes)" >&2
     return 4
@@ -2295,24 +2465,48 @@ wt_status_lines() {
   done
 }
 
-# wt_reap <ttl-minutes> <now> — remove clean kept checkouts older than the TTL; forget old closed entries
+# wt_reap <ttl-minutes> <now> — checkouts of kept asks, and of `running` asks whose owner is gone
+# (reboot, killed harness), past the TTL: results are brought back first; the checkout goes when
+# nothing is left in it or a patch holds the rest. Old collected/closed/reaped entries are forgotten.
 wt_reap() {
-  local ttl=$1 now=$2 f mt
+  local ttl=$1 now=$2 f mt st days=${HARNESS_LOG_DAYS:-14}
   [ -d "$WT_DIR" ] || return 0
   for f in "$WT_DIR"/*.json; do
     [ -f "$f" ] || continue
-    case "$(jq -r '.state // empty' "$f" 2>/dev/null)" in
-      kept)
-        mt=$(file_mtime "$f") || continue
-        [ $((now - mt)) -ge $((ttl * 60)) ] || continue
-        ( wt_load "$f"; if [ ! -d "$ASK_WT" ] || wt_clean "$ASK_WT"; then wt_remove 0 reaped; fi ) >&2 || true ;;
+    st=$(jq -r '.state // empty' "$f" 2>/dev/null)
+    case "$st" in
+      kept) ;;
+      running) ! wt_entry_live "$f" || continue ;;
+      creating) ! wt_entry_live_owner "$f" || continue ;;
+      *) continue ;;
     esac
+    mt=$(file_mtime "$f") || continue
+    [ $((now - mt)) -ge $((ttl * 60)) ] || continue
+    (
+      wt_load "$f"
+      if [ ! -d "$ASK_WT" ]; then wt_remove 0 reaped; exit 0; fi
+      wt_finalize
+      if [ -n "$WT_PATCH" ]; then wt_remove 1 reaped
+      elif wt_clean "$ASK_WT"; then wt_remove 1 reaped
+      else wt_update state kept; fi
+    ) >&2 || true
   done
   git worktree prune 2>/dev/null
-  find "$WT_DIR" -type f -mtime "+${HARNESS_LOG_DAYS:-14}" 2>/dev/null | while IFS= read -r f; do
-    case "$(jq -r '.state // empty' "${f%.report.md}.json" 2>/dev/null)" in collected|closed|reaped) rm -f "$f" "${f%.json}.report.md" ;; esac
+  for f in "$WT_DIR"/*.json; do
+    [ -f "$f" ] || continue
+    case "$(jq -r '.state // empty' "$f" 2>/dev/null)" in collected|closed|reaped) ;; *) continue ;; esac
+    mt=$(file_mtime "$f") || continue
+    [ $((now - mt)) -ge $((days * 86400)) ] || continue
+    rm -f "$f" "${f%.json}.report.md" "${f%.json}.in" "${f%.json}.patch"
   done
   return 0
+}
+
+# wt_entry_live_owner <registry-file> — the harness process that created the entry still runs
+wt_entry_live_owner() {
+  local pid
+  pid=$(jq -r '.pid // empty' "$1" 2>/dev/null)
+  digits_only "$pid" && kill -0 "$pid" 2>/dev/null && ps -p "$pid" -o command= 2>/dev/null | grep -q 'harness'
 }
 
 need jq
