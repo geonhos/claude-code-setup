@@ -494,5 +494,91 @@ check "done: missing .current warns on stderr" [ "$(printf '%s\n' "$ERR" | grep 
 ERR=$(cd "$R" && printf '{"cwd":"%s"}' "$R" | env -u HARNESS_ROLE /bin/bash "$VERIFY" done analyst 2>&1 >/dev/null)
 check "done: non-worker no warning" [ -z "$ERR" ]
 
+# --- stop: docs-only / .harness-only changes skip the suite -------------------------
+# docs-only ask: skipped (docs-only), test not run
+newrepo
+cfg '{"test":"echo tests-ran > ran.out"}'
+( cd "$R" && git add .claude && git -c core.hooksPath=/dev/null commit -q -m cfg )
+hv baseline
+mkdir -p "$R/docs/superpowers" "$R/.harness"; echo n > "$R/docs/superpowers/plan.md"; echo r > "$R/.harness/note.md"
+hvin "$(stopjson)" stop
+check "docs-only: allows" [ -z "$OUT" ]
+check "docs-only: skipped" [ "$(result status)" = skipped ]
+check "docs-only: step label" [ "$(result step)" = "skipped (docs-only)" ]
+check "docs-only: test not run" [ ! -e "$R/ran.out" ]
+
+# docs-only but committed (HEAD moved) and a deleted file: still docs-only
+newrepo
+cfg '{"test":"echo tests-ran > ran.out"}'
+mkdir -p "$R/docs"; echo d > "$R/docs/old.md"
+( cd "$R" && git add .claude docs && git -c core.hooksPath=/dev/null commit -q -m cfg )
+hv baseline
+echo d2 > "$R/docs/new.md"; rm "$R/docs/old.md"
+( cd "$R" && git add -A docs && git -c core.hooksPath=/dev/null commit -q -m docs )
+hvin "$(stopjson)" stop
+check "docs-only committed+deleted: skipped" [ "$(result step)" = "skipped (docs-only)" ]
+check "docs-only committed+deleted: test not run" [ ! -e "$R/ran.out" ]
+
+# source changes made in an EARLIER ask (before this baseline) do not count
+newrepo
+cfg '{"test":"echo tests-ran > ran.out"}'
+mkdir -p "$R/bin"; echo s > "$R/bin/tool"
+( cd "$R" && git add .claude bin && git -c core.hooksPath=/dev/null commit -q -m earlier )
+hv baseline
+mkdir -p "$R/docs"; echo n > "$R/docs/n.md"
+hvin "$(stopjson)" stop
+check "earlier-ask source: docs-only skip" [ "$(result step)" = "skipped (docs-only)" ]
+
+# commit-only ask: nothing since baseline but HEAD moved with earlier uncommitted src -> full run
+newrepo
+cfg '{"test":"echo tests-ran > ran.out"}'
+( cd "$R" && git add .claude && git -c core.hooksPath=/dev/null commit -q -m cfg )
+mkdir -p "$R/bin"; echo s > "$R/bin/tool"
+hv baseline
+( cd "$R" && git add bin && git -c core.hooksPath=/dev/null commit -q -m 'commit earlier work' )
+hvin "$(stopjson)" stop
+check "commit-only of src: full run" [ "$(result status)" = pass ]
+check "commit-only of src: test ran" [ -s "$R/ran.out" ]
+
+# docs/wiki change: only wiki-lint runs; a bad page fails like a test failure
+newrepo
+cfg '{"test":"echo tests-ran > ran.out","maxAttempts":1}'
+mkdir -p "$R/docs/wiki"
+printf '# Wiki index\n' > "$R/docs/wiki/index.md"
+( cd "$R" && git add .claude docs && git -c core.hooksPath=/dev/null commit -q -m cfg )
+hv baseline
+printf 'no frontmatter\n' > "$R/docs/wiki/bad.md"
+hvin "$(stopjson)" stop
+check "wiki bad page: blocks or fails" [ "$(result status)" = fail ]
+check "wiki bad page: step wiki-lint" [ "$(result step)" = wiki-lint ]
+check "wiki bad page: test not run" [ ! -e "$R/ran.out" ]
+rm "$R/docs/wiki/bad.md"; echo more >> "$R/docs/wiki/index.md"
+hv baseline
+echo more >> "$R/docs/wiki/index.md"
+hvin "$(stopjson)" stop
+check "wiki good: skipped" [ "$(result step)" = "skipped (docs-only)" ]
+check "wiki good: test not run" [ ! -e "$R/ran.out" ]
+
+# mixed docs + bin: full run
+newrepo
+cfg '{"test":"echo tests-ran > ran.out"}'
+( cd "$R" && git add .claude && git -c core.hooksPath=/dev/null commit -q -m cfg )
+hv baseline
+mkdir -p "$R/docs" "$R/bin"; echo n > "$R/docs/n.md"; echo s > "$R/bin/tool"
+hvin "$(stopjson)" stop
+check "mixed: pass" [ "$(result status)" = pass ]
+check "mixed: test ran" [ -s "$R/ran.out" ]
+
+# agents md / AGENTS.md / README.md are not docs: full run
+for p in claude/agents/x.md AGENTS.md README.md; do
+  newrepo
+  cfg '{"test":"echo tests-ran > ran.out"}'
+  ( cd "$R" && git add .claude && git -c core.hooksPath=/dev/null commit -q -m cfg )
+  hv baseline
+  mkdir -p "$R/$(dirname "$p")"; echo n > "$R/$p"
+  hvin "$(stopjson)" stop
+  check "non-docs $p: test ran" [ -s "$R/ran.out" ]
+done
+
 echo "PASS $pass / FAIL $fail"
 [ "$fail" -eq 0 ]
