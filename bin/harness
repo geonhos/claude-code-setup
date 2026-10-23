@@ -208,14 +208,36 @@ show_agent_diag() {
   fi
 }
 
-# lock_take <dir> — mkdir lock (portable); a lock older than ~10 s is taken over
+# lock_take <dir> — mkdir lock (portable) with an owner pid file inside. A waiter takes the lock
+# over only when its owner is dead, or has none and the lock is older than HARNESS_LOCK_STALE_S
+# (default 10 s: an owner that died between mkdir and writing its pid). The takeover is one atomic rename of the stale
+# dir, so only one waiter wins it; the rest simply retry the mkdir.
 lock_take() {
-  local d=$1 i=0
+  local d=$1 i=0 own age mt stale
   while ! mkdir "$d" 2>/dev/null; do
     i=$((i + 1))
-    if [ "$i" -ge 200 ]; then rm -rf "$d"; i=0; fi
+    if [ $((i % 10)) -eq 0 ]; then
+      stale=0
+      own=$(cat "$d/owner" 2>/dev/null)
+      if digits_only "$own"; then
+        kill -0 "$own" 2>/dev/null || stale=1
+      elif mt=$(file_mtime "$d"); then   # no readable owner (died before writing it): go by age
+        age=$(( $(date +%s) - mt ))
+        [ "$age" -le "${HARNESS_LOCK_STALE_S:-10}" ] || stale=1
+      fi
+      if [ "$stale" = 1 ] && mv "$d" "$d.stale.$$" 2>/dev/null; then
+        # we renamed whatever sat there: if it is not the lock we judged, put it back
+        if [ "$(cat "$d.stale.$$/owner" 2>/dev/null)" = "$own" ]; then
+          rm -rf "$d.stale.$$"
+        else
+          mv "$d.stale.$$" "$d" 2>/dev/null || rm -rf "$d.stale.$$"
+        fi
+      fi
+    fi
     sleep 0.05
   done
+  echo $$ > "$d/owner" 2>/dev/null
+  return 0
 }
 lock_drop() { rmdir "$1" 2>/dev/null || rm -rf "$1"; }
 
@@ -1907,12 +1929,19 @@ hl_status_line() {
 # First match wins (spec §3). Never returns.
 hl_collect() {
   local role=$1 ej="$ASK_DIR/$1.exit.json" report="$REPORT_DIR/$1.md" cur="$ASK_DIR/$1.current"
-  local rc res iserr killed sid tinit pane perm
-  rc=$(jq -r '.rc // empty' "$ej" 2>/dev/null); res=$(jq -r '.result // empty' "$ej" 2>/dev/null)
-  iserr=$(jq -r '.is_error // false' "$ej" 2>/dev/null); killed=$(jq -r '.killed // empty' "$ej" 2>/dev/null)
-  sid=$(jq -r '(.session_id // "") | .[0:8]' "$ej" 2>/dev/null); tinit=$(jq -r '.t_init // empty' "$ej" 2>/dev/null)
+  local rc res iserr killed sid tinit pane perm ejc
+  ejc=$(cat "$ej" 2>/dev/null)   # one read: a racing close removes the checkout under us
+  rc=$(jq -r '.rc // empty' <<<"$ejc" 2>/dev/null); res=$(jq -r '.result // empty' <<<"$ejc" 2>/dev/null)
+  iserr=$(jq -r '.is_error // false' <<<"$ejc" 2>/dev/null); killed=$(jq -r '.killed // empty' <<<"$ejc" 2>/dev/null)
+  sid=$(jq -r '(.session_id // "") | .[0:8]' <<<"$ejc" 2>/dev/null); tinit=$(jq -r '.t_init // empty' <<<"$ejc" 2>/dev/null)
+  # a worktree ask whose result vanished was closed under it (`harness close --force` kills the
+  # run and removes the checkout while this process is still collecting): that is a kill, not a failure
+  if [ -n "$ASK_WT" ] && [ -z "$ejc" ]; then
+    echo "harness: $role's run was killed (closed); its checkout was removed"
+    exit 3
+  fi
   pane=$(hl_registered_pane "$role")
-  perm=$(jq -r '.perm // empty' "$ej" 2>/dev/null)
+  perm=$(jq -r '.perm // empty' <<<"$ejc" 2>/dev/null)
   if [ -n "$perm" ] && [ "$perm" != auto ]; then
     echo "harness: warning: $role ran with permission mode '$perm', not auto; tools may have been denied (see the viewer pane)" >&2
   fi
@@ -2137,6 +2166,7 @@ ask_wt_parse() {
 wt_root_check() {
   local top p
   case "$WT_HOME" in /*) ;; *) die "HARNESS_WT_ROOT must be an absolute path (got '$WT_HOME')" ;; esac
+  case "/$WT_HOME/" in */../*) die "HARNESS_WT_ROOT must not contain a '..' component (got '$WT_HOME')" ;; esac
   case "$WT_HOME" in */.harness|*/.harness/*) die "HARNESS_WT_ROOT must not be inside a .harness/ directory (got '$WT_HOME')" ;; esac
   top=$(git rev-parse --show-toplevel 2>/dev/null) || return 0
   # resolve symlinks through the nearest existing ancestor (the root itself may not exist yet)
@@ -2236,12 +2266,23 @@ wt_copy_in() {
   return 0
 }
 
+# wt_git <git args> — git worktree add/remove/prune are not safe to run side by side (concurrent
+# asks failed with "failed to read .git/worktrees/<n>/commondir"): serialise them under a lock
+wt_git() {
+  local rc
+  mkdir -p "$WT_DIR" 2>/dev/null
+  lock_take "$WT_DIR/.git.lock"
+  git "$@"; rc=$?
+  lock_drop "$WT_DIR/.git.lock"
+  return $rc
+}
+
 # wt_create — git worktree add --detach, per-ask dirs, brief copy, memory link, registry.
 # The registry entry is written first (state creating); a failing later step removes the checkout.
 wt_create() {
   local out
   mkdir -p "$WT_DIR" "$WT_HOME/$REPO8" || return 1
-  if ! out=$(git worktree add --detach "$ASK_WT" "$ASK_BASE" 2>&1); then
+  if ! out=$(wt_git worktree add --detach "$ASK_WT" "$ASK_BASE" 2>&1); then
     echo "harness: git worktree add failed: $out" >&2
     return 1
   fi
@@ -2260,8 +2301,8 @@ wt_create() {
 
 wt_create_undo() {
   rm -f "$ASK_WT/.claude/agent-memory" 2>/dev/null
-  git worktree remove --force "$ASK_WT" >/dev/null 2>&1 || rm -rf "$ASK_WT"
-  git worktree prune 2>/dev/null
+  wt_git worktree remove --force "$ASK_WT" >/dev/null 2>&1 || rm -rf "$ASK_WT"
+  wt_git worktree prune 2>/dev/null
   wt_update state closed
   return 0
 }
@@ -2294,14 +2335,15 @@ wt_create_rest() {
 }
 
 # wt_copy_back — new or changed top-level <wt>/.harness/*.md files (detail files, designs) go back
-# to the main .harness/. Task and report files are harness's own; a file the main root changed
+# to the main .harness/ (an allowlist: regular top-level *.md files only, never goal.md, progress.md
+# or task-*.md, which the harness writes itself; symlinks are skipped); a file the main root changed
 # since the copy-in is not overwritten: the worker's version lands in <name>.<id8>.md.
 wt_copy_back() {
   local f name base_sha cur_sha dest sum in="$WT_DIR/$ASK_ID.in"
   for f in "$ASK_WT"/.harness/*.md; do
-    [ -f "$f" ] || continue
+    [ -f "$f" ] && [ ! -L "$f" ] || continue   # regular files only: a symlink could point anywhere
     name=${f##*/}
-    case "$name" in task-*|progress.md) continue ;; esac
+    case "$name" in goal.md|progress.md|task-*.md) continue ;; esac   # the harness's own files
     sum=$(file_sum "$f")
     base_sha=$(awk -v n="$name" '$2 == n { print $1 }' "$in" 2>/dev/null | tail -n 1)
     if [ -n "$base_sha" ] && [ "$base_sha" = "$sum" ]; then continue; fi         # the copied-in brief, untouched
@@ -2327,8 +2369,8 @@ wt_copy_back() {
 wt_patch() {
   local p="$WT_DIR/$ASK_ID.patch" msg
   WT_PATCH=""
+  [ -d "$ASK_WT" ] || return 0   # checkout gone: the saved patch stays (it outlives the worktree)
   rm -f "$p"
-  [ -d "$ASK_WT" ] || return 0
   wt_clean "$ASK_WT" && return 0
   # add warns (rc 1) about the ignored .harness/ pathspec although it staged everything else
   git -C "$ASK_WT" add -A -- . ':!.harness' ':!.claude/agent-memory' >/dev/null 2>&1
@@ -2362,13 +2404,13 @@ wt_remove() {
   local force=$1 state=$2 link="$ASK_WT/.claude/agent-memory" target="" pane out reg="$WT_DIR/$ASK_ID.json"
   if [ -d "$ASK_WT" ]; then
     if [ -L "$link" ]; then target=$(readlink "$link"); rm -f "$link"; fi
-    if [ "$force" = 1 ]; then out=$(git worktree remove --force "$ASK_WT" 2>&1); else out=$(git worktree remove "$ASK_WT" 2>&1); fi || {
+    if [ "$force" = 1 ]; then out=$(wt_git worktree remove --force "$ASK_WT" 2>&1); else out=$(wt_git worktree remove "$ASK_WT" 2>&1); fi || {
       [ -z "$target" ] || ln -s "$target" "$link" 2>/dev/null
       echo "harness: git worktree remove failed: $out" >&2
       return 1
     }
   fi
-  git worktree prune 2>/dev/null
+  wt_git worktree prune 2>/dev/null
   pane=$(jq -r '.pane // empty' "$reg" 2>/dev/null)
   if [ -n "$pane" ]; then
     herdr pane close "$pane" >/dev/null 2>&1 || true
@@ -2422,7 +2464,7 @@ report_wt() {
 
 # close_wt <registry-file> <force> — `harness close <ask-id>`
 close_wt() {
-  local f=$1 force=$2 pane
+  local f=$1 force=$2 pane old
   wt_load "$f"
   pane=$(jq -r '.pane // empty' "$f")
   if wt_run_alive "$ASK_WT" "$ASK_AGENT"; then
@@ -2437,10 +2479,15 @@ close_wt() {
     [ ! -f "$REPORT_DIR/$ASK_AGENT.md" ] || cp "$REPORT_DIR/$ASK_AGENT.md" "$WT_DIR/$ASK_ID.report.md" 2>/dev/null
     [ ! -d "$ASK_WT" ] || wt_copy_back
   else
+    old=""; [ ! -s "$WT_DIR/$ASK_ID.patch" ] || old=$(file_sum "$WT_DIR/$ASK_ID.patch")
     wt_finalize
     if [ -n "$WT_PATCH" ]; then
-      echo "harness: $ASK_KEY not closed: its other changes are in $WT_PATCH (use --force to discard the checkout)" >&2
-      return 4
+      # the same patch as the saved one: nothing beyond it, so the checkout may go without --force
+      if [ -n "$old" ] && [ "$(file_sum "$WT_PATCH")" = "$old" ]; then force=1
+      else
+        echo "harness: $ASK_KEY not closed: its other changes are in $WT_PATCH (use --force to discard the checkout)" >&2
+        return 4
+      fi
     fi
   fi
   if ! wt_remove "$force" closed; then
@@ -2461,13 +2508,16 @@ wt_status_lines() {
     case "$st" in running|kept) ;; *) continue ;; esac
     if [ "$st" = running ] && ! wt_entry_live "$f"; then st=stale; fi
     cs=$(jq -r '.created_s // 0' "$f")
-    printf '%-12s %-8s %-8s detached %ss\n' "$(jq -r '.role + "@" + .id8' "$f")" "$st" "$(jq -r '.pane // "-"' "$f")" "$((now - cs))"
+    printf '%-12s %-8s %-8s detached %ss%s\n' "$(jq -r '.role + "@" + .id8' "$f")" "$st" "$(jq -r '.pane // "-"' "$f")" "$((now - cs))" \
+      "$([ ! -s "${f%.json}.patch" ] || printf ' patch %s' "${f%.json}.patch")"
   done
 }
 
 # wt_reap <ttl-minutes> <now> — checkouts of kept asks, and of `running` asks whose owner is gone
-# (reboot, killed harness), past the TTL: results are brought back first; the checkout goes when
-# nothing is left in it or a patch holds the rest. Old collected/closed/reaped entries are forgotten.
+# (reboot, killed harness), past the TTL: results are brought back first; the checkout goes only
+# when nothing is left in it. A worktree with a saved patch is never reaped; it stays `kept`
+# until `harness close`. Old collected/closed/reaped entries (and their patch) are forgotten
+# after HARNESS_LOG_DAYS.
 wt_reap() {
   local ttl=$1 now=$2 f mt st days=${HARNESS_LOG_DAYS:-14}
   [ -d "$WT_DIR" ] || return 0
@@ -2480,18 +2530,20 @@ wt_reap() {
       creating) ! wt_entry_live_owner "$f" || continue ;;
       *) continue ;;
     esac
+    # a worktree with a saved patch is never reaped (ADR 0008): it waits for `harness close`
+    [ ! -s "${f%.json}.patch" ] || continue
     mt=$(file_mtime "$f") || continue
     [ $((now - mt)) -ge $((ttl * 60)) ] || continue
     (
       wt_load "$f"
       if [ ! -d "$ASK_WT" ]; then wt_remove 0 reaped; exit 0; fi
       wt_finalize
-      if [ -n "$WT_PATCH" ]; then wt_remove 1 reaped
+      if [ -n "$WT_PATCH" ]; then wt_update state kept   # the patch now holds changes: keep it
       elif wt_clean "$ASK_WT"; then wt_remove 1 reaped
       else wt_update state kept; fi
     ) >&2 || true
   done
-  git worktree prune 2>/dev/null
+  wt_git worktree prune 2>/dev/null
   for f in "$WT_DIR"/*.json; do
     [ -f "$f" ] || continue
     case "$(jq -r '.state // empty' "$f" 2>/dev/null)" in collected|closed|reaped) ;; *) continue ;; esac

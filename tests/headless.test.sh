@@ -24,6 +24,9 @@ lastprog() { tail -n 1 .harness/progress.jsonl 2>/dev/null; }
 killpids() { local p; for p in $(cat "$1" 2>/dev/null); do kill "$p" 2>/dev/null; done; return 0; }
 # live_runs RID — pids whose command line carries this run id (empty RID matches nothing)
 live_runs() { [ -n "${1:-}" ] || return 0; pgrep -f "harness-run analyst $1 "; }
+# wait_no_runs <run-id> [tenths] — until no process of that run is left (the watchdog reaps the
+# group in steps: claude dies first, the pipeline's subshells a moment later; 15 s cap)
+wait_no_runs() { local i=0; while [ $i -lt "${2:-150}" ] && [ -n "$(live_runs "$1")" ]; do sleep 0.1; i=$((i + 1)); done; }
 claude_runs() { grep -c '^claude: ' "$FAKE_LOG"; }
 
 # 1. success
@@ -268,6 +271,7 @@ rid=$(awk 'NR == 1 { print $1 }' .harness/asks/analyst.pid)
 kill -9 "$(awk 'NR == 1 { print $2 }' .harness/asks/analyst.pid)"
 killpids "$FAKE_DIR/claude.pids"
 sleep 2.5
+wait_no_runs "$rid"
 check "watchdog orphan: gone once harness-run is" [ -z "$(live_runs "$rid")" ]
 for p in $(live_runs "$rid"); do kill "$p" 2>/dev/null; done
 wait "$bg"
@@ -285,6 +289,7 @@ check "orphan: claude running before the kill" kill -0 "$cpid"
 kill -9 "$(awk 'NR == 1 { print $2 }' .harness/asks/analyst.pid)"
 i=0; while [ $i -lt 40 ] && kill -0 "$cpid" 2>/dev/null; do sleep 0.2; i=$((i + 1)); done
 check "orphan: claude reaped after harness-run was SIGKILLed" not kill -0 "$cpid"
+wait_no_runs "$rid"
 check "orphan: no harness-run process left" [ -z "$(live_runs "$rid")" ]
 for p in $(live_runs "$rid"); do kill "$p" 2>/dev/null; done
 kill "$cpid" 2>/dev/null

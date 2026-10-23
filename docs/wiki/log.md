@@ -15,3 +15,4 @@
 - 2026-10-23 · implementer · v16 round 2 · 0007: use_hl needs a live run, pending-retro streams kept, --keep session fallback, start-check failure is exit 1
 - 2026-10-23 · implementer · v17 round 2 · gotcha in-place-edit-breaks-running-scripts; bin/* brace-wrapped; harness-run reaps the pipeline process group (TERM, 3 s, KILL; zombie runner = dead); close drops .session; exit.json grace ~3 s
 - 2026-10-23 · implementer · v18 S1 · decision 0008: ask --worktree (headless analyst/reviewer, detached checkout under ~/.cache/harness/wt, registry .harness/wt, report/close by ask-id, max_parallel 3)
+- 2026-10-23 · implementer · v18 round 3 · 0008: kept+patch never reaped; copy-back allowlist; lock owner/age takeover; wt_git serialises git worktree add/remove/prune (concurrent add raced prune)

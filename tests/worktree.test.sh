@@ -33,8 +33,11 @@ wt_dirs() { ls -d "$WTROOT"/*/* 2>/dev/null | wc -l | tr -d ' '; }
 wait_reg() { # N — until N registry entries exist
   local i=0; while [ $i -lt 60 ] && [ "$(ls .harness/wt/*.json 2>/dev/null | wc -l | tr -d ' ')" -lt "$1" ]; do sleep 0.2; i=$((i + 1)); done
 }
-wait_pid() { # until the nth run announced itself
-  local i=0; while [ $i -lt 60 ] && [ "$(ls "$WTROOT"/*/*/.harness/asks/analyst.pid 2>/dev/null | wc -l | tr -d ' ')" -lt "$1" ]; do sleep 0.2; i=$((i + 1)); done
+wait_panes() { # N — until N worktree asks registered their viewer pane (the barrier for registry assertions)
+  local i=0; while [ $i -lt 150 ] && [ "$(grep -c '^analyst@' .harness/panes 2>/dev/null)" -lt "$1" ]; do sleep 0.2; i=$((i + 1)); done
+}
+wait_pid() { # until the nth run announced itself (30 s cap: a loaded machine starts them slowly)
+  local i=0; while [ $i -lt 150 ] && [ "$(ls "$WTROOT"/*/*/.harness/asks/analyst.pid 2>/dev/null | wc -l | tr -d ' ')" -lt "$1" ]; do sleep 0.2; i=$((i + 1)); done
 }
 
 # 1. clean success: created, ran in the worktree, report printed, checkout removed
@@ -65,6 +68,7 @@ check "dirty: kept" [ "$(wt_dirs)" = 1 ]
 check "dirty: registry kept" jqt '.state == "kept"' ".harness/wt/$id.json"
 hrun status
 check "dirty: status lists it" grep -qE "^analyst@[0-9a-f]{8} +kept" <<<"$OUT"
+echo beyond > "$(jq -r .path ".harness/wt/$id.json")/beyond.txt"   # more than the saved patch holds
 hrun close "$id"
 check "dirty: close refuses (4)" [ "$RC" -eq 4 ]
 check "dirty: still there" [ "$(wt_dirs)" = 1 ]
@@ -270,6 +274,7 @@ wait
 # 17. five asks started at once register five panes (locked registry)
 wsetup; export FAKE_CLAUDE_MODE=hang HARNESS_MAX_PARALLEL=6
 for i in 1 2 3 4 5; do ( hrun ask analyst "q17-$i" --worktree --timeout 60000 >/dev/null ) & done
+wait_panes 5
 wait_pid 5
 check "panes: five registered" [ "$(grep -c '^analyst@' .harness/panes)" = 5 ]
 for f in .harness/wt/*.json; do hrun close "$(basename "$f" .json)" --force; done
@@ -287,6 +292,69 @@ hrun report "$id"
 check "late: log named with the id8" bash -c "ls .harness/log | grep -q -- -analyst-$id8-late"
 check "late: jsonl line carries the ask id" bash -c "grep '\"late\":true' .harness/progress.jsonl | grep -q '$id'"
 hrun close "$id" --force
+
+# 19. kept worktree with a saved patch is never auto-reaped; close removes it, the patch survives
+wsetup
+export FAKE_REPORT_CMD="mkdir -p .harness/reports && printf '# analyst report\nstatus: done\n' > .harness/reports/analyst.md && echo plan > plan19.txt"
+hrun ask analyst "q19" --worktree
+id=$(ask_id); path=$(jq -r .path ".harness/wt/$id.json")
+check "kept+patch: patch saved" [ -s ".harness/wt/$id.patch" ]
+touch -t 202001010000 ".harness/wt/$id.json" ".harness/wt/$id.patch"
+HARNESS_NO_AUTOCLOSE=0 HARNESS_IDLE_TTL_MIN=1 HARNESS_LOG_DAYS=1 hrun status
+HARNESS_NO_AUTOCLOSE=0 HARNESS_IDLE_TTL_MIN=1 HARNESS_LOG_DAYS=1 hrun status
+check "kept+patch: survives reap passes (checkout)" [ -d "$path" ]
+check "kept+patch: survives reap passes (state)" jqt '.state == "kept"' ".harness/wt/$id.json"
+check "kept+patch: survives LOG_DAYS (patch)" [ -s ".harness/wt/$id.patch" ]
+check "kept+patch: status shows the patch path" grep -q "patch .*wt/$id.patch" <<<"$OUT"
+hrun close "$id"
+check "kept+patch: close without --force when nothing beyond the patch" [ "$RC" -eq 0 ]
+check "kept+patch: checkout removed" [ ! -d "$path" ]
+check "kept+patch: patch survives close" [ -s ".harness/wt/$id.patch" ]
+# changes beyond the saved patch: close refuses without --force
+hrun ask analyst "q19b" --worktree
+id=$(ask_id); path=$(jq -r .path ".harness/wt/$id.json")
+echo more > "$path/extra19.txt"
+hrun close "$id"
+check "kept+patch: more than the patch -> refused (4)" [ "$RC" -eq 4 ]
+check "kept+patch: refused -> checkout stays" [ -d "$path" ]
+hrun close "$id" --force
+check "kept+patch: --force removes it" [ ! -d "$path" ]
+# a clean kept entry without a patch is still reaped by the idle TTL
+wsetup
+git worktree add -q --detach "$WTROOT/r19/analyst-clean001" HEAD
+mkdir -p .harness/wt
+printf '{"id":"clean1","id8":"clean001","role":"analyst","path":"%s","pid":999999,"state":"kept","created_s":1}\n' "$WTROOT/r19/analyst-clean001" > .harness/wt/clean1.json
+touch -t 202001010000 .harness/wt/clean1.json
+HARNESS_NO_AUTOCLOSE=0 HARNESS_IDLE_TTL_MIN=1 hrun status
+check "kept clean: reaped by TTL" [ ! -d "$WTROOT/r19/analyst-clean001" ]
+
+# 20. copy-back allowlist: reserved names and symlinks stay in the worktree
+wsetup
+mkdir -p .harness && echo mine > .harness/goal.md && echo prog > .harness/progress.md && echo secret > "$WORK/outside20.txt"
+export FAKE_REPORT_CMD="mkdir -p .harness/reports && printf '# analyst report\nstatus: done\n' > .harness/reports/analyst.md && echo hijack > .harness/goal.md && echo hijack > .harness/progress.md && echo hijack > .harness/task-new.md && ln -s $WORK/outside20.txt .harness/link20.md && echo ok > .harness/notes20.md"
+hrun ask analyst "q20" --worktree
+check "allowlist: rc 0" [ "$RC" -eq 0 ]
+check "allowlist: goal.md untouched" grep -q '^mine$' .harness/goal.md
+check "allowlist: progress.md not overwritten by the worker" not_grep hijack .harness/progress.md
+check "allowlist: task-*.md not copied" [ ! -e .harness/task-new.md ]
+check "allowlist: symlink not copied" [ ! -e .harness/link20.md ] && [ ! -L .harness/link20.md ]
+check "allowlist: plain .md still copied" grep -q '^ok$' .harness/notes20.md
+
+# 21. lock takeover: a dead owner, or an old ownerless lock, is taken over; no hang
+wsetup
+mkdir -p .harness/panes.lock && echo 999999 > .harness/panes.lock/owner
+hrun ask analyst "q21a" --worktree
+check "lock: dead owner taken over (rc 0)" [ "$RC" -eq 0 ]
+mkdir -p .harness/panes.lock && touch -t 202001010000 .harness/panes.lock
+hrun ask analyst "q21b" --worktree
+check "lock: old ownerless lock taken over (rc 0)" [ "$RC" -eq 0 ]
+check "lock: no stale dir left" bash -c "! ls .harness | grep -q 'panes.lock'"
+
+# 22. HARNESS_WT_ROOT with a '..' component is rejected
+wsetup
+HARNESS_WT_ROOT="$WORK.wt/sub/../../escape22" hrun ask analyst "q22" --worktree
+check "wt root with ..: rc 1" [ "$RC" -eq 1 ]
+check "wt root with ..: says so" grep -q "'\.\.'" <<<"$OUT"
 
 echo "PASS $pass / FAIL $fail"
 [ "$fail" -eq 0 ]

@@ -85,7 +85,9 @@ router that will later suggest the route.
    ask-id is on stderr at start). Not for the implementer or pane-mode roles (exit 1).
    A worktree ask returns its `.harness/*.md` outputs (detail files, designs) in the main
    `.harness/` (a clashing name gets an `.<id8>.md` suffix); any other edit it made comes
-   back only as `.harness/wt/<ask-id>.patch` (stderr warning) to apply via /implement.
+   back only as `.harness/wt/<ask-id>.patch` (stderr warning) to apply via /implement. A worktree with a saved patch is never auto-reaped: it stays
+   `kept` in `harness status` until `harness close <ask-id>` (`--force` only if it holds
+   more than the patch); the patch file outlives the close.
 3. Read only the report that `harness ask` prints. Decide: done, iterate with
    another skill call, or ask the user.
 4. Keep your own output short. Relay the report's substance to the user, not
