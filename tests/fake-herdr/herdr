@@ -11,6 +11,7 @@
 #         $FAKE_CLEAR               ok (default): `agent prompt <a> /clear` assigns a new session id
 #                                   stuck: /clear is accepted but the session id never changes
 #                                   late<N>: the new session id appears at the N-th `agent get` after /clear
+#                                   sidonly: the session id changes but the status becomes working for the next 3 `agent get`s
 #                                   second: the first /clear is ignored, the second one works
 #         $FAKE_DIR/no_stop_hook    exists => the worker's Stop hook does not fire after a prompt
 #         (otherwise, when the agent ends the prompt idle/done, `harness-verify done <role>` runs
@@ -67,6 +68,11 @@ case "$sub" in
         echo "$left" > "$FAKE_DIR/clear.pending.$name"
       fi
     fi
+    if [ -f "$FAKE_DIR/idle.pending.$name" ]; then   # FAKE_CLEAR=sidonly: working, then idle again
+      left=$(( $(cat "$FAKE_DIR/idle.pending.$name") - 1 ))
+      if [ "$left" -le 0 ]; then rm -f "$FAKE_DIR/idle.pending.$name"; echo idle > "$FAKE_DIR/live.$name"
+      else echo "$left" > "$FAKE_DIR/idle.pending.$name"; fi
+    fi
     if [ -f "$FAKE_DIR/live.$name" ]; then
       status=$(cat "$FAKE_DIR/live.$name")
       pane=w1:p2
@@ -108,6 +114,8 @@ case "$sub" in
       echo "$nclear" > "$FAKE_DIR/clear.n.$name"
       case "${FAKE_CLEAR:-ok}" in
         stuck) ;;
+        sidonly) echo "sess-$name-c$$-$RANDOM" > "$FAKE_DIR/session.$name"
+                 echo working > "$FAKE_DIR/live.$name"; echo 3 > "$FAKE_DIR/idle.pending.$name" ;;
         late*) echo "${FAKE_CLEAR#late}" > "$FAKE_DIR/clear.pending.$name" ;;
         second) if [ "$nclear" -ge 2 ]; then
                   echo "sess-$name-c$$-$RANDOM" > "$FAKE_DIR/session.$name"

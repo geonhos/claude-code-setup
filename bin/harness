@@ -302,17 +302,20 @@ fmt_ctx() {
 # do_clear <agent> — send /clear (no --wait: herdr would stall) and poll until herdr
 # reports a new session id (status is not required: CC may clear while herdr still
 # shows the old status). Window: HARNESS_CLEAR_POLLS (default 60) x
-# HARNESS_CLEAR_INTERVAL (0.5 s) ~ 30 s. If the id did not change, /clear is sent once
-# more (same window). After a change, wait briefly for idle (bounded, never fails the
+# HARNESS_CLEAR_INTERVAL (0.5 s) ~ 30 s. If the id did not change and the pane is
+# idle/done, /clear is sent once more with a shorter window (HARNESS_CLEAR_RETRY_POLLS,
+# default 20 ~ 10 s); otherwise the caller respawns. After a change, wait briefly for idle (bounded, never fails the
 # clear). Sets CLEAR_HOW=ok|retry. 0 = cleared, 1 = not cleared (caller respawns).
 do_clear() {
-  local old new st i attempt=1 j
+  local old new st i attempt=1 j polls
   CLEAR_HOW=""
   old=$(agent_session "$1")
   while [ "$attempt" -le 2 ]; do
     herdr agent prompt "$(wname "$1")" /clear >/dev/null 2>&1 || return 1
     i=0
-    while [ "$i" -lt "${HARNESS_CLEAR_POLLS:-60}" ]; do
+    polls=${HARNESS_CLEAR_POLLS:-60}
+    [ "$attempt" = 1 ] || polls=${HARNESS_CLEAR_RETRY_POLLS:-20}
+    while [ "$i" -lt "$polls" ]; do
       sleep "${HARNESS_CLEAR_INTERVAL:-0.5}"
       j=$(agent_json "$1") || return 1
       new=$(printf '%s' "$j" | jq -r '.result.agent.agent_session.value // empty' 2>/dev/null)
@@ -330,6 +333,8 @@ do_clear() {
       i=$((i + 1))
     done
     attempt=$((attempt + 1))
+    st=$(agent_status "$1")
+    case "$st" in idle|done) ;; *) return 1 ;; esac
   done
   return 1
 }

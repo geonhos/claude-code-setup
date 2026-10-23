@@ -128,22 +128,29 @@ changed_files() {
 # "since baseline" (the baseline is per ask), so it never counts. Every path under
 # docs/ or .harness/ -> docs-only (wiki when any is under docs/wiki/); anything else
 # (AGENTS.md, README.md and agents/*.md included: tests read them) -> code.
+# docs/ and .harness/ are ROOT's (the cwd's): paths are listed from the git toplevel
+# with rename detection off (a move into docs/ lists the source path too), and any
+# path outside ROOT counts as code.
 change_class() {
-  local base f wiki=0 any=0
+  local base f top rel wiki=0 any=0
   base=$(sed -n 1p "$STATE_REL/$AGENT.base" 2>/dev/null)
   [ -n "$base" ] || { echo code; return; }
   git rev-parse --verify -q "$base^{commit}" >/dev/null 2>&1 || { echo code; return; }
+  top=$(git rev-parse --show-toplevel 2>/dev/null) || { echo code; return; }
+  top=$(cd "$top" && pwd -P)
+  # prefix of ROOT (the cwd) inside the toplevel: "" at the top, "pkg/" in a subdir
+  rel=$(git rev-parse --show-prefix 2>/dev/null)
   while IFS= read -r f; do
     [ -n "$f" ] || continue
     any=1
     case "$f" in
-      docs/wiki/*) wiki=1 ;;
-      docs/*|.harness/*) ;;
+      "$rel"docs/wiki/*) wiki=1 ;;
+      "$rel"docs/*|"$rel".harness/*) ;;
       *) echo code; return ;;
     esac
   done <<EOF_PATHS
-$({ git -c core.quotepath=off diff --name-only "$base" 2>/dev/null
-    git -c core.quotepath=off ls-files --others --exclude-standard 2>/dev/null; } | sort -u)
+$({ git -c core.quotepath=off diff --no-renames --name-only "$base" 2>/dev/null
+    git -c core.quotepath=off -C "$top" ls-files --others --exclude-standard 2>/dev/null; } | sort -u)
 EOF_PATHS
   [ "$any" = 1 ] || { echo code; return; }
   if [ "$wiki" = 1 ]; then echo wiki; else echo docs-only; fi

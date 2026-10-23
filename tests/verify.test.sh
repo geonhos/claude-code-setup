@@ -540,6 +540,39 @@ hvin "$(stopjson)" stop
 check "commit-only of src: full run" [ "$(result status)" = pass ]
 check "commit-only of src: test ran" [ -s "$R/ran.out" ]
 
+# rename of a source file into docs/ (committed, then staged): the old path counts -> full run
+for mode in committed staged; do
+  newrepo
+  cfg '{"test":"echo tests-ran > ran.out"}'
+  mkdir -p "$R/bin" "$R/docs"; echo s > "$R/bin/x.sh"
+  ( cd "$R" && git add .claude bin && git -c core.hooksPath=/dev/null commit -q -m cfg )
+  hv baseline
+  ( cd "$R" && git mv bin/x.sh docs/x.sh )
+  [ "$mode" = committed ] && ( cd "$R" && git -c core.hooksPath=/dev/null commit -q -m mv )
+  hvin "$(stopjson)" stop
+  check "rename src->docs ($mode): full run" [ "$(result status)" = pass ]
+  check "rename src->docs ($mode): test ran" [ -s "$R/ran.out" ]
+done
+
+# subdir ROOT (repo/pkg): pkg/docs only -> docs-only; untracked file outside ROOT -> full run
+for outside in 0 1; do
+  newrepo
+  REPO=$R; R="$REPO/pkg"; mkdir -p "$R"
+  cfg '{"test":"echo tests-ran > ran.out"}'
+  ( cd "$REPO" && git add pkg && git -c core.hooksPath=/dev/null commit -q -m cfg )
+  hv baseline
+  mkdir -p "$R/docs"; echo n > "$R/docs/x.md"
+  [ "$outside" = 1 ] && { mkdir -p "$REPO/bin"; echo s > "$REPO/bin/new.sh"; }
+  hvin "$(stopjson)" stop
+  if [ "$outside" = 0 ]; then
+    check "subdir root, docs only: skipped" [ "$(result step)" = "skipped (docs-only)" ]
+  else
+    check "subdir root, outside file: full run" [ "$(result status)" = pass ]
+    check "subdir root, outside file: test ran" [ -s "$R/ran.out" ]
+  fi
+done
+R=$REPO
+
 # docs/wiki change: only wiki-lint runs; a bad page fails like a test failure
 newrepo
 cfg '{"test":"echo tests-ran > ran.out","maxAttempts":1}'

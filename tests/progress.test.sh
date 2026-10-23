@@ -289,14 +289,27 @@ unset FAKE_CLEAR
 setup; gitwork
 echo idle > "$FAKE_DIR/live.$(WN implementer)"; echo w1:p5 > "$FAKE_DIR/pane.$(WN implementer)"
 mkdir -p .harness; echo "implementer w1:p5" > .harness/panes
-export FAKE_CLEAR=late30 HARNESS_CLEAR_POLLS=60
+export FAKE_CLEAR=late30; unset HARNESS_CLEAR_POLLS   # default poll count (60)
 hook_report implementer '# r\nstatus: done\n'
 run ask implementer "do it"
 check "reset late: rc 0" [ "$RC" -eq 0 ]
 check "reset late: one /clear" [ "$(grep -c "agent prompt $(WN implementer) /clear" "$FAKE_LOG")" -eq 1 ]
 check "reset late: no respawn" not_logged "pane close"
 check "reset late: progress clear ok" [ "$(jl .clear)" = ok ]
-unset FAKE_CLEAR HARNESS_CLEAR_POLLS
+unset FAKE_CLEAR
+
+# session id changes but the status stays working: still a successful clear (no retry, no respawn)
+setup; gitwork
+echo idle > "$FAKE_DIR/live.$(WN implementer)"; echo w1:p5 > "$FAKE_DIR/pane.$(WN implementer)"
+mkdir -p .harness; echo "implementer w1:p5" > .harness/panes
+export FAKE_CLEAR=sidonly
+hook_report implementer '# r\nstatus: done\n'
+run ask implementer "do it"
+check "reset sid-only: rc 0" [ "$RC" -eq 0 ]
+check "reset sid-only: one /clear" [ "$(grep -c "agent prompt $(WN implementer) /clear" "$FAKE_LOG")" -eq 1 ]
+check "reset sid-only: no respawn" not_logged "pane close"
+check "reset sid-only: progress clear ok" [ "$(jl .clear)" = ok ]
+unset FAKE_CLEAR
 
 # only the second /clear takes effect: retry, no respawn
 setup; gitwork
