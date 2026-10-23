@@ -1,0 +1,36 @@
+#!/bin/bash
+# harness-view — render a `claude -p --output-format stream-json` stream (stdin) as a human view.
+# Never fails on odd input: non-JSON lines and unknown event types print nothing.
+c=0
+if [ -z "${NO_COLOR:-}" ] && [ -t 1 ]; then c=1; fi
+exec jq -R --unbuffered -r --arg c "$c" '
+  def col($n; $s): if $c == "1" then "\u001b[\($n)m\($s)\u001b[0m" else $s end;
+  def first_line: tostring | split("\n")[0];
+  def cut($n): if length > $n then .[0:$n] else . end;
+  def short: (.command // .file_path // .pattern // .url // .description // (. | tostring)) | first_line | cut(120);
+  def money: ((.total_cost_usd // 0) * 100 | round) as $n | "\($n / 100 | floor).\(($n % 100) | tostring | if length < 2 then "0" + . else . end)";
+  def content_text: if type == "string" then . elif type == "array" then (map(.text? // (. | tostring)) | join(" ")) else (. | tostring) end;
+  fromjson? | try (
+    if .type == "system" and .subtype == "init" then
+      "▶ \(.model // "?") · session \((.session_id // "") | .[0:8]) · perm \(.permissionMode // "?") · \(.cwd // "")"
+    elif .type == "assistant" then
+      (.message.content // [])[]
+      | if .type == "text" then (.text // empty)
+        elif .type == "tool_use" then "→ \(.name // "?") \((.input // {}) | short)"
+        else empty end
+    elif .type == "user" then
+      (.message.content // [])[]
+      | select(.type == "tool_result" and .is_error == true)
+      | col("31"; "✗ \((.content // "") | content_text | first_line | cut(200))")
+    elif .type == "system" and .subtype == "hook_response" and ((.exit_code // 0) != 0) then
+      "hook \(.hook_name // "?") exit \(.exit_code): \((.stderr // "") | first_line | cut(120))"
+    elif .type == "system" and .subtype == "task_started" then
+      "⧗ bg \(.description // "")"
+    elif .type == "system" and .subtype == "task_notification" then
+      "⧗ bg \(.status // "")"
+    elif .type == "result" then
+      "■ \(.subtype // "?") · \(.num_turns // 0) turns · \(((.duration_ms // 0) / 1000) | floor)s · $\(money) · denials \((.permission_denials // []) | length)"
+      + (if .is_error == true then col("31"; " ERROR") else "" end)
+    else empty end
+  ) catch empty
+'
