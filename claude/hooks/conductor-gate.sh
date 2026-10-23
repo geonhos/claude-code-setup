@@ -122,7 +122,9 @@ physical() {
 # raw_stream_rel REL -> 0 for a headless run's raw stream (.harness/log/*.jsonl[.gz]); it
 # holds source the conductor must not see (ADR 0007)
 raw_stream_rel() {
-  case "$1" in .harness/log/*.jsonl|.harness/log/*.jsonl.*) return 0 ;; esac
+  local l
+  l=$(printf '%s' "$1" | tr 'A-Z' 'a-z')   # macOS volumes are case-insensitive
+  case "$l" in .harness/log/*.jsonl|.harness/log/*.jsonl.*) return 0 ;; esac
   return 1
 }
 readable_rel() {
