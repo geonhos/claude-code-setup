@@ -182,6 +182,8 @@ for d in "$REPO"/claude/skills/*/; do
 done
 ln -sfn "$REPO/bin/harness" "$BIN_DIR/harness"
 ln -sfn "$REPO/bin/harness-verify" "$BIN_DIR/harness-verify"
+ln -sfn "$REPO/bin/harness-run" "$BIN_DIR/harness-run"
+ln -sfn "$REPO/bin/harness-view" "$BIN_DIR/harness-view"
 case ":$PATH:" in
   *":$BIN_DIR:"*) ;;
   *) echo "warning: $BIN_DIR is not on PATH; add it so the conductor can run 'harness'" >&2 ;;
@@ -232,6 +234,8 @@ installed:
   skills         $CLAUDE_DIR/skills/ ($(cd "$REPO/claude/skills" && ls -d */ | tr -d / | tr '\n' ' '))
   harness        $BIN_DIR/harness
   harness-verify $BIN_DIR/harness-verify
+  harness-run    $BIN_DIR/harness-run
+  harness-view   $BIN_DIR/harness-view
   settings       $SETTINGS (backup: $bak)
   agent          settings.agent = conductor (workers override with --agent <name>)
   cache TTL      promptCacheTtl=1h subagentPromptCacheTtl=1h
