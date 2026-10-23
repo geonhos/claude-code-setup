@@ -23,7 +23,7 @@ cd ~/workspace/claude-code-setup
 
 - `claude/agents/*.md`를 `~/.claude/agents/`에 심링크
 - `claude/skills/*/`를 `~/.claude/skills/`에 디렉터리 심링크 (이미 있던 다른 스킬은 `~/.claude/skills.bak/`으로 옮긴다)
-- `bin/harness`, `bin/harness-verify`를 `~/.local/bin`에 링크
+- `bin/harness`, `bin/harness-verify`, `bin/harness-run`, `bin/harness-view`를 `~/.local/bin`에 링크
 - `~/.claude/settings.json`에 아래 항목을 병합 (백업을 남긴다)
   - PreToolUse 훅 하나(게이트), SessionStart 훅 하나(`conductor-resume.sh`), UserPromptSubmit 훅 하나(`conductor-route.sh`)
   - `env.BASH_DEFAULT_TIMEOUT_MS`/`BASH_MAX_TIMEOUT_MS`
@@ -57,6 +57,7 @@ harness route-log '<json>'                               # append one line to .h
 `harness close`는 herdr의 `herdr pane close <pane>`으로 패널을 닫고 `.harness/panes`에서 지운다. 워커가 `working`/`blocked`이거나 아직 수집하지 않은 리포트(`.pending` 포함)가 있으면 exit 4로 거절한다(`--force`로 무시). 다른 디렉터리의 워커는 exit 6. 닫은 뒤 `harness ask`는 평소처럼 워커를 새로 띄운다.
 자동 종료 설정은 `.harness/config.json`(없으면 첫 실행 때 기본값으로 만든다):
 - `close_after_ask.<role>`: `never`|`on_success`. 기본은 모든 역할 `never`(ADR 0006: implementer pane도 ask 사이에 유지, 컨텍스트는 ask마다 /clear). `on_success`는 ask가 0으로 끝나면 닫음(reviewer는 0 또는 5). 환경변수 `HARNESS_CLOSE_AFTER_ASK_<ROLE>`. 기존 저장소: 수정하지 않은 옛 기본 파일(implementer `on_success`)만 자동으로 새 기본값으로 바뀐다. 직접 고친 설정은 그대로이므로 `close_after_ask.implementer`를 `never`로 손수 바꾼다.
+- `runner.<role>`: `pane`(기본, 키 없으면 pane)|`headless`(ADR 0007, 시범). `headless`는 보관되는 viewer pane에서 `harness-run`이 `claude -p`를 돌리고 `harness-view`가 스트림을 보여준다. 완료 = `.harness/asks/<role>.exit.json`(프로세스 종료), 마감 시간에 죽이지 않고 exit 4(`harness report <role>`로 수집), `--keep`이 아니면 매번 새 세션. 환경변수 `HARNESS_RUNNER_<ROLE>`이 우선. `headless_max_minutes`(기본 60)가 한 번의 실행 상한. 되돌리기: `pane`으로 바꾸고 `harness close <role> --force`. 원본 스트림(`.harness/log/*.jsonl`)은 conductor 게이트가 읽기를 막는다.
 - `idle_ttl_minutes`(기본 30, 0이면 끔, 환경변수 `HARNESS_IDLE_TTL_MINUTES`): `harness ask|spawn|status` 시작 때 이 저장소의 워커 중 마지막 리포트 수집 후 TTL이 지났고 idle/done이며 수집 안 한 리포트가 없는 것을 닫는다. 데몬은 없다.
 - `HARNESS_NO_AUTOCLOSE=1`이면 둘 다 꺼진다(수동 `harness close`는 그대로).
 닫을 때마다 `progress.jsonl`에 `{"event":"close","role","reason":"manual|after_ask|ttl|legacy"}`가 남고 `progress.md` 최근 항목에 `close <role> (<reason>)`로 보인다.
