@@ -3,7 +3,7 @@ type: gotcha
 status: active
 updated: 2026-10-21
 sources: [.harness/review-critique-detail.md §1.3, commit 5ea7475, commit 79a1964, https://raw.githubusercontent.com/herdrdev/herdr/v0.9.5/docs/next/website/src/content/docs/agent-automation.mdx]
-verified_by: tests/harness.test.sh (marker/idle/pending cases); live reviewer ask exit 0 after respawn 2026-10-21
+verified_by: tests/harness-ask.test.sh (marker/idle/pending cases); live reviewer ask exit 0 after respawn 2026-10-21
 ---
 # herdr "idle" does not mean the worker finished
 
