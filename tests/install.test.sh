@@ -336,6 +336,7 @@ printf '#!/bin/bash\nsleep 61 &\necho $! > "%s/b.pid"\nwait\n' "$D" > "$D/b.test
 HARNESS_TESTS_DIR="$D" /bin/bash "$RUNNER" --test > "$D.out" 2>&1 &
 RP=$!
 i=0; while [ ! -s "$D/b.pid" ] && [ "$i" -lt 50 ]; do sleep 0.1; i=$((i+1)); done
+check "runner: HUP test saw the suite start (b.pid written)" [ -s "$D/b.pid" ]
 kill -HUP "$RP"
 ( sleep 40; kill -KILL "$RP" 2>/dev/null ) & WD=$!
 wait "$RP"; HRC=$?
@@ -345,22 +346,25 @@ sleep 0.5
 check "runner: HUP kills suite children" sh -c '! kill -0 "$(cat "$1/b.pid")" 2>/dev/null' _ "$D"
 kill "$(cat "$D/b.pid")" 2>/dev/null || true
 
-# a finished suite's .pid file is removed, so kill_all cannot hit a reused pid.
-# Suite b polls the runner's tdir (under TMPDIR=$D/tmp) while a is done and b still runs.
-D=$ROOT/rn-pid; mkdir -p "$D/tmp"
-printf '#!/bin/bash\nexit 0\n' > "$D/a.test.sh"
+# a finished suite's .pid file is removed by run_one itself, so kill_all cannot hit a reused pid.
+# The runner's poll loop (and its report() backstop) only runs after `sleep 0.2`: a shim makes that
+# sleep 2s, so only run_one's own rm can remove a.pid within b's 1.2s window.
+D=$ROOT/rn-pid; mkdir -p "$D/tmp" "$D/shim"
+printf '#!/bin/bash\nif [ "$1" = 0.2 ]; then exec /bin/sleep 2; fi\nexec /bin/sleep "$@"\n' > "$D/shim/sleep"
+chmod +x "$D/shim/sleep"
+printf '#!/bin/bash\n/bin/sleep 0.3\nexit 0\n' > "$D/a.test.sh"
 cat > "$D/b.test.sh" <<EOS
 #!/bin/bash
 i=0
-while [ \$i -lt 100 ]; do
+while [ \$i -lt 12 ]; do
   for t in "$D"/tmp/harness-tests.*; do
     if [ -f "\$t/a.rc" ] && [ ! -e "\$t/a.pid" ]; then echo gone > "$D/result"; exit 0; fi
   done
-  sleep 0.1; i=\$((i+1))
+  /bin/sleep 0.1; i=\$((i+1))
 done
 echo stuck > "$D/result"
 EOS
-guard run_runner "$D" TMPDIR="$D/tmp"
+guard run_runner "$D" TMPDIR="$D/tmp" PATH="$D/shim:$PATH"
 check "runner: finished suite's pid file removed while others run" grep -qx gone "$D/result"
 
 # runner discovers suites by glob: hyphenated names run, helper files (no .test.sh) do not

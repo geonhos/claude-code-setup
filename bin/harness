@@ -1,4 +1,7 @@
 #!/bin/bash
+# The body is one brace group: bash parses the whole file before running any of it, so a
+# tool that rewrites this file in place cannot corrupt a run in progress (wiki: gotchas).
+{
 # harness — conductor-side wrapper around herdr for named Claude workers.
 # Spec: docs/superpowers/specs/2026-10-12-herdr-conductor-setup-design.md
 #
@@ -1526,7 +1529,7 @@ retro_brief() {
   else
     printf 'This repo has no docs/wiki: one file per note in `.harness/retro/inbox/<YYYY-MM-DD>-retro-<ask-id>.md`. Do not create docs/wiki.\n'
   fi
-  printf 'Skip any ask-id that already appears in a file under the inbox (a previous retro may have finished after its ask timed out).\n'
+  printf 'Skip any ask-id that already has a retro note in the inbox (a file named `*-retro-<ask-id>.md`; a previous retro may have finished after its ask timed out). Other inbox files, such as a role'"'"'s late Learned harvest, do not count.\n'
   printf 'Do not edit wiki pages, index.md or log.md. No fluff, no success stories.\n'
   printf 'Inbox files are committed to git: never copy prompt text, screen text, secrets, tokens, keys or URLs with credentials from the logs; paraphrase the observable symptom.\n'
 }
@@ -1737,16 +1740,23 @@ hl_registered_pane() { awk -v r="$1" '$1 == r { p = $2 } END { if (p != "") prin
 hl_alive() {
   local f=".harness/asks/$1.pid" id pid
   [ -f "$f" ] || return 1
-  read -r id pid < "$f"
+  read -r id pid _ < "$f"
   digits_only "${pid:-}" && kill -0 "$pid" 2>/dev/null || return 1
   ps -p "$pid" -o command= 2>/dev/null | grep -q 'harness-run'
 }
-# hl_last_session <role> — session id of the role's latest headless progress line that has one
+# hl_last_session <role> — session id of the role's latest *successful* headless run (progress
+# line with result "success" and a session). A close event of the role is a boundary: when one
+# came after the last such run, print "closed" instead (no session id looks like that).
 hl_last_session() {
   [ -f "$JSONL" ] || return 1
-  grep -v '"event":"close"' "$JSONL" 2>/dev/null | tail -n 200 \
-    | jq -R -r --arg a "$1" 'fromjson? | select(type == "object" and .agent == $a and .runner == "headless" and ((.session // "") != "")) | .session' 2>/dev/null \
-    | tail -n 1 | grep .
+  tail -n 200 "$JSONL" 2>/dev/null \
+    | jq -R -n -r --arg r "$1" '
+        reduce (inputs | fromjson? | select(type == "object")) as $e ({sid: "", closed: false};
+          if $e.event == "close" then (if $e.role == $r then {sid: "", closed: true} else . end)
+          elif $e.agent == $r and $e.runner == "headless" and $e.result == "success" and (($e.session // "") != "") then {sid: $e.session, closed: false}
+          else . end)
+        | if .sid != "" then .sid elif .closed then "closed" else empty end' 2>/dev/null \
+    | grep .
 }
 hl_pid() { awk 'NR == 1 { print $2 }' ".harness/asks/$1.pid" 2>/dev/null; }
 # hl_done <role> <ask-id> — exit.json exists for that ask
@@ -1863,7 +1873,7 @@ hl_view_tail() { [ -z "${1:-}" ] || herdr pane read "$1" 2>/dev/null | tail -n 3
 # ask_headless <role> <text> <timeout-ms> <fresh> <keep> — the whole headless ask; always exits
 ask_headless() {
   local role=$1 text=$2 timeout=$3 keep=$5 pane id start resume="" sid max_s ctxb="" report="$REPORT_DIR/$1.md"
-  local a=".harness/asks/$role" now deadline poll=${HARNESS_POLL_SEC:-2} start_s=${HARNESS_HL_START_S:-15} s0
+  local a=".harness/asks/$role" now deadline poll=${HARNESS_POLL_SEC:-2} start_s=${HARNESS_HL_START_S:-15} s0 g
   mkdir -p .harness/asks .harness/done "$REPORT_DIR" "$LOG_DIR"
   if hl_alive "$role"; then
     echo "harness: $role is still running (pid $(hl_pid "$role")); nothing sent. Collect with: harness report $role; stop: harness close $role --force" >&2
@@ -1875,8 +1885,10 @@ ask_headless() {
     if [ -n "$sid" ]; then
       resume=$sid
       ctxb=$(jq -r '.ctx // empty' "$a.exit.json" 2>/dev/null)
-    elif sid=$(hl_last_session "$role") && [ -n "$sid" ]; then
-      # the previous run died before it reported a session: fall back to the last good one
+    elif sid=$(hl_last_session "$role") && [ "$sid" = closed ]; then
+      echo "harness: note: $role was closed after its last successful run; no session to resume — running fresh"
+    elif [ -n "$sid" ]; then
+      # the previous run died before it reported a session: fall back to the last successful one
       resume=$sid
       echo "harness: note: the previous run recorded no session; resuming the last successful one from progress.jsonl (${sid:0:8})"
     else
@@ -1918,7 +1930,8 @@ ask_headless() {
   while :; do
     if hl_done "$role" "$id"; then hl_collect "$role"; fi
     if ! hl_alive "$role"; then
-      sleep 0.3
+      # the runner may still be writing exit.json (jq, mv) as its pid disappears: give it ~3 s
+      g=0; while [ "$g" -lt 30 ] && ! hl_done "$role" "$id"; do sleep 0.1; g=$((g + 1)); done
       if hl_done "$role" "$id"; then hl_collect "$role"; fi
       sid=$(sed -n 1p "$a.session" 2>/dev/null | cut -c1-8)
       if [ -n "$sid" ]; then
@@ -1976,7 +1989,8 @@ hl_finish_close() {
   herdr pane close "$2" >/dev/null || die "pane close failed for $2"
   pane_gone "$2" || die "pane $2 is still present after close; registry entry kept"
   unregister "$1" "$2"
-  rm -f ".harness/asks/$1.finished"
+  # a close ends the conversation: --keep must not resume a session across it
+  rm -f ".harness/asks/$1.finished" ".harness/asks/$1.session"
   log_close "$1" "$2" "$3" headless
   echo "closed $1 ($2)"
 }
@@ -2030,3 +2044,5 @@ case "${1:-}" in
   close)  shift; cmd_close "$@" ;;
   *)      usage ;;
 esac
+exit $?
+}

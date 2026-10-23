@@ -20,6 +20,10 @@ hsetup() {
 }
 jqt() { jq -e "$@" >/dev/null; }
 lastprog() { tail -n 1 .harness/progress.jsonl 2>/dev/null; }
+# killpids FILE — kill exactly the pids a test recorded (no pattern kills anywhere in tests/)
+killpids() { local p; for p in $(cat "$1" 2>/dev/null); do kill "$p" 2>/dev/null; done; return 0; }
+# live_runs RID — pids whose command line carries this run id (empty RID matches nothing)
+live_runs() { [ -n "${1:-}" ] || return 0; pgrep -f "harness-run analyst $1 "; }
 claude_runs() { grep -c '^claude: ' "$FAKE_LOG"; }
 
 # 1. success
@@ -77,7 +81,8 @@ check "close --force: running ask returned 3" [ "$(cat "$WORK/ask.rc")" -eq 3 ]
 check "close --force: killed signal" jqt '.killed == "signal"' .harness/asks/analyst.exit.json
 check "close --force: pane closed" logged "pane close"
 check "close --force: registry empty" not_grep '^analyst ' .harness/panes
-check "close --force: no leftover fake claude" not pgrep -f "fake-claude/claude"
+sleep 0.3
+check "close --force: no leftover fake claude" not kill -0 "$(cat "$FAKE_DIR/claude.pid")"
 check "close --force: logged force_kill" grep -q force_kill .harness/progress.jsonl
 
 # 5. slow run: ask times out (4), report collects later
@@ -198,7 +203,7 @@ bg=$!
 i=0; while [ $i -lt 50 ] && ! grep -q . .harness/asks/analyst.pid 2>/dev/null; do sleep 0.2; i=$((i + 1)); done
 check "stale sid: cleared at ask start" [ ! -s .harness/asks/analyst.session ]
 kill -9 "$(awk 'NR == 1 { print $2 }' .harness/asks/analyst.pid)"
-pkill -f "fake-claude/claude" 2>/dev/null
+killpids "$FAKE_DIR/claude.pids"
 wait "$bg"
 OUT=$(cat "$WORK/ask2.out")
 check "stale sid: run gone reported" grep -q "gone without a result" <<<"$OUT"
@@ -208,6 +213,52 @@ hrun ask analyst "third" --keep
 check "stale sid: --keep resumes the last successful session" logged "--resume sess-1"
 check "stale sid: --keep says where it came from" grep -q "progress.jsonl" <<<"$OUT"
 
+# 15b. --keep fallback: last *successful* session only; a close is a boundary
+hsetup
+hrun ask analyst "ok"
+check "keep ok: first run sess-1" [ "$(cat .harness/asks/analyst.session)" = sess-1 ]
+export FAKE_CLAUDE_MODE=error
+hrun ask analyst "bad"
+check "keep ok: failed run got sess-2" [ "$(cat .harness/asks/analyst.session)" = sess-2 ]
+export FAKE_CLAUDE_MODE=hangpre
+( hrun ask analyst "dies" --timeout 60000; echo "$OUT" > "$WORK/ask3.out" ) &
+bg=$!
+i=0; while [ $i -lt 50 ] && ! grep -q . .harness/asks/analyst.pid 2>/dev/null; do sleep 0.2; i=$((i + 1)); done
+kill -9 "$(awk 'NR == 1 { print $2 }' .harness/asks/analyst.pid)"
+killpids "$FAKE_DIR/claude.pids"
+wait "$bg"
+export FAKE_CLAUDE_MODE=success
+hrun ask analyst "keep" --keep
+check "keep ok: resumes the last successful session, not the failed one" logged "--resume sess-1"
+check "keep ok: not the failed session" not_logged "--resume sess-2"
+check "keep ok: note says successful" grep -q "last successful" <<<"$OUT"
+
+hsetup
+hrun ask analyst "ok"
+export FAKE_CLAUDE_MODE=hangpre
+( hrun ask analyst "dies" --timeout 60000 ) &
+bg=$!
+i=0; while [ $i -lt 50 ] && ! grep -q . .harness/asks/analyst.pid 2>/dev/null; do sleep 0.2; i=$((i + 1)); done
+kill -9 "$(awk 'NR == 1 { print $2 }' .harness/asks/analyst.pid)"
+killpids "$FAKE_DIR/claude.pids"
+wait "$bg"
+export FAKE_CLAUDE_MODE=success
+hrun close analyst
+hrun ask analyst "after close" --keep
+check "keep close: no resume across a close" not_logged "--resume"
+check "keep close: says a close ended it" grep -q "closed" <<<"$OUT"
+check "keep close: runs fresh" grep -q "running fresh" <<<"$OUT"
+
+# 15c. close ends the conversation: --keep after a close of a healthy idle worker runs fresh
+hsetup
+hrun ask analyst "ok"
+check "keep healthy close: session recorded" [ "$(cat .harness/asks/analyst.session)" = sess-1 ]
+hrun close analyst
+check "keep healthy close: session file removed by close" [ ! -e .harness/asks/analyst.session ]
+hrun ask analyst "after" --keep
+check "keep healthy close: no resume" not_logged "--resume"
+check "keep healthy close: note" grep -q "running fresh" <<<"$OUT"
+
 # 16. watchdog does not outlive an killed harness-run
 hsetup; export FAKE_CLAUDE_MODE=hang HARNESS_HL_MAX_S=4
 ( hrun ask analyst "q" --timeout 60000 ) &
@@ -215,12 +266,82 @@ bg=$!
 i=0; while [ $i -lt 50 ] && ! grep -q . .harness/asks/analyst.pid 2>/dev/null; do sleep 0.2; i=$((i + 1)); done
 rid=$(awk 'NR == 1 { print $1 }' .harness/asks/analyst.pid)
 kill -9 "$(awk 'NR == 1 { print $2 }' .harness/asks/analyst.pid)"
-pkill -f "fake-claude/claude" 2>/dev/null
+killpids "$FAKE_DIR/claude.pids"
 sleep 2.5
-check "watchdog orphan: gone once harness-run is" not pgrep -f "harness-run analyst $rid"
-pkill -f "harness-run analyst $rid" 2>/dev/null
+check "watchdog orphan: gone once harness-run is" [ -z "$(live_runs "$rid")" ]
+for p in $(live_runs "$rid"); do kill "$p" 2>/dev/null; done
 wait "$bg"
 unset HARNESS_HL_MAX_S
+
+# 16b. a SIGKILLed harness-run leaves claude (ppid 1): the watchdog must reap it, by run identity
+hsetup; export FAKE_CLAUDE_MODE=hang HARNESS_HL_MAX_S=600
+( hrun ask analyst "q" --timeout 60000 ) &
+bg=$!
+i=0; while [ $i -lt 50 ] && ! grep -q . .harness/asks/analyst.pid 2>/dev/null; do sleep 0.2; i=$((i + 1)); done
+i=0; while [ $i -lt 50 ] && ! [ -s "$FAKE_DIR/claude.pid" ]; do sleep 0.2; i=$((i + 1)); done
+rid=$(awk 'NR == 1 { print $1 }' .harness/asks/analyst.pid)
+cpid=$(cat "$FAKE_DIR/claude.pid")
+check "orphan: claude running before the kill" kill -0 "$cpid"
+kill -9 "$(awk 'NR == 1 { print $2 }' .harness/asks/analyst.pid)"
+i=0; while [ $i -lt 40 ] && kill -0 "$cpid" 2>/dev/null; do sleep 0.2; i=$((i + 1)); done
+check "orphan: claude reaped after harness-run was SIGKILLed" not kill -0 "$cpid"
+check "orphan: no harness-run process left" [ -z "$(live_runs "$rid")" ]
+for p in $(live_runs "$rid"); do kill "$p" 2>/dev/null; done
+kill "$cpid" 2>/dev/null
+wait "$bg"
+unset HARNESS_HL_MAX_S
+
+# 16c. direct runs (no herdr): zombie runner, TERM-proof claude, foreign process, live-script safety
+hdirect() { # hdirect MODE MAX_S -> starts harness-run under a parent that never reaps it; sets RID RPID
+  FAKE_CLAUDE_MODE=$1
+  mkdir -p .harness/asks
+  printf 'x\n' > .harness/asks/analyst.prompt; printf 'resume=\nmax_s=%s\n' "$2" > .harness/asks/analyst.run
+  rm -f "$FAKE_DIR/claude.pids"
+  # perl forks the runner and then sleeps without wait(): a SIGKILLed runner stays a zombie
+  HARNESS_ROLE=worker FAKE_CLAUDE_MODE=$1 PATH="$FAKE_CLAUDE:$HERE/../bin:$PATH" \
+    perl -e 'unless (fork) { open STDOUT, ">/dev/null"; open STDERR, ">&STDOUT"; exec @ARGV } sleep 12' \
+    /bin/bash "${HR_BIN:-$HERE/../bin/harness-run}" analyst RUN-$$-$1 "$PWD" &
+  i=0; while [ $i -lt 50 ] && ! grep -q . .harness/asks/analyst.pid 2>/dev/null; do sleep 0.1; i=$((i + 1)); done
+  i=0; while [ $i -lt 50 ] && ! [ -s "$FAKE_DIR/claude.pids" ]; do sleep 0.1; i=$((i + 1)); done
+  RID=$(awk 'NR == 1 { print $1 }' .harness/asks/analyst.pid); RPID=$(awk 'NR == 1 { print $2 }' .harness/asks/analyst.pid)
+  CPID=$(sed -n 1p "$FAKE_DIR/claude.pids")
+}
+# a foreign process in its own process group, started before the reap
+hsetup
+( set -m; sleep 300 & echo $! > "$WORK/foreign.pid"; wait ) 2>/dev/null &
+fbg=$!
+sleep 0.3
+hdirect hang 600
+kill -9 "$RPID"
+sleep 1
+ps -o stat= -p "$RPID" 2>/dev/null | grep -q '^Z' && zomb=1 || zomb=0
+check "zombie: the SIGKILLed runner is a zombie (parent does not reap)" [ "$zomb" = 1 ]
+i=0; while [ $i -lt 60 ] && kill -0 "$CPID" 2>/dev/null; do sleep 0.1; i=$((i + 1)); done
+check "zombie: claude reaped though kill -0 on the runner succeeds" not kill -0 "$CPID"
+check "foreign: a process without the run identity survives the reap" kill -0 "$(cat "$WORK/foreign.pid")"
+kill "$(cat "$WORK/foreign.pid")" 2>/dev/null; wait "$fbg" 2>/dev/null
+
+hsetup
+hdirect hangterm 600
+check "term-proof: claude running" kill -0 "$CPID"
+kill -9 "$RPID"
+sleep 1.5
+check "term-proof: still alive during the TERM grace" kill -0 "$CPID"
+i=0; while [ $i -lt 80 ] && kill -0 "$CPID" 2>/dev/null; do sleep 0.1; i=$((i + 1)); done
+check "term-proof: KILLed after the grace" not kill -0 "$CPID"
+
+# live-script safety: overwrite a copy of harness-run in place while it waits; it must still finish
+hsetup
+mkdir -p "$WORK/binc"
+cp "$HERE/../bin/harness-run" "$WORK/binc/harness-run"
+HR_BIN="$WORK/binc/harness-run"
+hdirect slow20 600
+i=0; while [ $i -lt 5 ]; do sleep 0.1; i=$((i + 1)); done
+i=0; : > "$WORK/junk"; while [ $i -lt 300 ]; do echo 'echo CORRUPT >&2; exit 9' >> "$WORK/junk"; i=$((i + 1)); done
+cat "$WORK/junk" > "$WORK/binc/harness-run"
+i=0; while [ $i -lt 60 ] && [ ! -f .harness/asks/analyst.exit.json ]; do sleep 0.2; i=$((i + 1)); done
+check "in-place rewrite: the running harness-run still writes exit.json" jqt '.rc == 0' .harness/asks/analyst.exit.json
+unset HR_BIN
 
 # 17. use_hl: only a live headless run (or config) selects the headless code
 hsetup; export FAKE_CLAUDE_MODE=hang
