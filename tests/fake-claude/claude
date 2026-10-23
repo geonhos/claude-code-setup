@@ -15,6 +15,7 @@ mode=${FAKE_CLAUDE_MODE:-success}
 input=$(cat)
 printf 'claude stdin: %s\n' "$input" >> "$FAKE_LOG"
 [ "$mode" != nostart ] || exit 127
+echo $$ > "$FAKE_DIR/claude.pid"
 n=$(( $(cat "$FAKE_DIR/claude.n" 2>/dev/null || echo 0) + 1 )); echo "$n" > "$FAKE_DIR/claude.n"
 sid=sess-$n
 resume=""; prev=""

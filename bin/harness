@@ -1741,12 +1741,19 @@ hl_alive() {
   digits_only "${pid:-}" && kill -0 "$pid" 2>/dev/null || return 1
   ps -p "$pid" -o command= 2>/dev/null | grep -q 'harness-run'
 }
-# hl_last_session <role> — session id of the role's latest headless progress line that has one
+# hl_last_session <role> — session id of the role's latest *successful* headless run (progress
+# line with result "success" and a session). A close event of the role is a boundary: when one
+# came after the last such run, print "closed" instead (no session id looks like that).
 hl_last_session() {
   [ -f "$JSONL" ] || return 1
-  grep -v '"event":"close"' "$JSONL" 2>/dev/null | tail -n 200 \
-    | jq -R -r --arg a "$1" 'fromjson? | select(type == "object" and .agent == $a and .runner == "headless" and ((.session // "") != "")) | .session' 2>/dev/null \
-    | tail -n 1 | grep .
+  tail -n 200 "$JSONL" 2>/dev/null \
+    | jq -R -n -r --arg r "$1" '
+        reduce (inputs | fromjson? | select(type == "object")) as $e ({sid: "", closed: false};
+          if $e.event == "close" then (if $e.role == $r then {sid: "", closed: true} else . end)
+          elif $e.agent == $r and $e.runner == "headless" and $e.result == "success" and (($e.session // "") != "") then {sid: $e.session, closed: false}
+          else . end)
+        | if .sid != "" then .sid elif .closed then "closed" else empty end' 2>/dev/null \
+    | grep .
 }
 hl_pid() { awk 'NR == 1 { print $2 }' ".harness/asks/$1.pid" 2>/dev/null; }
 # hl_done <role> <ask-id> — exit.json exists for that ask
@@ -1875,8 +1882,10 @@ ask_headless() {
     if [ -n "$sid" ]; then
       resume=$sid
       ctxb=$(jq -r '.ctx // empty' "$a.exit.json" 2>/dev/null)
-    elif sid=$(hl_last_session "$role") && [ -n "$sid" ]; then
-      # the previous run died before it reported a session: fall back to the last good one
+    elif sid=$(hl_last_session "$role") && [ "$sid" = closed ]; then
+      echo "harness: note: $role was closed after its last successful run; no session to resume — running fresh"
+    elif [ -n "$sid" ]; then
+      # the previous run died before it reported a session: fall back to the last successful one
       resume=$sid
       echo "harness: note: the previous run recorded no session; resuming the last successful one from progress.jsonl (${sid:0:8})"
     else

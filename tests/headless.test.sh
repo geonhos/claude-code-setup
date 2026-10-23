@@ -208,6 +208,42 @@ hrun ask analyst "third" --keep
 check "stale sid: --keep resumes the last successful session" logged "--resume sess-1"
 check "stale sid: --keep says where it came from" grep -q "progress.jsonl" <<<"$OUT"
 
+# 15b. --keep fallback: last *successful* session only; a close is a boundary
+hsetup
+hrun ask analyst "ok"
+check "keep ok: first run sess-1" [ "$(cat .harness/asks/analyst.session)" = sess-1 ]
+export FAKE_CLAUDE_MODE=error
+hrun ask analyst "bad"
+check "keep ok: failed run got sess-2" [ "$(cat .harness/asks/analyst.session)" = sess-2 ]
+export FAKE_CLAUDE_MODE=hangpre
+( hrun ask analyst "dies" --timeout 60000; echo "$OUT" > "$WORK/ask3.out" ) &
+bg=$!
+i=0; while [ $i -lt 50 ] && ! grep -q . .harness/asks/analyst.pid 2>/dev/null; do sleep 0.2; i=$((i + 1)); done
+kill -9 "$(awk 'NR == 1 { print $2 }' .harness/asks/analyst.pid)"
+pkill -f "fake-claude/claude" 2>/dev/null
+wait "$bg"
+export FAKE_CLAUDE_MODE=success
+hrun ask analyst "keep" --keep
+check "keep ok: resumes the last successful session, not the failed one" logged "--resume sess-1"
+check "keep ok: not the failed session" not_logged "--resume sess-2"
+check "keep ok: note says successful" grep -q "last successful" <<<"$OUT"
+
+hsetup
+hrun ask analyst "ok"
+export FAKE_CLAUDE_MODE=hangpre
+( hrun ask analyst "dies" --timeout 60000 ) &
+bg=$!
+i=0; while [ $i -lt 50 ] && ! grep -q . .harness/asks/analyst.pid 2>/dev/null; do sleep 0.2; i=$((i + 1)); done
+kill -9 "$(awk 'NR == 1 { print $2 }' .harness/asks/analyst.pid)"
+pkill -f "fake-claude/claude" 2>/dev/null
+wait "$bg"
+export FAKE_CLAUDE_MODE=success
+hrun close analyst
+hrun ask analyst "after close" --keep
+check "keep close: no resume across a close" not_logged "--resume"
+check "keep close: says a close ended it" grep -q "closed" <<<"$OUT"
+check "keep close: runs fresh" grep -q "running fresh" <<<"$OUT"
+
 # 16. watchdog does not outlive an killed harness-run
 hsetup; export FAKE_CLAUDE_MODE=hang HARNESS_HL_MAX_S=4
 ( hrun ask analyst "q" --timeout 60000 ) &
@@ -220,6 +256,25 @@ sleep 2.5
 check "watchdog orphan: gone once harness-run is" not pgrep -f "harness-run analyst $rid"
 pkill -f "harness-run analyst $rid" 2>/dev/null
 wait "$bg"
+unset HARNESS_HL_MAX_S
+
+# 16b. a SIGKILLed harness-run leaves claude (ppid 1): the watchdog must reap it, by run identity
+hsetup; export FAKE_CLAUDE_MODE=hang HARNESS_HL_MAX_S=600
+( hrun ask analyst "q" --timeout 60000 ) &
+bg=$!
+i=0; while [ $i -lt 50 ] && ! grep -q . .harness/asks/analyst.pid 2>/dev/null; do sleep 0.2; i=$((i + 1)); done
+i=0; while [ $i -lt 50 ] && ! [ -s "$FAKE_DIR/claude.pid" ]; do sleep 0.2; i=$((i + 1)); done
+rid=$(awk 'NR == 1 { print $1 }' .harness/asks/analyst.pid)
+cpid=$(cat "$FAKE_DIR/claude.pid")
+check "orphan: claude running before the kill" kill -0 "$cpid"
+kill -9 "$(awk 'NR == 1 { print $2 }' .harness/asks/analyst.pid)"
+i=0; while [ $i -lt 40 ] && kill -0 "$cpid" 2>/dev/null; do sleep 0.2; i=$((i + 1)); done
+check "orphan: claude reaped after harness-run was SIGKILLed" not kill -0 "$cpid"
+check "orphan: no harness-run process left" not pgrep -f "harness-run analyst $rid"
+pkill -f "harness-run analyst $rid" 2>/dev/null
+kill "$cpid" 2>/dev/null
+wait "$bg"
+# a foreign process must not be killed: a recycled/unrelated pid is not matched by identity
 unset HARNESS_HL_MAX_S
 
 # 17. use_hl: only a live headless run (or config) selects the headless code

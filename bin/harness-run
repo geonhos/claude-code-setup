@@ -69,12 +69,19 @@ trap on_signal TERM INT HUP
 ) &
 pipe=$!
 # the watchdog ticks once a second; it ends with this runner (a SIGKILLed harness-run must not
-# leave it behind) and only kills the pipeline while that is still this runner's child
+# leave it behind, and it then reaps the orphaned pipeline by run identity) and kills it on
+# timeout only while it is still this runner's child
 runner=$$
 ( n=0
   while [ "$n" -lt "$max_s" ]; do
     sleep 1; n=$((n + 1))
-    kill -0 "$runner" 2>/dev/null || exit 0
+    if ! kill -0 "$runner" 2>/dev/null; then
+      # the runner is gone (SIGKILLed): its pipeline is orphaned (ppid 1) and nobody else
+      # will stop it. Kill it only while the process still carries this run's identity
+      # (its command line holds "harness-run <role> <ask-id>"), never by a bare pid
+      ps -o command= -p "$pipe" 2>/dev/null | grep -qF "harness-run $role $id " && kill_tree "$pipe"
+      exit 0
+    fi
   done
   [ "$(ps -o ppid= -p "$pipe" 2>/dev/null | tr -d ' ')" = "$runner" ] || exit 0
   : > "$wdflag"; kill_tree "$pipe" ) >/dev/null 2>&1 &
