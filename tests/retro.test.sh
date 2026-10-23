@@ -343,10 +343,10 @@ cat > .harness/progress.jsonl <<'EOF'
 {"ts":"2026-10-02T10:00:00Z","agent":"analyst","exit":0,"dur_s":100,"status":"done"}
 {"ts":"2026-10-03T10:00:00Z","agent":"analyst","exit":4,"dur_s":600}
 {"ts":"2026-10-03T10:05:00Z","agent":"analyst","exit":null,"late":true,"status":"done"}
-{"ts":"2026-10-04T10:00:00Z","agent":"implementer","exit":0,"dur_s":300,"verify":"pass","verify_attempts":1}
-{"ts":"2026-10-05T10:00:00Z","agent":"implementer","exit":5,"dur_s":900,"verify":"fail","verify_attempts":3}
-{"ts":"2026-10-06T10:00:00Z","agent":"implementer","exit":0,"dur_s":500,"verify":"pass","verify_attempts":2}
-{"ts":"2026-10-07T10:00:00Z","agent":"implementer","exit":0,"dur_s":100}
+{"ts":"2026-10-04T10:00:00Z","agent":"implementer","exit":0,"dur_s":300,"verify":"pass","verify_attempts":1,"clear":"ok"}
+{"ts":"2026-10-05T10:00:00Z","agent":"implementer","exit":5,"dur_s":900,"verify":"fail","verify_attempts":3,"clear":"retry"}
+{"ts":"2026-10-06T10:00:00Z","agent":"implementer","exit":0,"dur_s":500,"verify":"pass","verify_attempts":2,"clear":"respawn"}
+{"ts":"2026-10-07T10:00:00Z","agent":"implementer","exit":0,"dur_s":100,"clear":"none"}
 {"ts":"2026-10-08T10:00:00Z","agent":"reviewer","exit":0,"dur_s":50}
 {"ts":"2026-10-09T10:00:00Z","agent":"reviewer","exit":5,"dur_s":150}
 {"ts":"2026-10-09T10:30:00Z","agent":"reviewer","exit":3,"dur_s":200}
@@ -382,6 +382,10 @@ check "json: reviewer FAIL rate (1/3)" [ "$(jv .current.roles.reviewer.fail_rate
 check "json: implementer median/p95" [ "$(jv '"\(.current.roles.implementer.duration_median_s)/\(.current.roles.implementer.duration_p95_s)"')" = "400/900" ]
 check "json: analyst median/p95 (600,100)" [ "$(jv '"\(.current.roles.analyst.duration_median_s)/\(.current.roles.analyst.duration_p95_s)"')" = "350/600" ]
 check "json: reviewer median/p95" [ "$(jv '"\(.current.roles.reviewer.duration_median_s)/\(.current.roles.reviewer.duration_p95_s)"')" = "150/200" ]
+check "json: clear counts" [ "$(jv '.current.clear | "\(.ok)/\(.retry)/\(.respawn)/\(.none)"')" = "1/1/1/1" ]
+check "json: clear retry rate (1/3)" [ "$(jv .current.clear.retry_rate)" = 33.3 ]
+check "json: clear respawn rate (1/3)" [ "$(jv .current.clear.respawn_rate)" = 33.3 ]
+check "json: clear rates null without data" [ "$(jv .prev.clear.retry_rate)" = null ]
 check "json: previous asks" [ "$(jv .prev.total.asks)" -eq 3 ]
 check "json: previous reviewer FAIL rate (2/2)" [ "$(jv .prev.roles.reviewer.fail_rate)" = 100 ]
 check "json: previous empty role is null" [ "$(jv .prev.roles.implementer.verify_failure_rate)" = null ]
@@ -393,6 +397,8 @@ check "text: rc 0" [ "$RC" -eq 0 ]
 check "text: header" grep -q '^harness metrics  2026-10-01 .. 2026-10-29 (28d)  vs  2026-09-03 .. 2026-10-01' <<<"$OUT"
 check "text: asks row" grep -Eq '^  asks +9 +3$' <<<"$OUT"
 check "text: abnormal row" grep -Eq 'abnormal rate .* +30% +' <<<"$OUT"
+check "text: clear retry row" grep -Eq '/clear retry rate +33.3% +-' <<<"$OUT"
+check "text: clear respawn row" grep -Eq '/clear respawn rate +33.3% +-' <<<"$OUT"
 check "text: exits line" grep -q 'exits current:  0:5 3:1 4:1 5:2 late:1' <<<"$OUT"
 check "text: retro line" grep -q '^retro: 1 pending · 2 processed' <<<"$OUT"
 check "text: no wiki" grep -q '^wiki: none' <<<"$OUT"

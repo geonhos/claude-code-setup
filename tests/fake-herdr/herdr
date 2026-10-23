@@ -10,6 +10,8 @@
 #         $FAKE_DIR/cwd.<agent>     cwd reported by `agent get` (default: the caller's $PWD)
 #         $FAKE_CLEAR               ok (default): `agent prompt <a> /clear` assigns a new session id
 #                                   stuck: /clear is accepted but the session id never changes
+#                                   late<N>: the new session id appears at the N-th `agent get` after /clear
+#                                   second: the first /clear is ignored, the second one works
 #         $FAKE_DIR/no_stop_hook    exists => the worker's Stop hook does not fire after a prompt
 #         (otherwise, when the agent ends the prompt idle/done, `harness-verify done <role>` runs
 #          from the caller's cwd with HARNESS_ROLE=worker, like the real Stop hook)
@@ -55,6 +57,16 @@ case "$sub" in
     ;;
   "agent get")
     name=$3
+    if [ -f "$FAKE_DIR/clear.pending.$name" ]; then   # FAKE_CLEAR=late<N>: count down, then apply
+      left=$(( $(cat "$FAKE_DIR/clear.pending.$name") - 1 ))
+      if [ "$left" -le 0 ]; then
+        rm -f "$FAKE_DIR/clear.pending.$name"
+        echo "sess-$name-c$$-$RANDOM" > "$FAKE_DIR/session.$name"
+        echo idle > "$FAKE_DIR/live.$name"
+      else
+        echo "$left" > "$FAKE_DIR/clear.pending.$name"
+      fi
+    fi
     if [ -f "$FAKE_DIR/live.$name" ]; then
       status=$(cat "$FAKE_DIR/live.$name")
       pane=w1:p2
@@ -92,10 +104,18 @@ case "$sub" in
       echo '{"error":{"code":"agent_blocked"}}' >&2; exit 1
     fi
     if [ "${4:-}" = /clear ]; then
-      if [ "${FAKE_CLEAR:-ok}" != stuck ]; then
-        echo "sess-$name-c$$-$RANDOM" > "$FAKE_DIR/session.$name"
-        echo idle > "$FAKE_DIR/live.$name"
-      fi
+      nclear=$(( $(cat "$FAKE_DIR/clear.n.$name" 2>/dev/null || echo 0) + 1 ))
+      echo "$nclear" > "$FAKE_DIR/clear.n.$name"
+      case "${FAKE_CLEAR:-ok}" in
+        stuck) ;;
+        late*) echo "${FAKE_CLEAR#late}" > "$FAKE_DIR/clear.pending.$name" ;;
+        second) if [ "$nclear" -ge 2 ]; then
+                  echo "sess-$name-c$$-$RANDOM" > "$FAKE_DIR/session.$name"
+                  echo idle > "$FAKE_DIR/live.$name"
+                fi ;;
+        *) echo "sess-$name-c$$-$RANDOM" > "$FAKE_DIR/session.$name"
+           echo idle > "$FAKE_DIR/live.$name" ;;
+      esac
       echo '{"id":"cli:agent:prompt","result":{},"type":"agent_prompt"}'
       exit 0
     fi

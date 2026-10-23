@@ -299,23 +299,46 @@ fmt_ctx() {
   esac
 }
 
-# do_clear <agent> — send /clear (no --wait: herdr would stall) and poll until
-# the session id changed and the agent is idle again. 0 = cleared.
+# do_clear <agent> — send /clear (no --wait: herdr would stall) and poll until herdr
+# reports a new session id (status is not required: CC may clear while herdr still
+# shows the old status). Window: HARNESS_CLEAR_POLLS (default 60) x
+# HARNESS_CLEAR_INTERVAL (0.5 s) ~ 30 s. If the id did not change, /clear is sent once
+# more (same window). After a change, wait briefly for idle (bounded, never fails the
+# clear). Sets CLEAR_HOW=ok|retry. 0 = cleared, 1 = not cleared (caller respawns).
 do_clear() {
-  local old new st i=0 j
+  local old new st i attempt=1 j
+  CLEAR_HOW=""
   old=$(agent_session "$1")
-  herdr agent prompt "$(wname "$1")" /clear >/dev/null 2>&1 || return 1
-  while [ "$i" -lt "${HARNESS_CLEAR_POLLS:-20}" ]; do
-    sleep "${HARNESS_CLEAR_INTERVAL:-0.5}"
-    j=$(agent_json "$1") || return 1
-    new=$(printf '%s' "$j" | jq -r '.result.agent.agent_session.value // empty' 2>/dev/null)
-    st=$(printf '%s' "$j" | jq -r '.result.agent.agent_status // empty' 2>/dev/null)
-    if [ -n "$new" ] && [ "$new" != "$old" ] && [ "$st" = idle ]; then
-      return 0
-    fi
-    i=$((i + 1))
+  while [ "$attempt" -le 2 ]; do
+    herdr agent prompt "$(wname "$1")" /clear >/dev/null 2>&1 || return 1
+    i=0
+    while [ "$i" -lt "${HARNESS_CLEAR_POLLS:-60}" ]; do
+      sleep "${HARNESS_CLEAR_INTERVAL:-0.5}"
+      j=$(agent_json "$1") || return 1
+      new=$(printf '%s' "$j" | jq -r '.result.agent.agent_session.value // empty' 2>/dev/null)
+      if [ -n "$new" ] && [ "$new" != "$old" ]; then
+        i=0
+        while [ "$i" -lt "${HARNESS_CLEAR_IDLE_POLLS:-20}" ]; do
+          st=$(agent_status "$1")
+          case "$st" in idle|done) break ;; esac
+          sleep "${HARNESS_CLEAR_INTERVAL:-0.5}"
+          i=$((i + 1))
+        done
+        if [ "$attempt" = 1 ]; then CLEAR_HOW=ok; else CLEAR_HOW=retry; fi
+        return 0
+      fi
+      i=$((i + 1))
+    done
+    attempt=$((attempt + 1))
   done
   return 1
+}
+
+# note_clear <agent> <ok|retry|respawn> — the ask's /clear outcome for record_progress
+# (maybe_reset runs in the ask's subshell, so it travels through a file)
+note_clear() {
+  mkdir -p .harness/asks 2>/dev/null && printf '%s\n' "$2" > ".harness/asks/$1.clear" 2>/dev/null
+  return 0
 }
 
 # last_exit <agent> — exit code of the agent's last logged ask (late archives
@@ -359,7 +382,8 @@ maybe_reset() {
   fi
   st=$(agent_status "$agent")
   case "$st" in idle|done) ;; *) return 0 ;; esac
-  do_clear "$agent" && return 0
+  if do_clear "$agent"; then note_clear "$agent" "$CLEAR_HOW"; return 0; fi
+  note_clear "$agent" respawn
   echo "harness: /clear did not take effect for $agent; respawning it" >&2
   if ! ( preflight_close "$agent"; finish_close "$agent" "$C_PANE" "" ) >&2; then
     echo "harness: could not close $agent; continuing without a reset" >&2
@@ -380,8 +404,10 @@ num_or_null() { case "${1:-}" in ''|*[!0-9]*) echo null ;; *) echo "$1" ;; esac;
 record_progress() {
   local agent=$1 text=$2 rc=$3 t0=$4 hb=$5 out=$6 cb=${7:-}
   local report="$REPORT_DIR/$agent.md" vj=.harness/verify/implementer.json
-  local now ts stamp ha sess ca status="" summary="" verify="" logf n brief sha="" va=""
+  local now ts stamp ha sess ca status="" summary="" verify="" logf n brief sha="" va="" clr=none
   now=$(date +%s)
+  [ ! -s ".harness/asks/$agent.clear" ] || clr=$(sed -n 1p ".harness/asks/$agent.clear")
+  case "$clr" in ok|retry|respawn|none) ;; *) clr=none ;; esac
   ts=$(date -u +%Y-%m-%dT%H:%M:%SZ)
   stamp=$(date +%Y%m%d-%H%M%S)
   ha=$(git_head); sess=$(agent_session "$agent"); ca=$(ctx_tokens "$agent")
@@ -420,11 +446,11 @@ record_progress() {
     --arg instr "$(printf '%s' "$text" | tr '\n' ' ' | cut -c1-160)" \
     --argjson exit "$rc" --arg verify "$verify" --argjson dur "$((now - t0))" \
     --arg hb "$hb" --arg ha "$ha" --argjson cb "$(num_or_null "$cb")" --argjson ca "$(num_or_null "$ca")" \
-    --arg status "$status" --arg summary "$summary" --arg sha "$sha" --argjson va "$(num_or_null "$va")" '
+    --arg status "$status" --arg summary "$summary" --arg sha "$sha" --argjson va "$(num_or_null "$va")" --arg clr "$clr" '
     def nz: if . == "" then null else . end;
     {ts: $ts, agent: $agent, session: ($session | nz), instr: $instr, exit: $exit,
      verify: ($verify | nz), verify_attempts: $va, dur_s: $dur, head_before: ($hb | nz), head_after: ($ha | nz),
-     ctx_before: $cb, ctx_after: $ca, status: ($status | nz), summary: ($summary | nz), report_sha: ($sha | nz)}' >> "$JSONL" || return 1
+     ctx_before: $cb, ctx_after: $ca, clear: $clr, status: ($status | nz), summary: ($summary | nz), report_sha: ($sha | nz)}' >> "$JSONL" || return 1
 
   LAST_LOG=$logf LAST_BRIEF=$brief
   rotate_logs "$logf"
@@ -843,7 +869,7 @@ ask_finish() {
     || echo "harness: could not write the progress log (ask result unchanged)" >&2
   record_route_delegate "$ASK_AGENT" "${ASK_VIA:-conductor}" "$rc"
   retro_on_ask "$ASK_AGENT" "$rc" || true
-  rm -f "$ASK_TMP" "${ASK_PF:-}"
+  rm -f "$ASK_TMP" "${ASK_PF:-}" ".harness/asks/$ASK_AGENT.clear"
   # a printed report (0, or 5 = failed verification/FAIL verdict) counts as collected
   case "$rc" in 0|5) stamp_finished "$ASK_AGENT" ;; esac
   maybe_close_after_ask "$ASK_AGENT" "$rc"
@@ -866,7 +892,7 @@ cmd_ask() {
   esac
   ASK_TMP=$(mktemp "${TMPDIR:-/tmp}/harness-ask.XXXXXX") || ask_inner "$@"
   ASK_AGENT=$agent ASK_TEXT=$text ASK_DONE=0 ASK_PID=""
-  ASK_PF=".harness/asks/$agent.preflight"; rm -f "$ASK_PF"
+  ASK_PF=".harness/asks/$agent.preflight"; rm -f "$ASK_PF" ".harness/asks/$agent.clear"
   ASK_T0=$(date +%s); ASK_HB=$(git_head); cb=$(ctx_tokens "$agent" 2>/dev/null) || cb=""
   CTX_BEFORE=$cb
   trap 'ask_finish 143' TERM
@@ -1548,8 +1574,15 @@ cmd_metrics() {
           duration_median_s: ($a | map(.dur_s | select(type == "number")) | median),
           duration_p95_s: ($a | map(.dur_s | select(type == "number")) | p95),
           mean_verify_attempts: ($a | map(.verify_attempts | select(type == "number")) | if length == 0 then null else ((add / length * 10 | round) / 10) end) };
+    def clear_stat($rs):
+      ($rs | map(select(.late != true))) as $a
+      | ($a | map(select(.clear == "ok")) | length) as $ok
+      | ($a | map(select(.clear == "retry")) | length) as $rt
+      | ($a | map(select(.clear == "respawn")) | length) as $rs2
+      | { ok: $ok, retry: $rt, respawn: $rs2, none: ($a | map(select(.clear == "none")) | length),
+          retry_rate: pct($rt; $ok + $rt + $rs2), respawn_rate: pct($rs2; $ok + $rt + $rs2) };
     def stat($rs):
-      { total: role_stat($rs),
+      { total: role_stat($rs), clear: clear_stat($rs),
         roles: (["analyst", "implementer", "reviewer"] | map(. as $r | {key: $r, value: role_stat($rs | map(select(.agent == $r)))}) | from_entries) }
       | .roles.implementer.verify_failure_rate = pct(.roles.implementer.exit5; .roles.implementer.asks)
       | .roles.reviewer.fail_rate = pct(.roles.reviewer.exit5; .roles.reviewer.asks);
@@ -1581,6 +1614,8 @@ cmd_metrics() {
           (["analyst", "implementer", "reviewer"][] as $r | row("  \($r)"; (.current.roles[$r].abnormal_rate | pc); (.prev.roles[$r].abnormal_rate | pc))),
           row("implementer verify-failure rate"; (.current.roles.implementer.verify_failure_rate | pc); (.prev.roles.implementer.verify_failure_rate | pc)),
           row("implementer mean verify attempts"; .current.roles.implementer.mean_verify_attempts; .prev.roles.implementer.mean_verify_attempts),
+          row("/clear retry rate"; (.current.clear.retry_rate | pc); (.prev.clear.retry_rate | pc)),
+          row("/clear respawn rate"; (.current.clear.respawn_rate | pc); (.prev.clear.respawn_rate | pc)),
           row("reviewer FAIL rate"; (.current.roles.reviewer.fail_rate | pc); (.prev.roles.reviewer.fail_rate | pc)),
           (["analyst", "implementer", "reviewer"][] as $r | row("duration median / p95  \($r)"; (.current.roles[$r] | dur); (.prev.roles[$r] | dur))),
           "",
