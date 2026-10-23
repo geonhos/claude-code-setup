@@ -36,16 +36,18 @@ if [ "${1:-}" = "--test" ]; then
   tests_dir=${HARNESS_TESTS_DIR:-$REPO/tests}
   limit=${HARNESS_TEST_TIMEOUT:-300}
   case "$limit" in ''|*[!0-9]*) limit=300 ;; esac
+  # suites are discovered by glob: every <tests_dir>/*.test.sh (helper files such as
+  # harness-lib.sh do not match); the real wiki check runs as the extra `wikilint`
+  names=""
+  for f in "$tests_dir"/*.test.sh; do
+    [ -e "$f" ] || continue
+    b=$(basename "$f"); names="$names ${b%.test.sh}"
+  done
+  names=${names# }
   if [ -n "${HARNESS_TESTS_DIR:-}" ]; then
     echo "install: HARNESS_TESTS_DIR set: running suites from $tests_dir; wiki-lint skipped" >&2
-    names=""
-    for f in "$tests_dir"/*.test.sh; do
-      [ -e "$f" ] || continue
-      b=$(basename "$f"); names="$names ${b%.test.sh}"
-    done
-    names=${names# }
   else
-    names="gate harness verify progress route install wiki retro wikilint"
+    names="$names wikilint"
   fi
   tdir=$(mktemp -d "${TMPDIR:-/tmp}/harness-tests.XXXXXX")
   descendants() {  # descendants PID — every transitive child, one per line
