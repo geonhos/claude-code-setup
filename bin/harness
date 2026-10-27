@@ -208,17 +208,22 @@ show_agent_diag() {
   fi
 }
 
-# lock_stale <dir> <waited-seconds> — the lock's owner is gone: its pid is dead, or alive but not a
-# harness process (the pid was reused), or the owner file never appeared and the dir is older than
-# HARNESS_LOCK_STALE_S (default 10 s: an owner that died between mkdir and writing its pid). Past
-# HARNESS_LOCK_MAX_S (default 120 s) of waiting a live owner is overridden too, with a warning.
+# lock_stale <dir> — the lock's owner is gone: its pid is dead, or alive but not a harness process
+# (the pid was reused; `grep harness` is a deliberate loose match: a reused pid whose command line
+# merely contains "harness" is honoured until the ceiling, never wrongly stolen), or the owner file
+# never appeared and the dir is older than HARNESS_LOCK_STALE_S (default 10 s: an owner that died
+# between mkdir and writing its pid). A live owner is overridden, with a warning, only once the LOCK
+# is older than HARNESS_LOCK_MAX_S (default 120 s; age = owner file mtime, i.e. since it was taken):
+# how long this waiter has waited does not count, so a lock just acquired is never stolen.
 lock_stale() {
-  local d=$1 waited=$2 own mt
+  local d=$1 own mt age
   own=$(cat "$d/owner" 2>/dev/null)
   if digits_only "$own"; then
     kill -0 "$own" 2>/dev/null || return 0
     ps -p "$own" -o command= 2>/dev/null | grep -q 'harness' || return 0
-    [ "$waited" -ge "${HARNESS_LOCK_MAX_S:-120}" ] || return 1
+    mt=$(file_mtime "$d/owner") || return 1
+    age=$(( $(date +%s) - mt ))
+    [ "$age" -ge "${HARNESS_LOCK_MAX_S:-120}" ] || return 1
     echo "harness: lock $d held by pid $own for over ${HARNESS_LOCK_MAX_S:-120}s; taking it over" >&2
     return 0
   fi
@@ -234,13 +239,12 @@ lock_stale() {
 # HARNESS_LOCK_MAX_S can race the owner's own lock_drop; that is the last resort by design.)
 # A taker that died holding "<dir>.take" is cleared by age (HARNESS_LOCK_STALE_S).
 lock_take() {
-  local d=$1 i=0 t0 mt
-  t0=$(date +%s)
+  local d=$1 i=0 mt
   while ! mkdir "$d" 2>/dev/null; do
     i=$((i + 1))
-    if [ $((i % 10)) -eq 0 ] && lock_stale "$d" $(( $(date +%s) - t0 )); then
+    if [ $((i % 10)) -eq 0 ] && lock_stale "$d"; then
       if mkdir "$d.take" 2>/dev/null; then
-        if lock_stale "$d" $(( $(date +%s) - t0 )); then rm -rf "$d"; fi
+        if lock_stale "$d"; then rm -rf "$d"; fi
         rmdir "$d.take" 2>/dev/null
       elif mt=$(file_mtime "$d.take") && [ $(( $(date +%s) - mt )) -gt "${HARNESS_LOCK_STALE_S:-10}" ]; then
         rmdir "$d.take" 2>/dev/null
@@ -2408,11 +2412,18 @@ wt_finalize() {
   wt_patch
 }
 
-# wt_clean <path> — nothing to lose: HEAD still at the base the checkout was created from (a worker
-# commit moves it) and no modified or untracked files (ignoring the agent-memory link harness made)
+# wt_clean <path> — nothing to lose: no modified or untracked files (ignoring the agent-memory link
+# harness made), and the tree equals the base the checkout was created from. A worker commit moves
+# HEAD off the base; that still counts as clean when the tree is back at the base (a commit
+# reverted, an empty commit) because there is then no diff to lose.
 wt_clean() {
+  local ex=(':!.harness' ':!.claude/agent-memory')
   [ -d "$1" ] || return 1
-  [ -z "$ASK_BASE" ] || [ "$(git -C "$1" rev-parse HEAD 2>/dev/null)" = "$ASK_BASE" ] || return 1
+  if [ -n "$ASK_BASE" ] && [ "$(git -C "$1" rev-parse HEAD 2>/dev/null)" != "$ASK_BASE" ]; then
+    git -C "$1" diff --quiet "$ASK_BASE" -- . "${ex[@]}" 2>/dev/null || return 1
+    ! git -C "$1" status --porcelain --untracked-files=all 2>/dev/null | grep -E '^\?\? ' | grep -vE '^\?\? (\.claude/agent-memory|\.harness/.*)$' | grep -q .
+    return
+  fi
   ! git -C "$1" status --porcelain --untracked-files=all 2>/dev/null | grep -vE '^\?\? (\.claude/agent-memory|\.harness/.*)$' | grep -q .
 }
 

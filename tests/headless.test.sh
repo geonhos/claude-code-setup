@@ -8,7 +8,7 @@ FAKE_CLAUDE="$HERE/fake-claude"
 # hrun ARGS... -> OUT, RC. Like run(), with the fake claude on PATH and a longer alarm.
 hrun() {
   OUT=$(HERDR_ENV=1 HERDR_PANE_ID=w1:p1 HARNESS_POLL_SEC=0.2 HARNESS_HL_START_S=5 \
-    PATH="$FAKE_BIN:$FAKE_CLAUDE:$HERE/../bin:$PATH" perl -e 'alarm(20);exec(@ARGV)' \
+    PATH="$FAKE_BIN:$FAKE_CLAUDE:$HERE/../bin:$PATH" perl -e 'alarm($ENV{HRUN_ALARM_S} || 60);exec(@ARGV)' \
     env -u HARNESS_ROLE /bin/bash "$HARNESS" "$@" 2>&1)
   RC=$?
 }
@@ -255,6 +255,7 @@ check "keep close: runs fresh" grep -q "running fresh" <<<"$OUT"
 # 15c. close ends the conversation: --keep after a close of a healthy idle worker runs fresh
 hsetup
 hrun ask analyst "ok"
+check "keep healthy close: ask rc 0 (142 = the alarm killed a slow ask before it stamped the report)" [ "$RC" -eq 0 ]
 check "keep healthy close: session recorded" [ "$(cat .harness/asks/analyst.session)" = sess-1 ]
 hrun close analyst
 check "keep healthy close: session file removed by close" [ ! -e .harness/asks/analyst.session ]

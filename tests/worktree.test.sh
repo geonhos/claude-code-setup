@@ -411,23 +411,103 @@ kill "$opid" 2>/dev/null; wait "$opid" 2>/dev/null
 check "lock ceiling: rc 0" [ "$RC" -eq 0 ]
 check "lock ceiling: warned" grep -q "taking it over" <<<"$OUT"
 
-# 26. takeover with several contenders: mutual exclusion holds, nothing nests, nothing is left
+# 26. takeover with several contenders: mutual exclusion holds, nothing nests, nothing is left.
+# Deterministic: mv and rm are shadowed by functions that sleep (rank-staggered), widening the gap
+# between "judged stale" and "removed/renamed". main's lock_take (rename the stale dir, put it back
+# when it was not the judged one) then moves a FRESH lock away and leaves a window with no lock, so
+# a second contender enters the critical section while the first is still inside ("bad").
 wsetup
-fn() { awk -v n="$1" '$0 ~ "^" n "\\(\\) \\{" { p = 1 } p { print } p && /^}$/ { p = 0 }' "$HARNESS"; }
-{ for f in digits_only file_mtime lock_stale lock_take; do fn "$f"; done; grep '^lock_drop()' "$HARNESS"; } > "$WORK/lockfns.sh"
+fn() { awk -v n="$1" '$0 ~ "^" n "\\(\\) \\{" { p = 1 } p { print } p && /^}$/ { p = 0 }' "$2"; }
 cat > "$WORK/harness-contend.sh" <<'EOS'
 #!/bin/bash
-. "$1"; d=$2; w=$3
+. "$1"; d=$2; w=$3; n=$4
+mv() { sleep "0.$n"; command mv "$@"; }
+rm() { sleep "0.$n"; command rm "$@"; }
 lock_take "$d"
-if mkdir "$w/in" 2>/dev/null; then sleep 0.05; rmdir "$w/in"; echo ok >> "$w/ok"; else echo bad >> "$w/bad"; fi
+if mkdir "$w/in" 2>/dev/null; then sleep 0.7; rmdir "$w/in"; echo ok >> "$w/ok"; else echo bad >> "$w/bad"; fi
 lock_drop "$d"
 EOS
-mkdir -p "$WORK/l26" && mkdir "$WORK/l26/lock" && echo 999999 > "$WORK/l26/lock/owner"   # a dead owner to take over
-for i in 1 2 3 4 5; do /bin/bash "$WORK/harness-contend.sh" "$WORK/lockfns.sh" "$WORK/l26/lock" "$WORK/l26" & done
+contend() { # contend <harness-file> <dir> — five contenders over a dead-owner lock
+  { for f in digits_only file_mtime lock_stale lock_take; do fn "$f" "$1"; done; grep '^lock_drop()' "$1"; } > "$2/lockfns.sh"
+  mkdir -p "$2/l" && mkdir "$2/l/lock" && echo 999999 > "$2/l/lock/owner"
+  local i
+  for i in 1 2 3 4 5; do /bin/bash "$WORK/harness-contend.sh" "$2/lockfns.sh" "$2/l/lock" "$2/l" "$i" 2>/dev/null & done
+  wait
+}
+mkdir -p "$WORK/new"; contend "$HARNESS" "$WORK/new"
+check "contenders: all five got the lock" [ "$(wc -l < "$WORK/new/l/ok" | tr -d ' ')" = 5 ]
+check "contenders: never two at once" [ ! -e "$WORK/new/l/bad" ]
+check "contenders: no lock or takeover dir left" bash -c "[ -z \"\$(ls '$WORK/new/l' | grep -E '^lock')\" ]"
+# the same scenario must FAIL on the pre-v19 lock_take (kept in the test as a fixture)
+cat > "$WORK/oldlock.sh" <<'EOS'
+digits_only() { case "$1" in ''|*[!0-9]*) return 1 ;; esac; }
+file_mtime() { stat -c %Y "$1" 2>/dev/null || stat -f %m "$1" 2>/dev/null; }
+lock_stale() { :; }
+lock_take() {
+  local d=$1 i=0 own age mt stale
+  while ! mkdir "$d" 2>/dev/null; do
+    i=$((i + 1))
+    if [ $((i % 10)) -eq 0 ]; then
+      stale=0
+      own=$(cat "$d/owner" 2>/dev/null)
+      if digits_only "$own"; then
+        kill -0 "$own" 2>/dev/null || stale=1
+      elif mt=$(file_mtime "$d"); then
+        age=$(( $(date +%s) - mt ))
+        [ "$age" -le "${HARNESS_LOCK_STALE_S:-10}" ] || stale=1
+      fi
+      if [ "$stale" = 1 ] && mv "$d" "$d.stale.$$" 2>/dev/null; then
+        if [ "$(cat "$d.stale.$$/owner" 2>/dev/null)" = "$own" ]; then
+          rm -rf "$d.stale.$$"
+        else
+          mv "$d.stale.$$" "$d" 2>/dev/null || rm -rf "$d.stale.$$"
+        fi
+      fi
+    fi
+    sleep 0.05
+  done
+  echo $$ > "$d/owner" 2>/dev/null
+  return 0
+}
+lock_drop() { rmdir "$1" 2>/dev/null || rm -rf "$1"; }
+EOS
+mkdir -p "$WORK/old/l" && mkdir "$WORK/old/l/lock" && echo 999999 > "$WORK/old/l/lock/owner"
+for i in 1 2 3 4 5; do /bin/bash "$WORK/harness-contend.sh" "$WORK/oldlock.sh" "$WORK/old/l/lock" "$WORK/old/l" "$i" 2>/dev/null & done
 wait
-check "contenders: all five got the lock" [ "$(wc -l < "$WORK/l26/ok" | tr -d ' ')" = 5 ]
-check "contenders: never two at once" [ ! -e "$WORK/l26/bad" ]
-check "contenders: no lock or takeover dir left" bash -c "[ -z \"\$(ls '$WORK/l26' | grep -E '^lock')\" ]"
+check "contenders: the old rename/put-back takeover is caught (two at once or a lost holder)" bash -c "[ -e '$WORK/old/l/bad' ] || [ \"\$(wc -l < '$WORK/old/l/ok' | tr -d ' ')\" != 5 ]"
+
+# 27. lock ceiling counts the LOCK's age, not the waiter's wait: a lock just acquired is never stolen
+wsetup
+cat > "$WORK/harness-owner27.sh" <<'EOS'
+#!/bin/bash
+while :; do sleep 1; done
+EOS
+/bin/bash "$WORK/harness-owner27.sh" & o27=$!
+sleep 0.3
+{ for f in digits_only file_mtime lock_stale; do fn "$f" "$HARNESS"; done; } > "$WORK/stalefns.sh"
+. "$WORK/stalefns.sh"
+mkdir -p "$WORK/l27" && echo "$o27" > "$WORK/l27/owner"
+# 5 is what an old waiter would pass as "waited"; the argument is ignored now
+check "ceiling: fresh lock, live harness owner, long-waiting contender: not stale" bash -c ". '$WORK/stalefns.sh'; ! HARNESS_LOCK_MAX_S=3 lock_stale '$WORK/l27' 5 2>/dev/null"
+perl -e 'utime(time - 5, time - 5, $ARGV[0])' "$WORK/l27/owner"
+check "ceiling: the same lock held past the ceiling is stale" bash -c ". '$WORK/stalefns.sh'; HARNESS_LOCK_MAX_S=3 lock_stale '$WORK/l27' 0 2>/dev/null"
+kill "$o27" 2>/dev/null; wait "$o27" 2>/dev/null
+
+# 28. a worker commit that leaves the tree equal to the base has nothing to lose: removed
+wsetup
+export FAKE_REPORT_CMD="mkdir -p .harness/reports && printf '# analyst report\nstatus: done\n' > .harness/reports/analyst.md && git commit -q --allow-empty -m empty"
+hrun ask analyst "q28" --worktree
+id=$(ask_id); path=$(jq -r .path ".harness/wt/$id.json")
+check "empty commit: rc 0" [ "$RC" -eq 0 ]
+check "empty commit: checkout removed" [ ! -d "$path" ]
+check "empty commit: registry collected" jqt '.state == "collected"' ".harness/wt/$id.json"
+check "empty commit: no patch" [ ! -e ".harness/wt/$id.patch" ]
+# ... and a commit that changes the tree is still kept
+wsetup
+export FAKE_REPORT_CMD="mkdir -p .harness/reports && printf '# analyst report\nstatus: done\n' > .harness/reports/analyst.md && echo x > c28.txt && git add c28.txt && git commit -qm real"
+hrun ask analyst "q28b" --worktree
+id=$(ask_id); path=$(jq -r .path ".harness/wt/$id.json")
+check "real commit: still kept" [ -d "$path" ]
 
 echo "PASS $pass / FAIL $fail"
 [ "$fail" -eq 0 ]
