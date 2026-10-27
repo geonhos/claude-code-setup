@@ -30,7 +30,7 @@ only when it is relevant to the task.**
 - `gotchas/*.md` symptom → cause → fix → evidence, one trap per page
 - `decisions/NNNN-*.md` ADRs: context / decision / status / consequences
 - `log.md` append-only, one line per change; `inbox/` unreviewed lessons
-  (from a report's `## Learned`), never listed in the index
+  (from a report's `## Notes`), never listed in the index
 
 Page frontmatter (required except in inbox):
 ```
@@ -45,7 +45,7 @@ Limits: index ≤80 lines, pages ≤150. `harness wiki-lint` checks this in the 
 
 **Do not record what can be derived from code** (structure, signatures, git
 history). Record traps, reasons and decisions that the code does not show.
-A report's `## Learned` bullets (≤2) must each cite evidence (ask-id, commit,
+A report's `## Notes` bullets (≤2) must each cite evidence (ask-id, commit,
 file:line or log).
 
 ### Promotion ladder

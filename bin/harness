@@ -832,7 +832,7 @@ learned_has_evidence() {
 }
 
 # queue_learned <agent> <report> — copy up to 2 evidence-backed bullets of the
-# report's optional `## Learned` section to docs/wiki/inbox/<date>-<role>-<ask-id>.md,
+# report's optional `## Notes` section (legacy `## Learned` is also accepted) to docs/wiki/inbox/<date>-<role>-<ask-id>.md,
 # only when docs/wiki/ already exists at the repo top level. Indented continuation
 # lines are joined to their bullet. Prints one stdout line when queued; bullets
 # without evidence are dropped with a one-line stderr warning. Never fails the
@@ -841,7 +841,7 @@ queue_learned() {
   local agent=$1 report=$2 raw line kept="" n=0 dropped=0 askid date out top
   raw=$(awk '
     function flush() { if (cur != "") print cur; cur = "" }
-    /^## Learned[ \t]*$/ { on = 1; next }
+    /^## (Learned|Notes)[ \t]*$/ { on = 1; next }
     on && (/^## / || /^VERDICT:/) { flush(); on = 0 }
     on && /^[ \t]*[-*] / { flush(); cur = $0; sub(/^[ \t]*[-*] +/, "- ", cur); next }
     on && cur != "" && /^[ \t]+[^ \t]/ { t = $0; sub(/^[ \t]+/, "", t); cur = cur " " t; next }
@@ -863,11 +863,11 @@ queue_learned() {
   done <<EOF_LEARNED
 $raw
 EOF_LEARNED
-  [ "$dropped" -eq 0 ] || echo "harness: wiki: dropped $dropped Learned bullet(s) without evidence (ask-id, commit, file:line or log)" >&2
+  [ "$dropped" -eq 0 ] || echo "harness: wiki: dropped $dropped Notes bullet(s) without evidence (ask-id, commit, file:line or log)" >&2
   [ -n "$kept" ] || return 0
   askid=$(awk 'NR == 1 { print $1 }' "$ASK_DIR/$agent.current" 2>/dev/null)
   if [ -z "$askid" ]; then
-    echo "harness: wiki: no ask-id for $agent; Learned bullets not queued" >&2
+    echo "harness: wiki: no ask-id for $agent; Notes bullets not queued" >&2
     return 0
   fi
   date=$(date +%Y-%m-%d)
@@ -1643,7 +1643,7 @@ retro_brief() {
   else
     printf 'This repo has no docs/wiki: one file per note in `.harness/retro/inbox/<YYYY-MM-DD>-retro-<ask-id>.md`. Do not create docs/wiki.\n'
   fi
-  printf 'Skip any ask-id that already has a retro note in the inbox (a file named `*-retro-<ask-id>.md`; a previous retro may have finished after its ask timed out). Other inbox files, such as a role'"'"'s late Learned harvest, do not count.\n'
+  printf 'Skip any ask-id that already has a retro note in the inbox (a file named `*-retro-<ask-id>.md`; a previous retro may have finished after its ask timed out). Other inbox files, such as a role'"'"'s late Notes harvest, do not count.\n'
   printf 'Do not edit wiki pages, index.md or log.md. No fluff, no success stories.\n'
   printf 'Inbox files are committed to git: never copy prompt text, screen text, secrets, tokens, keys or URLs with credentials from the logs; paraphrase the observable symptom.\n'
 }
