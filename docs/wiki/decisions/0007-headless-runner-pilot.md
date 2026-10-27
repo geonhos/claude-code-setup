@@ -1,8 +1,8 @@
 ---
 type: decision
 status: active
-updated: 2026-10-23
-sources: [.harness/headless-design.md, .harness/headless-detail.md, branch feature/v16-headless-runner]
+updated: 2026-10-27
+sources: [.harness/headless-design.md, .harness/headless-detail.md, branch feature/v16-headless-runner, ask 1792721195-60464-27462]
 verified_by: tests/headless.test.sh
 ---
 # 0007 — Headless runner pilot: `claude -p` in a viewer pane
@@ -25,4 +25,4 @@ verified_by: tests/headless.test.sh
 
 **Status.** Pilot. Revisit after ~10 analyst asks (`harness metrics --since <merge day>`).
 
-**Consequences.** About +330 net lines while both runners exist. No typing into headless workers. Raw streams hold source, so the gate rule is load-bearing. Rollback = set `runner.analyst` back to `pane` (or `HARNESS_RUNNER_ANALYST=pane`), then `harness close analyst --force`; no data migration.
+**Consequences.** About +330 net lines while both runners exist. No typing into headless workers. Raw streams hold source, so the gate rule is load-bearing. Rollback = set `runner.analyst` back to `pane` (or `HARNESS_RUNNER_ANALYST=pane`), then `harness close analyst --force`; no data migration. `claude -p` waits for background-Bash notifications before it exits, so the pane-mode "turn ended → idle → exit 3" race cannot happen headless (probe: 2 turns, 24 s for a 15 s background sleep).

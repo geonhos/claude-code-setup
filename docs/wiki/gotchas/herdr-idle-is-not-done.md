@@ -1,7 +1,7 @@
 ---
 type: gotcha
 status: active
-updated: 2026-10-21
+updated: 2026-10-27
 sources: [.harness/review-critique-detail.md §1.3, commit 5ea7475, commit 79a1964, https://raw.githubusercontent.com/herdrdev/herdr/v0.9.5/docs/next/website/src/content/docs/agent-automation.mdx]
 verified_by: tests/harness-ask.test.sh (marker/idle/pending cases); live reviewer ask exit 0 after respawn 2026-10-21
 ---
@@ -11,6 +11,6 @@ verified_by: tests/harness-ask.test.sh (marker/idle/pending cases); live reviewe
 
 **Cause.** herdr infers Claude's state from screen regexes (`claude.toml` manifest). When nothing matches, it defaults to idle. `herdr agent prompt --wait` does not track turns. A worker that ends its turn to wait for background tasks shows as idle.
 
-**Fix.** Completion = Stop-hook marker `.harness/done/<role>.<ask-id>`, with marker epoch ≥ report mtime ≥ ask start. herdr idle is only a fallback: 30s grace, and only when there is no marker and no `.pending`. While `.pending` exists (verify running), never give up early. At the deadline, exit 4 "still verifying" if the worker is `working`.
+**Fix.** Completion is the Stop-hook marker; herdr idle is only a fallback with a 30 s grace — rule and ordering in [ADR 0002](../decisions/0002-completion-by-stop-hook-marker.md). Headless roles bypass this ([0007](../decisions/0007-headless-runner-pilot.md)).
 
 **Still open.** Whether herdr reports `working` for the whole length of a long Stop hook is not verified. If it reports idle, the deadline restore can race on verifies longer than the ask timeout.

@@ -29,6 +29,7 @@ you do not fix.
   Major finding at least. Exit 2 means the base ref does not resolve, so
   lint `{files}` is unavailable: note that under Verification; it is not a
   finding against the diff.
+- A new or changed test must fail on `<base>`: run it against base code (a worktree at HEAD plus `git checkout <base> -- bin claude`, or point the test's path variable at a base copy). A test that passes on both is a Major finding.
 - If `harness-verify detect` shows an `app` entry, start `app.start`, wait for
   `app.url` to respond, smoke-check it (curl, or Playwright if available), and
   stop it again. Record the outcome under Verification.

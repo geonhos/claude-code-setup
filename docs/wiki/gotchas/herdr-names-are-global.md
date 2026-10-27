@@ -1,7 +1,7 @@
 ---
 type: gotcha
 status: active
-updated: 2026-10-21
+updated: 2026-10-27
 sources: [.harness/review-critique-detail.md §1.2, commit bc6095b, commit b310af4]
 verified_by: tests/harness.test.sh (exit 6, sibling-prefix, symlink cases)
 ---
@@ -11,4 +11,4 @@ verified_by: tests/harness.test.sh (exit 6, sibling-prefix, symlink cases)
 
 **Cause.** herdr agent names are unique per herdr server, not per directory. The old harness used bare `analyst|implementer|reviewer` names and never checked the worker's cwd.
 
-**Fix.** Names are `<role>-<repo8>` (sha1 of the repo top-level). After every `agent get`, the worker's resolved cwd must be the repo or a subdir; otherwise exit 6 and nothing is sent. If a subdir conductor's `.harness/` lives in the subdir but the worker writes to the root `.harness/`, the result is exit 3 (known, not fixed).
+**Fix.** Names are `<role>-<repo8>` (sha1 of the repo top-level). After every `agent get`, the worker's resolved cwd must be the repo or a subdir; otherwise exit 6 and nothing is sent. A subdir conductor works: the Stop hook finds the subdir's `.harness/asks/` (see [harness root lookup](harness-root-lookup.md)).
