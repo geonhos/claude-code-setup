@@ -17,3 +17,6 @@
 - 2026-10-23 · implementer · v18 S1 · decision 0008: ask --worktree (headless analyst/reviewer, detached checkout under ~/.cache/harness/wt, registry .harness/wt, report/close by ask-id, max_parallel 3)
 - 2026-10-23 · implementer · v18 round 3 · 0008: kept+patch never reaped; copy-back allowlist; lock owner/age takeover; wt_git serialises git worktree add/remove/prune (concurrent add raced prune)
 - 2026-10-27 · implementer · v19 · 0008: wt patch kept until replaced; worker commits captured vs base; lock_take pid-reuse check + HARNESS_LOCK_MAX_S + .take mutex; harness-run ignores TTOU/TTIN (stty tostop hung the run)
+- 2026-10-27 · implementer · wiki cleanup · inbox triaged (31 notes): new gotchas whole-second-timing, harness-root-lookup, tests-inherit-worker-env, bash-signals-job-control, test-wait-loops; new runbook transcript-forensics; 10 notes dropped as fixed/duplicate
+- 2026-10-27 · implementer · wiki cleanup · merged notes into 0006 (template drift), 0007 (claude -p waits for bg Bash), docs-only (quotepath); herdr-names-are-global subdir case resolved; deadline/timeout pages note role-aware defaults; herdr-idle Fix points to 0002; index grouped by area
+- 2026-10-27 · implementer · wiki cleanup · reviewer.md: new tests must fail on base (3 recurrences)
