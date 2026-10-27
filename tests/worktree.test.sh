@@ -416,11 +416,15 @@ check "lock ceiling: warned" grep -q "taking it over" <<<"$OUT"
 # between "judged stale" and "removed/renamed". main's lock_take (rename the stale dir, put it back
 # when it was not the judged one) then moves a FRESH lock away and leaves a window with no lock, so
 # a second contender enters the critical section while the first is still inside ("bad").
+# Start barrier: the race needs >=2 contenders to judge the dead lock within ~0.2 s of each other, which
+# a loaded machine's staggered forks defeat; each contender signals ready and waits for "go".
+# The script name must contain "harness" (the real lock_stale checks the owner's command line).
 wsetup
 fn() { awk -v n="$1" '$0 ~ "^" n "\\(\\) \\{" { p = 1 } p { print } p && /^}$/ { p = 0 }' "$2"; }
 cat > "$WORK/harness-contend.sh" <<'EOS'
 #!/bin/bash
 . "$1"; d=$2; w=$3; n=$4
+: > "$w/r.$n"; while [ ! -e "$w/go" ]; do sleep 0.02; done   # start barrier: no start-up skew
 mv() { sleep "0.$n"; command mv "$@"; }
 rm() { sleep "0.$n"; command rm "$@"; }
 lock_take "$d"
@@ -432,7 +436,13 @@ contend() { # contend <harness-file> <dir> — five contenders over a dead-owner
   mkdir -p "$2/l" && mkdir "$2/l/lock" && echo 999999 > "$2/l/lock/owner"
   local i
   for i in 1 2 3 4 5; do /bin/bash "$WORK/harness-contend.sh" "$2/lockfns.sh" "$2/l/lock" "$2/l" "$i" 2>/dev/null & done
+  barrier_go "$2/l"
   wait
+}
+barrier_go() { # barrier_go <dir> — release the contenders once all five are ready
+  local k=0
+  while [ "$(ls "$1" | grep -c '^r\.')" -lt 5 ] && [ $k -lt 200 ]; do sleep 0.05; k=$((k + 1)); done
+  : > "$1/go"
 }
 mkdir -p "$WORK/new"; contend "$HARNESS" "$WORK/new"
 check "contenders: all five got the lock" [ "$(wc -l < "$WORK/new/l/ok" | tr -d ' ')" = 5 ]
@@ -471,10 +481,16 @@ lock_take() {
 }
 lock_drop() { rmdir "$1" 2>/dev/null || rm -rf "$1"; }
 EOS
-mkdir -p "$WORK/old/l" && mkdir "$WORK/old/l/lock" && echo 999999 > "$WORK/old/l/lock/owner"
-for i in 1 2 3 4 5; do /bin/bash "$WORK/harness-contend.sh" "$WORK/oldlock.sh" "$WORK/old/l/lock" "$WORK/old/l" "$i" 2>/dev/null & done
-wait
-check "contenders: the old rename/put-back takeover is caught (two at once or a lost holder)" bash -c "[ -e '$WORK/old/l/bad' ] || [ \"\$(wc -l < '$WORK/old/l/ok' | tr -d ' ')\" != 5 ]"
+# one catch proves the scenario detects the bug, so only the OLD-code control is retried
+caught=0
+for k in 1 2 3; do
+  mkdir -p "$WORK/old$k/l" && mkdir "$WORK/old$k/l/lock" && echo 999999 > "$WORK/old$k/l/lock/owner"
+  for i in 1 2 3 4 5; do /bin/bash "$WORK/harness-contend.sh" "$WORK/oldlock.sh" "$WORK/old$k/l/lock" "$WORK/old$k/l" "$i" 2>/dev/null & done
+  barrier_go "$WORK/old$k/l"
+  wait
+  if [ -e "$WORK/old$k/l/bad" ] || [ "$(wc -l < "$WORK/old$k/l/ok" 2>/dev/null | tr -d ' ')" != 5 ]; then caught=1; break; fi
+done
+check "contenders: the old rename/put-back takeover is caught (two at once or a lost holder)" [ "$caught" = 1 ]
 
 # 27. lock ceiling counts the LOCK's age, not the waiter's wait: a lock just acquired is never stolen
 wsetup

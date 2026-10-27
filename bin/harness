@@ -335,7 +335,15 @@ cmd_spawn() {
   register "$agent" "$pane"
   rm -f ".harness/asks/$agent.finished"
 
-  if ! out=$(herdr agent start "$(wname "$agent")" --kind claude --pane "$pane" -- --agent "$agent" 2>&1); then
+  # a fresh pane's shell may still be loading (agent_pane_busy): retry only that error
+  local try=0 started=0
+  while :; do
+    if out=$(herdr agent start "$(wname "$agent")" --kind claude --pane "$pane" -- --agent "$agent" 2>&1); then started=1; break; fi
+    case "$out" in *agent_pane_busy*) ;; *) break ;; esac
+    [ "$try" -lt "${HARNESS_SPAWN_RETRIES:-20}" ] || break
+    try=$((try + 1)); sleep "${HARNESS_SPAWN_RETRY_S:-0.5}"
+  done
+  if [ "$started" = 0 ]; then
     echo "harness: agent start failed for $agent in $pane: $out" >&2
     show_pane_screen "$pane" >&2
     herdr pane close "$pane" >/dev/null 2>&1 \
@@ -485,9 +493,11 @@ num_or_null() { case "${1:-}" in ''|*[!0-9]*) echo null ;; *) echo "$1" ;; esac;
 # Writes the log file + jsonl line, rotates, regenerates progress.md.
 record_progress() {
   local agent=$1 text=$2 rc=$3 t0=$4 hb=$5 out=$6 cb=${7:-}
-  local report="$REPORT_DIR/$agent.md" vj=.harness/verify/implementer.json
+  local report="$REPORT_DIR/$agent.md" vj=.harness/verify/implementer.json rmt
   local now ts stamp ha sess ca status="" summary="" verify="" logf n brief sha="" va="" clr=none hl='{}'
   now=$(date +%s)
+  # a report older than this ask is a previous ask's (this one died before archiving it)
+  if [ -f "$report" ]; then rmt=$(file_mtime "$report") && [ "$rmt" -ge "$t0" ] || report=/dev/null.none; fi
   [ ! -s "$ASK_DIR/$agent.clear" ] || clr=$(sed -n 1p "$ASK_DIR/$agent.clear")
   case "$clr" in ok|retry|respawn|none) ;; *) clr=none ;; esac
   ts=$(date -u +%Y-%m-%dT%H:%M:%SZ)
@@ -535,6 +545,9 @@ record_progress() {
         printf '\n## Viewer pane (last 40 lines)\n\n'
         herdr pane read "$(hl_registered_pane "$agent")" 2>/dev/null | tail -n 40
       fi
+    fi
+    if [ -s "${ASK_ERR:-}" ]; then
+      printf '\n## Errors\n\n'; cat "$ASK_ERR"
     fi
     if [ "$hl" != '{}' ]; then
       printf '\n## Run\n\n'
@@ -617,7 +630,7 @@ retro_pending_logs() {
 # retro_on_ask <agent> <rc> — after an ask is logged: queue a candidate when it is a
 # trigger, print the one-line notice. Never fails; the retro ask itself never queues.
 retro_on_ask() {
-  local agent=$1 rc=$2 reason="" va dur id cur ts rep="" bsnap
+  local agent=$1 rc=$2 reason="" va dur id cur ts rep="" bsnap mt
   [ "${ASK_VIA:-}" != retro ] || return 0
   dur=$(( $(date +%s) - ASK_T0 ))
   va=$(jq -r '.attempts // empty' .harness/verify/implementer.json 2>/dev/null)
@@ -637,7 +650,9 @@ retro_on_ask() {
   cur="$ASK_DIR/$agent.current"
   id=$(awk 'NR == 1 { print $1 }' "$cur" 2>/dev/null); ts=$(awk 'NR == 1 { print $2 }' "$cur" 2>/dev/null)
   if [ -z "$id" ] || ! digits_only "$ts" || [ "$ts" -lt "$ASK_T0" ]; then id="$ASK_T0-$$-noid"; fi
-  [ ! -f "$REPORT_DIR/$agent.md" ] || rep=$(retro_snapshot "$id" "$REPORT_DIR/$agent.md")
+  if [ -f "$REPORT_DIR/$agent.md" ] && mt=$(file_mtime "$REPORT_DIR/$agent.md") && [ "$mt" -ge "$ASK_T0" ]; then
+    rep=$(retro_snapshot "$id" "$REPORT_DIR/$agent.md")
+  fi
   # the live .harness/task-<role>.md is overwritten by the next ask: point at the log's copy
   bsnap=""; [ -z "${LAST_BRIEF:-}" ] || [ -z "${LAST_LOG:-}" ] || bsnap="$LAST_LOG#brief"
   RETRO_STREAM=""; ! use_hl "$agent" || RETRO_STREAM=$(jq -r '.stream_log // empty' "$ASK_DIR/$agent.exit.json" 2>/dev/null)
@@ -992,11 +1007,12 @@ ask_finish() {
     kill_tree "$ASK_PID"
   fi
   cat "$ASK_TMP" 2>/dev/null
+  if [ -n "${ASK_ERR:-}" ] && [ -f "$ASK_ERR" ]; then cat "$ASK_ERR" >&2; fi
   record_progress "$ASK_AGENT" "$ASK_TEXT" "$rc" "$ASK_T0" "$ASK_HB" "$ASK_TMP" "$CTX_BEFORE" \
     || echo "harness: could not write the progress log (ask result unchanged)" >&2
   record_route_delegate "$ASK_AGENT" "${ASK_VIA:-conductor}" "$rc"
   retro_on_ask "$ASK_AGENT" "$rc" || true
-  rm -f "$ASK_TMP" "${ASK_PF:-}" "$ASK_DIR/$ASK_AGENT.clear"
+  rm -f "$ASK_TMP" "${ASK_ERR:-}" "${ASK_PF:-}" "$ASK_DIR/$ASK_AGENT.clear"
   if [ -n "$ASK_WT" ]; then
     # a worktree ask has no role slot to stamp or close: collect, then remove the checkout when clean
     ( wt_after_ask "$rc" ) || true
@@ -1041,7 +1057,8 @@ cmd_ask() {
   trap 'ask_finish 130' INT
   trap 'ask_finish 129' HUP
   trap 'ask_finish "$?"' EXIT
-  ( ask_inner "$@" ) > "$ASK_TMP" &
+  ASK_ERR="$ASK_TMP.err"
+  ( ask_inner "$@" ) > "$ASK_TMP" 2> "$ASK_ERR" &
   ASK_PID=$!
   wait "$ASK_PID"
   ask_finish "$?"

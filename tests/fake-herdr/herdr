@@ -3,6 +3,7 @@
 # State:  $FAKE_DIR/live.<agent>   exists => agent is live; content = agent_status
 #         $FAKE_DIR/split_fail      exists => `pane split` fails
 #         $FAKE_DIR/start_fail      exists => `agent start` fails
+#         $FAKE_DIR/start_busy      N>0 => `agent start` fails with agent_pane_busy and decrements N
 #         $FAKE_DIR/prompt_fail     exists => `agent prompt` is rejected (socket_unavailable)
 #         $FAKE_DIR/layout          optional "WIDTH HEIGHT" for `pane layout` (default 162 45)
 #         $FAKE_DIR/pane.<agent>    pane id recorded by `agent start --pane` (default w1:p2)
@@ -92,6 +93,10 @@ case "$sub" in
     name=$3
     if [ -f "$FAKE_DIR/start_fail" ]; then
       echo '{"error":{"code":"agent_not_ready"}}' >&2; exit 1
+    fi
+    if [ -f "$FAKE_DIR/start_busy" ] && [ "$(cat "$FAKE_DIR/start_busy")" -gt 0 ]; then
+      echo $(( $(cat "$FAKE_DIR/start_busy") - 1 )) > "$FAKE_DIR/start_busy"
+      echo '{"error":{"code":"agent_pane_busy","message":"agent target pane is not an available shell"}}' >&2; exit 1
     fi
     echo idle > "$FAKE_DIR/live.$name"
     rm -f "$FAKE_DIR"/closed.*
