@@ -229,23 +229,23 @@ check "resume hook works with no jq on PATH (rc 0)" [ "$RC" -eq 0 ]
 
 # wiki index injection
 WK=$(newdir hookwiki); mkdir -p "$WK/docs/wiki"
-printf '# Wiki index\n- [a](gotchas/a.md) — one (active, 2026-10-21)\n- [b](gotchas/b.md) — two (draft, 2026-10-21)\n- [c](decisions/c.md) — three (stale, 2026-10-21)\n' > "$WK/docs/wiki/index.md"
+printf '# Wiki index\n- [a](troubleshooting/a.md) — one (active, 2026-10-21)\n- [b](troubleshooting/b.md) — two (draft, 2026-10-21)\n- [c](decisions/c.md) — three (stale, 2026-10-21)\n' > "$WK/docs/wiki/index.md"
 OUT=$(cd "$WK" && env -u HARNESS_ROLE /bin/bash "$RESUME" </dev/null 2>/dev/null); RC=$?
 CTX=$(printf '%s' "$OUT" | jq -r .hookSpecificOutput.additionalContext)
 check "wiki only (no progress.md) injects" [ "$RC" -eq 0 ] 
-check "wiki active line present" printf '%s' "$CTX" | grep -q 'gotchas/a.md'
-check "wiki draft line absent" sh -c '! printf "%s" "$1" | grep -q gotchas/b.md' _ "$CTX"
+check "wiki active line present" printf '%s' "$CTX" | grep -q 'troubleshooting/a.md'
+check "wiki draft line absent" sh -c '! printf "%s" "$1" | grep -q troubleshooting/b.md' _ "$CTX"
 check "wiki stale line absent" sh -c '! printf "%s" "$1" | grep -q decisions/c.md' _ "$CTX"
 check "wiki heading line absent" sh -c '! printf "%s" "$1" | grep -q "^# Wiki index"' _ "$CTX"
 mkdir -p "$WK/.harness"; printf 'Goal: g\n' > "$WK/.harness/progress.md"
 OUT=$(cd "$WK" && env -u HARNESS_ROLE /bin/bash "$RESUME" </dev/null 2>/dev/null)
 CTX=$(printf '%s' "$OUT" | jq -r .hookSpecificOutput.additionalContext)
-check "progress and wiki both injected" sh -c 'printf "%s" "$1" | grep -qx "Goal: g" && printf "%s" "$1" | grep -q gotchas/a.md' _ "$CTX"
-check "progress comes before wiki" [ "$(printf '%s' "$CTX" | grep -n 'Goal: g\|gotchas/a.md' | head -1 | cut -d: -f2-)" = "Goal: g" ]
+check "progress and wiki both injected" sh -c 'printf "%s" "$1" | grep -qx "Goal: g" && printf "%s" "$1" | grep -q troubleshooting/a.md' _ "$CTX"
+check "progress comes before wiki" [ "$(printf '%s' "$CTX" | grep -n 'Goal: g\|troubleshooting/a.md' | head -1 | cut -d: -f2-)" = "Goal: g" ]
 OUT=$(cd "$WK" && HARNESS_ROLE=worker /bin/bash "$RESUME" </dev/null 2>&1)
 check "wiki injection silent for workers" [ -z "$OUT" ]
 # cap: many active lines -> wiki part <= 2048 bytes, truncation note
-i=0; while [ $i -lt 60 ]; do printf -- '- [p%s](gotchas/p%s.md) — hook text to fill space here (active, 2026-10-21)\n' $i $i; i=$((i+1)); done > "$WK/docs/wiki/index.md"
+i=0; while [ $i -lt 60 ]; do printf -- '- [p%s](troubleshooting/p%s.md) — hook text to fill space here (active, 2026-10-21)\n' $i $i; i=$((i+1)); done > "$WK/docs/wiki/index.md"
 OUT=$(cd "$WK" && env -u HARNESS_ROLE /bin/bash "$RESUME" </dev/null 2>/dev/null)
 CTX=$(printf '%s' "$OUT" | jq -r .hookSpecificOutput.additionalContext)
 WB=$(printf '%s\n' "$CTX" | awk '/^Wiki \(active/ || /^- \[p/ || /^… see/' | LC_ALL=C wc -c | tr -d ' ')

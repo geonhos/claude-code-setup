@@ -1,5 +1,5 @@
 ---
-type: gotcha
+type: troubleshooting
 status: active
 updated: 2026-10-27
 sources: [commit 79a1964, .harness/progress.jsonl implementer ask dur_s 602 (2026-10-21 11:16:46), reviewer report round 2]

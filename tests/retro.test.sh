@@ -459,14 +459,14 @@ check "metrics: no data text rc 0" [ "$RC" -eq 0 ]
 # wiki block
 setup
 unset HARNESS_NOW
-mkdir -p docs/wiki/gotchas docs/wiki/inbox
-printf -- '---\nstatus: active\n---\n# a\n' > docs/wiki/gotchas/a.md
-printf -- '---\nstatus: active\n---\n# b\n' > docs/wiki/gotchas/b.md
-printf -- '---\nstatus: stale\n---\n# c\n' > docs/wiki/gotchas/c.md
-printf -- '---\nstatus: draft\n---\n# d\n' > docs/wiki/gotchas/d.md
-printf '# Wiki index\n\n- [a](gotchas/a.md) — h (active, 2026-10-21)\n- [b](gotchas/b.md) — h (active, 2026-10-21)\n- [c](gotchas/c.md) — h (stale, 2026-10-21)\n' > docs/wiki/index.md
+mkdir -p docs/wiki/troubleshooting docs/wiki/inbox
+printf -- '---\nstatus: active\n---\n# a\n' > docs/wiki/troubleshooting/a.md
+printf -- '---\nstatus: active\n---\n# b\n' > docs/wiki/troubleshooting/b.md
+printf -- '---\nstatus: stale\n---\n# c\n' > docs/wiki/troubleshooting/c.md
+printf -- '---\nstatus: draft\n---\n# d\n' > docs/wiki/troubleshooting/d.md
+printf '# Wiki index\n\n- [a](troubleshooting/a.md) — h (active, 2026-10-21)\n- [b](troubleshooting/b.md) — h (active, 2026-10-21)\n- [c](troubleshooting/c.md) — h (stale, 2026-10-21)\n' > docs/wiki/index.md
 printf 'x\n' > docs/wiki/log.md
-printf 'recurrence of gotchas/a.md\nEvidence: x\n' > docs/wiki/inbox/n1.md
+printf 'recurrence of troubleshooting/a.md\nEvidence: x\n' > docs/wiki/inbox/n1.md
 printf -- '- lesson\n' > docs/wiki/inbox/n2.md
 now=$(date +%s)
 perl -e 'utime($ARGV[0],$ARGV[0],$ARGV[1])' $((now - 10 * 86400 - 100)) docs/wiki/inbox/n1.md

@@ -31,5 +31,5 @@ and (§1.5) that the global conductor made every session outside herdr useless.
   prompt; the prompt tells it to work directly there.
 - Env-based checks trust inherited env. A Claude daemon started in a worker
   pane hands `HARNESS_ROLE=worker` to every session it hosts, gate off — see
-  gotcha [daemon inherits worker env](../gotchas/daemon-inherits-worker-env.md).
+  gotcha [daemon inherits worker env](../troubleshooting/daemon-inherits-worker-env.md).
   `HERDR_ENV` does not help there: it is inherited too.

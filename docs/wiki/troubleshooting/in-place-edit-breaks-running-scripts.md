@@ -1,5 +1,5 @@
 ---
-type: gotcha
+type: troubleshooting
 status: active
 updated: 2026-10-23
 sources: [ask 1792733060, transcript 46cb17a4 05:04:32Z]

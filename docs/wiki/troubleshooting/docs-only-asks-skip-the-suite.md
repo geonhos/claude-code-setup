@@ -1,5 +1,5 @@
 ---
-type: gotcha
+type: troubleshooting
 status: active
 updated: 2026-10-27
 sources: [ee449dd, fix(verify,harness) v15 round 2, ask 216eaa9e (129 s ask, 87 s Stop-hook suite), .harness/clear-and-weight-detail.md §2, ask 1792718047-26139-19519]

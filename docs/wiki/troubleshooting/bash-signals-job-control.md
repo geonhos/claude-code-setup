@@ -1,5 +1,5 @@
 ---
-type: gotcha
+type: troubleshooting
 status: active
 updated: 2026-10-27
 sources: [ask 1792643029-7208-28291, ask 1792569832-86883-26522, ask 1792734325-48033-8131, tests/retro.test.sh:114, bin/harness-run:46, tests/headless.test.sh 16e]

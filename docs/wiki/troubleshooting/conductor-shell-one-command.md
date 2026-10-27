@@ -1,5 +1,5 @@
 ---
-type: gotcha
+type: troubleshooting
 status: active
 updated: 2026-10-21
 sources: [claude/hooks/conductor-gate.sh, conductor session 2026-10-21 (3 denied compound commands)]

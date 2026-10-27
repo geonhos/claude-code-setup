@@ -1,5 +1,5 @@
 ---
-type: runbook
+type: how-to
 status: active
 updated: 2026-10-27
 sources: [ask 1792626580-18511-31125, ask 1792714556-77884-26975, ask 1792674245-84806-615, ask 1793073010-64174-28688]
@@ -9,7 +9,7 @@ verified_by: human (sessions 942b8f0b, c1c1bb80, fdd6bd08, 2298d3e1, 7d18f6cb, e
 
 Transcripts: `~/.claude/projects/<cwd-slug>/<session>.jsonl`.
 
-- **Stop-hook time.** The screen's "running Stop hook · Nm Ns" counts the whole turn. Use the `stop_hook_summary` entry's `durationMs` (942b8f0b: screen 10 m, hook 189.9 s). Its `cwd` also shows where the hook ran (see [harness root lookup](../gotchas/harness-root-lookup.md)).
+- **Stop-hook time.** The screen's "running Stop hook · Nm Ns" counts the whole turn. Use the `stop_hook_summary` entry's `durationMs` (942b8f0b: screen 10 m, hook 189.9 s). Its `cwd` also shows where the hook ran (see [harness root lookup](../troubleshooting/harness-root-lookup.md)).
 - **Did /clear run?** A `continued-in` link = cleared. A lone `file-history-snapshot` at send time = submitted but not cleared.
 - **Ask → PR round.** Ask-ids are `<epoch>-<pid>-<rand>` (bin/harness:1142), so map an ask to its PR round by merge time. Exception: PRs #13–#16 merged within seconds of each other (merge ct 1792625055–1792625096), so the epoch cannot separate them.
 

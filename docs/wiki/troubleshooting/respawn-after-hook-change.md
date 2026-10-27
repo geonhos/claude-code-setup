@@ -1,5 +1,5 @@
 ---
-type: gotcha
+type: troubleshooting
 status: active
 updated: 2026-10-23
 sources: [commit 5ea7475, .harness/progress.jsonl reviewer asks 2026-10-21 exit 3 ×4]
