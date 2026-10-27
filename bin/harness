@@ -1057,8 +1057,8 @@ cmd_ask() {
   trap 'ask_finish 130' INT
   trap 'ask_finish 129' HUP
   trap 'ask_finish "$?"' EXIT
-  ASK_ERR="$ASK_TMP.err"
-  ( ask_inner "$@" ) > "$ASK_TMP" 2> "$ASK_ERR" &
+  ASK_ERR=$(mktemp "${TMPDIR:-/tmp}/harness-err.XXXXXX") || ASK_ERR=   # not harness-ask.*: tests glob that prefix
+  ( ask_inner "$@" ) > "$ASK_TMP" 2> "${ASK_ERR:-/dev/null}" &
   ASK_PID=$!
   wait "$ASK_PID"
   ask_finish "$?"
