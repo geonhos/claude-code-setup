@@ -208,30 +208,42 @@ show_agent_diag() {
   fi
 }
 
-# lock_take <dir> — mkdir lock (portable) with an owner pid file inside. A waiter takes the lock
-# over only when its owner is dead, or has none and the lock is older than HARNESS_LOCK_STALE_S
-# (default 10 s: an owner that died between mkdir and writing its pid). The takeover is one atomic rename of the stale
-# dir, so only one waiter wins it; the rest simply retry the mkdir.
+# lock_stale <dir> <waited-seconds> — the lock's owner is gone: its pid is dead, or alive but not a
+# harness process (the pid was reused), or the owner file never appeared and the dir is older than
+# HARNESS_LOCK_STALE_S (default 10 s: an owner that died between mkdir and writing its pid). Past
+# HARNESS_LOCK_MAX_S (default 120 s) of waiting a live owner is overridden too, with a warning.
+lock_stale() {
+  local d=$1 waited=$2 own mt
+  own=$(cat "$d/owner" 2>/dev/null)
+  if digits_only "$own"; then
+    kill -0 "$own" 2>/dev/null || return 0
+    ps -p "$own" -o command= 2>/dev/null | grep -q 'harness' || return 0
+    [ "$waited" -ge "${HARNESS_LOCK_MAX_S:-120}" ] || return 1
+    echo "harness: lock $d held by pid $own for over ${HARNESS_LOCK_MAX_S:-120}s; taking it over" >&2
+    return 0
+  fi
+  mt=$(file_mtime "$d") || return 1
+  [ $(( $(date +%s) - mt )) -gt "${HARNESS_LOCK_STALE_S:-10}" ]
+}
+
+# lock_take <dir> — mkdir lock (portable) with an owner pid file inside.
+# Takeover invariant: a lock dir is only ever removed by a waiter that holds the takeover mutex
+# "<dir>.take" and re-judged the lock stale while holding it. Nothing is renamed or put back, so a
+# fresh lock can never be moved away or nested; while the stale dir exists nobody can mkdir over it,
+# and the other waiters sit in the mutex or retry the mkdir. (Only a live-owner override after
+# HARNESS_LOCK_MAX_S can race the owner's own lock_drop; that is the last resort by design.)
+# A taker that died holding "<dir>.take" is cleared by age (HARNESS_LOCK_STALE_S).
 lock_take() {
-  local d=$1 i=0 own age mt stale
+  local d=$1 i=0 t0 mt
+  t0=$(date +%s)
   while ! mkdir "$d" 2>/dev/null; do
     i=$((i + 1))
-    if [ $((i % 10)) -eq 0 ]; then
-      stale=0
-      own=$(cat "$d/owner" 2>/dev/null)
-      if digits_only "$own"; then
-        kill -0 "$own" 2>/dev/null || stale=1
-      elif mt=$(file_mtime "$d"); then   # no readable owner (died before writing it): go by age
-        age=$(( $(date +%s) - mt ))
-        [ "$age" -le "${HARNESS_LOCK_STALE_S:-10}" ] || stale=1
-      fi
-      if [ "$stale" = 1 ] && mv "$d" "$d.stale.$$" 2>/dev/null; then
-        # we renamed whatever sat there: if it is not the lock we judged, put it back
-        if [ "$(cat "$d.stale.$$/owner" 2>/dev/null)" = "$own" ]; then
-          rm -rf "$d.stale.$$"
-        else
-          mv "$d.stale.$$" "$d" 2>/dev/null || rm -rf "$d.stale.$$"
-        fi
+    if [ $((i % 10)) -eq 0 ] && lock_stale "$d" $(( $(date +%s) - t0 )); then
+      if mkdir "$d.take" 2>/dev/null; then
+        if lock_stale "$d" $(( $(date +%s) - t0 )); then rm -rf "$d"; fi
+        rmdir "$d.take" 2>/dev/null
+      elif mt=$(file_mtime "$d.take") && [ $(( $(date +%s) - mt )) -gt "${HARNESS_LOCK_STALE_S:-10}" ]; then
+        rmdir "$d.take" 2>/dev/null
       fi
     fi
     sleep 0.05
@@ -2370,17 +2382,20 @@ wt_patch() {
   local p="$WT_DIR/$ASK_ID.patch" msg
   WT_PATCH=""
   [ -d "$ASK_WT" ] || return 0   # checkout gone: the saved patch stays (it outlives the worktree)
-  rm -f "$p"
+  # A saved patch is replaced only by a new, non-empty one: a tree cleaned in place after the
+  # patch was written keeps it (it is the only copy of those changes).
   wt_clean "$ASK_WT" && return 0
   # add warns (rc 1) about the ignored .harness/ pathspec although it staged everything else
   git -C "$ASK_WT" add -A -- . ':!.harness' ':!.claude/agent-memory' >/dev/null 2>&1
-  git -C "$ASK_WT" diff --cached --binary HEAD > "$p" 2>/dev/null
-  if [ -s "$p" ]; then
+  # diff against the recorded base, not HEAD: commits the worker made in the detached checkout count
+  git -C "$ASK_WT" diff --cached --binary "${ASK_BASE:-HEAD}" -- . ':!.harness' ':!.claude/agent-memory' > "$p.tmp" 2>/dev/null
+  if [ -s "$p.tmp" ]; then
+    mv "$p.tmp" "$p"
     WT_PATCH=$p
     msg="harness: $ASK_KEY changed files outside .harness/; saved as a patch: $p (apply it via /implement; worktree kept)"
     echo "$msg"; echo "$msg" >&2
   else
-    rm -f "$p"
+    rm -f "$p.tmp"
   fi
   return 0
 }
@@ -2393,9 +2408,11 @@ wt_finalize() {
   wt_patch
 }
 
-# wt_clean <path> — no modified or untracked files (ignoring the agent-memory link harness made)
+# wt_clean <path> — nothing to lose: HEAD still at the base the checkout was created from (a worker
+# commit moves it) and no modified or untracked files (ignoring the agent-memory link harness made)
 wt_clean() {
   [ -d "$1" ] || return 1
+  [ -z "$ASK_BASE" ] || [ "$(git -C "$1" rev-parse HEAD 2>/dev/null)" = "$ASK_BASE" ] || return 1
   ! git -C "$1" status --porcelain --untracked-files=all 2>/dev/null | grep -vE '^\?\? (\.claude/agent-memory|\.harness/.*)$' | grep -q .
 }
 

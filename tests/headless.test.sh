@@ -335,6 +335,46 @@ check "term-proof: still alive during the TERM grace" kill -0 "$CPID"
 i=0; while [ $i -lt 80 ] && kill -0 "$CPID" 2>/dev/null; do sleep 0.1; i=$((i + 1)); done
 check "term-proof: KILLed after the grace" not kill -0 "$CPID"
 
+# 16d. the group reap guard: a live process group WITHOUT the run's identity is left alone
+# (models a recycled pgid: the pipeline's group exists but none of its members is this run's)
+hsetup
+hdirect hang 600
+PG=$(awk 'NR == 1 { print $3 }' .harness/asks/analyst.pid)
+WD=""   # the watchdog subshell: a child of the runner that is not the pipeline and carries the run's argv
+for c in $(pgrep -P "$RPID"); do
+  [ "$c" != "$PG" ] && ps -o command= -p "$c" 2>/dev/null | grep -q "harness-run analyst $RID " && WD=$c
+done
+identity_members() { ps -ax -o pid= -o pgid= -o command= | awk -v g="$PG" -v a="harness-run analyst $RID " -v b="hrun-id=analyst:$RID" -v b2="hrid=analyst:$RID" '$2 == g && (index($0, a) || index($0, b2)) { print $1 }'; }
+check "guard: premise, claude is in the run's group" [ "$(ps -o pgid= -p "$CPID" | tr -d ' ')" = "$PG" ]
+check "guard: premise, the watchdog was found" [ -n "$WD" ]
+kill -STOP "$WD"                                  # hold the watchdog while the premise is set up
+kill -9 "$RPID"                                   # the runner dies (a zombie: its parent never reaps)
+for p in $(identity_members); do kill -9 "$p" 2>/dev/null; done
+sleep 0.3
+check "guard: premise, no member carries the run identity" [ -z "$(identity_members)" ]
+check "guard: premise, claude still alive" kill -0 "$CPID"
+kill -CONT "$WD"
+i=0; while [ $i -lt 80 ] && kill -0 "$WD" 2>/dev/null; do sleep 0.1; i=$((i + 1)); done
+check "guard: the watchdog ran and finished" bash -c '! kill -0 "$0" 2>/dev/null' "$WD"
+check "guard: a live process without the run identity was not killed" kill -0 "$CPID"
+kill -KILL -- "-$PG" 2>/dev/null                  # test cleanup by group id, never by pattern
+
+# 16e. set -m on a tty with tostop (the viewer pane): SIGTTOU must not stop the run
+if [ "$(perl -e 'alarm 5; exec @ARGV' script -q /dev/null /bin/echo ttyok </dev/null 2>/dev/null | tr -d '\r\004\b^D')" = ttyok ]; then
+  hsetup
+  mkdir -p .harness/asks
+  printf 'x\n' > .harness/asks/analyst.prompt; printf 'resume=\nmax_s=20\n' > .harness/asks/analyst.run
+  cat > "$WORK/tty.sh" <<EOS
+stty tostop
+cd "$WORK"
+HARNESS_ROLE=worker FAKE_CLAUDE_MODE=success PATH="$FAKE_CLAUDE:$HERE/../bin:$PATH" /bin/bash "$HERE/../bin/harness-run" analyst TTY-$$ "$WORK"
+EOS
+  perl -e 'alarm 15; exec @ARGV' script -q /dev/null /bin/bash "$WORK/tty.sh" </dev/null >/dev/null 2>&1
+  check "tty tostop: the run finished normally (not stopped, not watchdog-killed)" jqt '.rc == 0 and .killed == null' .harness/asks/analyst.exit.json
+else
+  echo "skip: tty tostop (no script(1) with the BSD syntax)"
+fi
+
 # live-script safety: overwrite a copy of harness-run in place while it waits; it must still finish
 hsetup
 mkdir -p "$WORK/binc"
