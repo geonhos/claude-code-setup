@@ -1,6 +1,6 @@
 #!/bin/bash
 # The body is one brace group: bash parses the whole file before running any of it, so a
-# tool that rewrites this file in place cannot corrupt a run in progress (wiki: gotchas).
+# tool that rewrites this file in place cannot corrupt a run in progress (wiki: troubleshooting).
 {
 # harness-verify — computational checks (format, lint, test) for harness workers.
 # Spec: docs/superpowers/specs/2026-10-18-verification-loop-design.md

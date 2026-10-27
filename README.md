@@ -1,4 +1,4 @@
-# claude-code-setup — herdr conductor
+# claude-code-setup: herdr conductor
 
 메인 세션(Fable)을 **conductor(지휘 세션)** 로 쓰는 사용자 단위 Claude Code 설정. 평범한 질의는 conductor가 직접 답하고, 소스를 읽거나 고치거나 검증해야 하는 일은 `/analyze` `/implement` `/review` 스킬로 [herdr](https://herdr.dev) 패널에서 도는 Claude 워커에게 맡긴다. conductor는 워커 리포트만 읽는다.
 아키텍처 다이어그램은 [docs/architecture.md](docs/architecture.md)에 있다.
@@ -28,7 +28,7 @@ cd ~/workspace/claude-code-setup
   - PreToolUse 훅 하나(게이트), SessionStart 훅 하나(`conductor-resume.sh`), UserPromptSubmit 훅 하나(`conductor-route.sh`)
   - `env.BASH_DEFAULT_TIMEOUT_MS`/`BASH_MAX_TIMEOUT_MS`
   - `promptCacheTtl`/`subagentPromptCacheTtl: 1h`
-  - `agent: conductor` — 평범한 `claude` 세션이 모두 conductor로 시작한다. 워커는 `--agent <name>`으로 덮어쓴다.
+  - `agent: conductor`: 평범한 `claude` 세션이 모두 conductor로 시작한다. 워커는 `--agent <name>`으로 덮어쓴다.
 - 전역 gitignore에 `.harness/` 추가
 - `herdr integration install claude` 실행
 
@@ -45,15 +45,15 @@ cd ~/workspace/claude-code-setup
 harness spawn  <agent> [--direction right|down]
 harness ask    <agent> '<instruction>' [--timeout MS] [--fresh|--keep] [--via skill|conductor|retro]   # exit 2 blocked · 3 no report · 4 still working · 5 verification failed · 6 worker runs outside this repo
 harness report <agent>|<ask-id>                                   # print existing report (same exit codes as ask), 3 none, 4 still working, 6 worker runs outside this repo (worker names are `<role>-<repo8>`)
-harness ask    <analyst|reviewer> '<instruction>' --worktree [--base REF]   # headless 전용: ask마다 detached git worktree(~/.cache/harness/wt/<repo8>/<role>-<id8>), 병렬 ask 가능 (ADR 0008)
+harness ask    <analyst|reviewer> '<instruction>' --worktree [--base REF]   # headless 전용: ask마다 detached git worktree(~/.cache/harness/wt/<repo8>/<role>-<id8>), 병렬 ask 가능 (결정 0008)
 harness status
-harness retro  [--dry-run]                               # 실패한 ask의 후보(.harness/retro/)를 analyst 한 번에 묶어 회고 → docs/wiki/inbox/
+harness retro  [--dry-run]                               # 실패한 ask의 후보(.harness/retro/)를 analyst 한 번에 묶어 회고하고 docs/wiki/inbox/에 남김
 harness metrics [--since YYYY-MM-DD] [--json]            # progress.jsonl·위키 기반 지표 (최근 28일 vs 직전 28일)
 harness close  <agent>|<ask-id>|--all|--legacy [--force]          # exit 4 when working/blocked or the report is uncollected (--force overrides); --legacy closes old unscoped workers of this repo
 harness route-log '<json>'                               # append one line to .harness/routing.jsonl (used by the hook and by ask)
 ```
 
-## 병렬 ask: `--worktree` (ADR 0008)
+## 병렬 ask: `--worktree` (결정 0008)
 
 `runner`가 `headless`인 analyst·reviewer는 `--worktree [--base REF]`로 ask마다 자기 작업 트리(`git worktree add --detach`, 브랜치·머지 없음)를 받는다. 경로는 `~/.cache/harness/wt/<repo8>/<role>-<id8>`(`.harness/` 밖). ask-id는 시작할 때 stderr에 찍히고 `harness report <ask-id>`·`harness close <ask-id> [--force]`·`harness status`에 쓴다. 진행 로그·routing·retro는 메인 루트에 그대로 쌓인다(progress.jsonl에 `wt`/`base`/`ask_id`). 리포트를 정상 수집(exit 0/5)했고 작업 트리가 깨끗하면 자동 제거, 아니면 유지. 패치가 저장된 작업 트리는 자동으로 절대 지워지지 않고(idle TTL·LOG_DAYS 포함) `harness status`에 `kept`+패치 경로로 남아 `harness close <ask-id>`를 기다린다(저장된 패치 외 변경이 더 있을 때만 `--force`). 패치 파일은 close 뒤에도 남고 HARNESS_LOG_DAYS 후 정리된다. 패치 없는 깨끗한 kept는 idle TTL로 정리될 수 있다. 작업 트리 안에서 워커가 만든 커밋도 base 기준으로 패치(바이너리 포함)에 저장되고 그 트리는 깨끗하지 않은 것으로 보아 유지한다; 저장된 패치는 새 패치가 쓰일 때만 교체된다. 락은 소유 pid가 살아 있고 명령줄에 `harness`가 있을 때만 살아 있는 것으로 보며, `HARNESS_LOCK_MAX_S`(기본 120초)가 지나면 경고를 찍고 넘겨받는다. 동시에 `max_parallel`(기본 3, `HARNESS_MAX_PARALLEL`)개까지, 넘으면 exit 4. implementer·pane 러너에 쓰면 exit 1. 작업 트리 안의 `.harness/*.md` 산출물은 끝날 때 메인 `.harness/`로 복사되고(예약 이름 `goal.md`·`progress.md`·`task-*.md`와 심볼릭 링크는 제외; 메인 쪽이 그사이 바뀌었으면 `<name>.<id8>.md`), 그 밖의 변경은 `.harness/wt/<ask-id>.patch`로 저장되며 작업 트리는 유지된다. `HARNESS_WT_ROOT`는 저장소 밖 절대경로여야 하고, `--base`는 `--worktree`와 함께만 쓴다.
 
@@ -61,8 +61,8 @@ harness route-log '<json>'                               # append one line to .h
 
 `harness close`는 herdr의 `herdr pane close <pane>`으로 패널을 닫고 `.harness/panes`에서 지운다. 워커가 `working`/`blocked`이거나 아직 수집하지 않은 리포트(`.pending` 포함)가 있으면 exit 4로 거절한다(`--force`로 무시). 다른 디렉터리의 워커는 exit 6. 닫은 뒤 `harness ask`는 평소처럼 워커를 새로 띄운다.
 자동 종료 설정은 `.harness/config.json`(없으면 첫 실행 때 기본값으로 만든다):
-- `close_after_ask.<role>`: `never`|`on_success`. 기본은 모든 역할 `never`(ADR 0006: implementer pane도 ask 사이에 유지, 컨텍스트는 ask마다 /clear). `on_success`는 ask가 0으로 끝나면 닫음(reviewer는 0 또는 5). 환경변수 `HARNESS_CLOSE_AFTER_ASK_<ROLE>`. 기존 저장소: 수정하지 않은 옛 기본 파일(implementer `on_success`)만 자동으로 새 기본값으로 바뀐다. 직접 고친 설정은 그대로이므로 `close_after_ask.implementer`를 `never`로 손수 바꾼다.
-- `runner.<role>`: `pane`(기본, 키 없으면 pane)|`headless`(ADR 0007, 시범). `headless`는 보관되는 viewer pane에서 `harness-run`이 `claude -p`를 돌리고 `harness-view`가 스트림을 보여준다. 완료 = `.harness/asks/<role>.exit.json`(프로세스 종료), 마감 시간에 죽이지 않고 exit 4(`harness report <role>`로 수집), `--keep`이 아니면 매번 새 세션. 환경변수 `HARNESS_RUNNER_<ROLE>`이 우선. `headless_max_minutes`(기본 60)가 한 번의 실행 상한. 되돌리기: `pane`으로 바꾸고 `harness close <role> --force`. 원본 스트림(`.harness/log/*.jsonl`)은 conductor 게이트가 읽기를 막는다.
+- `close_after_ask.<role>`: `never`|`on_success`. 기본은 모든 역할 `never`(결정 0006: implementer pane도 ask 사이에 유지, 컨텍스트는 ask마다 /clear). `on_success`는 ask가 0으로 끝나면 닫음(reviewer는 0 또는 5). 환경변수 `HARNESS_CLOSE_AFTER_ASK_<ROLE>`. 기존 저장소: 수정하지 않은 옛 기본 파일(implementer `on_success`)만 자동으로 새 기본값으로 바뀐다. 직접 고친 설정은 그대로이므로 `close_after_ask.implementer`를 `never`로 손수 바꾼다.
+- `runner.<role>`: `pane`(기본, 키 없으면 pane)|`headless`(결정 0007, 시범). `headless`는 보관되는 viewer pane에서 `harness-run`이 `claude -p`를 돌리고 `harness-view`가 스트림을 보여준다. 완료 = `.harness/asks/<role>.exit.json`(프로세스 종료), 마감 시간에 죽이지 않고 exit 4(`harness report <role>`로 수집), `--keep`이 아니면 매번 새 세션. 환경변수 `HARNESS_RUNNER_<ROLE>`이 우선. `headless_max_minutes`(기본 60)가 한 번의 실행 상한. 되돌리기: `pane`으로 바꾸고 `harness close <role> --force`. 원본 스트림(`.harness/log/*.jsonl`)은 conductor 게이트가 읽기를 막는다.
 - `idle_ttl_minutes`(기본 30, 0이면 끔, 환경변수 `HARNESS_IDLE_TTL_MINUTES`): `harness ask|spawn|status` 시작 때 이 저장소의 워커 중 마지막 리포트 수집 후 TTL이 지났고 idle/done이며 수집 안 한 리포트가 없는 것을 닫는다. 데몬은 없다.
 - `HARNESS_NO_AUTOCLOSE=1`이면 둘 다 꺼진다(수동 `harness close`는 그대로).
 닫을 때마다 `progress.jsonl`에 `{"event":"close","role","reason":"manual|after_ask|ttl|legacy"}`가 남고 `progress.md` 최근 항목에 `close <role> (<reason>)`로 보인다.
@@ -81,7 +81,7 @@ ask 전에 살아 있는 워커의 컨텍스트를 `/clear`로 비운다. 새 �
 `harness status`의 `ctx` 열은 `~/.claude/projects` 아래 트랜스크립트에서 읽은 토큰 수이고, 알 수 없으면 `-`다. 디렉터리는 `HARNESS_PROJECTS_DIR`로 바꾼다.
 실측: `/clear`를 해도 `--agent` 프롬프트는 유지되고, 1초 안에 끝난다.
 
-프롬프트마다 UserPromptSubmit 훅이 `.harness/routing.jsonl`에 `prompt` 줄을, `harness ask`가 끝날 때마다 `delegate` 줄(`source`: 스킬 경유면 `skill`, 아니면 `conductor`)을 남긴다. 직접 답변은 "다음 프롬프트까지 delegate 줄 없음"으로 나중에 도출한다. 이 로그는 결정 모델을 학습시켜 라우팅 힌트를 주기 위한 데이터다 — 배경은 [docs/research/2026-10-20-decision-models-kev-vs-laya.md](docs/research/2026-10-20-decision-models-kev-vs-laya.md). `HARNESS_ROUTE_LOG=0`으로 끈다.
+프롬프트마다 UserPromptSubmit 훅이 `.harness/routing.jsonl`에 `prompt` 줄을, `harness ask`가 끝날 때마다 `delegate` 줄(`source`: 스킬 경유면 `skill`, 아니면 `conductor`)을 남긴다. 직접 답변은 "다음 프롬프트까지 delegate 줄 없음"으로 나중에 도출한다. 이 로그는 결정 모델을 학습시켜 라우팅 힌트를 주기 위한 데이터다, 배경은 [docs/research/2026-10-20-decision-models-kev-vs-laya.md](docs/research/2026-10-20-decision-models-kev-vs-laya.md). `HARNESS_ROUTE_LOG=0`으로 끈다.
 
 ## 검증 루프
 

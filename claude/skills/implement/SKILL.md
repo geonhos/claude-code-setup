@@ -1,10 +1,10 @@
 ---
 name: implement
-description: Conductor only. Delegate a change (code, tests, config, hooks, scripts, commits, pushes — anything outside docs/**/*.md and .harness/) to the herdr implementer worker and relay its report. Use whenever a file the conductor cannot write must change.
+description: Conductor only. Delegate a change (code, tests, config, hooks, scripts, commits, pushes, anything outside docs/**/*.md and .harness/) to the herdr implementer worker and relay its report. Use whenever a file the conductor cannot write must change.
 argument-hint: <what to change; the commit message if it should commit>
 ---
 
-# /implement — delegate to the implementer worker (sonnet)
+# /implement: delegate to the implementer worker (sonnet)
 
 If you are a worker session (HARNESS_ROLE=worker, or your system prompt names
 you analyst, implementer, reviewer or solo), ignore this skill and make the
@@ -30,7 +30,7 @@ change yourself (`harness ask` refuses to run in a worker session anyway).
 
    Why: harness waits 1740000 ms (29 min) for the implementer by default (p95 is above the 600000 analyst/reviewer wait), so no `--timeout` is needed; the Bash foreground cap is 1800000, which must be raised to cover it.
 
-   Use `--keep` only for a follow-up that needs its previous conversation. The implementer pane is kept between asks (ADR 0006; context is cleared with /clear before every implementer ask, `--keep` skips that). It closes after an exit-0 ask only if `close_after_ask.implementer` is `on_success`; the idle TTL still reaps it.
+   Use `--keep` only for a follow-up that needs its previous conversation. The implementer pane is kept between asks (decision 0006; context is cleared with /clear before every implementer ask, `--keep` skips that). It closes after an exit-0 ask only if `close_after_ask.implementer` is `on_success`; the idle TTL still reaps it.
 3. Handle the exit code as conductor.md's "Exit codes from `harness ask`"
    section says. In particular `5` means its lint/test checks failed after
    retries: send the printed failure back with another `/implement` (its

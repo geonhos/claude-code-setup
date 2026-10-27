@@ -1,5 +1,5 @@
 flowchart TD
-  CFG["config per key, first hit wins:<br/>.harness/verify.local.json → .claude/harness.json<br/>(no detection; null/missing key = step skipped; maxAttempts default 3)"]
+  CFG["config per key, first hit wins:<br/>.harness/verify.local.json to .claude/harness.json<br/>(no detection; null/missing key = step skipped; maxAttempts default 3)"]
   subgraph impl["implementer (frontmatter hooks)"]
     E["Edit / Write / MultiEdit"] --> PT["PostToolUse: harness-verify format<br/>format file, lint {files} on it"]
     PT -- "lint fails" --> FB["decision: block + lint output<br/>(feedback, edit already done)"]
@@ -9,7 +9,7 @@ flowchart TD
     NG -- no --> PASS0([allow stop])
     NG -- yes --> SAME{"state id = baseline?"}
     SAME -- yes --> SK(["result skipped, allow"])
-    SAME -- no --> HIDE["hide report → .pending"] --> LT{"lint then test<br/>over changed files"}
+    SAME -- no --> HIDE["hide report to .pending"] --> LT{"lint then test<br/>over changed files"}
     LT -- pass --> OKR(["restore report<br/>result pass or skipped"])
     LT -- fail --> CAP{"attempts &lt; max?"}
     CAP -- yes --> BLK["attempts+1, delete .pending<br/>result fail, decision: block + tail 40"]

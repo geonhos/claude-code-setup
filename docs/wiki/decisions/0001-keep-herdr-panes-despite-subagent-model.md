@@ -5,7 +5,7 @@ updated: 2026-10-23
 sources: [docs/research/2026-10-21-subagent-model-poc.md, commit 1978486, https://code.claude.com/docs/en/sub-agents]
 verified_by: docs/research/2026-10-21-subagent-model-poc.md (modelUsage split)
 ---
-# 0001 — Keep herdr worker panes although subagent `model:` works
+# 0001: Keep herdr worker panes although subagent `model:` works
 
 **Context.** The herdr layer was justified by "native subagents inherit the conductor's (Fable) model". The PoC proved that false: a subagent with `model: sonnet` under an opus parent was billed on sonnet, and `inherit` billed opus only.
 

@@ -11,7 +11,7 @@ Transcripts: `~/.claude/projects/<cwd-slug>/<session>.jsonl`.
 
 - **Stop-hook time.** The screen's "running Stop hook · Nm Ns" counts the whole turn. Use the `stop_hook_summary` entry's `durationMs` (942b8f0b: screen 10 m, hook 189.9 s). Its `cwd` also shows where the hook ran (see [harness root lookup](../troubleshooting/harness-root-lookup.md)).
 - **Did /clear run?** A `continued-in` link = cleared. A lone `file-history-snapshot` at send time = submitted but not cleared.
-- **Ask → PR round.** Ask-ids are `<epoch>-<pid>-<rand>` (bin/harness:1142), so map an ask to its PR round by merge time. Exception: PRs #13–#16 merged within seconds of each other (merge ct 1792625055–1792625096), so the epoch cannot separate them.
+- **Ask to PR round.** Ask-ids are `<epoch>-<pid>-<rand>` (bin/harness:1142), so map an ask to its PR round by merge time. Exception: PRs #13–#16 merged within seconds of each other (merge ct 1792625055–1792625096), so the epoch cannot separate them.
 
 ## Known noise (not a bug)
 - sonnet-5-5 workers call a lowercase `bash` tool ~1.6% of the time (9/564) and recover at once; opus 0/987. Do not chase it as a config bug.

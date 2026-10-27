@@ -1,6 +1,6 @@
 #!/bin/bash
 # The body is one brace group: bash parses the whole file before running any of it, so a
-# tool that rewrites this file in place cannot corrupt a run in progress (wiki: gotchas).
+# tool that rewrites this file in place cannot corrupt a run in progress (wiki: troubleshooting).
 {
 # harness — conductor-side wrapper around herdr for named Claude workers.
 # Spec: docs/superpowers/specs/2026-10-12-herdr-conductor-setup-design.md
@@ -10,7 +10,7 @@
 #     default --timeout: implementer 1740000, analyst/reviewer 600000
 #   harness ask    <analyst|reviewer> '<instruction>' --worktree [--base REF]
 #     headless roles only: the ask runs in its own detached git worktree under
-#     ~/.cache/harness/wt/<repo8>/<role>-<id8> (ADR 0008); the ask-id is printed on stderr.
+#     ~/.cache/harness/wt/<repo8>/<role>-<id8> (decision 0008); the ask-id is printed on stderr.
 #   harness report <agent>|<ask-id>
 #   harness status
 #   harness close  <agent>|<ask-id>|--all|--legacy [--force]
@@ -70,7 +70,7 @@ ROUTE_JSONL=".harness/routing.jsonl"
 DEFAULT_TIMEOUT=600000
 IMPLEMENTER_TIMEOUT=1740000   # default --timeout for the implementer (Stop-hook verify can take 10 min)
 TAB=$(printf '\t')
-# Per-ask state (ADR 0008). A plain ask uses the main checkout's .harness/asks and reports; a
+# Per-ask state (decision 0008). A plain ask uses the main checkout's .harness/asks and reports; a
 # `--worktree` ask (headless analyst/reviewer, detached checkout) points ASK_DIR/REPORT_DIR into
 # its worktree, so same-role asks never share a slot. Everything shared (progress.jsonl, logs,
 # routing, retro, panes, config) stays in the main root.
@@ -1084,7 +1084,7 @@ ask_inner() {
 
   if [ -n "$ASK_WT" ]; then wt_create || exit 1; fi
 
-  # headless roles (ADR 0007) never touch herdr agents: run claude -p in a viewer pane
+  # headless roles (decision 0007) never touch herdr agents: run claude -p in a viewer pane
   if is_headless "$agent"; then ask_headless "$agent" "$text" "$timeout" "$fresh" "$keep"; fi
 
   local pane existed=0
@@ -1327,7 +1327,7 @@ EOC
 }
 
 # ensure_config — create the documented default config when absent (never fatal).
-# An existing file that is byte-for-byte the pre-ADR-0006 template (implementer
+# An existing file that is byte-for-byte the pre-decision-0006 template (implementer
 # on_success) is rewritten once with the current one; any edited file is left alone.
 ensure_config() {
   # Workers never create .harness/ (stray dirs break harness-verify's root lookup);
@@ -1636,7 +1636,7 @@ retro_brief() {
   printf '## What to write\n\n'
   printf 'For each candidate (or one note per group of candidates with the same cause) write at most 120 words as:\n\n'
   printf -- '- **Symptom:** what failed, observable.\n- **Cause:** the verified cause, or "unknown" with what was ruled out.\n- **Next time:** one concrete action.\n- **Evidence:** ask-id plus file:line (code, test, commit). Log and report paths under `.harness/` rotate away, so never cite only those. Mandatory; a note without it is dropped.\n\n'
-  printf 'Before writing, read `docs/wiki/index.md`. If an existing gotcha already covers the cause, write only a one-line note "recurrence of <page>" (with the Evidence line) instead of a new lesson; this feeds the 2+ recurrence promotion rule in AGENTS.md.\n\n'
+  printf 'Before writing, read `docs/wiki/index.md`. If an existing troubleshooting page already covers the cause, write only a one-line note "recurrence of <page>" (with the Evidence line) instead of a new lesson; this feeds the 2+ recurrence promotion rule in AGENTS.md.\n\n'
   printf '## Output\n\n'
   if [ -d "$top/docs/wiki" ]; then
     printf 'One file per note: `docs/wiki/inbox/<YYYY-MM-DD>-retro-<ask-id>.md` (the first ask-id of the group), starting with the header lines `role: retro`, `ask-id: <id>`, `date: <YYYY-MM-DD>` between `---` lines.\n'
@@ -1824,7 +1824,7 @@ cmd_metrics() {
       | .[] end'
 }
 
-# --- headless runner (ADR 0007) --------------------------------------------------------------
+# --- headless runner (decision 0007) --------------------------------------------------------------
 # runner.<role> = headless: `harness ask` writes the instruction to a file and runs
 # `harness-run` (claude -p, stream-json) in a kept viewer pane. Completion = the run's
 # .harness/asks/<role>.exit.json carrying this ask-id; no herdr agent, no Stop-hook marker.
@@ -2141,7 +2141,7 @@ close_headless() {
   hl_finish_close "$role" "$pane" "$reason"
 }
 
-# --- worktree asks (ADR 0008, S1) ----------------------------------------------------------
+# --- worktree asks (decision 0008, S1) ----------------------------------------------------------
 # A `--worktree` ask of a headless analyst/reviewer runs in its own detached checkout
 # $WT_HOME/<repo8>/<role>-<id8>. The registry .harness/wt/<ask-id>.json (main root) tracks it;
 # <ask-id>.report.md keeps the collected report after the checkout is removed.
@@ -2558,7 +2558,7 @@ wt_reap() {
       creating) ! wt_entry_live_owner "$f" || continue ;;
       *) continue ;;
     esac
-    # a worktree with a saved patch is never reaped (ADR 0008): it waits for `harness close`
+    # a worktree with a saved patch is never reaped (decision 0008): it waits for `harness close`
     [ ! -s "${f%.json}.patch" ] || continue
     mt=$(file_mtime "$f") || continue
     [ $((now - mt)) -ge $((ttl * 60)) ] || continue

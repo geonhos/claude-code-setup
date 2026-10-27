@@ -120,7 +120,7 @@ physical() {
 
 # readable_rel / writable_rel REL -> 0 when the repo-relative path is allowed
 # raw_stream_rel REL -> 0 for a headless run's raw stream (.harness/log/*.jsonl[.gz]); it
-# holds source the conductor must not see (ADR 0007)
+# holds source the conductor must not see (decision 0007)
 raw_stream_rel() {
   local l
   l=$(printf '%s' "$1" | tr 'A-Z' 'a-z')   # macOS volumes are case-insensitive

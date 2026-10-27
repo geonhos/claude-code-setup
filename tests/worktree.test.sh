@@ -1,5 +1,5 @@
 #!/bin/bash
-# Worktree asks (ADR 0008, S1): bin/harness ask --worktree for headless analyst/reviewer against
+# Worktree asks (decision 0008, S1): bin/harness ask --worktree for headless analyst/reviewer against
 # tests/fake-herdr + tests/fake-claude. Run: /bin/bash tests/worktree.test.sh
 set -u
 . "$(dirname "$0")/harness-lib.sh"
