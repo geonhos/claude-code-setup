@@ -7,7 +7,7 @@ verified_by: tests/harness.test.sh (default: implementer pane kept)
 ---
 # 0006: Keep the implementer pane between asks
 
-**Context.** decision 0003 closed the implementer pane after every exit-0 ask because its context is reset anyway. Metrics 2026-09-24..10-22 show implementer median 202 s, and each ask paid a fresh Claude start plus re-reading the docs on top of that.
+**Context.** Decision 0003 closed the implementer pane after every exit-0 ask because its context is reset anyway. Metrics 2026-09-24..10-22 show implementer median 202 s, and each ask paid a fresh Claude start plus re-reading the docs on top of that.
 
 **Decision.** `close_after_ask.implementer` defaults to `never`. Context is still cleared with `/clear` before every implementer ask, so keeping the pane loses nothing. `on_success` remains available via config or `HARNESS_CLOSE_AFTER_ASK_IMPLEMENTER`.
 

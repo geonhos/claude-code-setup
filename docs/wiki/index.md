@@ -7,7 +7,7 @@ Read this first. Open a page only when it is relevant. Schema and promotion rule
 - [Deadline restore race](troubleshooting/deadline-restore-race.md): false INTERRUPTED when ask hits the deadline mid-verify (active, 2026-10-27)
 - [ask --timeout is ms](troubleshooting/ask-timeout-is-milliseconds.md): `--timeout 1200` = 1.2s; defaults are role-aware (active, 2026-10-27)
 - [.harness root lookup](troubleshooting/harness-root-lookup.md): hook finds root by nearest `.harness/asks/`; change all definitions together (active, 2026-10-27)
-- [Docs-only skip scope](troubleshooting/docs-only-asks-skip-the-suite.md): Stop hook skips the suite only for `docs/`/`.harness/`; wiki to wiki-lint only (active, 2026-10-27)
+- [Docs-only skip scope](troubleshooting/docs-only-asks-skip-the-suite.md): Stop hook skips the suite only for `docs/`/`.harness/`; wiki runs wiki-lint only (active, 2026-10-27)
 
 ## Troubleshooting: workers, panes and env
 - [Respawn after hook change](troubleshooting/respawn-after-hook-change.md): new prompt/frontmatter hooks need `harness close` + respawn (active, 2026-10-23)

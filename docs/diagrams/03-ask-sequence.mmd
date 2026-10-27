@@ -16,10 +16,10 @@ sequenceDiagram
   alt status = working
     H-->>C: screen, exit 4 (nothing sent)
   end
-  Note over H,D: maybe_reset (live worker only, not --keep)<br/>need = implementer always, else ctx > 120000, or --fresh<br/>reset only if last logged exit is 0 (reviewer: 0 or 5) or none logged, else keep context unless --fresh<br/>status idle|done to /clear, poll new session id (≤10 s) to else close + respawn
+  Note over H,D: maybe_reset (live worker only, not --keep)<br/>need = implementer always, else ctx > 120000, or --fresh<br/>reset only if last logged exit is 0 (reviewer: 0 or 5) or none logged, else keep context unless --fresh<br/>status idle|done → /clear, poll new session id (≤10 s) → else close + respawn
   H->>S: archive leftover report as late (jsonl exit null), rm report
   opt implementer
-    H->>V: baseline (state id to verify/implementer.base, attempts=0)
+    H->>V: baseline (state id → verify/implementer.base, attempts=0)
   end
   alt status = blocked
     H-->>C: screen, exit 2
@@ -28,7 +28,7 @@ sequenceDiagram
   D->>W: instruction
   W->>S: reports/agent.md
   opt implementer Stop hook
-    W->>V: stop to lint+test, may block and retry
+    W->>V: stop → lint+test, may block and retry
     V->>S: verify/implementer.json
   end
   D-->>H: settled (or prompt failed)
@@ -37,7 +37,7 @@ sequenceDiagram
     H-->>C: exit 2
   else idle/done and report present
     H->>S: read report (+ verify json / VERDICT line)
-    H-->>C: report, exit 0 or 5 (reviewer w/o VERDICT to 3)
+    H-->>C: report, exit 0 or 5 (reviewer w/o VERDICT → 3)
   else idle/done, only .pending (hook killed)
     H-->>C: restore report + "verify: INTERRUPTED", exit 5
   else idle/done, no report

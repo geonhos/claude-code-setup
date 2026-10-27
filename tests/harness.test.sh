@@ -312,6 +312,25 @@ printf '# analyst report\nstatus: done\n## Notes\n- seen in bin/harness:844\n' >
 run report analyst
 check "Notes section queued" grep -q '^wiki: 1 lesson' <<<"$OUT"
 
+# Learned + Notes together: bullets from both, one shared 2-bullet cap
+setup
+mkdir -p docs/wiki .harness/asks .harness/reports; printf '1700000004-8-8 1700000004\n' > .harness/asks/analyst.current
+printf '# analyst report\nstatus: done\n## Learned\n- first in bin/harness:10\n## Notes\n- second in bin/harness:20\n- third in bin/harness:30\n' > .harness/reports/analyst.md
+run report analyst
+check "Learned+Notes queue line" grep -q '^wiki: 2 lessons' <<<"$OUT"
+Q=$(ls docs/wiki/inbox/*-analyst-1700000004-8-8.md 2>/dev/null | head -1)
+check "Learned+Notes keeps Learned bullet" grep -q 'bin/harness:10' "$Q"
+check "Learned+Notes keeps Notes bullet" grep -q 'bin/harness:20' "$Q"
+check "Learned+Notes shared cap drops third" not grep -q 'bin/harness:30' "$Q"
+
+# Notes bullets without evidence: dropped with a warning, nothing queued
+setup
+mkdir -p docs/wiki .harness/asks .harness/reports; printf '1700000005-6-6 1700000005\n' > .harness/asks/analyst.current
+printf '# analyst report\nstatus: done\n## Notes\n- no proof at all\n- also unproven\n' > .harness/reports/analyst.md
+run report analyst
+check "Notes without evidence: warns" grep -q 'dropped 2 Notes bullet' <<<"$OUT"
+check "Notes without evidence: nothing queued" [ ! -d docs/wiki/inbox ]
+
 # --- ask: missing instruction ------------------------------------------------------
 setup
 run ask analyst

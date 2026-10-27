@@ -8,12 +8,12 @@ verified_by: tests/gate.test.sh
 # 0005: Gate only inside herdr, fail closed on bad input
 
 **Decision.** `conductor-gate.sh` checks, in order:
-1. `HARNESS_ROLE=worker` to allow (unchanged).
-2. `HERDR_ENV` is not `1` to allow. Outside a herdr pane `harness ask` dies
+1. `HARNESS_ROLE=worker`: allow (unchanged).
+2. `HERDR_ENV` is not `1`: allow. Outside a herdr pane `harness ask` dies
    (`bin/harness`, "run Claude inside a herdr pane"), so a gated conductor
    there can neither delegate nor work.
-3. jq missing to deny (unchanged).
-4. Hook input that does not parse, or has no `tool_name` to **deny** (was allow).
+3. jq missing: deny (unchanged).
+4. Hook input that does not parse, or has no `tool_name`: **deny** (was allow).
 
 The global `settings.agent = "conductor"` stays (user choice, 2026-10-21); the
 `HERDR_ENV` guard is the opt-out for sessions outside herdr. The PreToolUse

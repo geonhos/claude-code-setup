@@ -3,7 +3,7 @@ type: troubleshooting
 status: active
 updated: 2026-10-27
 sources: [commit 79a1964, .harness/progress.jsonl implementer ask dur_s 602 (2026-10-21 11:16:46), reviewer report round 2]
-verified_by: tests/harness.test.sh (pending+working at deadline to rc 4)
+verified_by: tests/harness.test.sh (pending+working at deadline gives rc 4)
 ---
 # `verify: INTERRUPTED` while the verify was still running
 
