@@ -62,8 +62,12 @@ on_signal() {
 }
 trap on_signal TERM INT HUP
 
-# pipeline in its own subshell: kill_tree on $pipe reaches claude, awk and the viewer
+# pipeline in its own subshell: kill_tree on $pipe reaches claude, awk and the viewer.
+# set -m made it a background process group: on a tty with `stty tostop` the viewer's output (or
+# a tty read) would stop the whole run with SIGTTOU/SIGTTIN until the watchdog killed it
+# (reproduced under script(1)); ignored here, the writes simply succeed. Children inherit it.
 (
+  trap '' TTOU TTIN
   { claude -p --agent "$role" --output-format stream-json --verbose --include-hook-events \
       --disallowedTools=AskUserQuestion ${resume:+--resume "$resume"} < "$prompt" 2> "$errf"
     echo $? > "$rcf"; } \
@@ -81,7 +85,7 @@ pipe=$!
 # the pipeline's process group, recorded at start (3rd field; readers only use the first two).
 # The pid file is the "I can be stopped" announcement: written only now that the TERM trap is
 # installed and the pipeline exists, so a close racing the start still finds sigflag + a pipe to kill
-echo "$id $$ $pipe" > "$pidf"
+echo "$id $$ $pipe" > "$pidf.tmp.$$" && mv "$pidf.tmp.$$" "$pidf"   # atomic: a reader never sees half a line
 # a TERM that arrived between the fork and `pipe=$!` found no pipe to kill
 [ ! -e "$sigflag" ] || kill_tree "$pipe"
 # the watchdog ticks once a second; it ends with this runner (a SIGKILLed harness-run must not
@@ -157,5 +161,4 @@ mv "$tmp" "$exitf"
 rm -f "$pidf" "$rcf" "$tinit" "$wdflag" "$sigflag"
 printf '=== exit %s ===\n' "$rc"
 exit 0
-exit $?
 }

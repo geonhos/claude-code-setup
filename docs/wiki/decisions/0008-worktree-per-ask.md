@@ -1,7 +1,7 @@
 ---
 type: decision
 status: active
-updated: 2026-10-23
+updated: 2026-10-27
 sources: [.harness/worktree-design.md, branch feature/v18-worktree-s1]
 verified_by: tests/worktree.test.sh
 ---
@@ -16,3 +16,5 @@ verified_by: tests/worktree.test.sh
 **Status.** Active. S2 (implementer with a branch and merge) is not built.
 
 **Consequences.** `.claude/agent-memory` is not ignored as a symlink (the ignore rule has a trailing slash): the dirty check filters it and it is removed before `git worktree remove`. A refused `close` on a dirty tree needs `--force`.
+
+**v19 follow-ups.** The registry `base` is the diff and clean-check reference: commits made in the detached checkout make the tree not clean and are saved binary-safe in the patch (`diff --cached --binary <base>`); a saved patch is only replaced when a new non-empty one is written, never deleted by a later clean check. Locks: an owner is live only if `kill -0` succeeds and its command line contains `harness` (pid reuse); `HARNESS_LOCK_MAX_S` (default 120) is a hard ceiling after which a waiter takes over with a stderr warning. A takeover first takes a `<lock>.take` mutex, re-judges the lock stale, then removes it; nothing is ever renamed away or put back.

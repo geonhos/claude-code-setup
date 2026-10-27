@@ -34,7 +34,12 @@ wait_reg() { # N — until N registry entries exist
   local i=0; while [ $i -lt 60 ] && [ "$(ls .harness/wt/*.json 2>/dev/null | wc -l | tr -d ' ')" -lt "$1" ]; do sleep 0.2; i=$((i + 1)); done
 }
 wait_panes() { # N — until N worktree asks registered their viewer pane (the barrier for registry assertions)
-  local i=0; while [ $i -lt 150 ] && [ "$(grep -c '^analyst@' .harness/panes 2>/dev/null)" -lt "$1" ]; do sleep 0.2; i=$((i + 1)); done
+  local i=0 n=0
+  while [ $i -lt 150 ]; do
+    n=$(grep -c '^analyst@' .harness/panes 2>/dev/null)   # empty while the registry file does not exist yet
+    [ "${n:-0}" -lt "$1" ] || break
+    sleep 0.2; i=$((i + 1))
+  done
 }
 wait_pid() { # until the nth run announced itself (30 s cap: a loaded machine starts them slowly)
   local i=0; while [ $i -lt 150 ] && [ "$(ls "$WTROOT"/*/*/.harness/asks/analyst.pid 2>/dev/null | wc -l | tr -d ' ')" -lt "$1" ]; do sleep 0.2; i=$((i + 1)); done
@@ -355,6 +360,154 @@ wsetup
 HARNESS_WT_ROOT="$WORK.wt/sub/../../escape22" hrun ask analyst "q22" --worktree
 check "wt root with ..: rc 1" [ "$RC" -eq 1 ]
 check "wt root with ..: says so" grep -q "'\.\.'" <<<"$OUT"
+
+# 23. a saved patch survives a tree that was cleaned in place afterwards (close, late report)
+wsetup
+export FAKE_REPORT_CMD="mkdir -p .harness/reports && printf '# analyst report\nstatus: done\n' > .harness/reports/analyst.md && echo plan > plan23.txt"
+hrun ask analyst "q23" --worktree
+id=$(ask_id); path=$(jq -r .path ".harness/wt/$id.json")
+check "patch kept: patch saved" [ -s ".harness/wt/$id.patch" ]
+sum23=$(cksum < ".harness/wt/$id.patch")
+rm -f "$path/plan23.txt"                      # cleaned in place: the patch is now the only copy
+hrun report "$id"
+check "patch kept: late report keeps the patch" [ "$(cksum < ".harness/wt/$id.patch")" = "$sum23" ]
+if [ -d "$path" ]; then hrun close "$id"; else RC=0; fi
+check "patch kept: close rc 0" [ "$RC" -eq 0 ]
+check "patch kept: patch survives close" [ "$(cksum < ".harness/wt/$id.patch")" = "$sum23" ]
+check "patch kept: checkout gone" [ ! -d "$path" ]
+
+# 24. a commit the worker made in the detached checkout is saved in the patch; the tree is kept
+wsetup
+export FAKE_REPORT_CMD="mkdir -p .harness/reports && printf '# analyst report\nstatus: done\n' > .harness/reports/analyst.md && echo committed > c24.txt && printf '\\000\\001bin' > c24.dat && git add c24.txt c24.dat && git commit -qm worker"
+hrun ask analyst "q24" --worktree
+id=$(ask_id); path=$(jq -r .path ".harness/wt/$id.json")
+check "commit: rc 0" [ "$RC" -eq 0 ]
+check "commit: tree kept" [ -d "$path" ]
+check "commit: registry kept" jqt '.state == "kept"' ".harness/wt/$id.json"
+check "commit: patch names the committed file" grep -q "c24.txt" ".harness/wt/$id.patch"
+check "commit: patch is binary-safe" grep -q "GIT binary patch" ".harness/wt/$id.patch"
+check "commit: patch applies to the main tree" git apply --check ".harness/wt/$id.patch"
+hrun close "$id"
+check "commit: close without --force refuses nothing new (patch equals saved)" [ "$RC" -eq 0 ]
+check "commit: patch survives close" grep -q "c24.txt" ".harness/wt/$id.patch"
+
+# 25. lock owner pid reused by an unrelated live process: taken over, no hang
+wsetup
+sleep 300 & spid=$!
+mkdir -p .harness/panes.lock && echo "$spid" > .harness/panes.lock/owner
+hrun ask analyst "q25" --worktree
+kill "$spid" 2>/dev/null; wait "$spid" 2>/dev/null
+check "lock reuse: rc 0" [ "$RC" -eq 0 ]
+# a live harness-looking owner is honoured until HARNESS_LOCK_MAX_S, then taken over with a warning
+cat > "$WORK/harness-owner.sh" <<'EOS'
+#!/bin/bash
+while :; do sleep 1; done
+EOS
+/bin/bash "$WORK/harness-owner.sh" & opid=$!
+sleep 0.3
+mkdir -p .harness/panes.lock && echo "$opid" > .harness/panes.lock/owner
+HARNESS_LOCK_MAX_S=2 hrun ask analyst "q25b" --worktree
+kill "$opid" 2>/dev/null; wait "$opid" 2>/dev/null
+check "lock ceiling: rc 0" [ "$RC" -eq 0 ]
+check "lock ceiling: warned" grep -q "taking it over" <<<"$OUT"
+
+# 26. takeover with several contenders: mutual exclusion holds, nothing nests, nothing is left.
+# Deterministic: mv and rm are shadowed by functions that sleep (rank-staggered), widening the gap
+# between "judged stale" and "removed/renamed". main's lock_take (rename the stale dir, put it back
+# when it was not the judged one) then moves a FRESH lock away and leaves a window with no lock, so
+# a second contender enters the critical section while the first is still inside ("bad").
+wsetup
+fn() { awk -v n="$1" '$0 ~ "^" n "\\(\\) \\{" { p = 1 } p { print } p && /^}$/ { p = 0 }' "$2"; }
+cat > "$WORK/harness-contend.sh" <<'EOS'
+#!/bin/bash
+. "$1"; d=$2; w=$3; n=$4
+mv() { sleep "0.$n"; command mv "$@"; }
+rm() { sleep "0.$n"; command rm "$@"; }
+lock_take "$d"
+if mkdir "$w/in" 2>/dev/null; then sleep 0.7; rmdir "$w/in"; echo ok >> "$w/ok"; else echo bad >> "$w/bad"; fi
+lock_drop "$d"
+EOS
+contend() { # contend <harness-file> <dir> — five contenders over a dead-owner lock
+  { for f in digits_only file_mtime lock_stale lock_take; do fn "$f" "$1"; done; grep '^lock_drop()' "$1"; } > "$2/lockfns.sh"
+  mkdir -p "$2/l" && mkdir "$2/l/lock" && echo 999999 > "$2/l/lock/owner"
+  local i
+  for i in 1 2 3 4 5; do /bin/bash "$WORK/harness-contend.sh" "$2/lockfns.sh" "$2/l/lock" "$2/l" "$i" 2>/dev/null & done
+  wait
+}
+mkdir -p "$WORK/new"; contend "$HARNESS" "$WORK/new"
+check "contenders: all five got the lock" [ "$(wc -l < "$WORK/new/l/ok" | tr -d ' ')" = 5 ]
+check "contenders: never two at once" [ ! -e "$WORK/new/l/bad" ]
+check "contenders: no lock or takeover dir left" bash -c "[ -z \"\$(ls '$WORK/new/l' | grep -E '^lock')\" ]"
+# the same scenario must FAIL on the pre-v19 lock_take (kept in the test as a fixture)
+cat > "$WORK/oldlock.sh" <<'EOS'
+digits_only() { case "$1" in ''|*[!0-9]*) return 1 ;; esac; }
+file_mtime() { stat -c %Y "$1" 2>/dev/null || stat -f %m "$1" 2>/dev/null; }
+lock_stale() { :; }
+lock_take() {
+  local d=$1 i=0 own age mt stale
+  while ! mkdir "$d" 2>/dev/null; do
+    i=$((i + 1))
+    if [ $((i % 10)) -eq 0 ]; then
+      stale=0
+      own=$(cat "$d/owner" 2>/dev/null)
+      if digits_only "$own"; then
+        kill -0 "$own" 2>/dev/null || stale=1
+      elif mt=$(file_mtime "$d"); then
+        age=$(( $(date +%s) - mt ))
+        [ "$age" -le "${HARNESS_LOCK_STALE_S:-10}" ] || stale=1
+      fi
+      if [ "$stale" = 1 ] && mv "$d" "$d.stale.$$" 2>/dev/null; then
+        if [ "$(cat "$d.stale.$$/owner" 2>/dev/null)" = "$own" ]; then
+          rm -rf "$d.stale.$$"
+        else
+          mv "$d.stale.$$" "$d" 2>/dev/null || rm -rf "$d.stale.$$"
+        fi
+      fi
+    fi
+    sleep 0.05
+  done
+  echo $$ > "$d/owner" 2>/dev/null
+  return 0
+}
+lock_drop() { rmdir "$1" 2>/dev/null || rm -rf "$1"; }
+EOS
+mkdir -p "$WORK/old/l" && mkdir "$WORK/old/l/lock" && echo 999999 > "$WORK/old/l/lock/owner"
+for i in 1 2 3 4 5; do /bin/bash "$WORK/harness-contend.sh" "$WORK/oldlock.sh" "$WORK/old/l/lock" "$WORK/old/l" "$i" 2>/dev/null & done
+wait
+check "contenders: the old rename/put-back takeover is caught (two at once or a lost holder)" bash -c "[ -e '$WORK/old/l/bad' ] || [ \"\$(wc -l < '$WORK/old/l/ok' | tr -d ' ')\" != 5 ]"
+
+# 27. lock ceiling counts the LOCK's age, not the waiter's wait: a lock just acquired is never stolen
+wsetup
+cat > "$WORK/harness-owner27.sh" <<'EOS'
+#!/bin/bash
+while :; do sleep 1; done
+EOS
+/bin/bash "$WORK/harness-owner27.sh" & o27=$!
+sleep 0.3
+{ for f in digits_only file_mtime lock_stale; do fn "$f" "$HARNESS"; done; } > "$WORK/stalefns.sh"
+. "$WORK/stalefns.sh"
+mkdir -p "$WORK/l27" && echo "$o27" > "$WORK/l27/owner"
+# 5 is what an old waiter would pass as "waited"; the argument is ignored now
+check "ceiling: fresh lock, live harness owner, long-waiting contender: not stale" bash -c ". '$WORK/stalefns.sh'; ! HARNESS_LOCK_MAX_S=3 lock_stale '$WORK/l27' 5 2>/dev/null"
+perl -e 'utime(time - 5, time - 5, $ARGV[0])' "$WORK/l27/owner"
+check "ceiling: the same lock held past the ceiling is stale" bash -c ". '$WORK/stalefns.sh'; HARNESS_LOCK_MAX_S=3 lock_stale '$WORK/l27' 0 2>/dev/null"
+kill "$o27" 2>/dev/null; wait "$o27" 2>/dev/null
+
+# 28. a worker commit that leaves the tree equal to the base has nothing to lose: removed
+wsetup
+export FAKE_REPORT_CMD="mkdir -p .harness/reports && printf '# analyst report\nstatus: done\n' > .harness/reports/analyst.md && git commit -q --allow-empty -m empty"
+hrun ask analyst "q28" --worktree
+id=$(ask_id); path=$(jq -r .path ".harness/wt/$id.json")
+check "empty commit: rc 0" [ "$RC" -eq 0 ]
+check "empty commit: checkout removed" [ ! -d "$path" ]
+check "empty commit: registry collected" jqt '.state == "collected"' ".harness/wt/$id.json"
+check "empty commit: no patch" [ ! -e ".harness/wt/$id.patch" ]
+# ... and a commit that changes the tree is still kept
+wsetup
+export FAKE_REPORT_CMD="mkdir -p .harness/reports && printf '# analyst report\nstatus: done\n' > .harness/reports/analyst.md && echo x > c28.txt && git add c28.txt && git commit -qm real"
+hrun ask analyst "q28b" --worktree
+id=$(ask_id); path=$(jq -r .path ".harness/wt/$id.json")
+check "real commit: still kept" [ -d "$path" ]
 
 echo "PASS $pass / FAIL $fail"
 [ "$fail" -eq 0 ]
