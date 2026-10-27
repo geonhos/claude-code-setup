@@ -1,5 +1,5 @@
 ---
-type: gotcha
+type: troubleshooting
 status: active
 updated: 2026-10-27
 sources: [ask 1792643421-12588-9450, ask 1792644961-69735-4647, ask 1792672554-53823-31362, ask 1792674241-84663-18593, bin/harness-verify:34-49, bin/harness:1316-1319]

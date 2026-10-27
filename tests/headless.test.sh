@@ -1,5 +1,5 @@
 #!/bin/bash
-# Headless runner (ADR 0007): bin/harness ask/report/close with runner=headless against
+# Headless runner (decision 0007): bin/harness ask/report/close with runner=headless against
 # tests/fake-herdr + tests/fake-claude. Run: /bin/bash tests/headless.test.sh
 set -u
 . "$(dirname "$0")/harness-lib.sh"

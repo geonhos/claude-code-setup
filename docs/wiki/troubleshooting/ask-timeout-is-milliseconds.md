@@ -1,5 +1,5 @@
 ---
-type: gotcha
+type: troubleshooting
 status: active
 updated: 2026-10-27
 sources: [harness usage text "--timeout MS", conductor ask 2026-10-21 "after 1s" exit 4]

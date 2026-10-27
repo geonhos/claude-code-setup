@@ -20,3 +20,4 @@
 - 2026-10-27 · implementer · wiki cleanup · inbox triaged (31 notes): new gotchas whole-second-timing, harness-root-lookup, tests-inherit-worker-env, bash-signals-job-control, test-wait-loops; new runbook transcript-forensics; 10 notes dropped as fixed/duplicate
 - 2026-10-27 · implementer · wiki cleanup · merged notes into 0006 (template drift), 0007 (claude -p waits for bg Bash), docs-only (quotepath); herdr-names-are-global subdir case resolved; deadline/timeout pages note role-aware defaults; herdr-idle Fix points to 0002; index grouped by area
 - 2026-10-27 · implementer · wiki cleanup · reviewer.md: new tests must fail on base (3 recurrences)
+- 2026-10-27 · implementer · wording rename · gotchas/ → troubleshooting/, runbooks/ → how-to/, ADR → decision, report `## Learned` → `## Notes` (old heading still parsed), index lines use ": " (old links on GitHub do not redirect)

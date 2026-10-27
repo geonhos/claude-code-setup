@@ -1,5 +1,5 @@
 ---
-type: gotcha
+type: troubleshooting
 status: active
 updated: 2026-10-27
 sources: [.harness/review-critique-detail.md §1.2, commit bc6095b, commit b310af4]

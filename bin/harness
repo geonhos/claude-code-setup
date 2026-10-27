@@ -1,6 +1,6 @@
 #!/bin/bash
 # The body is one brace group: bash parses the whole file before running any of it, so a
-# tool that rewrites this file in place cannot corrupt a run in progress (wiki: gotchas).
+# tool that rewrites this file in place cannot corrupt a run in progress (wiki: troubleshooting).
 {
 # harness — conductor-side wrapper around herdr for named Claude workers.
 # Spec: docs/superpowers/specs/2026-10-12-herdr-conductor-setup-design.md
@@ -10,7 +10,7 @@
 #     default --timeout: implementer 1740000, analyst/reviewer 600000
 #   harness ask    <analyst|reviewer> '<instruction>' --worktree [--base REF]
 #     headless roles only: the ask runs in its own detached git worktree under
-#     ~/.cache/harness/wt/<repo8>/<role>-<id8> (ADR 0008); the ask-id is printed on stderr.
+#     ~/.cache/harness/wt/<repo8>/<role>-<id8> (decision 0008); the ask-id is printed on stderr.
 #   harness report <agent>|<ask-id>
 #   harness status
 #   harness close  <agent>|<ask-id>|--all|--legacy [--force]
@@ -70,7 +70,7 @@ ROUTE_JSONL=".harness/routing.jsonl"
 DEFAULT_TIMEOUT=600000
 IMPLEMENTER_TIMEOUT=1740000   # default --timeout for the implementer (Stop-hook verify can take 10 min)
 TAB=$(printf '\t')
-# Per-ask state (ADR 0008). A plain ask uses the main checkout's .harness/asks and reports; a
+# Per-ask state (decision 0008). A plain ask uses the main checkout's .harness/asks and reports; a
 # `--worktree` ask (headless analyst/reviewer, detached checkout) points ASK_DIR/REPORT_DIR into
 # its worktree, so same-role asks never share a slot. Everything shared (progress.jsonl, logs,
 # routing, retro, panes, config) stays in the main root.
@@ -832,7 +832,7 @@ learned_has_evidence() {
 }
 
 # queue_learned <agent> <report> — copy up to 2 evidence-backed bullets of the
-# report's optional `## Learned` section to docs/wiki/inbox/<date>-<role>-<ask-id>.md,
+# report's optional `## Notes` section (legacy `## Learned` is also accepted) to docs/wiki/inbox/<date>-<role>-<ask-id>.md,
 # only when docs/wiki/ already exists at the repo top level. Indented continuation
 # lines are joined to their bullet. Prints one stdout line when queued; bullets
 # without evidence are dropped with a one-line stderr warning. Never fails the
@@ -841,7 +841,7 @@ queue_learned() {
   local agent=$1 report=$2 raw line kept="" n=0 dropped=0 askid date out top
   raw=$(awk '
     function flush() { if (cur != "") print cur; cur = "" }
-    /^## Learned[ \t]*$/ { on = 1; next }
+    /^## (Learned|Notes)[ \t]*$/ { on = 1; next }
     on && (/^## / || /^VERDICT:/) { flush(); on = 0 }
     on && /^[ \t]*[-*] / { flush(); cur = $0; sub(/^[ \t]*[-*] +/, "- ", cur); next }
     on && cur != "" && /^[ \t]+[^ \t]/ { t = $0; sub(/^[ \t]+/, "", t); cur = cur " " t; next }
@@ -863,11 +863,11 @@ queue_learned() {
   done <<EOF_LEARNED
 $raw
 EOF_LEARNED
-  [ "$dropped" -eq 0 ] || echo "harness: wiki: dropped $dropped Learned bullet(s) without evidence (ask-id, commit, file:line or log)" >&2
+  [ "$dropped" -eq 0 ] || echo "harness: wiki: dropped $dropped Notes bullet(s) without evidence (ask-id, commit, file:line or log)" >&2
   [ -n "$kept" ] || return 0
   askid=$(awk 'NR == 1 { print $1 }' "$ASK_DIR/$agent.current" 2>/dev/null)
   if [ -z "$askid" ]; then
-    echo "harness: wiki: no ask-id for $agent; Learned bullets not queued" >&2
+    echo "harness: wiki: no ask-id for $agent; Notes bullets not queued" >&2
     return 0
   fi
   date=$(date +%Y-%m-%d)
@@ -918,7 +918,7 @@ EOF_LINKS
         v=$(printf '%s\n' "$st" | sed -n "s/^$k:[ ]*//p" | head -1)
         if [ -z "$v" ]; then err "$f" "frontmatter key missing or empty: $k"; continue; fi
         case "$k" in
-          type) case "$v" in gotcha|decision|runbook|playbook) ;; *) err "$f" "invalid type: $v" ;; esac ;;
+          type) case "$v" in troubleshooting|decision|how-to) ;; *) err "$f" "invalid type: $v" ;; esac ;;
           status) case "$v" in draft|active|stale|superseded) ;; *) err "$f" "invalid status: $v" ;; esac ;;
           updated) printf '%s\n' "$v" | grep -Eq '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' || err "$f" "invalid updated date: $v" ;;
           sources) case "$v" in \[*\]) [ "$v" != "[]" ] || err "$f" "sources is empty" ;; *) err "$f" "sources must be a [list]" ;; esac ;;
@@ -1084,7 +1084,7 @@ ask_inner() {
 
   if [ -n "$ASK_WT" ]; then wt_create || exit 1; fi
 
-  # headless roles (ADR 0007) never touch herdr agents: run claude -p in a viewer pane
+  # headless roles (decision 0007) never touch herdr agents: run claude -p in a viewer pane
   if is_headless "$agent"; then ask_headless "$agent" "$text" "$timeout" "$fresh" "$keep"; fi
 
   local pane existed=0
@@ -1327,7 +1327,7 @@ EOC
 }
 
 # ensure_config — create the documented default config when absent (never fatal).
-# An existing file that is byte-for-byte the pre-ADR-0006 template (implementer
+# An existing file that is byte-for-byte the pre-decision-0006 template (implementer
 # on_success) is rewritten once with the current one; any edited file is left alone.
 ensure_config() {
   # Workers never create .harness/ (stray dirs break harness-verify's root lookup);
@@ -1636,14 +1636,14 @@ retro_brief() {
   printf '## What to write\n\n'
   printf 'For each candidate (or one note per group of candidates with the same cause) write at most 120 words as:\n\n'
   printf -- '- **Symptom:** what failed, observable.\n- **Cause:** the verified cause, or "unknown" with what was ruled out.\n- **Next time:** one concrete action.\n- **Evidence:** ask-id plus file:line (code, test, commit). Log and report paths under `.harness/` rotate away, so never cite only those. Mandatory; a note without it is dropped.\n\n'
-  printf 'Before writing, read `docs/wiki/index.md`. If an existing gotcha already covers the cause, write only a one-line note "recurrence of <page>" (with the Evidence line) instead of a new lesson; this feeds the 2+ recurrence promotion rule in AGENTS.md.\n\n'
+  printf 'Before writing, read `docs/wiki/index.md`. If an existing troubleshooting page already covers the cause, write only a one-line note "recurrence of <page>" (with the Evidence line) instead of a new lesson; this feeds the 2+ recurrence promotion rule in AGENTS.md.\n\n'
   printf '## Output\n\n'
   if [ -d "$top/docs/wiki" ]; then
     printf 'One file per note: `docs/wiki/inbox/<YYYY-MM-DD>-retro-<ask-id>.md` (the first ask-id of the group), starting with the header lines `role: retro`, `ask-id: <id>`, `date: <YYYY-MM-DD>` between `---` lines.\n'
   else
     printf 'This repo has no docs/wiki: one file per note in `.harness/retro/inbox/<YYYY-MM-DD>-retro-<ask-id>.md`. Do not create docs/wiki.\n'
   fi
-  printf 'Skip any ask-id that already has a retro note in the inbox (a file named `*-retro-<ask-id>.md`; a previous retro may have finished after its ask timed out). Other inbox files, such as a role'"'"'s late Learned harvest, do not count.\n'
+  printf 'Skip any ask-id that already has a retro note in the inbox (a file named `*-retro-<ask-id>.md`; a previous retro may have finished after its ask timed out). Other inbox files, such as a role'"'"'s late Notes harvest, do not count.\n'
   printf 'Do not edit wiki pages, index.md or log.md. No fluff, no success stories.\n'
   printf 'Inbox files are committed to git: never copy prompt text, screen text, secrets, tokens, keys or URLs with credentials from the logs; paraphrase the observable symptom.\n'
 }
@@ -1824,7 +1824,7 @@ cmd_metrics() {
       | .[] end'
 }
 
-# --- headless runner (ADR 0007) --------------------------------------------------------------
+# --- headless runner (decision 0007) --------------------------------------------------------------
 # runner.<role> = headless: `harness ask` writes the instruction to a file and runs
 # `harness-run` (claude -p, stream-json) in a kept viewer pane. Completion = the run's
 # .harness/asks/<role>.exit.json carrying this ask-id; no herdr agent, no Stop-hook marker.
@@ -2141,7 +2141,7 @@ close_headless() {
   hl_finish_close "$role" "$pane" "$reason"
 }
 
-# --- worktree asks (ADR 0008, S1) ----------------------------------------------------------
+# --- worktree asks (decision 0008, S1) ----------------------------------------------------------
 # A `--worktree` ask of a headless analyst/reviewer runs in its own detached checkout
 # $WT_HOME/<repo8>/<role>-<id8>. The registry .harness/wt/<ask-id>.json (main root) tracks it;
 # <ask-id>.report.md keeps the collected report after the checkout is removed.
@@ -2558,7 +2558,7 @@ wt_reap() {
       creating) ! wt_entry_live_owner "$f" || continue ;;
       *) continue ;;
     esac
-    # a worktree with a saved patch is never reaped (ADR 0008): it waits for `harness close`
+    # a worktree with a saved patch is never reaped (decision 0008): it waits for `harness close`
     [ ! -s "${f%.json}.patch" ] || continue
     mt=$(file_mtime "$f") || continue
     [ $((now - mt)) -ge $((ttl * 60)) ] || continue

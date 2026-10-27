@@ -1,5 +1,5 @@
 ---
-type: gotcha
+type: troubleshooting
 status: active
 updated: 2026-10-27
 sources: [ask 1792562994-34957-9151, ask 1792565478-50561-31913, commit 174e159, tests/harness-ask.test.sh:44]

@@ -1,5 +1,5 @@
 ---
-type: gotcha
+type: troubleshooting
 status: active
 updated: 2026-10-21
 sources: [https://code.claude.com/docs/en/memory#agents-md]

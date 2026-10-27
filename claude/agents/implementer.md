@@ -79,7 +79,7 @@ status: done | partial | blocked
 - command run → result (tests, lint, manual check)
 ## Open questions
 - ≤ 3 bullets, or "none"
-## Learned
+## Notes
 - (optional, ≤ 2 bullets) a reusable lesson, each citing evidence: ask-id,
   commit, file:line or log. Omit the section if there is none.
 ```

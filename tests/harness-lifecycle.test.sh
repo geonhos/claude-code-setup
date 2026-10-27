@@ -105,7 +105,7 @@ echo '{"idle_ttl_minutes": 60}' > .harness/config.json
 run status
 check "ttl: config lowers ttl" logged "pane close w1:p2"
 
-# default: implementer pane is kept (ADR 0006); config/env on_success closes after ask 0, not after 5
+# default: implementer pane is kept (decision 0006); config/env on_success closes after ask 0, not after 5
 setup
 live_worker implementer idle w1:p2
 export FAKE_PROMPT_HOOK="$(REPORT_HOOK implementer)"
@@ -113,7 +113,7 @@ run ask implementer "do it"
 check "default: ask rc 0" [ "$RC" -eq 0 ]
 check "default: implementer pane kept" not_logged "pane close"
 check "default: config template says never" jqt '.close_after_ask.implementer=="never"' .harness/config.json
-# config migration: untouched pre-ADR-0006 template is rewritten; edited / new files are not
+# config migration: untouched pre-decision-0006 template is rewritten; edited / new files are not
 OLDCFG=$(sed 's/"implementer": "never"/"implementer": "on_success"/' <<'EOC'
 {
   "_doc": "close_after_ask.<role>: never | on_success (close the worker after `harness ask` exits 0; reviewer: 0 or 5). idle_ttl_minutes: close this repo's workers idle longer than N minutes after their last collected report (0 = off). HARNESS_NO_AUTOCLOSE=1 disables both. Env overrides: HARNESS_CLOSE_AFTER_ASK_<ROLE>, HARNESS_IDLE_TTL_MINUTES.",

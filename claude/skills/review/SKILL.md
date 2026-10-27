@@ -4,7 +4,7 @@ description: Conductor only. Delegate judging a diff (a commit range, a branch a
 argument-hint: <commit range | branch | "working tree"> [focus]
 ---
 
-# /review — delegate to the reviewer worker (opus)
+# /review: delegate to the reviewer worker (opus)
 
 If you are a worker session (HARNESS_ROLE=worker, or your system prompt names
 you analyst, implementer, reviewer or solo), ignore this skill and review the
@@ -21,7 +21,7 @@ diff yourself (`harness ask` refuses to run in a worker session anyway).
    - **Intent**: one paragraph on what the change should do, or the path of
      the spec/plan under `docs/`.
    - **Focus**, if any: correctness, tests, docs/code agreement, security.
-   - **Constraints**: read-only — do not fix, do not commit.
+   - **Constraints**: read-only: do not fix, do not commit.
    - **Report**: findings ordered by severity, each with `file:line` and why;
      the **last line must be `VERDICT: PASS` or `VERDICT: FAIL`**.
 2. Run, with the Bash tool timeout raised to 660000 or in the background:
@@ -30,9 +30,9 @@ diff yourself (`harness ask` refuses to run in a worker session anyway).
    harness ask reviewer 'Read .harness/task-reviewer.md and do it.' --via skill
    ```
 
-3. Exit codes: `0` = PASS. `5` = `VERDICT: FAIL` — hand the findings to
+3. Exit codes: `0` = PASS. `5` = `VERDICT: FAIL`: hand the findings to
    `/implement`, then `/review` again; after 2 rounds, ask the user. `3` = no
-   final VERDICT line — ask it to rewrite the report ending with one. Others
+   final VERDICT line, ask it to rewrite the report ending with one. Others
    as in conductor.md.
 4. Relay findings and verdict. Anything the reviewer marks as a judgment call
    goes to the user.

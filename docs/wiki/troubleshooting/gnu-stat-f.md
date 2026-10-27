@@ -1,5 +1,5 @@
 ---
-type: gotcha
+type: troubleshooting
 status: active
 updated: 2026-10-21
 sources: [commit 2e1764a, reviewer report 2026-10-21 (docker alpine coreutils check)]

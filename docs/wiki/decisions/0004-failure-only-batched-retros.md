@@ -5,7 +5,7 @@ updated: 2026-10-21
 sources: [docs/superpowers/plans/2026-10-21-retro-metrics.md, commits d3ff2ec b35120e 4046e75, review of v11]
 verified_by: tests/retro.test.sh
 ---
-# 0004 — Failure-only, batched retros
+# 0004: Failure-only, batched retros
 
 **Decision.** `harness ask`/`report` queue `.harness/retro/<ask-id>.json` only on failure: exit other than 0 and 5 (excluded: exit 1 from a usage error before pre-flight, where nothing ran, and 129/130/143, the wrapper hung up, interrupted or terminated; an exit 1 after pre-flight, such as a failed pane split, `agent start` or a missing harness-verify, does queue), implementer exit 5, implementer verify attempts ≥ 2, or a late report. A reviewer exit 5 (`VERDICT: FAIL`) never queues one: a FAIL is the reviewer doing its job, and the "second consecutive FAIL for the same range" variant needs branch state the harness does not track. `harness retro` sends all pending candidates to the analyst in one ask (`--via retro`, `--fresh`); on exit 0 they move to `.harness/retro/done/`, otherwise they stay, unless the retro's late report (`status: done`) is collected later with `harness report analyst`, which moves the candidates named in `.harness/task-retro.md`. The ask-id is the filename, so a late report updates the same candidate.
 

@@ -1,6 +1,6 @@
 #!/bin/bash
 # The body is one brace group: bash parses the whole file before running any of it, so a
-# tool that rewrites this file in place cannot corrupt a run in progress (wiki: gotchas).
+# tool that rewrites this file in place cannot corrupt a run in progress (wiki: troubleshooting).
 {
 # harness-run <role> <ask-id> <root> — run ONE headless worker ask inside a viewer pane.
 # Started by `harness ask` through `herdr pane run`; not for the conductor (the gate

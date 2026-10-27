@@ -1,5 +1,5 @@
 ---
-type: gotcha
+type: troubleshooting
 status: active
 updated: 2026-10-21
 sources: [session 7ad04a14 (ps eww of claude daemon pid 90516), claude/hooks/conductor-gate.sh:10]
