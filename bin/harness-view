@@ -13,6 +13,13 @@ exec jq -R --unbuffered -r --arg c "$c" '
   def short: (.command // .file_path // .pattern // .url // .description // (. | tostring)) | first_line | cut(120);
   def money: ((.total_cost_usd // 0) * 100 | round) as $n | "\($n / 100 | floor).\(($n % 100) | tostring | if length < 2 then "0" + . else . end)";
   def content_text: if type == "string" then . elif type == "array" then (map(.text? // (. | tostring)) | join(" ")) else (. | tostring) end;
+  # a failed tool result: first line, then (multi-line output, e.g. a failing test run) its last 5 lines
+  def failed_result:
+    (.content // "") | content_text | split("\n") | map(select(test("\\S"))) as $l
+    | "✗ \(($l[0] // "") | cut(200))"
+      + (if ($l | length) > 1 then "\n" + ($l[(if ($l | length) > 6 then -5 else 1 end):] | map("  | " + cut(200)) | join("\n")) else "" end);
+  # a hook that exited 0 can still block with {"decision":"block","reason":...} on stdout
+  def hook_block: ((.stdout // "") | fromjson? | select(type == "object" and .decision == "block") | (.reason // "blocked")) // null;
   fromjson? | try (
     if .type == "system" and .subtype == "init" then
       "▶ \(.model // "?") · session \((.session_id // "") | .[0:8]) · perm \(.permissionMode // "?") · \(.cwd // "")"
@@ -24,9 +31,17 @@ exec jq -R --unbuffered -r --arg c "$c" '
     elif .type == "user" then
       (.message.content // [])[]
       | select(.type == "tool_result" and .is_error == true)
-      | col("31"; "✗ \((.content // "") | content_text | first_line | cut(200))")
+      | col("31"; failed_result)
+    elif .type == "system" and .subtype == "permission_denied" then
+      col("31"; "⛔ denied \(.tool_name // "?"): \(.decision_reason // .message // "" | first_line | cut(160))")
+    elif .type == "system" and .subtype == "hook_started" and .hook_event == "Stop" then
+      "⧗ verify (Stop hook)…"
     elif .type == "system" and .subtype == "hook_response" and ((.exit_code // 0) != 0) then
       "hook \(.hook_name // "?") exit \(.exit_code): \((.stderr // "") | first_line | cut(120))"
+    elif .type == "system" and .subtype == "hook_response" and (hook_block != null) then
+      col("33"; "⟲ \(.hook_event // .hook_name // "hook") block: \(hook_block | first_line | cut(160))")
+    elif .type == "system" and .subtype == "hook_response" and .hook_event == "Stop" then
+      "✓ verify done"
     elif .type == "system" and .subtype == "task_started" then
       "⧗ bg \(.description // "")"
     elif .type == "system" and .subtype == "task_notification" then

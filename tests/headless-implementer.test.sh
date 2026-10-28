@@ -124,5 +124,27 @@ hrun ask analyst "first"
 hrun ask analyst "second"
 check "autoresume: analyst is not auto-resumed" not_logged "--resume"
 
+# 4. harness-view (design §7): verify blocks, Stop start/done, denials, failing-test tails
+vw() { printf '%s\n' "$@" | NO_COLOR=1 PATH="$HERE/../bin:$PATH" /bin/bash "$HERE/../bin/harness-view" 2>&1; }
+OUT=$(vw '{"type":"system","subtype":"hook_started","hook_event":"Stop","hook_name":"Stop"}' \
+  '{"type":"system","subtype":"hook_response","hook_event":"Stop","hook_name":"Stop","exit_code":0,"stdout":"{\"decision\":\"block\",\"reason\":\"Verification failed at step test (attempt 1 of 3)\\nmore\"}"}' \
+  '{"type":"system","subtype":"hook_response","hook_event":"Stop","hook_name":"Stop","exit_code":0,"stdout":""}' \
+  '{"type":"system","subtype":"hook_response","hook_event":"PostToolUse","hook_name":"PostToolUse:Edit","exit_code":0,"stdout":"{\"decision\":\"block\",\"reason\":\"LINT: add END\"}"}' \
+  '{"type":"system","subtype":"permission_denied","tool_name":"Bash","decision_reason":"safetyCheck","message":"m"}' \
+  '{"type":"user","message":{"content":[{"type":"tool_result","is_error":true,"content":"FAIL suite\nl2\nl3\nl4\nl5\nl6\nl7\nfinal line"}]}}' \
+  '{"type":"user","message":{"content":[{"type":"tool_result","is_error":true,"content":"single"}]}}')
+check "view: Stop hook start line" grep -q '⧗ verify (Stop hook)' <<<"$OUT"
+check "view: Stop block reason (exit 0)" grep -q '⟲ Stop block: Verification failed at step test (attempt 1 of 3)' <<<"$OUT"
+check "view: Stop block shows only the first reason line" not_grep "more" <(printf '%s' "$OUT")
+check "view: Stop done line" grep -q '✓ verify done' <<<"$OUT"
+check "view: PostToolUse block" grep -q '⟲ PostToolUse block: LINT: add END' <<<"$OUT"
+check "view: permission_denied" grep -q '⛔ denied Bash: safetyCheck' <<<"$OUT"
+check "view: failed result keeps the tail" grep -q '| final line' <<<"$OUT"
+check "view: failed result drops the middle" not_grep "| l3" <(printf '%s' "$OUT")
+check "view: failed result first line kept" grep -q '✗ FAIL suite' <<<"$OUT"
+check "view: single-line failure unchanged" grep -qx '✗ single' <<<"$OUT"
+OUT=$(vw 'not json' '{"type":"system","subtype":"hook_response","hook_event":"Stop","exit_code":0,"stdout":"not json"}' '{"type":"system","subtype":"hook_response","hook_event":"Stop","exit_code":2,"stderr":"boom"}')
+check "view: odd hook stdout still never fails" grep -q 'hook .* exit 2: boom' <<<"$OUT"
+
 echo "PASS $pass / FAIL $fail"
 [ "$fail" -eq 0 ]
