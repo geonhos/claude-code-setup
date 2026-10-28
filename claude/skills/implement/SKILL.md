@@ -31,6 +31,7 @@ change yourself (`harness ask` refuses to run in a worker session anyway).
    Why: harness waits 1740000 ms (29 min) for the implementer by default (p95 is above the 600000 analyst/reviewer wait), so no `--timeout` is needed; the Bash foreground cap is 1800000, which must be raised to cover it.
 
    Use `--keep` only for a follow-up that needs its previous conversation. The implementer pane is kept between asks (decision 0006; context is cleared with /clear before every implementer ask, `--keep` skips that). It closes after an exit-0 ask only if `close_after_ask.implementer` is `on_success`; the idle TTL still reaps it.
+   With `runner.implementer: headless` there is no `/clear`: a fresh session starts every ask, except that an implementer whose last ask exited non-zero resumes its session automatically (`--fresh` starts clean). Exit 2 there means a tool call was denied and no report was written: re-ask with a changed brief.
 3. Handle the exit code as conductor.md's "Exit codes from `harness ask`"
    section says. In particular `5` means its lint/test checks failed after
    retries: send the printed failure back with another `/implement` (its

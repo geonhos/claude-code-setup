@@ -38,5 +38,6 @@ Read this first. Open a page only when it is relevant. Schema and promotion rule
 - [0004 Failure-only retros](decisions/0004-failure-only-batched-retros.md): queue on failure, one batched analyst ask, reviewer FAIL never queues (active, 2026-10-21)
 - [0005 Gate only inside herdr](decisions/0005-gate-only-inside-herdr.md): `HERDR_ENV`≠1 allows; unparseable input denies; global conductor kept; agent_type keys the gate (active, 2026-10-28)
 - [0006 Keep implementer pane](decisions/0006-keep-implementer-pane.md): `close_after_ask.implementer` default `never`; idle TTL still reaps (active, 2026-10-27)
-- [0007 Headless runner pilot](decisions/0007-headless-runner-pilot.md): `runner.<role>: headless` = `claude -p` in a viewer pane; completion = exit file (active, 2026-10-27)
+- [0007 Headless runner pilot](decisions/0007-headless-runner-pilot.md): `runner.<role>: headless` = `claude -p` in a viewer pane; completion = exit file (active, 2026-10-28)
 - [0008 Worktree per ask](decisions/0008-worktree-per-ask.md): `ask --worktree` gives a headless analyst/reviewer its own detached checkout; ask-id addressing (active, 2026-10-23)
+- [0009 Headless implementer](decisions/0009-headless-implementer.md): headless implementer: pinned permissions, exit 2 on denials, auto-resume after non-zero exit, 90 min cap (active, 2026-10-28)

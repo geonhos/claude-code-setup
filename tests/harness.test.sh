@@ -670,5 +670,8 @@ check "config template close_after_ask keys = roles" [ "$(printf '%s' "$TPL" | j
 check "config template close_after_ask values = default" [ "$(printf '%s' "$TPL" | jq -r '[.close_after_ask[]] | unique | join(" ")')" = "$(dv HARNESS_CLOSE_AFTER_DEFAULT)" ]
 check "metrics --json lists every role" bash -c 'cd "$1" && HERDR_ENV=1 "$2" metrics --json | jq -e ".current.roles | keys == [\"analyst\",\"implementer\",\"reviewer\"]" >/dev/null' _ "$WORK" "$HARNESS"
 
+check "_defaults: headless cap implementer 90 min, others 60" bash -c '[ "$1" = 5400 ] && [ "$2" = 3600 ]' _ "$(dv HARNESS_HL_MAX_S_IMPLEMENTER_DEFAULT)" "$(dv HARNESS_HL_MAX_S_DEFAULT)"
+check "README quotes the headless caps (60 / 90 min)" bash -c 'grep -q "headless_max_minutes" "$1" && grep -q "implementer 90" "$1"' _ "$HERE/../README.md"
+
 echo "PASS $pass / FAIL $fail"
 [ "$fail" -eq 0 ]
