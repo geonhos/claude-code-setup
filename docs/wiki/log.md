@@ -22,3 +22,4 @@
 - 2026-10-27 · implementer · wiki cleanup · reviewer.md: new tests must fail on base (3 recurrences)
 - 2026-10-27 · implementer · wording rename · gotchas/ → troubleshooting/, runbooks/ → how-to/, ADR → decision, report `## Learned` → `## Notes` (old heading still parsed), index lines use ": " (old links on GitHub do not redirect)
 - 2026-10-28 · implementer · v20 · spawn retries agent_pane_busy (HARNESS_SPAWN_RETRIES); ask log ignores a report older than the ask and keeps stderr under ## Errors; worktree test 26 uses a start barrier
+- 2026-10-28 · implementer · time-budget rule added to worker prompts (retro 2026-10-28, 5 recurrences)
