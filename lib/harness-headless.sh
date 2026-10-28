@@ -150,12 +150,6 @@ hl_collect() {
     fi
     finish_report "$role" "$report" "${pane:--}"
   fi
-  # permissions blocked the worker and it wrote nothing: there is no answer to relay (exit 2)
-  if [ -n "$denied" ] && [ -z "$killed" ] && [ -n "$tinit" ]; then
-    printf 'harness: %s was denied %s tool call(s) and wrote no report; nothing to answer. Re-ask with a changed brief:\n%s\n' \
-      "$role" "$(grep -c . <<<"$denied")" "$denied"
-    hl_view_tail "$pane"; exit 2
-  fi
   if [ "$res" = error_max_turns ]; then
     echo "harness: $role stopped at the max-turns limit without a report; continue with: harness ask $role '...' --keep"
     hl_view_tail "$pane"; exit 3
@@ -174,14 +168,54 @@ hl_collect() {
     tail -n 20 "$ASK_DIR/$role.err" 2>/dev/null
     hl_view_tail "$pane"; exit 3
   fi
+  # permissions blocked the worker and it wrote nothing: there is no answer to relay (exit 2), only when the run ended without errors
+  if [ -n "$denied" ] && [ -z "$killed" ] && [ -n "$tinit" ]; then
+    printf 'harness: %s was denied %s tool call(s) and wrote no report; nothing to answer. Re-ask with a changed brief:\n%s\n' \
+      "$role" "$(grep -c . <<<"$denied")" "$denied"
+    hl_view_tail "$pane"; exit 2
+  fi
   echo "harness: $role finished without a report at $report; collect: harness report $(ask_ref "$role")"
   hl_view_tail "$pane"; exit 3
 }
 hl_view_tail() { [ -z "${1:-}" ] || herdr pane read "$1" 2>/dev/null | tail -n 30; return 0; }
 
+# hl_launch <role> <id> <pane> <resume> <max_s> <ctxb> <start_s> <poll> — write the run file, start
+# harness-run in the pane and wait for its pid file; exits 1 when the pane never starts it
+hl_launch() {
+  local role=$1 id=$2 pane=$3 resume=$4 max_s=$5 ctxb=$6 start_s=$7 poll=$8 a="$ASK_DIR/$1" s0
+  rm -f "$a.finished" "$a.exit.json" "$a.pid"
+  printf 'resume=%s\nmax_s=%s\nctx_before=%s\n' "$resume" "$max_s" "$ctxb" > "$a.run"
+  # a worktree ask streams into the main checkout's log dir, tagged with its id8
+  [ -z "$ASK_WT" ] || printf 'log_dir=%s\nlog_tag=%s\n' "$(pwd -P)/.harness/log" "$ASK_ID8" >> "$a.run"
+  if ! herdr pane run "$pane" "$(printf 'harness-run %q %q %q' "$role" "$id" "${ASK_WT:-$(pwd -P)}")" >/dev/null 2>&1; then
+    echo "harness: pane run failed for $pane" >&2
+    exit 1
+  fi
+  # the run announces itself with its pid file; a pane whose shell is busy never does
+  s0=$(date +%s)
+  until grep -q "^$id " "$a.pid" 2>/dev/null || hl_done "$role" "$id"; do
+    if [ $(( $(date +%s) - s0 )) -ge "$start_s" ]; then
+      echo "harness: $role's run did not start in $start_s s (is the pane $pane at a shell prompt?)" >&2
+      show_pane_screen "$pane"
+      exit 1
+    fi
+    sleep "$poll"
+  done
+}
+# hl_resume_missing <role> — the finished run was a --resume that produced no init event because
+# claude could not find the conversation (real claude: result-only stream, error_during_execution)
+hl_resume_missing() {
+  local role=$1 a="$ASK_DIR/$1" raw
+  [ -n "$(sed -n 's/^resume=//p' "$a.run" 2>/dev/null | head -n 1)" ] || return 1
+  [ -z "$(jq -r '.t_init // empty' "$a.exit.json" 2>/dev/null)" ] || return 1
+  raw=$(jq -r '.stream_log // empty' "$a.exit.json" 2>/dev/null)
+  grep -qi 'no conversation found' "$a.err" 2>/dev/null && return 0
+  [ -z "$raw" ] || grep -qi 'no conversation found' "$raw" 2>/dev/null
+}
+
 # ask_headless <role> <text> <timeout-ms> <fresh> <keep> — the whole headless ask; always exits
 ask_headless() {
-  local role=$1 text=$2 timeout=$3 fresh=$4 keep=$5 pane id start resume="" sid max_s ctxb="" report="$REPORT_DIR/$1.md" last
+  local role=$1 text=$2 timeout=$3 fresh=$4 keep=$5 pane id start retried resume="" sid max_s ctxb="" report="$REPORT_DIR/$1.md" last
   local a="$ASK_DIR/$role" now deadline poll=${HARNESS_POLL_SEC:-2} start_s=${HARNESS_HL_START_S:-15} s0 g
   mkdir -p "$ASK_DIR" .harness/done "$REPORT_DIR" "$LOG_DIR"
   if hl_alive "$role"; then
@@ -231,30 +265,25 @@ ask_headless() {
   max_s=${HARNESS_HL_MAX_S:-}
   digits_only "$max_s" || { max_s=$(jq -r '.headless_max_minutes // empty' "$CONFIG_FILE" 2>/dev/null); digits_only "$max_s" && max_s=$((max_s * 60)) || { max_s=$HARNESS_HL_MAX_S_DEFAULT; [ "$role" != implementer ] || max_s=$HARNESS_HL_MAX_S_IMPLEMENTER_DEFAULT; }; }
   printf '%s\n' "$text" > "$a.prompt"
-  printf 'resume=%s\nmax_s=%s\nctx_before=%s\n' "$resume" "$max_s" "$ctxb" > "$a.run"
-  # a worktree ask streams into the main checkout's log dir, tagged with its id8
-  [ -z "$ASK_WT" ] || printf 'log_dir=%s\nlog_tag=%s\n' "$(pwd -P)/.harness/log" "$ASK_ID8" >> "$a.run"
-  if ! herdr pane run "$pane" "$(printf 'harness-run %q %q %q' "$role" "$id" "${ASK_WT:-$(pwd -P)}")" >/dev/null 2>&1; then
-    echo "harness: pane run failed for $pane" >&2
-    exit 1
-  fi
-  # the run announces itself with its pid file; a pane whose shell is busy never does
-  s0=$(date +%s)
-  until grep -q "^$id " "$a.pid" 2>/dev/null || hl_done "$role" "$id"; do
-    if [ $(( $(date +%s) - s0 )) -ge "$start_s" ]; then
-      echo "harness: $role's run did not start in $start_s s (is the pane $pane at a shell prompt?)" >&2
-      show_pane_screen "$pane"
-      exit 1
-    fi
-    sleep "$poll"
-  done
+  hl_launch "$role" "$id" "$pane" "$resume" "$max_s" "$ctxb" "$start_s" "$poll"
   deadline=$((start + (timeout + 999) / 1000))
+  retried=0
   while :; do
-    if hl_done "$role" "$id"; then hl_collect "$role"; fi
+    if hl_done "$role" "$id"; then
+      if [ "$retried" = 0 ] && hl_resume_missing "$role"; then
+        # the session is gone: one fresh run in the same ask; the dead sid must not stay the resume target
+        retried=1
+        echo "harness: resume of ${resume:0:8} failed, running fresh" >&2
+        resume=""; ctxb=""
+        hl_launch "$role" "$id" "$pane" "" "$max_s" "" "$start_s" "$poll"
+        continue
+      fi
+      hl_collect "$role"
+    fi
     if ! hl_alive "$role"; then
       # the runner may still be writing exit.json (jq, mv) as its pid disappears: give it ~3 s
       g=0; while [ "$g" -lt 30 ] && ! hl_done "$role" "$id"; do sleep 0.1; g=$((g + 1)); done
-      if hl_done "$role" "$id"; then hl_collect "$role"; fi
+      if hl_done "$role" "$id"; then continue; fi
       sid=$(sed -n 1p "$a.session" 2>/dev/null | cut -c1-8)
       if [ -n "$sid" ]; then
         echo "harness: $role's run is gone without a result (killed?); --keep resumes session $sid"

@@ -2,6 +2,7 @@
 # Fake `claude -p` for tests/headless.test.sh. Not a real client.
 # $FAKE_CLAUDE_MODE: success|noreport|error|maxturns|slow<N>|hang|hangterm|hangpre|nostart|junk
 # $FAKE_CLAUDE_DENY=1 emits a permission_denied event + result denial (default none).
+# $FAKE_CLAUDE_RESUME_MISSING=1: a --resume run fails like an unknown session (no init, rc 1).
 # $FAKE_PERM sets init permissionMode (default auto). hangpre sleeps before any output.
 #   success   init + tool_use + result success; writes the report via $FAKE_REPORT_CMD
 #   noreport  like success, no report      error  result is_error (rc 1)
@@ -23,6 +24,11 @@ sid=sess-$n
 resume=""; prev=""
 for a in "$@"; do [ "$prev" != --resume ] || resume=$a; prev=$a; done
 [ -z "$resume" ] || sid=$resume
+if [ -n "$resume" ] && [ "${FAKE_CLAUDE_RESUME_MISSING:-}" = 1 ]; then   # real claude 2.1.312: result-only stream, rc 1
+  echo "No conversation found with session ID: $resume" >&2
+  printf '%s\n' '{"type":"result","subtype":"error_during_execution","is_error":true,"errors":["No conversation found with session ID: '"$resume"'"],"session_id":"'"$sid"'","permission_denials":[]}'
+  exit 1
+fi
 [ "$mode" != hangterm ] || { trap '' TERM; while :; do sleep 0.1; done; }   # ignores TERM: only KILL stops it
 [ "$mode" != hangpre ] || { trap 'exit 143' TERM; while :; do sleep 0.1; done; }
 ev() { printf '%s\n' "$1"; }

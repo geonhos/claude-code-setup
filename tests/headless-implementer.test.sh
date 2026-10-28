@@ -118,6 +118,31 @@ hrun ask implementer "second" --fresh
 check "autoresume: --fresh overrides" not_logged "--resume"
 check "autoresume: --fresh progress not resumed" jqt '(.resumed // false) == false' <<<"$(lastprog)"
 
+# 3b. a resume of a session claude no longer knows: one fresh retry in the same ask
+isetup
+export FAKE_REPORT_CMD=$(failcmd)
+hrun ask implementer "first"
+export FAKE_REPORT_CMD="mkdir -p $WORK/.harness/reports && printf '# implementer report\nstatus: done\n' > $WORK/.harness/reports/implementer.md"
+export FAKE_CLAUDE_RESUME_MISSING=1
+hrun ask implementer "second"
+unset FAKE_CLAUDE_RESUME_MISSING
+check "resume missing: fresh retry succeeds, rc 0" [ "$RC" -eq 0 ]
+check "resume missing: first attempt did resume" logged "--resume sess-1"
+check "resume missing: second attempt ran fresh" test "$(grep -c '^claude: ' "$FAKE_LOG")" = 3
+check "resume missing: stderr line" grep -q 'resume of sess-1 failed, running fresh' <<<"$OUT"
+check "resume missing: report relayed" grep -q "implementer report" <<<"$OUT"
+check "resume missing: progress resume:false, not resumed" jqt '.resume == false and (.resumed // false) == false and .exit == 0' <<<"$(lastprog)"
+check "resume missing: session no longer the dead one" jqt '.session != "sess-1" and .session != ""' <<<"$(lastprog)"
+
+# 3c. error branches win over the denial branch (exit 3 with the --keep hint, not 2)
+isetup; export FAKE_CLAUDE_MODE=maxturns FAKE_CLAUDE_DENY=1
+hrun ask implementer "q"
+check "denial + max_turns: rc 3" [ "$RC" -eq 3 ]
+check "denial + max_turns: --keep hint" grep -q -- '--keep' <<<"$OUT"
+isetup; export FAKE_CLAUDE_MODE=error FAKE_CLAUDE_DENY=1
+hrun ask implementer "q"
+check "denial + error result: rc 3" [ "$RC" -eq 3 ]
+
 isetup
 export FAKE_REPORT_CMD=$(failcmd)
 hrun ask analyst "first"
