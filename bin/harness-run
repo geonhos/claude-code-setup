@@ -44,6 +44,9 @@ case "$max_s" in ''|*[!0-9]*) max_s=3600 ;; esac
 # job control: the background pipeline becomes its own process group (pgid == its pid), which
 # is what the watchdog reaps after a SIGKILLed runner
 set -m
+# the implementer runner pins its permissions (decision 0009): auto mode, and nothing may wait for a host
+pflags=""
+[ "$role" != implementer ] || pflags="--permission-mode auto --permission-prompts none"
 kill_tree() {
   local c
   for c in $(pgrep -P "$1" 2>/dev/null); do kill_tree "$c"; done
@@ -69,7 +72,7 @@ trap on_signal TERM INT HUP
 (
   trap '' TTOU TTIN
   { claude -p --agent "$role" --output-format stream-json --verbose --include-hook-events \
-      --disallowedTools=AskUserQuestion ${resume:+--resume "$resume"} < "$prompt" 2> "$errf"
+      --disallowedTools=AskUserQuestion $pflags ${resume:+--resume "$resume"} < "$prompt" 2> "$errf"
     echo $? > "$rcf"; } \
   | awk -v raw="$raw" -v ti="$tinit" -v sf="$sessf" -v hrid="$role:$id" '
       { print > raw; fflush(raw) }
@@ -142,12 +145,20 @@ jq -R -n -c --arg id "$id" --argjson rc "$rc" --arg killed "$killed" --arg raw "
   | ([$e[] | select(.type == "system" and .subtype == "init")] | first) as $init
   | ([$e[] | select(.type == "result")] | last) as $r
   | ([$e[] | select(.type == "assistant") | .message.usage?] | map(select(. != null)) | last) as $u
+  | ([$e[] | select(.type == "system" and .subtype == "permission_denied")] | map(
+        {tool: (.tool_name // "?"), input: ((.tool_input.command? // .tool_input.file_path? // .message // "") | tostring | split("\n")[0] | .[0:120]),
+         reason: (.decision_reason // .message // "")})) as $dev
+  | (if ($dev | length) > 0 then $dev
+     else ((($r.permission_denials // []) | map(
+        {tool: (.tool_name // "?"), input: ((.tool_input.command? // .tool_input.file_path? // "") | tostring | split("\n")[0] | .[0:120]), reason: ""})))
+     end) as $den
   | {ask_id: $id, rc: $rc,
      result: ($r.subtype // null), is_error: ($r.is_error // null),
      num_turns: ($r.num_turns // null), cost_usd: ($r.total_cost_usd // null),
      duration_ms: ($r.duration_ms // null),
      session_id: ($init.session_id // $r.session_id // null),
      denials: (if $r then (($r.permission_denials // []) | length) else null end),
+     denied: $den,
      perm: ($init.permissionMode // null),
      killed: (if $killed == "" then null else $killed end),
      stream_log: $raw,

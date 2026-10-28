@@ -1,6 +1,7 @@
 #!/bin/bash
 # Fake `claude -p` for tests/headless.test.sh. Not a real client.
 # $FAKE_CLAUDE_MODE: success|noreport|error|maxturns|slow<N>|hang|hangterm|hangpre|nostart|junk
+# $FAKE_CLAUDE_DENY=1 emits a permission_denied event + result denial (default none).
 # $FAKE_PERM sets init permissionMode (default auto). hangpre sleeps before any output.
 #   success   init + tool_use + result success; writes the report via $FAKE_REPORT_CMD
 #   noreport  like success, no report      error  result is_error (rc 1)
@@ -28,8 +29,13 @@ ev() { printf '%s\n' "$1"; }
 ev '{"type":"system","subtype":"hook_started","hook_event":"Stop","hook_name":"Stop"}'
 ev '{"type":"system","subtype":"init","model":"fake-model","permissionMode":"'"${FAKE_PERM:-auto}"'","cwd":"'"$PWD"'","session_id":"'"$sid"'"}'
 ev '{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Bash","input":{"command":"echo hi"}}],"usage":{"input_tokens":10,"cache_creation_input_tokens":20,"cache_read_input_tokens":30}},"session_id":"'"$sid"'"}'
-result() { # subtype is_error
-  ev '{"type":"result","subtype":"'"$1"'","is_error":'"$2"',"num_turns":3,"duration_ms":1500,"total_cost_usd":0.0123,"session_id":"'"$sid"'","permission_denials":[{"tool_name":"Bash"}]}'
+result() { # subtype is_error — FAKE_CLAUDE_DENY=1 adds one permission_denied event + a result denial
+  local den='[]'
+  if [ "${FAKE_CLAUDE_DENY:-}" = 1 ]; then
+    den='[{"tool_name":"Bash","tool_input":{"command":"rm -rf /tmp/x\nsecond line"}}]'
+    ev '{"type":"system","subtype":"permission_denied","tool_name":"Bash","tool_input":{"command":"rm -rf /tmp/x\nsecond line"},"decision_reason":"safetyCheck","message":"denied by safety check","session_id":"'"$sid"'"}'
+  fi
+  ev '{"type":"result","subtype":"'"$1"'","is_error":'"$2"',"num_turns":3,"duration_ms":1500,"total_cost_usd":0.0123,"session_id":"'"$sid"'","permission_denials":'"$den"'}'
 }
 case "$mode" in
   hang) trap 'exit 143' TERM; while :; do sleep 0.1; done ;;

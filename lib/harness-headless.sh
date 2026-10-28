@@ -124,7 +124,7 @@ hl_status_line() {
 # First match wins (spec §3). Never returns.
 hl_collect() {
   local role=$1 ej="$ASK_DIR/$1.exit.json" report="$REPORT_DIR/$1.md" cur="$ASK_DIR/$1.current"
-  local rc res iserr killed sid tinit pane perm ejc
+  local rc res iserr killed sid tinit pane perm ejc denied
   ejc=$(cat "$ej" 2>/dev/null)   # one read: a racing close removes the checkout under us
   rc=$(jq -r '.rc // empty' <<<"$ejc" 2>/dev/null); res=$(jq -r '.result // empty' <<<"$ejc" 2>/dev/null)
   iserr=$(jq -r '.is_error // false' <<<"$ejc" 2>/dev/null); killed=$(jq -r '.killed // empty' <<<"$ejc" 2>/dev/null)
@@ -140,12 +140,20 @@ hl_collect() {
   if [ -n "$perm" ] && [ "$perm" != auto ]; then
     echo "harness: warning: $role ran with permission mode '$perm', not auto; tools may have been denied (see the viewer pane)" >&2
   fi
+  denied=$(jq -r '(.denied // [])[] | "  - \(.tool): \(.input)\(if (.reason // "") != "" then " (" + .reason + ")" else "" end)"' <<<"$ejc" 2>/dev/null)
   restore_interrupted "$role" "$report"
   if [ -f "$report" ] && { [ ! -f "$cur" ] || [ ! "$report" -ot "$cur" ]; }; then
+    [ -z "$denied" ] || printf 'harness: note: %s denied tool call(s):\n%s\n' "$(grep -c . <<<"$denied")" "$denied" >&2
     if { [ -n "$rc" ] && [ "$rc" != 0 ]; } || [ "$iserr" = true ]; then
       echo "harness: note: $role's run ended with ${res:-no result} (rc ${rc:-?}) but wrote a report" >&2
     fi
     finish_report "$role" "$report" "${pane:--}"
+  fi
+  # permissions blocked the worker and it wrote nothing: there is no answer to relay (exit 2)
+  if [ -n "$denied" ] && [ -z "$killed" ] && [ -n "$tinit" ]; then
+    printf 'harness: %s was denied %s tool call(s) and wrote no report; nothing to answer. Re-ask with a changed brief:\n%s\n' \
+      "$role" "$(grep -c . <<<"$denied")" "$denied"
+    hl_view_tail "$pane"; exit 2
   fi
   if [ "$res" = error_max_turns ]; then
     echo "harness: $role stopped at the max-turns limit without a report; continue with: harness ask $role '...' --keep"
