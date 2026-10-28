@@ -1,0 +1,61 @@
+# Gate regression list: one probe per line, "deny<TAB>command" or "allow<TAB>command".
+# Every deny probe must stay denied through any gate refactor (v21 gate shrink).
+deny	gh run view 1 --log
+deny	gh gist view x
+deny	gh repo clone o/r
+deny	gh pr checkout 1
+deny	gh -R o/r api repos
+deny	gh api repos/o/r
+deny	gh pr diff 1
+deny	git branch tmpx
+deny	git branch -f tmpx HEAD
+deny	ls -R
+deny	ls -R docs
+deny	git diff
+deny	git show HEAD
+deny	git show HEAD:bin/harness
+deny	git log -p
+deny	git status -v
+deny	git status -vv
+deny	git status --verbose
+deny	git log -Gsecret
+deny	git log -S foo
+allow	git status -sb
+deny	git diff --stat --output=x
+deny	git checkout main
+deny	git reset --hard
+deny	cat bin/harness
+deny	cat .harness/../bin/harness
+deny	cat .harness/log/x.jsonl
+deny	harness status; cat bin/harness
+deny	harness status && touch x
+deny	harness status | sh
+deny	echo $(cat bin/harness)
+deny	echo `cat bin/harness`
+deny	harness status > docs/x.md
+deny	harness ask implementer "$(cat bin/harness)"
+deny	jq . bin/harness
+deny	jq --rawfile x bin/harness -n '$x'
+deny	herdr pane run 1 ls
+deny	herdr pane read 1
+deny	herdr agent prompt x hi
+deny	python3 -c 1
+deny	sed -n 1p bin/harness
+allow	harness status
+allow	git log --oneline -3
+allow	gh pr view 30
+allow	cat .harness/progress.md
+allow	ls docs
+deny	git status && harness status
+deny	herdr agent get a 2>&1
+deny	herdr agent list | jq .result
+deny	harness status & harness status
+deny	cat docs/a.md # x
+deny	herdr status
+deny	herdr pane list
+deny	git show --stat HEAD
+deny	git branch --list feat
+deny	gh issue view 3
+deny	gh run list
+deny	gh pr status
+deny	gh repo view

@@ -90,6 +90,23 @@ expect allow $W "worker: Read src"        "$(tool Read  '{"file_path":"/repo/src
 expect allow $W "worker: Agent"           "$(tool Agent '{"prompt":"x"}')"
 expect allow $W "worker: Bash rm"         "$(bcmd 'rm -rf build')"
 
+# --- agent_type keying (v21): the hook input's agent decides, not the env ---
+# as_agent AGENT JSON -> JSON with agent_type set
+as_agent() { printf '%s' "$2" | jq -c --arg a "$1" '. + {agent_type:$a}'; }
+RM=$(bcmd 'rm -rf build')
+expect deny  $C "agent conductor: Bash rm"                "$(as_agent conductor "$RM")"
+expect deny  $W "agent conductor beats HARNESS_ROLE=worker" "$(as_agent conductor "$RM")"
+expect allow $C "agent analyst allowed"                   "$(as_agent analyst "$RM")"
+expect allow $C "agent implementer allowed"               "$(as_agent implementer "$RM")"
+expect allow $W "agent solo + worker env allowed"         "$(as_agent solo "$RM")"
+expect deny  $C "no agent_type, conductor env: gated"     "$RM"
+expect allow $W "no agent_type, worker env: allowed"      "$RM"
+as_sub() { printf '%s' "$2" | jq -c --arg a "$1" '. + {agent_type:$a, agent_id:"sub1"}'; }
+expect deny  $C "subagent (agent_id) of conductor, conductor env: gated" "$(as_sub conductor "$RM")"
+expect deny  $C "subagent (agent_id) other type, conductor env: gated"   "$(as_sub analyst "$RM")"
+expect allow $W "subagent (agent_id), worker env: allowed"               "$(as_sub conductor "$RM")"
+expect deny  $C "agent_type but no tool_name"             '{"agent_type":"analyst","tool_input":{}}'
+
 # --- Edit / Write / NotebookEdit -------------------------------------------
 expect deny  $C "Edit src abs"            "$(tool Edit  '{"file_path":"/repo/src/a.ts","old_string":"a","new_string":"b"}')"
 expect deny  $C "Edit src rel"            "$(tool Edit  '{"file_path":"src/a.ts","old_string":"a","new_string":"b"}')"
@@ -102,7 +119,6 @@ expect deny  $C "Write outside cwd"       "$(tool Write '{"file_path":"/etc/host
 expect deny  $C "Write dotdot"            "$(tool Write '{"file_path":"docs/../src/a.md","content":"x"}')"
 expect deny  $C "Write empty path"        "$(tool Write '{"content":"x"}')"
 expect allow $C "cwd trailing slash"      "$(jq -n -c '{tool_name:"Write",tool_input:{file_path:"/repo/docs/a.md",content:"x"},cwd:"/repo/"}')"
-expect deny  $C "NotebookEdit"            "$(tool NotebookEdit '{"notebook_path":"/repo/nb.ipynb","new_source":"x"}')"
 
 # --- Read / Grep / Glob ------------------------------------------------------
 expect deny  $C "Read src"                "$(tool Read '{"file_path":"/repo/src/a.ts"}')"
@@ -139,10 +155,6 @@ expect allow $C "Glob docs pattern no path"     "$(tool Glob '{"pattern":"docs/*
 expect allow $C "Glob .harness pattern no path" "$(tool Glob '{"pattern":".harness/reports/*.md"}')"
 expect deny  $C "Glob src pattern no path"      "$(tool Glob '{"pattern":"src/**"}')"
 
-# --- Agent / Workflow --------------------------------------------------------
-expect deny  $C "Agent"                   "$(tool Agent    '{"prompt":"x","description":"y"}')"
-expect deny  $C "Workflow"                "$(tool Workflow '{"script":"x"}')"
-expect deny  $C "Monitor"                 "$(tool Monitor '{"command":"tail -f src/a.log"}')"
 
 # --- Bash: allowlist ---------------------------------------------------------
 expect allow $C "bash harness ask"        "$(bcmd 'harness ask analyst "what is this"')"
@@ -157,8 +169,11 @@ expect deny  $C "bash cd"                 "$(bcmd 'cd src && ls')"
 expect deny  $C "bash empty"              "$(tool Bash '{}')"   # missing command field: bcmd cannot build this
 expect deny  $C "bash only separator"     "$(bcmd ';')"
 expect allow $C "bash herdr agent get"    "$(bcmd 'herdr agent get analyst')"
-expect allow $C "bash herdr pane layout"  "$(bcmd 'herdr pane layout --pane w1:p1')"
-expect allow $C "bash herdr status"       "$(bcmd 'herdr status')"
+expect allow $C "bash herdr agent wait"   "$(bcmd 'herdr agent wait analyst --timeout 600')"
+expect allow $C "bash herdr pane current" "$(bcmd 'herdr pane current')"
+expect allow $C "bash herdr pane get"     "$(bcmd 'herdr pane get w1:p2')"
+expect allow $C "bash git branch -a"      "$(bcmd 'git branch -a')"
+expect allow $C "bash gh pr merge"        "$(bcmd 'gh pr merge 30 --squash')"
 expect deny  $C "bash herdr pane run"     "$(bcmd 'herdr pane run w1:p2 "npm test"')"
 expect deny  $C "bash herdr send-keys"    "$(bcmd 'herdr agent send-keys analyst esc')"
 expect deny  $C "bash herdr prompt"       "$(bcmd 'herdr agent prompt analyst "x"')"
@@ -174,7 +189,7 @@ expect deny  $C "bash gh alias"           "$(bcmd "gh alias set x '!sh -c id'")"
 expect deny  $C "bash gh extension"       "$(bcmd 'gh extension install o/r')"
 
 # --- Bash: separators --------------------------------------------------------
-expect allow $C "bash compound ok"        "$(bcmd 'git status && harness status')"
+expect deny  $C "bash compound denied"        "$(bcmd 'git status && harness status')"
 expect deny  $C "bash compound bad"       "$(bcmd 'git status && npm test')"
 expect deny  $C "bash single &"           "$(bcmd 'git status & npm test')"
 expect deny  $C "bash single & nospace"   "$(bcmd 'harness status &rm -rf src')"
@@ -206,29 +221,15 @@ expect deny  $C "bash dq escaped \$("    "$(bcmd 'harness ask analyst "cost \$(x
 # --- Bash: redirects ---------------------------------------------------------
 expect deny  $C "bash redirect"           "$(bcmd 'git status > out.txt')"
 expect deny  $C "bash here-string"        "$(bcmd 'jq . <<< x')"
-expect allow $C "bash 2>&1 end"           "$(bcmd 'herdr agent get analyst 2>&1')"
-expect allow $C "bash 2>&1 pipe"          "$(bcmd 'herdr agent get analyst 2>&1 | jq .result')"
+expect deny  $C "bash 2>&1 end denied"           "$(bcmd 'herdr agent get analyst 2>&1')"
+expect deny  $C "bash 2>&1 pipe denied"          "$(bcmd 'herdr agent get analyst 2>&1 | jq .result')"
 expect deny  $C "bash 2>&1 glued file"    "$(bcmd 'cat .harness/x2>&1src')"
 expect deny  $C "bash 2>&1 glued tail"    "$(bcmd 'harness status 2>&1x')"
 
-# --- Bash: jq ----------------------------------------------------------------
-expect allow $C "bash jq piped"           "$(bcmd 'herdr agent list | jq .result')"
-expect allow $C "bash jq quoted filter"   "$(bcmd "herdr agent list | jq -r '.result.agents[].pane_id'")"
+# --- Bash: jq is not on the allowlist (pipes are denied outright) ----------------------------------------------------------------
+expect deny  $C "bash jq pipe denied"           "$(bcmd 'herdr agent list | jq .result')"
+expect deny  $C "bash jq quoted pipe denied"   "$(bcmd "herdr agent list | jq -r '.result.agents[].pane_id'")"
 expect deny  $C "bash jq first"           "$(bcmd 'jq . src/secret.json')"
-expect deny  $C "bash jq piped file"      "$(bcmd 'herdr agent list | jq -r . src/a.ts')"
-expect deny  $C "bash jq piped qfile"     "$(bcmd 'herdr agent list | jq -r . "src/a.ts"')"
-expect deny  $C "bash jq quoted slash"    "$(bcmd 'herdr x | jq "./a"')"
-expect deny  $C "bash jq glob"            "$(bcmd 'herdr x | jq *')"
-expect deny  $C "bash jq -f quoted path"  "$(bcmd 'herdr x | jq -f "src/a.ts"')"
-expect deny  $C "bash jq -f"              "$(bcmd 'herdr x | jq -f a.jq')"
-expect deny  $C "bash jq -rf"             "$(bcmd 'herdr x | jq -rf a.jq')"
-expect deny  $C "bash jq -L"              "$(bcmd 'herdr x | jq -L lib .')"
-expect deny  $C "bash jq --rawfile path"  "$(bcmd 'herdr x | jq --rawfile a src/a.ts .')"
-expect deny  $C "bash jq --rawfile"       "$(bcmd 'herdr x | jq --rawfile a a.ts .')"
-expect deny  $C "bash jq --slurpfile"     "$(bcmd 'herdr x | jq --slurpfile a a.json')"
-expect deny  $C "bash jq --args"          "$(bcmd 'herdr x | jq --args . a')"
-expect deny  $C "bash jq env"             "$(bcmd 'herdr x | jq -n env')"
-expect deny  $C "bash jq \$ENV"           "$(bcmd "herdr x | jq -n '\$ENV'")"
 
 # --- Bash: git ---------------------------------------------------------------
 expect allow $C "bash git status"         "$(bcmd 'git status')"
@@ -237,7 +238,6 @@ expect allow $C "bash git log"            "$(bcmd 'git log --oneline -5')"
 expect allow $C "bash git log --stat"     "$(bcmd 'git log --stat')"
 expect allow $C "bash git diff --stat"    "$(bcmd 'git diff --stat main...HEAD')"
 expect allow $C "bash git branch"         "$(bcmd 'git branch --show-current')"
-expect allow $C "bash git show --stat"    "$(bcmd 'git show --stat HEAD')"
 expect deny  $C "bash git diff full"      "$(bcmd 'git diff main...HEAD')"
 expect deny  $C "bash git show full"      "$(bcmd 'git show HEAD')"
 expect deny  $C "bash git commit"         "$(bcmd 'git commit -m x')"
@@ -290,24 +290,6 @@ expect deny  $C "bash cat *"              "$(bcmd 'cat .harness/*')"
 expect deny  $C "bash cat \$HOME"         "$(bcmd 'cat .harness/$HOME')"
 expect deny  $C "bash cat backslash"      "$(bcmd 'cat .harness/\.\./src/a.ts')"
 
-# --- MCP filesystem ---------------------------------------------------------
-expect deny  $C "mcp read src"            "$(tool mcp__filesystem__read_text_file '{"path":"/repo/src/a.ts"}')"
-expect allow $C "mcp read docs"           "$(tool mcp__filesystem__read_text_file '{"path":"/repo/docs/a.md"}')"
-expect deny  $C "mcp read_file src"       "$(tool mcp__filesystem__read_file '{"path":"src/a.ts"}')"
-expect deny  $C "mcp search src"          "$(tool mcp__filesystem__search_files '{"path":"/repo","pattern":"x"}')"
-expect deny  $C "mcp tree root"           "$(tool mcp__filesystem__directory_tree '{"path":"/repo"}')"
-expect allow $C "mcp list docs"           "$(tool mcp__filesystem__list_directory '{"path":"docs"}')"
-expect deny  $C "mcp read multiple src"   "$(tool mcp__filesystem__read_multiple_files '{"paths":["src/a.ts"]}')"
-expect allow $C "mcp read multiple docs"  "$(tool mcp__filesystem__read_multiple_files '{"paths":["docs/a.md"]}')"
-expect deny  $C "mcp read multiple mixed" "$(tool mcp__filesystem__read_multiple_files '{"paths":["docs/a.md","src/a.ts"]}')"
-expect deny  $C "mcp read multiple empty" "$(tool mcp__filesystem__read_multiple_files '{"paths":[]}')"
-expect deny  $C "mcp write src"           "$(tool mcp__filesystem__write_file '{"path":"src/x","content":"x"}')"
-expect allow $C "mcp write .harness"      "$(tool mcp__filesystem__write_file '{"path":".harness/x","content":"x"}')"
-expect deny  $C "mcp edit src"            "$(tool mcp__filesystem__edit_file '{"path":"src/a.ts","edits":[]}')"
-expect deny  $C "mcp mkdir src"           "$(tool mcp__filesystem__create_directory '{"path":"src/new"}')"
-expect deny  $C "mcp move into src"       "$(tool mcp__filesystem__move_file '{"source":".harness/x","destination":"src/x"}')"
-expect deny  $C "mcp move out of src"     "$(tool mcp__filesystem__move_file '{"source":"src/x","destination":".harness/x"}')"
-expect allow $C "mcp move in .harness"    "$(tool mcp__filesystem__move_file '{"source":".harness/x","destination":".harness/y"}')"
 
 # --- hardening: jq missing fails closed (spec 5) ----------------------------
 JQBIN=$(mktemp -d)
@@ -317,7 +299,7 @@ got=$(nojq conductor "$(bcmd 'ls')")
 if [ "$got" = '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"Conductor gate requires jq. Install jq, or run a worker session."}}' ]
 then report ok "no jq: conductor denied" deny deny x; else report bad "no jq: conductor denied" deny "$got" "$(bcmd 'ls')"; fi
 got=$(nojq worker "$(bcmd 'rm -rf x')")
-if [ -z "$got" ]; then report ok "no jq: worker allowed" allow allow x; else report bad "no jq: worker allowed" allow "$got" "$(bcmd 'rm -rf x')"; fi
+if [ -n "$got" ]; then report ok "no jq: worker env denied (agent unknown)" deny deny x; else report bad "no jq: worker env denied (agent unknown)" deny "$got" "$(bcmd 'rm -rf x')"; fi
 rm -rf "$JQBIN"
 
 # --- hardening: gh allowlist (spec 1) ---------------------------------------
@@ -341,13 +323,7 @@ expect allow $C "gh pr create body-file"  "$(bcmd "gh pr create --title 't' --bo
 expect allow $C "gh -R pr view"           "$(bcmd 'gh -R o/r pr view 1')"
 expect allow $C "gh --repo= pr view"      "$(bcmd 'gh --repo=o/r pr view 1')"
 expect allow $C "gh pr list"              "$(bcmd 'gh pr list')"
-expect allow $C "gh run view"             "$(bcmd 'gh run view 1')"
-expect allow $C "gh run list"             "$(bcmd 'gh run list')"
-expect allow $C "gh issue view"           "$(bcmd 'gh issue view 3')"
-expect allow $C "gh auth status"          "$(bcmd 'gh auth status')"
-expect allow $C "gh repo view"            "$(bcmd 'gh repo view')"
 expect allow $C "gh pr checks"            "$(bcmd 'gh pr checks 1')"
-expect allow $C "gh browse"               "$(bcmd 'gh browse')"
 
 # --- hardening: git branch list-only (spec 2) -------------------------------
 expect deny  $C "git branch create"       "$(bcmd 'git branch tmpx')"
@@ -366,17 +342,7 @@ expect deny  $C "git branch --list then -f" "$(bcmd 'git branch --list -f x')"
 expect allow $C "git branch bare"         "$(bcmd 'git branch')"
 expect allow $C "git branch -a"           "$(bcmd 'git branch -a')"
 expect allow $C "git branch -r"           "$(bcmd 'git branch -r')"
-expect allow $C "git branch -vv"          "$(bcmd 'git branch -vv')"
-expect allow $C "git branch --all"        "$(bcmd 'git branch --all')"
-expect allow $C "git branch --remotes"    "$(bcmd 'git branch --remotes')"
-expect allow $C "git branch --list pat"   "$(bcmd 'git branch --list feat')"
 expect deny  $C "git branch --list quoted" "$(bcmd "git branch --list 'feat*'")"
-expect allow $C "git branch --contains"   "$(bcmd 'git branch --contains HEAD')"
-expect allow $C "git branch --merged"     "$(bcmd 'git branch --merged main')"
-expect allow $C "git branch --no-merged"  "$(bcmd 'git branch --no-merged')"
-expect allow $C "git branch --points-at"  "$(bcmd 'git branch --points-at HEAD')"
-expect allow $C "git branch --sort"       "$(bcmd 'git branch --sort=-committerdate')"
-expect allow $C "git branch -a --contains" "$(bcmd 'git branch -a --contains HEAD')"
 
 # --- hardening: ls without recursion (spec 3) --------------------------------
 expect deny  $C "ls -R"                   "$(bcmd 'ls -R')"
@@ -412,7 +378,6 @@ expect deny  $C "sym Grep dir link"           "$(stool Grep "$(sp docs/srcdir)")
 expect deny  $C "sym Write dir link outside"  "$(stool Write "$(sp .harness/outdir/x.txt)")"
 expect deny  $C "sym Write dir link src"      "$(stool Write "$(sp .harness/srclink/x.txt)")"
 expect deny  $C "sym Write to file link"      "$(stool Write "$(sp docs/link.md)")"
-expect deny  $C "sym mcp read link"           "$(stool mcp__filesystem__read_text_file "$(sp docs/link.md)")"
 expect deny  $C "sym bash cat link"           "$(stool Bash '{"command":"cat docs/link.md"}')"
 expect allow $C "sym Read real docs md"       "$(stool Read "$(sp docs/real.md)")"
 expect allow $C "sym Read link within docs"   "$(stool Read "$(sp docs/ln2.md)")"
@@ -463,7 +428,6 @@ expect deny  $C "gh -R api x"               "$(bcmd 'gh -R o/r api x')"
 expect deny  $C "gh auth status -t"         "$(bcmd 'gh auth status -t')"
 expect deny  $C "gh auth status --show-token" "$(bcmd 'gh auth status --show-token')"
 expect deny  $C "gh auth status quoted token" "$(bcmd 'gh auth status "--show-token"')"
-expect allow $C "gh auth status -h"         "$(bcmd 'gh auth status -h github.com')"
 expect allow $C "Write docs v1..2.md"       "$(tool Write '{"file_path":"docs/v1..2.md","content":"x"}')"
 expect deny  $C "Write docs/../x.md"        "$(tool Write '{"file_path":"docs/../x.md","content":"x"}')"
 
@@ -511,8 +475,8 @@ expect allow $C "al harness read task"      "$(bcmd "harness ask implementer 'Re
 expect allow $C "al harness sq specials"    "$(bcmd "harness ask x 'a {b} (c) *d* \$e'")"
 expect allow $C "al gh create paren title"  "$(bcmd "gh pr create --title 'fix: x (y)' --body-file .harness/pr.md")"
 expect allow $C "al git diff range"         "$(bcmd 'git diff --stat main...HEAD')"
-expect allow $C "al two segs"               "$(bcmd 'harness status; herdr agent get reviewer')"
-expect allow $C "al 2>&1"                   "$(bcmd 'harness report implementer 2>&1')"
+expect deny  $C "al two segs denied"               "$(bcmd 'harness status; herdr agent get reviewer')"
+expect deny  $C "al 2>&1 denied"                   "$(bcmd 'harness report implementer 2>&1')"
 expect allow $C "al dq plain"               "$(bcmd 'harness ask x "plain words, fine (really) {ok}"')"
 
 
@@ -541,7 +505,7 @@ expect allow $C "MCP tool"                "$(tool mcp__context7__query-docs '{"q
 expect deny  $C "garbage input"           'not json at all'
 expect deny  $C "missing tool_name"       '{"tool_input":{}}'
 expect deny  $C "empty input"             ''
-expect allow $W "worker garbage input"    'not json at all'
+expect deny  $W "worker garbage input"    'not json at all'
 
 # --- outside herdr: gate is off (decision 0005) ------------------------------
 # off_herdr ENVSPEC JSON -> allow|deny; ENVSPEC is passed to env (e.g. -u HERDR_ENV)
@@ -568,7 +532,6 @@ expect_reason "Conductor gate could not parse" "reason: unparseable" 'not json a
 # --- deny output shape -------------------------------------------------------
 expect_reason "Conductor cannot edit"   "reason: write" "$(tool Write '{"file_path":"src/a.ts","content":"x"}')"
 expect_reason "Conductor does not read" "reason: read"  "$(tool Read '{"file_path":"src/a.ts"}')"
-expect_reason "Native subagents"        "reason: agent" "$(tool Agent '{"prompt":"x"}')"
 expect_reason "Conductor shell"         "reason: bash"  "$(bcmd 'npm test')"
 # every deny reason names the skill to use, not a raw `harness ask`
 expect_reason_has() {
@@ -581,7 +544,6 @@ expect_reason_has() {
 }
 expect_reason_has "/implement" "skill named: write" "$(tool Write '{"file_path":"src/a.ts","content":"x"}')"
 expect_reason_has "/analyze"   "skill named: read"  "$(tool Read '{"file_path":"src/a.ts"}')"
-expect_reason_has "/review"    "skill named: agent" "$(tool Agent '{"prompt":"x"}')"
 expect_reason_has "/implement" "skill named: bash"  "$(bcmd 'npm test')"
 # ...and none of them mentions a raw `harness ask`
 expect_reason_lacks() {
@@ -594,9 +556,14 @@ expect_reason_lacks() {
 }
 expect_reason_lacks "harness ask" "no raw ask: write" "$(tool Write '{"file_path":"src/a.ts","content":"x"}')"
 expect_reason_lacks "harness ask" "no raw ask: read"  "$(tool Read '{"file_path":"src/a.ts"}')"
-expect_reason_lacks "harness ask" "no raw ask: agent" "$(tool Agent '{"prompt":"x"}')"
 expect_reason_lacks "harness ask" "no raw ask: bash"  "$(bcmd 'npm test')"
 expect_event  "event name"                              "$(bcmd 'npm test')"
+
+# --- regression list: tests/gate-denied.list (deny probes must stay denied) ---
+while IFS="$(printf '\t')" read -r want cmd; do
+  case "$want" in deny|allow) ;; *) continue ;; esac
+  expect "$want" $C "list: $cmd" "$(bcmd "$cmd")"
+done < "$HERE/gate-denied.list"
 
 echo "PASS $pass / FAIL $fail"
 [ "$fail" -eq 0 ]

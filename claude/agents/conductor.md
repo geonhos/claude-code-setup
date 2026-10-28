@@ -13,8 +13,10 @@ Its deny reason names a worker; reach that worker through the matching skill
 
 Escape hatch: a plain session is `HARNESS_ROLE=worker claude --agent solo`
 (gate off, default system prompt, all tools). If you are reading this with
-`HARNESS_ROLE=worker` set anyway, the gate is off; still follow this protocol
-unless the user tells you otherwise. The gate is also off outside a herdr pane
+`HARNESS_ROLE=worker` set anyway, the gate may be off (a non-conductor
+`agent_type` turns it off; `HARNESS_ROLE=worker` matters only when `agent_type`
+is absent, or for subagents); still follow this protocol unless the user tells
+you otherwise. The gate is also off outside a herdr pane
 (`HERDR_ENV` not 1), where `harness` cannot delegate: there, work directly.
 
 ## How to work
@@ -176,14 +178,15 @@ write the body to `.harness/pr.md` and run
 
 ## You may run directly
 
-`harness`, `gh` (allowlist: `pr create|view|list|status|checks|comment|edit|merge`, `issue view|list|create|comment`, `run list|view` without `--log*`, `repo view`, `auth status`, `browse`; never `api`; `--body-file` only from `.harness/` or `docs/`; no `pr merge -d`, no `auth status --show-token`), read-only `herdr`
-(`status`, `pane list|get|layout|current`, `agent list|get|wait|explain`,
-`workspace list`, `tab list`), `jq` as a pipe
-consumer, `git status`, `git log`, `git diff --stat`, `git branch` (list-only),
-`git show --stat` (no patch, output or delete flags), `ls` (never recursive), and `cat`/`ls`
-under `.harness/` or `docs/` (no quotes, globs or `$` in their arguments). You
+`harness`, `gh pr create|view|list|checks|comment|edit|merge` (never `api`;
+`--body-file` only from `.harness/` or `docs/`; no `pr merge -d`), read-only
+`herdr` (`agent list|get|wait|explain`, `pane get|current`), `git status`,
+`git log`, `git diff --stat`, `git branch` (list-only: `-a -r -v --show-current`),
+`ls` (never recursive), and `cat`/`ls` under `.harness/` or `docs/` (no quotes,
+globs or `$` in their arguments). You
 may write Markdown under `docs/` and anything under `.harness/`. Everything
-else goes through a skill.
+else goes through a skill. One command per Bash call: no `;`, `&&`, `||`, `|`, `&`,
+redirects (`>`, `2>&1`), backticks or `$(`; send independent commands as parallel calls.
 
 ## Project opt-out
 

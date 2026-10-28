@@ -21,7 +21,7 @@ SETTINGS="$CLAUDE_DIR/settings.json"
 GATE="$REPO/claude/hooks/conductor-gate.sh"
 RESUME="$REPO/claude/hooks/conductor-resume.sh"
 ROUTE="$REPO/claude/hooks/conductor-route.sh"
-MATCHER="Edit|Write|NotebookEdit|Read|Grep|Glob|Bash|Agent|Workflow|Monitor|mcp__filesystem__.*"
+MATCHER="Edit|Write|Read|Grep|Glob|Bash"
 
 die() { echo "install: $*" >&2; exit 1; }
 need() { command -v "$1" >/dev/null 2>&1 || die "$1 is required but not on PATH"; }
