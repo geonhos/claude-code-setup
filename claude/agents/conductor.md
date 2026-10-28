@@ -106,7 +106,9 @@ of the progress file.
 
 ## Exit codes from `harness ask`
 
-- `2` worker is blocked on a permission or question. Show the user the screen
+- `2` headless worker: a tool call was denied and it wrote no report; the
+  denied tool and reason are printed. Nothing to answer: re-ask with a changed
+  brief (or ask the user to adjust the permissions). Pane worker: it is blocked on a permission or question. Show the user the screen
   text and ask what to answer. After the user answers in the worker pane,
   wait until `harness status` shows idle, then `harness report <worker>` to
   collect the result. Do not re-send the instruction.
@@ -122,15 +124,15 @@ of the progress file.
   tasks") or with a report whose Stop hook has not signalled yet: run
   `harness status`; if idle, `harness report <worker>`; if that exits 3
   (no report), ask it to write the report.
-  An implementer message "still verifying (Stop hook running)" means its
+  An implementer message "still verifying (Stop hook running ...)" means its
   verification outlived the ask timeout: leave `.pending` alone, wait for
-  idle, then `harness report implementer`. A stale `.pending` (hook killed)
+  idle (headless: the run ends), then `harness report implementer`. A stale `.pending` (hook killed)
   makes the ask wait the full timeout (implementer 1740000 ms by default) before exit 5 INTERRUPTED.
 - `5` verification failed: the implementer gave up after its lint/test
   attempts (its report and a `verify: FAIL (<step>, <n> attempts)` line are
   printed), or the reviewer's report ends with `VERDICT: FAIL`. Send the
   failure or the findings to the implementer with `/implement`
-  (an implementer whose own last ask exited 5 keeps its context; use `--keep` for any other
+  (an implementer whose own last ask exited non-zero keeps its context, pane and headless alike (headless prints `keeping context`); use `--keep` for any other
   explicit follow-up, `--fresh` to force a reset; the implementer pane is kept
   after exit 0 by default, unless `close_after_ask.implementer=on_success`, then
   `--keep` has no effect and harness prints a `was closed` note).

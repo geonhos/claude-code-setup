@@ -229,7 +229,7 @@ ask_headless() {
   rm -f "$a.finished" "$a.exit.json" "$a.pid"
   if [ "$role" = implementer ]; then verify_tool baseline implementer 2>/dev/null || rm -f .harness/verify/implementer.json; fi
   max_s=${HARNESS_HL_MAX_S:-}
-  digits_only "$max_s" || { max_s=$(jq -r '.headless_max_minutes // empty' "$CONFIG_FILE" 2>/dev/null); digits_only "$max_s" && max_s=$((max_s * 60)) || max_s=$HARNESS_HL_MAX_S_DEFAULT; }
+  digits_only "$max_s" || { max_s=$(jq -r '.headless_max_minutes // empty' "$CONFIG_FILE" 2>/dev/null); digits_only "$max_s" && max_s=$((max_s * 60)) || { max_s=$HARNESS_HL_MAX_S_DEFAULT; [ "$role" != implementer ] || max_s=$HARNESS_HL_MAX_S_IMPLEMENTER_DEFAULT; }; }
   printf '%s\n' "$text" > "$a.prompt"
   printf 'resume=%s\nmax_s=%s\nctx_before=%s\n' "$resume" "$max_s" "$ctxb" > "$a.run"
   # a worktree ask streams into the main checkout's log dir, tagged with its id8

@@ -164,5 +164,15 @@ isetup
 HARNESS_CLOSE_AFTER_ASK_IMPLEMENTER=on_success hrun ask implementer "q"
 check "lifecycle: on_success still closes the viewer after exit 0" not_grep '^implementer ' .harness/panes
 
+# 6. per-role headless cap: implementer 90 min, analyst 60, config headless_max_minutes wins
+isetup
+hrun ask implementer "q"
+check "cap: implementer default 5400 s" grep -qx 'max_s=5400' .harness/asks/implementer.run
+hrun ask analyst "q"
+check "cap: analyst default 3600 s" grep -qx 'max_s=3600' .harness/asks/analyst.run
+mkdir -p .harness; printf '{"headless_max_minutes": 7}\n' > .harness/config.json
+hrun ask implementer "q"
+check "cap: config headless_max_minutes wins for the implementer" grep -qx 'max_s=420' .harness/asks/implementer.run
+
 echo "PASS $pass / FAIL $fail"
 [ "$fail" -eq 0 ]
