@@ -30,3 +30,4 @@
 - 2026-10-28 · implementer · v21 step 6 · gate drops Agent/Workflow/Monitor/NotebookEdit/mcp__filesystem cases; matcher is Edit|Write|Read|Grep|Glob|Bash; architecture.md flow updated (diagram 04 svg not regenerated)
 - 2026-10-28 · implementer · v22 step 1 (#5) · lib/harness-defaults.sh is the single source for roles/timeouts/TTL; `harness _defaults` + drift tests; install.sh links bin/* by glob
 - 2026-10-28 · implementer · v22 step 2 (#6) · last_ask_record replaces three progress scans; plain asks ignore worktree-ask lines (last_exit, retro, --keep resume); ask args parsed once into ASK_* globals
+- 2026-10-28 · implementer · v22 PR B (#8 stage 1) · metrics+wiki-lint and wt_* move to lib/harness-metrics.sh / lib/harness-worktree.sh; loader sources an explicit list; tests/harness-split.test.sh

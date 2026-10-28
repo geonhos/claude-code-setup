@@ -8,7 +8,7 @@ gate the conductor's shell, verify worker output and resume from progress logs.
 
 ## Layout
 - `bin/`: `harness` (CLI: ask, spawn, report, close, status, retro, metrics) and `harness-verify`
-- `lib/`: `harness-defaults.sh` (roles, default timeouts/TTL; sourced eagerly by `harness` and `harness-verify`)
+- `lib/`: `harness-defaults.sh` (roles, default timeouts/TTL; sourced by `harness` and `harness-verify`), `harness-metrics.sh` (metrics + wiki-lint), `harness-worktree.sh` (`--worktree` asks); `bin/harness` sources its lib files eagerly from an explicit list
 - `claude/agents/`: conductor, analyst, implementer, reviewer, solo prompts
 - `claude/hooks/`: conductor-gate, conductor-route, conductor-resume (SessionStart)
 - `claude/skills/`: /analyze, /implement, /review (conductor-only)
