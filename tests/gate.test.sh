@@ -90,6 +90,19 @@ expect allow $W "worker: Read src"        "$(tool Read  '{"file_path":"/repo/src
 expect allow $W "worker: Agent"           "$(tool Agent '{"prompt":"x"}')"
 expect allow $W "worker: Bash rm"         "$(bcmd 'rm -rf build')"
 
+# --- agent_type keying (v21): the hook input's agent decides, not the env ---
+# as_agent AGENT JSON -> JSON with agent_type set
+as_agent() { printf '%s' "$2" | jq -c --arg a "$1" '. + {agent_type:$a}'; }
+RM=$(bcmd 'rm -rf build')
+expect deny  $C "agent conductor: Bash rm"                "$(as_agent conductor "$RM")"
+expect deny  $W "agent conductor beats HARNESS_ROLE=worker" "$(as_agent conductor "$RM")"
+expect allow $C "agent analyst allowed"                   "$(as_agent analyst "$RM")"
+expect allow $C "agent implementer allowed"               "$(as_agent implementer "$RM")"
+expect allow $W "agent solo + worker env allowed"         "$(as_agent solo "$RM")"
+expect deny  $C "no agent_type, conductor env: gated"     "$RM"
+expect allow $W "no agent_type, worker env: allowed"      "$RM"
+expect deny  $C "agent_type but no tool_name"             '{"agent_type":"analyst","tool_input":{}}'
+
 # --- Edit / Write / NotebookEdit -------------------------------------------
 expect deny  $C "Edit src abs"            "$(tool Edit  '{"file_path":"/repo/src/a.ts","old_string":"a","new_string":"b"}')"
 expect deny  $C "Edit src rel"            "$(tool Edit  '{"file_path":"src/a.ts","old_string":"a","new_string":"b"}')"
@@ -317,7 +330,7 @@ got=$(nojq conductor "$(bcmd 'ls')")
 if [ "$got" = '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"Conductor gate requires jq. Install jq, or run a worker session."}}' ]
 then report ok "no jq: conductor denied" deny deny x; else report bad "no jq: conductor denied" deny "$got" "$(bcmd 'ls')"; fi
 got=$(nojq worker "$(bcmd 'rm -rf x')")
-if [ -z "$got" ]; then report ok "no jq: worker allowed" allow allow x; else report bad "no jq: worker allowed" allow "$got" "$(bcmd 'rm -rf x')"; fi
+if [ -n "$got" ]; then report ok "no jq: worker env denied (agent unknown)" deny deny x; else report bad "no jq: worker env denied (agent unknown)" deny "$got" "$(bcmd 'rm -rf x')"; fi
 rm -rf "$JQBIN"
 
 # --- hardening: gh allowlist (spec 1) ---------------------------------------
@@ -541,7 +554,7 @@ expect allow $C "MCP tool"                "$(tool mcp__context7__query-docs '{"q
 expect deny  $C "garbage input"           'not json at all'
 expect deny  $C "missing tool_name"       '{"tool_input":{}}'
 expect deny  $C "empty input"             ''
-expect allow $W "worker garbage input"    'not json at all'
+expect deny  $W "worker garbage input"    'not json at all'
 
 # --- outside herdr: gate is off (decision 0005) ------------------------------
 # off_herdr ENVSPEC JSON -> allow|deny; ENVSPEC is passed to env (e.g. -u HERDR_ENV)

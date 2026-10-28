@@ -2,17 +2,17 @@
 # conductor-gate.sh — PreToolUse hook for the Fable conductor.
 # Spec: docs/superpowers/specs/2026-10-12-herdr-conductor-setup-design.md
 #
-# Role:   HARNESS_ROLE=worker  -> allow everything (herdr workers, manual escape hatch)
+# Role:   hook input agent_type -> conductor: gate; any other agent: allow
+#         (herdr workers run as analyst/implementer/reviewer/solo). Keying on the
+#         agent, not the env, closes the daemon-inherits-worker-env hole: a
+#         conductor hosted by a daemon that exported HARNESS_ROLE=worker is still
+#         gated. Without agent_type, HARNESS_ROLE=worker allows (older hosts).
 #         HERDR_ENV != 1       -> allow everything (not in a herdr pane: harness
 #                                 cannot delegate there, so gating would only
 #                                 strand the session; decision 0005)
-#         anything else        -> conductor rules below
+#         otherwise            -> conductor rules below
 # Output: nothing (allow) or a PreToolUse deny JSON on stdout. Always exit 0.
 set -u
-
-if [ "${HARNESS_ROLE:-conductor}" = "worker" ]; then
-  exit 0
-fi
 
 if [ "${HERDR_ENV:-}" != 1 ]; then
   exit 0
@@ -31,6 +31,13 @@ if [ $? -ne 0 ] || [ -z "$TOOL" ]; then
   # fail closed (decision 0005): a gate that allows what it cannot read is no gate
   echo "conductor-gate: unparseable hook input, denying" >&2
   printf '%s\n' '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"Conductor gate could not parse the hook input, so the call is denied. Retry, or delegate with /analyze or /implement."}}'
+  exit 0
+fi
+
+AGENT=$(printf '%s' "$INPUT" | jq -r '.agent_type // empty' 2>/dev/null)
+if [ -n "$AGENT" ]; then
+  [ "$AGENT" = conductor ] || exit 0
+elif [ "${HARNESS_ROLE:-conductor}" = worker ]; then
   exit 0
 fi
 

@@ -1,9 +1,9 @@
 ---
 type: troubleshooting
 status: active
-updated: 2026-10-21
-sources: [session 7ad04a14 (ps eww of claude daemon pid 90516), claude/hooks/conductor-gate.sh:10]
-verified_by: human (ps eww -p <daemon pid>)
+updated: 2026-10-28
+sources: [session 7ad04a14 (ps eww of claude daemon pid 90516), claude/hooks/conductor-gate.sh:5-9, .harness/gate-shrink-detail.md §5]
+verified_by: tests/gate.test.sh (agent_type keying)
 ---
 # Claude daemon inherits a worker's env
 
@@ -22,8 +22,12 @@ session it hosts later inherits the worker role and the dead pane's ids.
   pid is the parent of the session's `--bg-pty-host` process.
 - Stop that daemon process and start the conductor again from a plain shell in
   a herdr pane, so a fresh daemon gets a clean env.
-- A gate that trusts env (decision 0005) cannot detect this. Do not build on
-  `HARNESS_ROLE` alone for anything security-like.
+- Since v21 the gate keys on the hook input's `agent_type` (== `conductor` →
+  gated; any other agent → allowed), so a hosted conductor is gated even with
+  `HARNESS_ROLE=worker` inherited. `HARNESS_ROLE` only matters when the host
+  sends no `agent_type`. Interactive sessions send it too (checked 2026-10-28).
+- Still broken: `harness ask` refuses under the inherited `HARNESS_ROLE=worker`;
+  restart the daemon as above to delegate.
 
 **Evidence.** 2026-10-21: daemon pid 90516 (started 12:21) had
 `HARNESS_ROLE=worker HERDR_PANE_ID=w8:p9`. The conductor session forked from it
