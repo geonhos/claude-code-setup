@@ -28,3 +28,4 @@
 - 2026-10-28 · implementer · v21 step 3-4 · gate tables at top; single-command scanner (chains, pipes, redirects incl. 2>&1, jq denied); one-command page, conductor.md, README updated
 - 2026-10-28 · implementer · v21 step 5 · gate allowlists trimmed to observed usage (gh pr only, herdr agent/pane get|current, git branch list flags); conductor.md and README match
 - 2026-10-28 · implementer · v21 step 6 · gate drops Agent/Workflow/Monitor/NotebookEdit/mcp__filesystem cases; matcher is Edit|Write|Read|Grep|Glob|Bash; architecture.md flow updated (diagram 04 svg not regenerated)
+- 2026-10-28 · implementer · inbox triage · new live-gate-edit page; 0005 allowlist-flags bullet; daemon page subagent agent_type/agent_id note; 4 inbox notes removed (1 dropped, no lesson)

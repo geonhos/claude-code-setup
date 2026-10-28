@@ -2,7 +2,7 @@
 type: troubleshooting
 status: active
 updated: 2026-10-28
-sources: [session 7ad04a14 (ps eww of claude daemon pid 90516), claude/hooks/conductor-gate.sh:5-9, .harness/gate-shrink-detail.md §5]
+sources: [session 7ad04a14 (ps eww of claude daemon pid 90516), claude/hooks/conductor-gate.sh:5-9, .harness/gate-shrink-detail.md §5, ask 1793151066-8797-18476]
 verified_by: tests/gate.test.sh (agent_type keying)
 ---
 # Claude daemon inherits a worker's env
@@ -26,6 +26,10 @@ session it hosts later inherits the worker role and the dead pane's ids.
   gated; any other agent → allowed), so a hosted conductor is gated even with
   `HARNESS_ROLE=worker` inherited. `HARNESS_ROLE` only matters when the host
   sends no `agent_type`. Interactive sessions send it too (checked 2026-10-28).
+- A subagent's hook input carries its own `agent_type` (its agent name, not the
+  session's `--agent`) plus an `agent_id`, which only subagents have; the gate
+  uses `agent_id` to apply the env rule to subagents (scratch-repo hook log,
+  v21 review).
 - Still broken: `harness ask` refuses under the inherited `HARNESS_ROLE=worker`;
   restart the daemon as above to delegate.
 
