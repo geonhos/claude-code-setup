@@ -14,11 +14,15 @@ check() { local label=$1; shift; if "$@"; then pass=$((pass + 1)); else fail=$((
 lib_named() { [ -n "$2" ] && grep -E '^for m in ' "$1" | head -1 | grep -qw -- "$2"; }
 no_glob() { ! printf '%s' "$1" | grep -qE 'lib/\*|harness-\*'; }
 not() { ! "$@"; }
-# eager_ok SCRIPT — one `# end loader` marker; >=1 harness-*.sh source line, all above the marker
+# eager_ok SCRIPT — one `# end loader` marker, below the first function definition's line (so it cannot
+# sit at EOF or after a lazy function); >=1 harness-*.sh source line, all above the marker.
+# Limit: a textual check only; a source via a variable or eval is not detected.
 eager_ok() {
-  local mark srcs n
+  local mark srcs n fn
   mark=$(grep -n '^# end loader$' "$1" | cut -d: -f1)
   case $mark in ''|*[!0-9]*) OUT="$1: need exactly one '# end loader' marker"; return 1 ;; esac
+  fn=$(grep -nE '^([a-zA-Z_][a-zA-Z0-9_]*\(\) *\{|function )' "$1" | head -1 | cut -d: -f1)
+  if [ -n "$fn" ] && [ "$mark" -gt "$fn" ]; then OUT="$1: '# end loader' (line $mark) is below the first function (line $fn)"; return 1; fi
   srcs=$(grep -nvE '^[[:space:]]*#' "$1" | grep -E '^[0-9]+:([^#]*[;&|[:space:]])?(\.|source)[[:space:]]+[^#]*harness-' | cut -d: -f1)
   [ -n "$srcs" ] || { OUT="$1: no lib source found"; return 1; }
   for n in $srcs; do
@@ -76,12 +80,22 @@ check "bin/harness loads every lib/harness-*.sh" all_listed "$ROOT/bin/harness" 
 M=$(mktemp -d); WORKS="$WORKS $M"
 sed 's/^for m in defaults metrics worktree;/for m in defaults metrics;/' "$ROOT/bin/harness" > "$M/dropped"
 mkdir -p "$M/lib"; cp $LIBS "$M/lib/"
+OUT="control: unmutated copy"
+check "control: unmutated copy passes all_listed" all_listed "$ROOT/bin/harness" "$M/lib"
+check "control: unmutated copy passes eager_ok" eager_ok "$ROOT/bin/harness"
 OUT="mutant: worktree dropped from the list"
 check "mutation: dropped list entry is caught" not all_listed "$M/dropped" "$M/lib"
 cp "$ROOT/bin/harness" "$M/lazy"
 printf '%s\n' '. "$HARNESS_LIB/harness-metrics.sh"' >> "$M/lazy"
 OUT="mutant: lazy source after the loader"
 check "mutation: lazy source is caught" not eager_ok "$M/lazy"
+# marker moved to EOF (every source is then "above" it) and a lazy function defined above the marker
+grep -v '^# end loader$' "$ROOT/bin/harness" > "$M/eof"; echo '# end loader' >> "$M/eof"
+OUT="mutant: marker at EOF"
+check "mutation: marker at EOF is caught" not eager_ok "$M/eof"
+awk '/^# end loader$/ { print "lazy() { :; }" } { print }' "$ROOT/bin/harness" > "$M/fnbefore"
+OUT="mutant: function defined before the marker"
+check "mutation: function before marker is caught" not eager_ok "$M/fnbefore"
 
 # in-place protection: overwrite bin/harness and every lib file while a run is in flight (a slow
 # jq stands in for a long ask); the run was read whole at start and must still finish normally
