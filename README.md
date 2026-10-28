@@ -135,6 +135,8 @@ conductor 에이전트의 본문은 Claude Code의 기본 시스템 프롬프트
 bin/harness                      herdr wrapper CLI
 bin/harness-verify               format/lint/test checks used by worker hooks
 lib/harness-defaults.sh         roles and default numbers (sourced by bin/harness, bin/harness-verify)
+lib/harness-metrics.sh          harness metrics + wiki-lint (sourced eagerly by bin/harness)
+lib/harness-worktree.sh         --worktree asks, the wt_* group (sourced eagerly by bin/harness)
 claude/hooks/conductor-gate.sh   PreToolUse gate
 claude/hooks/conductor-resume.sh SessionStart hook: injects .harness/progress.md
 claude/hooks/conductor-route.sh  UserPromptSubmit hook: logs each prompt to .harness/routing.jsonl
