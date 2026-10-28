@@ -598,5 +598,11 @@ expect_reason_lacks "harness ask" "no raw ask: agent" "$(tool Agent '{"prompt":"
 expect_reason_lacks "harness ask" "no raw ask: bash"  "$(bcmd 'npm test')"
 expect_event  "event name"                              "$(bcmd 'npm test')"
 
+# --- regression list: tests/gate-denied.list (deny probes must stay denied) ---
+while IFS="$(printf '\t')" read -r want cmd; do
+  case "$want" in deny|allow) ;; *) continue ;; esac
+  expect "$want" $C "list: $cmd" "$(bcmd "$cmd")"
+done < "$HERE/gate-denied.list"
+
 echo "PASS $pass / FAIL $fail"
 [ "$fail" -eq 0 ]
