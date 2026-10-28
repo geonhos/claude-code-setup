@@ -51,6 +51,41 @@ MSG_READ="Conductor does not read source. Delegate with the /analyze skill (anal
 MSG_AGENT="Native subagents are disabled for the conductor; delegate through the skills so work is visible in herdr panes and logged. Use /analyze (analyst), /implement (implementer) or /review (reviewer) instead."
 MSG_BASH="Conductor shell is limited to: harness; gh (pr/issue/run/repo view-style subcommands, pr create, no api); herdr read-only (status, pane list|get|layout|current, agent list|get|wait|explain, workspace list, tab list); read-only git (status / log / diff --stat / branch list / show --stat); cat or ls (no -R) under .harness/ and docs/; jq as a pipe consumer. Delegate command execution with the /implement skill (implementer worker)."
 
+# --- Bash allow/deny lists ---------------------------------------------------
+# Each piece below is one alternative; they are joined with | into one regex.
+
+# Commands the conductor may run (matched against a whole masked segment).
+BASH_ALLOW='harness( .*)?'                                        # delegation CLI
+BASH_ALLOW="$BASH_ALLOW|"'herdr status( .*)?'                     # herdr, read-only state ...
+BASH_ALLOW="$BASH_ALLOW|"'herdr pane (list|get|layout|current)( .*)?'
+BASH_ALLOW="$BASH_ALLOW|"'herdr agent (list|get|wait|explain)( .*)?'
+BASH_ALLOW="$BASH_ALLOW|"'herdr (workspace|tab) list( .*)?'
+BASH_ALLOW="$BASH_ALLOW|"'gh( .*)?'                               # GitHub CLI (see gh_segment_ok)
+BASH_ALLOW="$BASH_ALLOW|"'git status( .*)?'                       # read-only git ...
+BASH_ALLOW="$BASH_ALLOW|"'git log( .*)?'
+BASH_ALLOW="$BASH_ALLOW|"'git diff --stat( .*)?'                  # ... summaries only
+BASH_ALLOW="$BASH_ALLOW|"'git branch( .*)?'
+BASH_ALLOW="$BASH_ALLOW|"'git show --stat( .*)?'
+BASH_ALLOW="$BASH_ALLOW|"'cat (\.harness|docs)(/[^ ]*)?'          # reports and docs
+BASH_ALLOW="$BASH_ALLOW|"'ls( -[A-Za-z]+)*( (\.harness|docs)(/[^ ]*)?)?' # top level, reports, docs
+BASH_ALLOW="^($BASH_ALLOW)\$"
+
+# git long options that are denied anywhere in a git segment.
+GIT_DENY_LONG='output'                                            # writes files
+GIT_DENY_LONG="$GIT_DENY_LONG|delete|move|copy"                   # mutates branches
+GIT_DENY_LONG="$GIT_DENY_LONG|patch|unified|cc|binary|remerge-diff|dd|diff-merges|raw|check" # prints diff content
+
+# Initials of git short-flag groups that are denied (e.g. -D, -Df, -U3):
+#   o = --output (writes files)
+#   d D m M c C = branch delete / move / copy (mutates branches)
+#   p u U = patch / unified context (prints diff content)
+GIT_DENY_SHORT='odDmMcCpuU'
+
+GIT_DENY="--($GIT_DENY_LONG)| -[$GIT_DENY_SHORT][A-Za-z0-9]* "
+
+# jq options that read files or take extra positional arguments.
+JQ_DENY=' -[A-Za-z]*[fL][A-Za-z]* | --(from-file|rawfile|slurpfile|args|jsonargs)[ =]'
+
 deny() {
   jq -n --arg r "$1" \
     '{hookSpecificOutput:{hookEventName:"PreToolUse",permissionDecision:"deny",permissionDecisionReason:$r}}'
@@ -213,41 +248,6 @@ split_segments() {
     END { flush(); if (st != 0 || bad) exit 1 }
   '
 }
-
-# --- Bash allow/deny lists ---------------------------------------------------
-# Each piece below is one alternative; they are joined with | into one regex.
-
-# Commands the conductor may run (matched against a whole masked segment).
-BASH_ALLOW='harness( .*)?'                                        # delegation CLI
-BASH_ALLOW="$BASH_ALLOW|"'herdr status( .*)?'                     # herdr, read-only state ...
-BASH_ALLOW="$BASH_ALLOW|"'herdr pane (list|get|layout|current)( .*)?'
-BASH_ALLOW="$BASH_ALLOW|"'herdr agent (list|get|wait|explain)( .*)?'
-BASH_ALLOW="$BASH_ALLOW|"'herdr (workspace|tab) list( .*)?'
-BASH_ALLOW="$BASH_ALLOW|"'gh( .*)?'                               # GitHub CLI (see gh_segment_ok)
-BASH_ALLOW="$BASH_ALLOW|"'git status( .*)?'                       # read-only git ...
-BASH_ALLOW="$BASH_ALLOW|"'git log( .*)?'
-BASH_ALLOW="$BASH_ALLOW|"'git diff --stat( .*)?'                  # ... summaries only
-BASH_ALLOW="$BASH_ALLOW|"'git branch( .*)?'
-BASH_ALLOW="$BASH_ALLOW|"'git show --stat( .*)?'
-BASH_ALLOW="$BASH_ALLOW|"'cat (\.harness|docs)(/[^ ]*)?'          # reports and docs
-BASH_ALLOW="$BASH_ALLOW|"'ls( -[A-Za-z]+)*( (\.harness|docs)(/[^ ]*)?)?' # top level, reports, docs
-BASH_ALLOW="^($BASH_ALLOW)\$"
-
-# git long options that are denied anywhere in a git segment.
-GIT_DENY_LONG='output'                                            # writes files
-GIT_DENY_LONG="$GIT_DENY_LONG|delete|move|copy"                   # mutates branches
-GIT_DENY_LONG="$GIT_DENY_LONG|patch|unified|cc|binary|remerge-diff|dd|diff-merges|raw|check" # prints diff content
-
-# Initials of git short-flag groups that are denied (e.g. -D, -Df, -U3):
-#   o = --output (writes files)
-#   d D m M c C = branch delete / move / copy (mutates branches)
-#   p u U = patch / unified context (prints diff content)
-GIT_DENY_SHORT='odDmMcCpuU'
-
-GIT_DENY="--($GIT_DENY_LONG)| -[$GIT_DENY_SHORT][A-Za-z0-9]* "
-
-# jq options that read files or take extra positional arguments.
-JQ_DENY=' -[A-Za-z]*[fL][A-Za-z]* | --(from-file|rawfile|slurpfile|args|jsonargs)[ =]'
 
 # has_expansion TEXT -> 0 when TEXT contains a character that the shell would
 # expand or glob ($ { } * ? [ ] ~ \)
