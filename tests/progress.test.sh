@@ -423,6 +423,38 @@ hook_report implementer '# r\nstatus: done\n'
 run ask implementer "do it"
 check "other agents/late lines do not hide the last exit" not_logged "/clear"
 
+# --- a worktree ask's line (agent: <role>, ask_id set) is not a plain ask's history -------------------------------------------------
+setup; gitwork
+echo idle > "$FAKE_DIR/live.$(WN implementer)"; mkdir -p .harness
+lastjson '{"ts":"2026-10-18T00:00:00Z","agent":"implementer","exit":0}'
+lastjson '{"ts":"2026-10-18T00:00:01Z","agent":"implementer","exit":4,"ask_id":"1-2-3","wt":"/x/wt","base":"b"}'
+hook_report implementer '# r\nstatus: done\n'
+run ask implementer "do it"
+check "leak: worktree exit 4 does not keep the plain ask's context" logged "/clear"
+setup; gitwork
+echo idle > "$FAKE_DIR/live.$(WN implementer)"; mkdir -p .harness
+lastjson '{"ts":"2026-10-18T00:00:00Z","agent":"implementer","exit":4}'
+lastjson '{"ts":"2026-10-18T00:00:01Z","agent":"implementer","exit":0,"ask_id":"1-2-3","wt":"/x/wt","base":"b"}'
+hook_report implementer '# r\nstatus: done\n'
+run ask implementer "do it"
+check "leak: worktree exit 0 does not hide the plain ask's exit 4" not_logged "/clear"
+
+# --- usage errors inside the ask are logged (exit 1); option errors that die first are not ---------------------------------------
+for bad in "--fresh --keep" "--timeout abc" "--timeout 0" "--bogus"; do
+  setup
+  runerr ask analyst "q" $bad
+  check "usage ($bad): rc 1" [ "$RC" -eq 1 ]
+  check "usage ($bad): progress line exit 1" [ "$(jl .exit)" = 1 ]
+  check "usage ($bad): routing line exit 1" [ "$(rj .exit)" = 1 ]
+  check "usage ($bad): nothing sent" not_logged "agent prompt"
+done
+for bad in "--via nope" "--via" "--base x" "--worktree --base"; do
+  setup
+  runerr ask analyst "q" $bad
+  check "early refusal ($bad): rc 1" [ "$RC" -eq 1 ]
+  check "early refusal ($bad): nothing logged" [ ! -e .harness/progress.jsonl ] && [ ! -e .harness/routing.jsonl ]
+done
+
 # --- late report archived, never deleted unlogged --------------------------------------------------------------------------------
 setup
 echo working > "$FAKE_DIR/live.$(WN analyst)"

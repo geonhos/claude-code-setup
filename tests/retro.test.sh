@@ -185,6 +185,15 @@ check "late: report snapshot path (stable)" [ "$(cand .report)" = ".harness/retr
 check "late: report snapshot exists" grep -q '^# analyst report' ".harness/retro/reports/$id.md"
 run report analyst
 check "late: second collect silent" not grep -q "$QUEUED" <<<"$OUT"
+setup   # a worktree ask's newer line (agent: analyst, ask_id set) must not hide the plain ask's exit 4
+echo idle > "$FAKE_DIR/live.$(WN analyst)"
+run ask analyst "slow" --timeout 2000
+check "leak: plain ask exit 4" [ "$RC" -eq 4 ]
+printf '%s\n' '{"ts":"2026-10-28T00:00:00Z","agent":"analyst","exit":0,"ask_id":"1-2-3","wt":"/x/wt","base":"b"}' >> .harness/progress.jsonl
+echo idle > "$FAKE_DIR/live.$(WN analyst)"
+mkdir -p .harness/reports; printf '# analyst report\nstatus: done\n' > .harness/reports/analyst.md
+run report analyst
+check "leak: late report still queues its candidate (worktree line ignored)" grep -q "^retro: candidate queued (late report)" <<<"$OUT"
 setup   # report after a good ask is not late
 echo idle > "$FAKE_DIR/live.$(WN analyst)"
 hook analyst '# analyst report\nstatus: done\n'

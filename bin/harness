@@ -92,6 +92,9 @@ ASK_DIR=".harness/asks"
 ASK_KEY=""        # pane-registry key of a worktree ask: <role>@<id8> (empty = the role)
 ASK_WT=""         # worktree path of this ask (empty = plain ask)
 ASK_ID=""; ASK_ID8=""; ASK_BASE=""; ASK_WT_WANT=0
+# parsed once by ask_parse_args (cmd_ask); ask_inner only reads them
+ASK_VIA=conductor; ASK_TIMEOUT=$DEFAULT_TIMEOUT; ASK_FRESH=0; ASK_KEEP=0; ASK_BAD=0
+ASK_HAS_BASE=0; ASK_BASE_REF=""; ASK_BASE_NOVAL=0
 WT_HOME=${HARNESS_WT_ROOT:-$HOME/.cache/harness/wt}
 WT_DIR=".harness/wt"
 
@@ -445,10 +448,33 @@ note_clear() {
   return 0
 }
 
-# last_exit <agent> — exit code of the agent's last logged ask (late archives
-# have no exit and are skipped); nothing when unknown
+# last_ask_record <agent> [--ask-id ID|--any-id] [--where JQ] [--field JQ]
+# The newest progress line of <agent> among the last 200 non-close lines that matches the
+# ask-id (default: $ASK_ID, "" = plain asks: a --worktree ask logs `agent: <role>` plus an
+# ask_id, and must never stand in for a plain ask; --any-id reads every line) and the extra
+# jq condition --where. Prints --field (default: the compact line); nothing = unknown.
+# The ids are passed with --arg; --where/--field are jq source from the caller's own literals.
+last_ask_record() {
+  local agent=$1 id=${ASK_ID:-} any=0 where=true field=. prog
+  shift
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --ask-id) id=$2; any=0; shift 2 ;;
+      --any-id) any=1; shift ;;
+      --where) where=$2; shift 2 ;;
+      --field) field=$2; shift 2 ;;
+      *) return 2 ;;
+    esac
+  done
+  prog="fromjson? | select(type == \"object\" and .agent == \$a and (\$any == 1 or (.ask_id // \"\") == \$id)) | select($where) | $field"
+  grep -v '"event":"close"' "$JSONL" 2>/dev/null | tail -n 200 \
+    | jq -R -r -c --arg a "$agent" --arg id "$id" --argjson any "$any" "$prog" 2>/dev/null | tail -n 1
+}
+
+# last_exit <agent> — exit code of the agent's last logged plain ask (late archives
+# have no exit and are skipped; worktree asks are not plain asks); nothing when unknown
 last_exit() {
-  grep -v '"event":"close"' "$JSONL" 2>/dev/null | tail -n 200 | jq -R -r --arg a "$1" 'fromjson? | select(type == "object" and .agent == $a and (.exit | type) == "number") | .exit' 2>/dev/null | tail -n 1
+  last_ask_record "$1" --where '(.exit | type) == "number"' --field .exit
 }
 
 # maybe_reset <agent> <fresh> <keep> <existed> <ctx> — clear a live worker's
@@ -704,19 +730,47 @@ cmd_route_log() {
   return 0
 }
 
-# ask_via AGENT TEXT [OPTIONS...] — the value after the last `--via` among the
-# options following the two positionals (so instruction text "--via" is never an
-# option). Default conductor; a `--via` with no value yields "". Validation is
-# cmd_ask's: it must refuse before any log.
-ask_via() {
-  local v=conductor
+# ask_parse_args <agent> <text> [opts...] — the one walk over an ask's options (called by cmd_ask
+# after the agent and text checks). Sets ASK_VIA/TIMEOUT/FRESH/KEEP/WT_WANT/HAS_BASE/BASE_REF.
+# The instruction text is positional, so a "--via" inside it is never an option. A bad option,
+# --timeout value or --fresh with --keep only sets ASK_BAD: ask_inner turns that into the usage
+# error inside the logged subshell (exit 1 is recorded in progress/routing). The errors that die
+# in cmd_ask before any log (--via, --base, --worktree) are raised by ask_via_check/ask_wt_check.
+ask_parse_args() {
+  local agent=$1
   shift 2
+  ASK_VIA=conductor; ASK_FRESH=0; ASK_KEEP=0; ASK_BAD=0
+  ASK_WT_WANT=0; ASK_HAS_BASE=0; ASK_BASE_REF=""; ASK_BASE_NOVAL=0
+  ASK_TIMEOUT=$DEFAULT_TIMEOUT
+  [ "$agent" != implementer ] || ASK_TIMEOUT=$IMPLEMENTER_TIMEOUT
   while [ $# -gt 0 ]; do
-    if [ "$1" = --via ]; then
-      if [ $# -ge 2 ]; then v=$2; shift 2; else v=''; shift; fi
-    else shift; fi
+    case "$1" in
+      --timeout)
+        case "${2:-}" in
+          ''|*[!0-9]*|0) ASK_BAD=1; shift ;;     # missing/invalid value: usage (logged)
+          *) ASK_TIMEOUT=$2; shift 2 ;;
+        esac ;;
+      --fresh) ASK_FRESH=1; shift ;;
+      --keep) ASK_KEEP=1; shift ;;
+      --worktree) ASK_WT_WANT=1; shift ;;
+      --base)
+        ASK_HAS_BASE=1
+        if [ $# -ge 2 ]; then ASK_BASE_REF=$2; shift 2; else ASK_BASE_NOVAL=1; shift; fi ;;
+      --via)
+        if [ $# -ge 2 ]; then ASK_VIA=$2; shift 2; else ASK_VIA=''; shift; fi ;;
+      *) ASK_BAD=1; shift ;;
+    esac
   done
-  printf '%s\n' "$v"
+  [ "$ASK_FRESH$ASK_KEEP" != 11 ] || ASK_BAD=1
+}
+
+# ask_via_check — refuse a bad --via before any log
+ask_via_check() {
+  case "$ASK_VIA" in
+    skill|conductor|retro) ;;
+    '') die "--via needs a value: skill, conductor or retro" ;;
+    *) die "--via expects skill, conductor or retro (got '$ASK_VIA')" ;;
+  esac
 }
 
 # record_route_delegate <agent> <source> <rc> — one `delegate` line in
@@ -738,7 +792,7 @@ archive_late() {
   local agent=$1 report=$2 sha last ts stamp logf n status summary
   sha=$(file_sum "$report")
   # keyed by role + ask: a worktree ask is compared with its own ask-id only, a plain one with plain lines
-  last=$(grep -v '"event":"close"' "$JSONL" 2>/dev/null | tail -n 200 | jq -R -r --arg a "$agent" --arg id "${ASK_ID:-}" 'fromjson? | select(type == "object" and .agent == $a and (.ask_id // "") == $id) | .report_sha // ""' 2>/dev/null | tail -n 1)
+  last=$(last_ask_record "$agent" --field '.report_sha // ""')
   [ -z "$sha" ] || [ "$sha" != "$last" ] || return 0
   ts=$(date -u +%Y-%m-%dT%H:%M:%SZ); stamp=$(date +%Y%m%d-%H%M%S)
   status=$(sed -n 's/^status: *//p' "$report" | head -n 1)
@@ -1046,13 +1100,9 @@ cmd_ask() {
   local agent=${1:-} text=${2:-} cb
   case " $AGENTS " in *" $agent "*) ;; *) ask_inner "$@" ;; esac
   [ -n "$text" ] || ask_inner "$@"
-  ASK_VIA=$(ask_via "$@")
-  case "$ASK_VIA" in
-    skill|conductor|retro) ;;
-    '') die "--via needs a value: skill, conductor or retro" ;;
-    *) die "--via expects skill, conductor or retro (got '$ASK_VIA')" ;;
-  esac
-  ask_wt_parse "$@"
+  ask_parse_args "$@"
+  ask_via_check
+  ask_wt_check "$agent"
   ASK_PF=".harness/asks/$agent.preflight"
   if [ "$ASK_WT_WANT" = 1 ]; then
     wt_capacity_check
@@ -1079,30 +1129,10 @@ cmd_ask() {
 }
 
 ask_inner() {
-  local agent=${1:-} text=${2:-} timeout=$DEFAULT_TIMEOUT fresh=0 keep=0
+  local agent=${1:-} text=${2:-} timeout=$ASK_TIMEOUT fresh=$ASK_FRESH keep=$ASK_KEEP
   [ -n "$agent" ] && [ -n "$text" ] || usage
   valid_agent "$agent"
-  [ "$agent" != implementer ] || timeout=$IMPLEMENTER_TIMEOUT
-  shift 2
-  while [ $# -gt 0 ]; do
-    case "$1" in
-      --timeout)
-        [ $# -ge 2 ] || usage
-        case "$2" in ''|*[!0-9]*|0) usage ;; esac
-        timeout=$2; shift 2 ;;
-      --fresh) fresh=1; shift ;;
-      --keep) keep=1; shift ;;
-      --worktree) shift ;;     # parsed (and validated) by ask_wt_parse in cmd_ask
-      --base)
-        [ $# -ge 2 ] || usage
-        shift 2 ;;
-      --via)
-        [ $# -ge 2 ] || usage
-        shift 2 ;;
-      *) usage ;;
-    esac
-  done
-  [ "$fresh$keep" != 11 ] || usage
+  [ "$ASK_BAD" = 0 ] || usage      # a bad option found by ask_parse_args: usage error, logged
 
   # pre-flight passed: an exit 1 from here on is an infrastructure failure, not a usage
   # error, and queues a retro candidate (retro_on_ask looks for this marker file; the ask
@@ -1621,8 +1651,7 @@ reap_idle() {
 retro_on_report() {
   local agent=$1 report=$2 last rc instr id
   [ -f "$report" ] && [ -f "$JSONL" ] || return 0
-  last=$(grep -v '"event":"close"' "$JSONL" 2>/dev/null | tail -n 200 \
-    | jq -R -r --arg a "$agent" 'fromjson? | select(type == "object" and .agent == $a and .late != true) | "\(.exit)\t\(.instr // "")"' 2>/dev/null | tail -n 1)
+  last=$(last_ask_record "$agent" --where '.late != true' --field '"\(.exit)\t\(.instr // "")"')
   rc=${last%%$TAB*}; instr=${last#*$TAB}
   digits_only "$rc" || return 0
   case "$rc" in 0|5) return 0 ;; esac
@@ -1896,9 +1925,10 @@ hl_alive() {
 hl_last_session() {
   [ -f "$JSONL" ] || return 1
   tail -n 200 "$JSONL" 2>/dev/null \
-    | jq -R -n -r --arg r "$1" '
+    | jq -R -n -r --arg r "$1" --arg id "${ASK_ID:-}" '
         reduce (inputs | fromjson? | select(type == "object")) as $e ({sid: "", closed: false};
           if $e.event == "close" then (if $e.role == $r then {sid: "", closed: true} else . end)
+          elif ($e.ask_id // "") != $id then .
           elif $e.agent == $r and $e.runner == "headless" and $e.result == "success" and (($e.session // "") != "") then {sid: $e.session, closed: false}
           else . end)
         | if .sid != "" then .sid elif .closed then "closed" else empty end' 2>/dev/null \
@@ -2180,27 +2210,16 @@ close_headless() {
 # ask_ref <role> — what a message tells the conductor to pass to report/close
 ask_ref() { if [ -n "$ASK_WT" ]; then printf '%s' "$ASK_ID"; else printf '%s' "$1"; fi; }
 
-# ask_wt_parse <agent> <text> [opts...] — sets ASK_WT_WANT/ASK_BASE; usage errors exit 1 here,
-# before any file access, so they queue no retro candidate
-ask_wt_parse() {
-  local agent=$1 keep=0 base="" has_base=0 want=0
-  shift 2
-  ASK_WT_WANT=0
-  while [ $# -gt 0 ]; do
-    case "$1" in
-      --timeout|--via) shift; [ $# -eq 0 ] || shift ;;
-      --worktree) want=1; shift ;;
-      --base) has_base=1; [ $# -ge 2 ] || die "--base needs a ref"; base=$2; shift 2 ;;
-      --keep) keep=1; shift ;;
-      *) shift ;;
-    esac
-  done
-  [ "$has_base" = 0 ] || [ "$want" = 1 ] || die "--base is only with --worktree (usage: harness ask <analyst|reviewer> '<instruction>' --worktree [--base REF])"
-  [ "$want" = 1 ] || return 0
-  ASK_WT_WANT=1
+# ask_wt_check <agent> — validates what ask_parse_args found (ASK_WT_WANT/HAS_BASE/BASE_REF) and
+# sets ASK_BASE; usage errors exit 1 here, before any file access, so they queue no retro candidate
+ask_wt_check() {
+  local agent=$1 base=$ASK_BASE_REF
+  [ "$ASK_BASE_NOVAL" = 0 ] || die "--base needs a ref"
+  [ "$ASK_HAS_BASE" = 0 ] || [ "$ASK_WT_WANT" = 1 ] || die "--base is only with --worktree (usage: harness ask <analyst|reviewer> '<instruction>' --worktree [--base REF])"
+  [ "$ASK_WT_WANT" = 1 ] || return 0
   role_in "$agent" "$HARNESS_WT_ROLES" || die "--worktree is for the headless analyst and reviewer only (not $agent)"
   is_headless "$agent" || die "--worktree needs the headless runner for $agent (config runner.$agent=headless or HARNESS_RUNNER_$(printf %s "$agent" | tr 'a-z' 'A-Z')=headless)"
-  [ "$keep" = 0 ] || die "--keep cannot be combined with --worktree (every worktree ask is a fresh session)"
+  [ "$ASK_KEEP" = 0 ] || die "--keep cannot be combined with --worktree (every worktree ask is a fresh session)"
   wt_root_check
   ASK_BASE=$(git rev-parse --verify --quiet "${base:-HEAD}^{commit}") || die "--base: '${base:-HEAD}' is not a commit"
 }

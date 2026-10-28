@@ -252,6 +252,15 @@ check "keep close: no resume across a close" not_logged "--resume"
 check "keep close: says a close ended it" grep -q "closed" <<<"$OUT"
 check "keep close: runs fresh" grep -q "running fresh" <<<"$OUT"
 
+# 15b2. a worktree ask's run (ask_id set) is never the session a plain --keep resumes
+hsetup
+hrun ask analyst "ok"
+rm -f .harness/asks/analyst.session
+printf '%s\n' '{"ts":"2026-10-28T00:00:00Z","agent":"analyst","runner":"headless","result":"success","session":"sess-wt","ask_id":"1-2-3","wt":"/x/wt","base":"b"}' >> .harness/progress.jsonl
+hrun ask analyst "keep" --keep
+check "keep leak: resumes the plain ask's session" logged "--resume sess-1"
+check "keep leak: never the worktree ask's session" not_logged "--resume sess-wt"
+
 # 15c. close ends the conversation: --keep after a close of a healthy idle worker runs fresh
 hsetup
 hrun ask analyst "ok"
