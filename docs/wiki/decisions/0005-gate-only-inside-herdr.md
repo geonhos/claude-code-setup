@@ -2,7 +2,7 @@
 type: decision
 status: active
 updated: 2026-10-28
-sources: [docs/superpowers/plans/2026-10-21-gate-opt-in.md, .harness/review-critique-detail.md §1.4-1.5, claude/hooks/conductor-gate.sh:10-30]
+sources: [docs/superpowers/plans/2026-10-21-gate-opt-in.md, .harness/review-critique-detail.md §1.4-1.5, claude/hooks/conductor-gate.sh:10-30, ask 1793150496-56689-6967, commit d2e4bcb]
 verified_by: tests/gate.test.sh
 ---
 # 0005: Gate only inside herdr, fail closed on bad input
@@ -36,3 +36,5 @@ and (§1.5) that the global conductor made every session outside herdr useless.
   `HERDR_ENV` is inherited too. Since v21 (step 4 above) the gate keys on
   `agent_type`, so that daemon case stays gated; only the no-`agent_type` fallback
   still trusts env.
+- Allowlists name flags; a catch-all like `git status( .*)?` leaks content
+  (`git status -vv` prints the diff; found in the v21 review, fixed in d2e4bcb).
