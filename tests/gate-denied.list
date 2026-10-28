@@ -45,3 +45,11 @@ deny	herdr agent get a 2>&1
 deny	herdr agent list | jq .result
 deny	harness status & harness status
 deny	cat docs/a.md # x
+deny	herdr status
+deny	herdr pane list
+deny	git show --stat HEAD
+deny	git branch --list feat
+deny	gh issue view 3
+deny	gh run list
+deny	gh pr status
+deny	gh repo view

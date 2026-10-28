@@ -176,11 +176,12 @@ write the body to `.harness/pr.md` and run
 
 ## You may run directly
 
-`harness`, `gh` (allowlist: `pr create|view|list|status|checks|comment|edit|merge`, `issue view|list|create|comment`, `run list|view` without `--log*`, `repo view`, `auth status`, `browse`; never `api`; `--body-file` only from `.harness/` or `docs/`; no `pr merge -d`, no `auth status --show-token`), read-only `herdr`
-(`status`, `pane list|get|layout|current`, `agent list|get|wait|explain`,
-`workspace list`, `tab list`), `git status`, `git log`, `git diff --stat`, `git branch` (list-only),
-`git show --stat` (no patch, output or delete flags), `ls` (never recursive), and `cat`/`ls`
-under `.harness/` or `docs/` (no quotes, globs or `$` in their arguments). You
+`harness`, `gh pr create|view|list|checks|comment|edit|merge` (never `api`;
+`--body-file` only from `.harness/` or `docs/`; no `pr merge -d`), read-only
+`herdr` (`agent list|get|wait|explain`, `pane get|current`), `git status`,
+`git log`, `git diff --stat`, `git branch` (list-only: `-a -r -v --show-current`),
+`ls` (never recursive), and `cat`/`ls` under `.harness/` or `docs/` (no quotes,
+globs or `$` in their arguments). You
 may write Markdown under `docs/` and anything under `.harness/`. Everything
 else goes through a skill. One command per Bash call: no `;`, `&&`, `||`, `|`, `&`,
 redirects (`>`, `2>&1`), backticks or `$(`; send independent commands as parallel calls.

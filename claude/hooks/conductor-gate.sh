@@ -49,26 +49,27 @@ CWD=${CWD%/}
 MSG_WRITE="Conductor cannot edit source. Delegate with the /implement skill (implementer worker). Direct writes are allowed only under docs/**/*.md and .harness/."
 MSG_READ="Conductor does not read source. Delegate with the /analyze skill (analyst worker) and read its report. Direct reads are allowed only under .harness/, docs/, and *.md files."
 MSG_AGENT="Native subagents are disabled for the conductor; delegate through the skills so work is visible in herdr panes and logged. Use /analyze (analyst), /implement (implementer) or /review (reviewer) instead."
-MSG_BASH="Conductor shell is limited to: harness; gh (pr/issue/run/repo view-style subcommands, pr create, no api); herdr read-only (status, pane list|get|layout|current, agent list|get|wait|explain, workspace list, tab list); read-only git (status / log / diff --stat / branch list / show --stat); cat or ls (no -R) under .harness/ and docs/. One command per call: no ; & | redirects, backticks or \$(. Delegate command execution with the /implement skill (implementer worker)."
+MSG_BASH="Conductor shell is limited to ONE command per call: harness; gh pr create|view|list|checks|comment|edit|merge (no api, no merge -d); herdr agent list|get|wait|explain and pane get|current; git status / log / diff --stat / branch (list); cat or ls (no -R) under .harness/ and docs/. No ; & | redirects, backticks or \$(. Delegate command execution with the /implement skill (implementer worker)."
 
 # --- Bash allow/deny lists ---------------------------------------------------
 # Each piece below is one alternative; they are joined with | into one regex.
 
 # Commands the conductor may run (matched against a whole masked segment).
 BASH_ALLOW='harness( .*)?'                                        # delegation CLI
-BASH_ALLOW="$BASH_ALLOW|"'herdr status( .*)?'                     # herdr, read-only state ...
-BASH_ALLOW="$BASH_ALLOW|"'herdr pane (list|get|layout|current)( .*)?'
+BASH_ALLOW="$BASH_ALLOW|"'herdr pane (get|current)( .*)?'        # herdr, read-only state ...
 BASH_ALLOW="$BASH_ALLOW|"'herdr agent (list|get|wait|explain)( .*)?'
-BASH_ALLOW="$BASH_ALLOW|"'herdr (workspace|tab) list( .*)?'
-BASH_ALLOW="$BASH_ALLOW|"'gh( .*)?'                               # GitHub CLI (see gh_segment_ok)
+BASH_ALLOW="$BASH_ALLOW|"'gh( .*)?'                               # GitHub CLI (see GH_ALLOW, gh_segment_ok)
 BASH_ALLOW="$BASH_ALLOW|"'git status( .*)?'                       # read-only git ...
 BASH_ALLOW="$BASH_ALLOW|"'git log( .*)?'
 BASH_ALLOW="$BASH_ALLOW|"'git diff --stat( .*)?'                  # ... summaries only
-BASH_ALLOW="$BASH_ALLOW|"'git branch( .*)?'
-BASH_ALLOW="$BASH_ALLOW|"'git show --stat( .*)?'
+BASH_ALLOW="$BASH_ALLOW|"'git branch( (-a|-r|-v|--show-current))*'  # list only
 BASH_ALLOW="$BASH_ALLOW|"'cat (\.harness|docs)(/[^ ]*)?'          # reports and docs
 BASH_ALLOW="$BASH_ALLOW|"'ls( -[A-Za-z]+)*( (\.harness|docs)(/[^ ]*)?)?' # top level, reports, docs
 BASH_ALLOW="^($BASH_ALLOW)\$"
+
+# gh "<group> <subcommand>" pairs the conductor may run. api, run, issue, repo,
+# auth, browse, pr diff|checkout|status are not here.
+GH_ALLOW='pr (create|view|list|checks|comment|edit|merge)'
 
 # git long options that are denied anywhere in a git segment.
 GIT_DENY_LONG='output'                                            # writes files
@@ -281,15 +282,13 @@ bodyfile_ok() {
   return 1
 }
 
-# gh_segment_ok MASKED RAW -> 0 only for allowlisted gh subcommands (spec 1):
-# pr create|view|list|status|checks|comment|edit|merge (merge without -d),
-# issue view|list|create|comment, run list|view (no --log*), repo view,
-# auth status (no --show-token), browse. Global flags -R/--repo/--hostname (and
-# --x=y) may precede the group. Everything up to and including the subcommand
-# is read from the MASKED segment and must be plain unquoted tokens, so quoting
-# cannot make this parser disagree with gh. --body-file/-F values must be
-# plain paths under .harness/ or docs/. Flag checks on the rest of the segment
-# use the raw text with quoting removed, so "--log" == --log.
+# gh_segment_ok MASKED RAW -> 0 only for "gh pr <sub>" with <sub> in GH_ALLOW
+# (merge without -d). Global flags -R/--repo/--hostname (and --x=y) may precede
+# the group. Everything up to and including the subcommand is read from the
+# MASKED segment and must be plain unquoted tokens, so quoting cannot make this
+# parser disagree with gh. --body-file/-F values must be plain paths under
+# .harness/ or docs/. Flag checks on the rest of the segment use the raw text
+# with quoting removed, so "--delete-branch" == --delete-branch.
 gh_segment_ok() {
   local norm tok group sub nflag=0 mflag=0 want=0 v
   norm=$(printf '%s ' "$2" | tr -d "\"'\\\\" | tr -s ' ')
@@ -307,20 +306,13 @@ gh_segment_ok() {
     esac
   done
   [ $# -ge 1 ] || return 1
-  group=$1; sub=-
+  group=$1
   shift
-  if [ "$group" != browse ]; then
-    [ $# -ge 1 ] || return 1
-    sub=$1
-    shift
-    plain_tok "$sub" || return 1
-  fi
-  case "$group $sub" in
-    'pr create'|'pr view'|'pr list'|'pr status'|'pr checks'|'pr comment'|'pr edit'|'pr merge') ;;
-    'issue view'|'issue list'|'issue create'|'issue comment') ;;
-    'run list'|'run view'|'repo view'|'auth status'|'browse -') ;;
-    *) return 1 ;;
-  esac
+  [ $# -ge 1 ] || return 1
+  sub=$1
+  shift
+  plain_tok "$sub" || return 1
+  printf '%s' "$group $sub" | grep -Eq "^($GH_ALLOW)\$" || return 1
   # --body-file / -F values (also --body-file=x, -Fx, clusters like -dF): read
   # from the masked tail, must be plain paths under .harness/ or docs/
   for tok in "$@"; do
@@ -343,39 +335,16 @@ gh_segment_ok() {
   for tok in "$@"; do
     case "$tok" in
       --body-file|--body-file=*|--recover|--recover=*) nflag=$((nflag + 1)) ;;
-      --log*)          [ "$group $sub" != 'run view' ] || return 1 ;;
       --delete-branch|--delete-branch=*) [ "$group $sub" != 'pr merge' ] || return 1 ;;
-      --show-token|--show-token=*) [ "$group $sub" != 'auth status' ] || return 1 ;;
       --*) ;;
       -*F*) nflag=$((nflag + 1)) ;;
     esac
     case "$tok" in
       --*) ;;
       -*d*) [ "$group $sub" != 'pr merge' ] || return 1 ;;
-      -*t*) [ "$group $sub" != 'auth status' ] || return 1 ;;
     esac
   done
   [ "$nflag" -le "$mflag" ] || return 1
-  return 0
-}
-
-# git_branch_ok RAW -> 0 when `git branch ...` only lists (spec 2). Any quote
-# or backslash denies, so token splitting cannot disagree with git.
-git_branch_ok() {
-  local tok listing=0
-  plain_tok "$1" || return 1
-  set -f
-  set -- $1
-  set +f
-  shift 2   # git branch
-  for tok in "$@"; do
-    case "$tok" in
-      --list|--merged|--no-merged|--contains|--no-contains|--points-at) listing=1 ;;
-      -a|-r|-v|-vv|--all|--remotes|--show-current|--sort=*) ;;
-      -*) return 1 ;;
-      *) [ "$listing" -eq 1 ] || return 1 ;;
-    esac
-  done
   return 0
 }
 
@@ -462,7 +431,7 @@ bash_ok() {
   printf ' %s ' "$seg" | grep -Eq '[ /=]\.\.([ /]|$)' && return 1
   case "$seg" in
     git\ *)          git_segment_ok "$raw" || return 1
-                     case "$seg" in git\ branch|git\ branch\ *) git_branch_ok "$raw" || return 1 ;; esac ;;
+                     ;;
     gh|gh\ *)        gh_segment_ok "$seg" "$raw" || return 1 ;;
     cat\ *|ls|ls\ *) cat_ls_segment_ok "$seg" || return 1 ;;
   esac

@@ -104,9 +104,9 @@ jq, git, 설정 중 무엇이 없어도 워커를 막지 않는다.
 ## conductor가 직접 할 수 있는 일
 
 - `harness`
-- `gh`: 허용 목록은 `pr create|view|list|status|checks|comment|edit|merge`, `issue view|list|create|comment`, `run list|view`(`--log*` 제외), `repo view`, `auth status`, `browse`. `api`는 금지. `--body-file`은 `.harness/` 또는 `docs/` 아래 파일만 가능. `pr merge -d`와 `auth status --show-token`은 금지.
-- 읽기 전용 `herdr`: `status`, `pane list|get|layout|current`, `agent list|get|wait|explain`, `workspace list`, `tab list`
-- 읽기 전용 `git`: `status`, `log`, `diff --stat`, `branch`(목록만), `show --stat`. patch, output, 삭제 플래그는 금지.
+- `gh pr create|view|list|checks|comment|edit|merge`: `api`는 금지. `--body-file`은 `.harness/` 또는 `docs/` 아래 파일만 가능. `pr merge -d`는 금지.
+- 읽기 전용 `herdr`: `agent list|get|wait|explain`, `pane get|current`
+- 읽기 전용 `git`: `status`, `log`, `diff --stat`, `branch`(목록만: `-a -r -v --show-current`). patch, output, 삭제 플래그는 금지.
 - `ls` (재귀 금지)
 - `.harness/`와 `docs/` 아래의 `cat`/`ls` (인자에 따옴표, glob, `$` 금지)
 - `docs/` 아래 Markdown 작성, `.harness/` 아래 모든 파일 작성
@@ -116,7 +116,7 @@ jq, git, 설정 중 무엇이 없어도 워커를 막지 않는다.
 
 ## 알려진 한계
 
-게이트가 막는 것은 기본 파일/셸 도구, `Monitor`, `filesystem` MCP 서버다. 파일을 읽는 다른 MCP 서버는 막지 못한다. 파일 도구의 경로는 심링크를 풀고 나서 한 번 더 검사한다. jq가 없거나 훅 입력을 파싱하지 못하면 게이트는 `HARNESS_ROLE=worker`가 아닌 한 호출을 거부한다(fail closed). herdr 패널 밖(`HERDR_ENV`가 1이 아님)에서는 `harness`가 위임할 수 없으므로 게이트가 꺼진다([결정 0005](docs/wiki/decisions/0005-gate-only-inside-herdr.md)). 워커에게 보내는 instruction에 백틱이나 `$(`가 들어가면 작은따옴표로 감싸야 한다.
+게이트가 막는 것은 기본 파일/셸 도구다. 파일을 읽는 다른 MCP 서버는 막지 못한다. 파일 도구의 경로는 심링크를 풀고 나서 한 번 더 검사한다. jq가 없거나 훅 입력을 파싱하지 못하면 게이트는 `HARNESS_ROLE=worker`가 아닌 한 호출을 거부한다(fail closed). herdr 패널 밖(`HERDR_ENV`가 1이 아님)에서는 `harness`가 위임할 수 없으므로 게이트가 꺼진다([결정 0005](docs/wiki/decisions/0005-gate-only-inside-herdr.md)). 워커에게 보내는 instruction에 백틱이나 `$(`가 들어가면 작은따옴표로 감싸야 한다.
 
 워커 세션(`HARNESS_ROLE=worker`)에서는 `harness ask`/`spawn`이 exit 1로 거부된다. 스킬이 사용자 전역이라 워커에서 중첩 위임이 일어나는 것을 막기 위해서다.
 
