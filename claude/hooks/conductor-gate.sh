@@ -49,7 +49,7 @@ CWD=${CWD%/}
 MSG_WRITE="Conductor cannot edit source. Delegate with the /implement skill (implementer worker). Direct writes are allowed only under docs/**/*.md and .harness/."
 MSG_READ="Conductor does not read source. Delegate with the /analyze skill (analyst worker) and read its report. Direct reads are allowed only under .harness/, docs/, and *.md files."
 MSG_AGENT="Native subagents are disabled for the conductor; delegate through the skills so work is visible in herdr panes and logged. Use /analyze (analyst), /implement (implementer) or /review (reviewer) instead."
-MSG_BASH="Conductor shell is limited to: harness; gh (pr/issue/run/repo view-style subcommands, pr create, no api); herdr read-only (status, pane list|get|layout|current, agent list|get|wait|explain, workspace list, tab list); read-only git (status / log / diff --stat / branch list / show --stat); cat or ls (no -R) under .harness/ and docs/; jq as a pipe consumer. Delegate command execution with the /implement skill (implementer worker)."
+MSG_BASH="Conductor shell is limited to: harness; gh (pr/issue/run/repo view-style subcommands, pr create, no api); herdr read-only (status, pane list|get|layout|current, agent list|get|wait|explain, workspace list, tab list); read-only git (status / log / diff --stat / branch list / show --stat); cat or ls (no -R) under .harness/ and docs/. One command per call: no ; & | redirects, backticks or \$(. Delegate command execution with the /implement skill (implementer worker)."
 
 # --- Bash allow/deny lists ---------------------------------------------------
 # Each piece below is one alternative; they are joined with | into one regex.
@@ -82,9 +82,6 @@ GIT_DENY_LONG="$GIT_DENY_LONG|patch|unified|cc|binary|remerge-diff|dd|diff-merge
 GIT_DENY_SHORT='odDmMcCpuU'
 
 GIT_DENY="--($GIT_DENY_LONG)| -[$GIT_DENY_SHORT][A-Za-z0-9]* "
-
-# jq options that read files or take extra positional arguments.
-JQ_DENY=' -[A-Za-z]*[fL][A-Za-z]* | --(from-file|rawfile|slurpfile|args|jsonargs)[ =]'
 
 deny() {
   jq -n --arg r "$1" \
@@ -204,29 +201,24 @@ writable() {
   writable_rel "$p"
 }
 
-# split_segments -> reads a command on stdin, scans it left to right like the
-# shell (single quotes, double quotes, backslash escapes), and prints one line
-# per command segment: "<masked><TAB><raw>". <masked> is the segment with the
-# contents of every '...' / "..." removed (quote chars kept); <raw> is the
-# segment text as written. Segments end at unquoted ; & | (so && and ||) and
-# newlines. Exits 1 on an unterminated quote; on an unquoted < > or # (comments
-# could hide quotes from this scanner); on an unquoted $' or $" (ANSI-C /
-# locale quoting); and on ` or $( unquoted or inside double quotes (command
-# substitution; inside single quotes they are literal). Process substitution
-# and here-strings are covered by the unquoted < > rule.
+# scan_command -> reads ONE command on stdin, scans it like the shell (single
+# quotes, double quotes, backslash escapes) and prints "<masked><TAB><raw>".
+# <masked> is the command with the contents of every '...' / "..." removed
+# (quote chars kept); <raw> is the text as written. Exits 1 (= deny) on anything
+# that would make it more than one simple command: an unquoted ; & | < > # `
+# or newline, an unquoted $( $' $", ` or $( inside double quotes, an
+# unterminated quote. Newlines inside quotes are kept as spaces.
 # Input must not contain tabs (callers normalize them to spaces).
-split_segments() {
+scan_command() {
   awk '
-    function flush() { if (m != "" || r != "") print m "\t" r; m = ""; r = "" }
-    BEGIN { st = 0; bad = 0; m = ""; r = "" }   # st: 0 unquoted, 1 single, 2 double
+    BEGIN { st = 0; bad = 0; m = ""; r = ""; nl = 0 }   # st: 0 unquoted, 1 single, 2 double
     {
       line = $0; n = length(line)
       for (i = 1; i <= n; i++) {
         c = substr(line, i, 1); nx = substr(line, i + 1, 1)
         if (st == 0) {
           if (c == "\\") { c = c substr(line, i + 1, 1); i++; m = m c; r = r c }
-          else if (c == ";" || c == "&" || c == "|") flush()
-          else if (c == "<" || c == ">" || c == "#" || c == "`") bad = 1
+          else if (c == ";" || c == "&" || c == "|" || c == "<" || c == ">" || c == "#" || c == "`") bad = 1
           else if (c == "$" && (nx == "(" || nx == "\047" || nx == "\"")) bad = 1
           else {
             m = m c; r = r c
@@ -243,11 +235,12 @@ split_segments() {
           else if (c == "`" || (c == "$" && nx == "(")) bad = 1
         }
       }
-      if (st == 0) flush(); else r = r " "
+      if (st == 0) nl++; else r = r " "
     }
-    END { flush(); if (st != 0 || bad) exit 1 }
+    END { if (st != 0 || bad || nl > 1) exit 1; print m "\t" r }
   '
 }
+
 
 # has_expansion TEXT -> 0 when TEXT contains a character that the shell would
 # expand or glob ($ { } * ? [ ] ~ \)
@@ -256,17 +249,6 @@ has_expansion() {
     *[\$\{\}\*\?\[\]~\\]*) return 0 ;;
   esac
   return 1
-}
-
-# jq_segment_ok N MASKED RAW -> 0 when a jq segment is safe: not the first
-# segment (so it reads piped input), a single filter argument, no file flags,
-# no paths, no env access, no unquoted expansions or globs
-jq_segment_ok() {
-  [ "$1" -gt 1 ] || return 1
-  case "$3" in */*|*..*|*env*|*ENV*) return 1 ;; esac
-  has_expansion "$2" && return 1
-  printf ' %s ' "$2" | grep -Eq -- "$JQ_DENY" && return 1
-  printf '%s' "$2" | grep -Eq '^jq( --?[A-Za-z-]+)*( [^ -][^ ]*)?$'
 }
 
 # git_segment_ok RAW -> 0 when a git segment uses no denied option and no
@@ -462,38 +444,29 @@ cat_ls_segment_ok() {
   return 0
 }
 
-# bash_ok COMMAND -> 0 when the command has at least one segment and every
-# segment is on the allowlist
+# bash_ok COMMAND -> 0 when COMMAND is one simple command on the allowlist
 bash_ok() {
-  local cmd=$1 segs seg raw n=0 tab
+  local cmd=$1 out seg raw tab
   tab=$(printf '\t')
   [ -n "$cmd" ] || return 1
   cmd=$(printf '%s' "$cmd" | tr '\t' ' ')
-  # tolerate a standalone 2>&1 word; split_segments rejects any other redirect
-  segs=$(printf '%s\n' "$cmd" \
-    | sed -E 's/(^|[[:space:]])2>&1([[:space:];&|]|$)/\1\2/g' \
-    | split_segments) || return 1
-  while IFS="$tab" read -r seg raw; do
-    seg=$(printf '%s' "$seg" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')
-    raw=$(printf '%s' "$raw" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')
-    [ -n "$seg" ] || continue
-    n=$((n + 1))
-    # plain shell text only (character allowlist), in any command
-    unquoted_text_ok "$raw" || return 1
-    # reject '..' path components (but not git ranges like main...HEAD)
-    printf ' %s ' "$seg" | grep -Eq '[ /=]\.\.([ /]|$)' && return 1
-    case "$seg" in
-      jq|jq\ *)       jq_segment_ok "$n" "$seg" "$raw" || return 1; continue ;;
-      git\ *)         git_segment_ok "$raw" || return 1
-                      case "$seg" in git\ branch|git\ branch\ *) git_branch_ok "$raw" || return 1 ;; esac ;;
-      gh|gh\ *)       gh_segment_ok "$seg" "$raw" || return 1 ;;
-      cat\ *|ls|ls\ *) cat_ls_segment_ok "$seg" || return 1 ;;
-    esac
-    printf '%s' "$seg" | grep -Eq "$BASH_ALLOW" || return 1
-  done <<EOF
-$segs
-EOF
-  [ "$n" -gt 0 ]
+  out=$(printf '%s\n' "$cmd" | scan_command) || return 1
+  seg=${out%%"$tab"*}
+  raw=${out#*"$tab"}
+  seg=$(printf '%s' "$seg" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')
+  raw=$(printf '%s' "$raw" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')
+  [ -n "$seg" ] || return 1
+  # plain shell text only (character allowlist)
+  unquoted_text_ok "$raw" || return 1
+  # reject '..' path components (but not git ranges like main...HEAD)
+  printf ' %s ' "$seg" | grep -Eq '[ /=]\.\.([ /]|$)' && return 1
+  case "$seg" in
+    git\ *)          git_segment_ok "$raw" || return 1
+                     case "$seg" in git\ branch|git\ branch\ *) git_branch_ok "$raw" || return 1 ;; esac ;;
+    gh|gh\ *)        gh_segment_ok "$seg" "$raw" || return 1 ;;
+    cat\ *|ls|ls\ *) cat_ls_segment_ok "$seg" || return 1 ;;
+  esac
+  printf '%s' "$seg" | grep -Eq "$BASH_ALLOW"
 }
 
 case "$TOOL" in

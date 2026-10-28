@@ -25,3 +25,4 @@
 - 2026-10-28 · implementer · time-budget rule added to worker prompts (retro 2026-10-28, 5 recurrences)
 - 2026-10-28 · implementer · inbox triage · new spawn-on-cold-shell page; test-wait-loops gains cause (3) start-barrier; in-place-edit page cites ask 1792731600-29108-22965; 5 inbox notes removed
 - 2026-10-28 · implementer · v21 step 2 · gate keys on hook agent_type (conductor gated, others allowed); HARNESS_ROLE only when agent_type is absent; 0005 + daemon page updated
+- 2026-10-28 · implementer · v21 step 3-4 · gate tables at top; single-command scanner (chains, pipes, redirects incl. 2>&1, jq denied); one-command page, conductor.md, README updated

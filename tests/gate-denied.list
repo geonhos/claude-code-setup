@@ -40,3 +40,8 @@ allow	git log --oneline -3
 allow	gh pr view 30
 allow	cat .harness/progress.md
 allow	ls docs
+deny	git status && harness status
+deny	herdr agent get a 2>&1
+deny	herdr agent list | jq .result
+deny	harness status & harness status
+deny	cat docs/a.md # x

@@ -106,11 +106,11 @@ jq, git, 설정 중 무엇이 없어도 워커를 막지 않는다.
 - `harness`
 - `gh`: 허용 목록은 `pr create|view|list|status|checks|comment|edit|merge`, `issue view|list|create|comment`, `run list|view`(`--log*` 제외), `repo view`, `auth status`, `browse`. `api`는 금지. `--body-file`은 `.harness/` 또는 `docs/` 아래 파일만 가능. `pr merge -d`와 `auth status --show-token`은 금지.
 - 읽기 전용 `herdr`: `status`, `pane list|get|layout|current`, `agent list|get|wait|explain`, `workspace list`, `tab list`
-- `jq` (파이프 뒤에서만)
 - 읽기 전용 `git`: `status`, `log`, `diff --stat`, `branch`(목록만), `show --stat`. patch, output, 삭제 플래그는 금지.
 - `ls` (재귀 금지)
 - `.harness/`와 `docs/` 아래의 `cat`/`ls` (인자에 따옴표, glob, `$` 금지)
 - `docs/` 아래 Markdown 작성, `.harness/` 아래 모든 파일 작성
+- Bash 호출 하나에 명령 하나만: `;` `&&` `||` `|` `&`, 리디렉션(`2>&1` 포함), 백틱, `$(`는 거부된다. 독립된 명령은 병렬 호출로 보낸다.
 
 이 밖의 호출은 모두 거부되고, 거부 사유에 써야 할 스킬 이름이 들어 있다.
 

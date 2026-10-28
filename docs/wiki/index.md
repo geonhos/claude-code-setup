@@ -18,7 +18,7 @@ Read this first. Open a page only when it is relevant. Schema and promotion rule
 - [In-place edit breaks running scripts](troubleshooting/in-place-edit-breaks-running-scripts.md): bin/ is live; bodies are brace-wrapped, edit via new inode (active, 2026-10-23)
 
 ## Troubleshooting: conductor
-- [Conductor shell: one command](troubleshooting/conductor-shell-one-command.md): no `;`, `tail`, `echo`; pipe only to jq (active, 2026-10-21)
+- [Conductor shell: one command](troubleshooting/conductor-shell-one-command.md): exactly one simple command: no `;`, `&&`, `|`, redirects (active, 2026-10-21)
 
 ## Troubleshooting: shell portability and tests
 - [GNU stat -f](troubleshooting/gnu-stat-f.md): use `-nt`/`-ot` or `stat -c %Y` first (active, 2026-10-21)
