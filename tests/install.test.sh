@@ -89,6 +89,11 @@ check "harness symlink" [ "$(readlink "$BIN_DIR/harness")" = "$REPO/bin/harness"
 check "harness-verify symlink" [ "$(readlink "$BIN_DIR/harness-verify")" = "$REPO/bin/harness-verify" ]
 check "harness-run symlink" [ "$(readlink "$BIN_DIR/harness-run")" = "$REPO/bin/harness-run" ]
 check "harness-view symlink" [ "$(readlink "$BIN_DIR/harness-view")" = "$REPO/bin/harness-view" ]
+check "harness runs through its install symlink (lib/ found via the real path)" [ "$("$BIN_DIR/harness" _defaults | grep -c '^HARNESS_ROLES=')" = 1 ]
+mkdir -p "$T/rel" && ln -sfn "$BIN_DIR/harness" "$T/rel/h2"
+check "harness runs through a symlink to a symlink" [ "$("$T/rel/h2" _defaults | grep -c '^HARNESS_ROLES=')" = 1 ]
+check "harness-verify loads the defaults through its symlink" bash -c '"$1" detect >/dev/null 2>"$2"; ! grep -q "built-in role list" "$2"' _ "$BIN_DIR/harness-verify" "$T/verify.err"
+check "every bin/ script is linked" bash -c 'for f in "$1"/bin/*; do [ "$(readlink "$2/$(basename "$f")")" = "$f" ] || exit 1; done' _ "$REPO" "$BIN_DIR"
 check "CLAUDE.md not created" [ ! -e "$CLAUDE_DIR/CLAUDE.md" ]
 check "global gitignore has .harness/" grep -qx '.harness/' "$GIT_IGNORE"
 check "global gitignore keeps old lines" grep -qx 'node_modules/' "$GIT_IGNORE"

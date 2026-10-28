@@ -647,6 +647,25 @@ run spawn analyst
 check "migration hint printed" grep -q "old unscoped worker 'analyst'" <<<"$OUT"
 check "migration: old worker not closed" [ -f "$FAKE_DIR/live.analyst" ]
 
+# --- shared defaults: one source (lib/harness-defaults.sh), prose copies must not drift -------
+setup
+DEF=$(/bin/bash "$HARNESS" _defaults); dv() { printf '%s\n' "$DEF" | sed -n "s/^$1=//p"; }
+check "_defaults lists the roles" [ "$(dv HARNESS_ROLES)" = "analyst implementer reviewer" ]
+check "_defaults needs no herdr" [ -n "$DEF" ]
+T_DEF=$(dv HARNESS_DEFAULT_TIMEOUT_MS); T_IMPL=$(dv HARNESS_IMPLEMENTER_TIMEOUT_MS)
+for f in claude/agents/conductor.md claude/skills/implement/SKILL.md; do
+  check "$f quotes the default timeouts" bash -c 'grep -q "$2" "$1" && grep -q "$3" "$1"' _ "$HERE/../$f" "$T_DEF" "$T_IMPL"
+done
+check "conductor.md Bash caps sit just above the defaults" bash -c 'grep -q "timeout $(($1 + 60000))" "$3" && grep -q "timeout $(($2 + 60000))" "$3"' _ "$T_DEF" "$T_IMPL" "$HERE/../claude/agents/conductor.md"
+check "no stray 7-digit timeout in conductor.md/implement skill" bash -c '! grep -ohE "\b1[0-9]{6}\b" "$1" "$2" | grep -vxE "$3|$4"' _ "$HERE/../claude/agents/conductor.md" "$HERE/../claude/skills/implement/SKILL.md" "$T_IMPL" "$(($T_IMPL + 60000))"
+check "header comment quotes the default timeouts" bash -c 'sed -n 1,15p "$1" | grep -q "implementer $2" && sed -n 1,15p "$1" | grep -q "analyst/reviewer $3"' _ "$HARNESS" "$T_IMPL" "$T_DEF"
+OUT=$(HERDR_ENV=1 PATH="$FAKE_BIN:$PATH" /bin/bash "$HARNESS" 2>&1)
+check "usage text prints the default timeouts" bash -c 'grep -q "implementer $2" <<<"$1" && grep -q "others $3" <<<"$1"' _ "$OUT" "$T_IMPL" "$T_DEF"
+TPL=$(sed -n "/^config_template() {/,/^EOC/p" "$HARNESS" | sed '1,2d;$d')
+check "config template idle_ttl_minutes = default" [ "$(printf '%s' "$TPL" | jq -r .idle_ttl_minutes)" = "$(dv HARNESS_IDLE_TTL_DEFAULT)" ]
+check "config template close_after_ask keys = roles" [ "$(printf '%s' "$TPL" | jq -r '.close_after_ask | keys | join(" ")')" = "$(dv HARNESS_ROLES)" ]
+check "config template close_after_ask values = default" [ "$(printf '%s' "$TPL" | jq -r '[.close_after_ask[]] | unique | join(" ")')" = "$(dv HARNESS_CLOSE_AFTER_DEFAULT)" ]
+check "metrics --json lists every role" bash -c 'cd "$1" && HERDR_ENV=1 "$2" metrics --json | jq -e ".current.roles | keys == [\"analyst\",\"implementer\",\"reviewer\"]" >/dev/null' _ "$WORK" "$HARNESS"
 
 echo "PASS $pass / FAIL $fail"
 [ "$fail" -eq 0 ]
