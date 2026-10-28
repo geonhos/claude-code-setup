@@ -32,6 +32,7 @@ if ! . "$HARNESS_LIB/harness-defaults.sh" 2>/dev/null; then
   echo "harness-verify: lib/harness-defaults.sh not found; using the built-in role list" >&2
 fi
 unset src d
+# end loader
 
 warn() { echo "harness-verify: $*" >&2; }
 

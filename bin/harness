@@ -76,6 +76,7 @@ for m in defaults metrics worktree; do
   . "$HARNESS_LIB/harness-$m.sh" 2>/dev/null || { echo "harness: cannot load lib/harness-$m.sh" >&2; exit 1; }
 done
 unset src d m
+# end loader
 
 AGENTS=$HARNESS_ROLES
 REPORT_DIR=".harness/reports"
