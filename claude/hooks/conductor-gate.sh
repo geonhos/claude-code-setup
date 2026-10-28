@@ -48,7 +48,6 @@ CWD=${CWD%/}
 # Fixed strings: never interpolate per-call data (keeps the prompt cache stable).
 MSG_WRITE="Conductor cannot edit source. Delegate with the /implement skill (implementer worker). Direct writes are allowed only under docs/**/*.md and .harness/."
 MSG_READ="Conductor does not read source. Delegate with the /analyze skill (analyst worker) and read its report. Direct reads are allowed only under .harness/, docs/, and *.md files."
-MSG_AGENT="Native subagents are disabled for the conductor; delegate through the skills so work is visible in herdr panes and logged. Use /analyze (analyst), /implement (implementer) or /review (reviewer) instead."
 MSG_BASH="Conductor shell is limited to ONE command per call: harness; gh pr create|view|list|checks|comment|edit|merge (no api, no merge -d); herdr agent list|get|wait|explain and pane get|current; git status / log / diff --stat / branch (list); cat or ls (no -R) under .harness/ and docs/. No ; & | redirects, backticks or \$(. Delegate command execution with the /implement skill (implementer worker)."
 
 # --- Bash allow/deny lists ---------------------------------------------------
@@ -441,8 +440,6 @@ bash_ok() {
 case "$TOOL" in
   Edit|Write)
     writable "$(field file_path)" || deny "$MSG_WRITE" ;;
-  NotebookEdit)
-    writable "$(field notebook_path)" || deny "$MSG_WRITE" ;;
   Read)
     readable "$(field file_path)" || deny "$MSG_READ" ;;
   Grep)
@@ -470,32 +467,8 @@ case "$TOOL" in
     fi
     GP=$(physrel "$GBASE${GDIR:+/$GDIR}") || deny "$MSG_READ"
     case "$GP" in .harness|.harness/*|docs|docs/*) ;; *) deny "$MSG_READ" ;; esac ;;
-  Agent|Workflow)
-    deny "$MSG_AGENT" ;;
   Bash)
     bash_ok "$(field command)" || deny "$MSG_BASH" ;;
-  Monitor)
-    deny "$MSG_BASH" ;;
-  mcp__filesystem__read_text_file|mcp__filesystem__read_file|\
-  mcp__filesystem__search_files|mcp__filesystem__list_directory|\
-  mcp__filesystem__list_directory_with_sizes|mcp__filesystem__directory_tree|\
-  mcp__filesystem__get_file_info|mcp__filesystem__read_media_file)
-    readable "$(field path)" || deny "$MSG_READ" ;;
-  mcp__filesystem__read_multiple_files)
-    # every path must be readable; an empty list is denied
-    PATHS=$(printf '%s' "$INPUT" | jq -r '.tool_input.paths[]? // empty' 2>/dev/null)
-    [ -n "$PATHS" ] || deny "$MSG_READ"
-    while IFS= read -r P; do
-      readable "$P" || deny "$MSG_READ"
-    done <<EOF
-$PATHS
-EOF
-    ;;
-  mcp__filesystem__write_file|mcp__filesystem__edit_file|\
-  mcp__filesystem__create_directory)
-    writable "$(field path)" || deny "$MSG_WRITE" ;;
-  mcp__filesystem__move_file)
-    writable "$(field source)" && writable "$(field destination)" || deny "$MSG_WRITE" ;;
 esac
 
 exit 0

@@ -167,19 +167,17 @@ sequenceDiagram
 
 ```mermaid
 flowchart TD
-  A["PreToolUse hook JSON on stdin"] --> R{"HARNESS_ROLE = worker?"}
-  R -- yes --> OK([allow: no output])
-  R -- no --> J{"jq on PATH?"}
+  A["PreToolUse hook JSON on stdin"] --> J{"jq on PATH?"}
   J -- no --> DJ([deny: static JSON, fail closed])
   J -- yes --> P{"tool_name parsed?"}
-  P -- no --> OK
-  P -- yes --> T{"tool_name"}
-  T -- "Agent, Workflow" --> DA([deny MSG_AGENT])
-  T -- Monitor --> DB([deny MSG_BASH])
-  T -- "Edit, Write, NotebookEdit,<br/>mcp fs write/edit/mkdir/move" --> WR{"writable? lexical + symlink-resolved<br/>.harness/* or docs/*.md"}
+  P -- no --> DP([deny: fail closed])
+  P -- yes --> R{"agent_type = conductor?<br/>(no agent_type: HARNESS_ROLE = worker allows)"}
+  R -- no --> OK([allow: no output])
+  R -- yes --> T{"tool_name"}
+  T -- "Edit, Write" --> WR{"writable? lexical + symlink-resolved<br/>.harness/* or docs/*.md"}
   WR -- yes --> OK
   WR -- no --> DW([deny MSG_WRITE])
-  T -- "Read, Grep, mcp fs read/list" --> RD{"readable? lexical + resolved<br/>.harness, docs, *.md inside cwd"}
+  T -- "Read, Grep" --> RD{"readable? lexical + resolved<br/>.harness, docs, *.md inside cwd"}
   RD -- yes --> OK
   RD -- no --> DR([deny MSG_READ])
   T -- Glob --> GL{"no .. anywhere, no leading / or ~<br/>without path: pattern starts docs/ or .harness/"}
@@ -311,7 +309,7 @@ flowchart LR
 
 </details>
 
-여러 번 실행해도 결과가 같다. 다시 실행하면 게이트/resume/route 항목이 중복 추가되지 않고 교체된다. 훅은 복사하지 않고 저장소의 절대 경로로 참조한다. 게이트 matcher는 `Edit|Write|NotebookEdit|Read|Grep|Glob|Bash|Agent|Workflow|Monitor|mcp__filesystem__.*`다.
+여러 번 실행해도 결과가 같다. 다시 실행하면 게이트/resume/route 항목이 중복 추가되지 않고 교체된다. 훅은 복사하지 않고 저장소의 절대 경로로 참조한다. 게이트 matcher는 `Edit|Write|Read|Grep|Glob|Bash`다. `Agent`, `Workflow`, `Monitor`, `NotebookEdit`는 conductor의 `disallowedTools`가 막는다.
 
 SVG는 아직 재렌더하지 않았다(렌더 방법은 [diagrams/README.md](diagrams/README.md)).
 

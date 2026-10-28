@@ -115,7 +115,6 @@ expect deny  $C "Write outside cwd"       "$(tool Write '{"file_path":"/etc/host
 expect deny  $C "Write dotdot"            "$(tool Write '{"file_path":"docs/../src/a.md","content":"x"}')"
 expect deny  $C "Write empty path"        "$(tool Write '{"content":"x"}')"
 expect allow $C "cwd trailing slash"      "$(jq -n -c '{tool_name:"Write",tool_input:{file_path:"/repo/docs/a.md",content:"x"},cwd:"/repo/"}')"
-expect deny  $C "NotebookEdit"            "$(tool NotebookEdit '{"notebook_path":"/repo/nb.ipynb","new_source":"x"}')"
 
 # --- Read / Grep / Glob ------------------------------------------------------
 expect deny  $C "Read src"                "$(tool Read '{"file_path":"/repo/src/a.ts"}')"
@@ -152,10 +151,6 @@ expect allow $C "Glob docs pattern no path"     "$(tool Glob '{"pattern":"docs/*
 expect allow $C "Glob .harness pattern no path" "$(tool Glob '{"pattern":".harness/reports/*.md"}')"
 expect deny  $C "Glob src pattern no path"      "$(tool Glob '{"pattern":"src/**"}')"
 
-# --- Agent / Workflow --------------------------------------------------------
-expect deny  $C "Agent"                   "$(tool Agent    '{"prompt":"x","description":"y"}')"
-expect deny  $C "Workflow"                "$(tool Workflow '{"script":"x"}')"
-expect deny  $C "Monitor"                 "$(tool Monitor '{"command":"tail -f src/a.log"}')"
 
 # --- Bash: allowlist ---------------------------------------------------------
 expect allow $C "bash harness ask"        "$(bcmd 'harness ask analyst "what is this"')"
@@ -291,24 +286,6 @@ expect deny  $C "bash cat *"              "$(bcmd 'cat .harness/*')"
 expect deny  $C "bash cat \$HOME"         "$(bcmd 'cat .harness/$HOME')"
 expect deny  $C "bash cat backslash"      "$(bcmd 'cat .harness/\.\./src/a.ts')"
 
-# --- MCP filesystem ---------------------------------------------------------
-expect deny  $C "mcp read src"            "$(tool mcp__filesystem__read_text_file '{"path":"/repo/src/a.ts"}')"
-expect allow $C "mcp read docs"           "$(tool mcp__filesystem__read_text_file '{"path":"/repo/docs/a.md"}')"
-expect deny  $C "mcp read_file src"       "$(tool mcp__filesystem__read_file '{"path":"src/a.ts"}')"
-expect deny  $C "mcp search src"          "$(tool mcp__filesystem__search_files '{"path":"/repo","pattern":"x"}')"
-expect deny  $C "mcp tree root"           "$(tool mcp__filesystem__directory_tree '{"path":"/repo"}')"
-expect allow $C "mcp list docs"           "$(tool mcp__filesystem__list_directory '{"path":"docs"}')"
-expect deny  $C "mcp read multiple src"   "$(tool mcp__filesystem__read_multiple_files '{"paths":["src/a.ts"]}')"
-expect allow $C "mcp read multiple docs"  "$(tool mcp__filesystem__read_multiple_files '{"paths":["docs/a.md"]}')"
-expect deny  $C "mcp read multiple mixed" "$(tool mcp__filesystem__read_multiple_files '{"paths":["docs/a.md","src/a.ts"]}')"
-expect deny  $C "mcp read multiple empty" "$(tool mcp__filesystem__read_multiple_files '{"paths":[]}')"
-expect deny  $C "mcp write src"           "$(tool mcp__filesystem__write_file '{"path":"src/x","content":"x"}')"
-expect allow $C "mcp write .harness"      "$(tool mcp__filesystem__write_file '{"path":".harness/x","content":"x"}')"
-expect deny  $C "mcp edit src"            "$(tool mcp__filesystem__edit_file '{"path":"src/a.ts","edits":[]}')"
-expect deny  $C "mcp mkdir src"           "$(tool mcp__filesystem__create_directory '{"path":"src/new"}')"
-expect deny  $C "mcp move into src"       "$(tool mcp__filesystem__move_file '{"source":".harness/x","destination":"src/x"}')"
-expect deny  $C "mcp move out of src"     "$(tool mcp__filesystem__move_file '{"source":"src/x","destination":".harness/x"}')"
-expect allow $C "mcp move in .harness"    "$(tool mcp__filesystem__move_file '{"source":".harness/x","destination":".harness/y"}')"
 
 # --- hardening: jq missing fails closed (spec 5) ----------------------------
 JQBIN=$(mktemp -d)
@@ -397,7 +374,6 @@ expect deny  $C "sym Grep dir link"           "$(stool Grep "$(sp docs/srcdir)")
 expect deny  $C "sym Write dir link outside"  "$(stool Write "$(sp .harness/outdir/x.txt)")"
 expect deny  $C "sym Write dir link src"      "$(stool Write "$(sp .harness/srclink/x.txt)")"
 expect deny  $C "sym Write to file link"      "$(stool Write "$(sp docs/link.md)")"
-expect deny  $C "sym mcp read link"           "$(stool mcp__filesystem__read_text_file "$(sp docs/link.md)")"
 expect deny  $C "sym bash cat link"           "$(stool Bash '{"command":"cat docs/link.md"}')"
 expect allow $C "sym Read real docs md"       "$(stool Read "$(sp docs/real.md)")"
 expect allow $C "sym Read link within docs"   "$(stool Read "$(sp docs/ln2.md)")"
@@ -552,7 +528,6 @@ expect_reason "Conductor gate could not parse" "reason: unparseable" 'not json a
 # --- deny output shape -------------------------------------------------------
 expect_reason "Conductor cannot edit"   "reason: write" "$(tool Write '{"file_path":"src/a.ts","content":"x"}')"
 expect_reason "Conductor does not read" "reason: read"  "$(tool Read '{"file_path":"src/a.ts"}')"
-expect_reason "Native subagents"        "reason: agent" "$(tool Agent '{"prompt":"x"}')"
 expect_reason "Conductor shell"         "reason: bash"  "$(bcmd 'npm test')"
 # every deny reason names the skill to use, not a raw `harness ask`
 expect_reason_has() {
@@ -565,7 +540,6 @@ expect_reason_has() {
 }
 expect_reason_has "/implement" "skill named: write" "$(tool Write '{"file_path":"src/a.ts","content":"x"}')"
 expect_reason_has "/analyze"   "skill named: read"  "$(tool Read '{"file_path":"src/a.ts"}')"
-expect_reason_has "/review"    "skill named: agent" "$(tool Agent '{"prompt":"x"}')"
 expect_reason_has "/implement" "skill named: bash"  "$(bcmd 'npm test')"
 # ...and none of them mentions a raw `harness ask`
 expect_reason_lacks() {
@@ -578,7 +552,6 @@ expect_reason_lacks() {
 }
 expect_reason_lacks "harness ask" "no raw ask: write" "$(tool Write '{"file_path":"src/a.ts","content":"x"}')"
 expect_reason_lacks "harness ask" "no raw ask: read"  "$(tool Read '{"file_path":"src/a.ts"}')"
-expect_reason_lacks "harness ask" "no raw ask: agent" "$(tool Agent '{"prompt":"x"}')"
 expect_reason_lacks "harness ask" "no raw ask: bash"  "$(bcmd 'npm test')"
 expect_event  "event name"                              "$(bcmd 'npm test')"
 

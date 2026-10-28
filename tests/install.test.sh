@@ -57,7 +57,7 @@ check "defaultMode preserved" [ "$(jq -r .permissions.defaultMode "$S")" = auto 
 check "other PreToolUse hook preserved" jq -e '.hooks.PreToolUse[] | select(.hooks[0].command=="/opt/other-hook.sh")' "$S" >/dev/null
 check "Stop hook preserved" jq -e '.hooks.Stop[0].hooks[0].command=="/opt/stop.sh"' "$S" >/dev/null
 check "gate hook added once" [ "$(jq --arg g "$GATE" '[.hooks.PreToolUse[] | select(.hooks[] | .command==$g)] | length' "$S")" -eq 1 ]
-check "gate matcher" jq -e --arg g "$GATE" '.hooks.PreToolUse[] | select(.hooks[] | .command==$g) | .matcher=="Edit|Write|NotebookEdit|Read|Grep|Glob|Bash|Agent|Workflow|Monitor|mcp__filesystem__.*"' "$S" >/dev/null
+check "gate matcher" jq -e --arg g "$GATE" '.hooks.PreToolUse[] | select(.hooks[] | .command==$g) | .matcher=="Edit|Write|Read|Grep|Glob|Bash"' "$S" >/dev/null
 check "promptCacheTtl" [ "$(jq -r .promptCacheTtl "$S")" = 1h ]
 check "subagentPromptCacheTtl" [ "$(jq -r .subagentPromptCacheTtl "$S")" = 1h ]
 check "BASH_DEFAULT_TIMEOUT_MS" [ "$(jq -r .env.BASH_DEFAULT_TIMEOUT_MS "$S")" = 600000 ]
