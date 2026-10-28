@@ -80,6 +80,7 @@ check "dirty: still there" [ "$(wt_dirs)" = 1 ]
 hrun close "$id" --force
 check "dirty: close --force rc 0" [ "$RC" -eq 0 ]
 check "dirty: removed" [ "$(wt_dirs)" = 0 ]
+check "dirty: close event carries the ask_id" jqt --arg id "$id" '.event == "close" and .ask_id == $id' <<<"$(grep '"event":"close"' .harness/progress.jsonl | tail -n 1)"
 check "dirty: registry closed" jqt '.state == "closed"' ".harness/wt/$id.json"
 
 # 3. failure (no report) keeps the checkout; a clean one closes without --force

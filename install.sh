@@ -180,10 +180,10 @@ for d in "$REPO"/claude/skills/*/; do
   fi
   ln -sfn "$d" "$dest"
 done
-ln -sfn "$REPO/bin/harness" "$BIN_DIR/harness"
-ln -sfn "$REPO/bin/harness-verify" "$BIN_DIR/harness-verify"
-ln -sfn "$REPO/bin/harness-run" "$BIN_DIR/harness-run"
-ln -sfn "$REPO/bin/harness-view" "$BIN_DIR/harness-view"
+# bin/* by glob; lib/ needs no link: the scripts resolve their symlink back into the repo
+for f in "$REPO"/bin/*; do
+  [ -f "$f" ] && ln -sfn "$f" "$BIN_DIR/$(basename "$f")"
+done
 case ":$PATH:" in
   *":$BIN_DIR:"*) ;;
   *) echo "warning: $BIN_DIR is not on PATH; add it so the conductor can run 'harness'" >&2 ;;
