@@ -254,6 +254,11 @@ ask_headless() {
     fi
     now=$(date +%s)
     if [ "$now" -ge "$deadline" ]; then
+      if [ "$role" = implementer ] && [ -f "$report.pending" ]; then
+        # the Stop hook has hidden the report while it verifies; the run is never killed at the deadline
+        echo "harness: $role is still verifying (Stop hook running, $(cat .harness/verify/implementer.attempts 2>/dev/null || echo 0) failed attempt(s) so far, $((now - start))s); collect: harness report $(ask_ref "$role"); stop: harness close $(ask_ref "$role") --force" >&2
+        exit 4
+      fi
       echo "harness: $role is still running (pid $(hl_pid "$role"), $((now - start))s); collect: harness report $(ask_ref "$role"); stop: harness close $(ask_ref "$role") --force" >&2
       exit 4
     fi

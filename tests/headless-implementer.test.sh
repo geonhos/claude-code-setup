@@ -56,5 +56,43 @@ isetup; export FAKE_CLAUDE_MODE=noreport
 hrun ask implementer "q"
 check "no denial, no report: still rc 3" [ "$RC" -eq 3 ]
 
+# 2. implementer exit map (the Stop hook is simulated by the fake claude's report command)
+isetup
+export FAKE_REPORT_CMD="mkdir -p $WORK/.harness/reports $WORK/.harness/verify && printf '# implementer report\nstatus: done\n' > $WORK/.harness/reports/implementer.md && printf '{\"status\":\"pass\",\"attempts\":1}' > $WORK/.harness/verify/implementer.json"
+hrun ask implementer "q"
+check "map: report + verify pass: rc 0" [ "$RC" -eq 0 ]
+check "map: report + verify pass: report printed" grep -q "implementer report" <<<"$OUT"
+
+isetup
+export FAKE_REPORT_CMD="mkdir -p $WORK/.harness/reports $WORK/.harness/verify && printf '# implementer report\nstatus: done\n' > $WORK/.harness/reports/implementer.md && printf '{\"status\":\"fail\",\"step\":\"test\",\"attempts\":3}' > $WORK/.harness/verify/implementer.json"
+hrun ask implementer "q"
+check "map: verify FAIL at cap: rc 5" [ "$RC" -eq 5 ]
+check "map: verify FAIL line" grep -q 'verify: FAIL (test, 3 attempts)' <<<"$OUT"
+check "map: verify FAIL: report still printed" grep -q "implementer report" <<<"$OUT"
+
+isetup
+export FAKE_REPORT_CMD="mkdir -p $WORK/.harness/reports && printf '# implementer report\nstatus: done\n' > $WORK/.harness/reports/implementer.md.pending"
+hrun ask implementer "q"
+check "map: only .pending: rc 5" [ "$RC" -eq 5 ]
+check "map: only .pending: INTERRUPTED" grep -q 'verify: INTERRUPTED' <<<"$OUT"
+check "map: only .pending: report restored" test -f .harness/reports/implementer.md
+
+# deadline while the Stop hook is verifying (.pending present): exit 4 "still verifying", run not killed
+isetup; export FAKE_CLAUDE_MODE=hang
+( hrun ask implementer "q" --timeout 3000; echo "$RC" > "$WORK/ask.rc"; echo "$OUT" > "$WORK/ask.out" ) &
+bg=$!
+i=0; while [ $i -lt 50 ] && ! grep -q . .harness/asks/implementer.pid 2>/dev/null; do sleep 0.2; i=$((i + 1)); done
+mkdir -p .harness/reports; printf '# implementer report\nstatus: done\n' > .harness/reports/implementer.md.pending
+wait "$bg"
+check "deadline+pending: rc 4" [ "$(cat "$WORK/ask.rc")" = 4 ]
+check "deadline+pending: says still verifying" grep -q 'still verifying' "$WORK/ask.out"
+check "deadline+pending: run still alive" grep -q . .harness/asks/implementer.pid
+hrun close implementer
+check "deadline+pending: close without --force refused (4)" [ "$RC" -eq 4 ]
+hrun close implementer --force
+hrun report implementer
+check "killed mid-verify: report is INTERRUPTED rc 5" [ "$RC" -eq 5 ]
+check "killed mid-verify: INTERRUPTED line" grep -q 'verify: INTERRUPTED' <<<"$OUT"
+
 echo "PASS $pass / FAIL $fail"
 [ "$fail" -eq 0 ]
