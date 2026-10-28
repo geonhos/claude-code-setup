@@ -50,6 +50,37 @@ check "start failure reads pane screen" logged "pane read w1:p2 --source recent-
 check "start failure closes orphan pane" logged "pane close w1:p2"
 check "start failure unregisters pane" not_grep "^implementer w1:p2$" "$WORK/.harness/panes"
 
+# agent_pane_busy (cold shell in a fresh pane): retry only that error
+setup
+echo 2 > "$FAKE_DIR/start_busy"
+run spawn implementer
+check "busy start retried: rc 0" [ "$RC" -eq 0 ]
+check "busy start retried: 3 starts" [ "$(grep -c '^agent start' "$FAKE_LOG")" -eq 3 ]
+check "busy start retried: pane kept" grep -q "^implementer w1:p2$" "$WORK/.harness/panes"
+
+setup
+echo 99 > "$FAKE_DIR/start_busy"
+OUT=$(HERDR_ENV=1 HERDR_PANE_ID=w1:p1 HARNESS_SPAWN_RETRIES=2 HARNESS_SPAWN_RETRY_S=0 PATH="$FAKE_BIN:$HERE/../bin:$PATH" $GUARD env -u HARNESS_ROLE /bin/bash "$HARNESS" spawn implementer 2>&1); RC=$?
+check "busy start gives up: rc 1" [ "$RC" -eq 1 ]
+check "busy start gives up: 3 starts" [ "$(grep -c '^agent start' "$FAKE_LOG")" -eq 3 ]
+check "busy start gives up: unregisters pane" not_grep "^implementer w1:p2$" "$WORK/.harness/panes"
+
+# a failed ask must not embed the previous ask's report; stderr lands in the ask log
+setup
+mkdir -p "$WORK/.harness/reports"
+printf '# OLD report heading\nstatus: done\n' > "$WORK/.harness/reports/analyst.md"
+touch -t 202001010000 "$WORK/.harness/reports/analyst.md"
+echo 99 > "$FAKE_DIR/start_busy"
+OUT=$(HERDR_ENV=1 HERDR_PANE_ID=w1:p1 HARNESS_SPAWN_RETRIES=1 HARNESS_SPAWN_RETRY_S=0 PATH="$FAKE_BIN:$HERE/../bin:$PATH" $GUARD env -u HARNESS_ROLE /bin/bash "$HARNESS" ask analyst "x" 2>&1); RC=$?
+LOGF=$(ls -t "$WORK"/.harness/log/*analyst*.md 2>/dev/null | head -n 1)
+check "stale report: rc 1" [ "$RC" -eq 1 ]
+check "stale report: log says no report" grep -q "no report" "$LOGF"
+check "stale report: old heading not embedded" not_grep "OLD report heading" "$LOGF"
+check "stale report: jsonl summary null" [ "$(tail -n 1 "$WORK/.harness/progress.jsonl" | jq -r '.summary')" = null ]
+check "ask log keeps stderr: Errors section" grep -q "^## Errors" "$LOGF"
+check "ask log keeps stderr: agent_pane_busy" grep -q "agent_pane_busy" "$LOGF"
+check "stderr still visible to caller" grep -q "agent_pane_busy" <<<"$OUT"
+
 # --- option parsing ----------------------------------------------------------------
 setup
 run ask analyst "x" --timeout
