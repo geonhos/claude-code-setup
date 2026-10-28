@@ -3,6 +3,7 @@
 # Spec: docs/superpowers/specs/2026-10-12-herdr-conductor-setup-design.md
 #
 # Role:   hook input agent_type -> conductor: gate; any other agent: allow
+#         (only when agent_id is absent; a subagent, agent_id set, uses the env rule)
 #         (herdr workers run as analyst/implementer/reviewer/solo). Keying on the
 #         agent, not the env, closes the daemon-inherits-worker-env hole: a
 #         conductor hosted by a daemon that exported HARNESS_ROLE=worker is still
@@ -34,8 +35,11 @@ if [ $? -ne 0 ] || [ -z "$TOOL" ]; then
   exit 0
 fi
 
+# agent_id is set only for subagents (and forked skills) inside a session: they
+# share the session's agent_type, so fall back to the env rule for them.
 AGENT=$(printf '%s' "$INPUT" | jq -r '.agent_type // empty' 2>/dev/null)
-if [ -n "$AGENT" ]; then
+AGENT_ID=$(printf '%s' "$INPUT" | jq -r '.agent_id // empty' 2>/dev/null)
+if [ -n "$AGENT" ] && [ -z "$AGENT_ID" ]; then
   [ "$AGENT" = conductor ] || exit 0
 elif [ "${HARNESS_ROLE:-conductor}" = worker ]; then
   exit 0
@@ -58,7 +62,7 @@ BASH_ALLOW='harness( .*)?'                                        # delegation C
 BASH_ALLOW="$BASH_ALLOW|"'herdr pane (get|current)( .*)?'        # herdr, read-only state ...
 BASH_ALLOW="$BASH_ALLOW|"'herdr agent (list|get|wait|explain)( .*)?'
 BASH_ALLOW="$BASH_ALLOW|"'gh( .*)?'                               # GitHub CLI (see GH_ALLOW, gh_segment_ok)
-BASH_ALLOW="$BASH_ALLOW|"'git status( .*)?'                       # read-only git ...
+BASH_ALLOW="$BASH_ALLOW|"'git status( (-[sb]+|--short|--branch|--porcelain(=v[12])?|--untracked-files=(no|normal|all)))*' # read-only git; no -v (prints diffs) ...
 BASH_ALLOW="$BASH_ALLOW|"'git log( .*)?'
 BASH_ALLOW="$BASH_ALLOW|"'git diff --stat( .*)?'                  # ... summaries only
 BASH_ALLOW="$BASH_ALLOW|"'git branch( (-a|-r|-v|--show-current))*'  # list only
@@ -79,7 +83,8 @@ GIT_DENY_LONG="$GIT_DENY_LONG|patch|unified|cc|binary|remerge-diff|dd|diff-merge
 #   o = --output (writes files)
 #   d D m M c C = branch delete / move / copy (mutates branches)
 #   p u U = patch / unified context (prints diff content)
-GIT_DENY_SHORT='odDmMcCpuU'
+#   G S = git log pickaxe (probes file contents)
+GIT_DENY_SHORT='odDmMcCpuUGS'
 
 GIT_DENY="--($GIT_DENY_LONG)| -[$GIT_DENY_SHORT][A-Za-z0-9]* "
 

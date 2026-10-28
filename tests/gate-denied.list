@@ -15,6 +15,12 @@ deny	git diff
 deny	git show HEAD
 deny	git show HEAD:bin/harness
 deny	git log -p
+deny	git status -v
+deny	git status -vv
+deny	git status --verbose
+deny	git log -Gsecret
+deny	git log -S foo
+allow	git status -sb
 deny	git diff --stat --output=x
 deny	git checkout main
 deny	git reset --hard

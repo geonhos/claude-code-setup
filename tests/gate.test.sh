@@ -101,6 +101,10 @@ expect allow $C "agent implementer allowed"               "$(as_agent implemente
 expect allow $W "agent solo + worker env allowed"         "$(as_agent solo "$RM")"
 expect deny  $C "no agent_type, conductor env: gated"     "$RM"
 expect allow $W "no agent_type, worker env: allowed"      "$RM"
+as_sub() { printf '%s' "$2" | jq -c --arg a "$1" '. + {agent_type:$a, agent_id:"sub1"}'; }
+expect deny  $C "subagent (agent_id) of conductor, conductor env: gated" "$(as_sub conductor "$RM")"
+expect deny  $C "subagent (agent_id) other type, conductor env: gated"   "$(as_sub analyst "$RM")"
+expect allow $W "subagent (agent_id), worker env: allowed"               "$(as_sub conductor "$RM")"
 expect deny  $C "agent_type but no tool_name"             '{"agent_type":"analyst","tool_input":{}}'
 
 # --- Edit / Write / NotebookEdit -------------------------------------------

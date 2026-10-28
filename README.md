@@ -116,7 +116,7 @@ jq, git, 설정 중 무엇이 없어도 워커를 막지 않는다.
 
 ## 알려진 한계
 
-게이트가 막는 것은 기본 파일/셸 도구다. 파일을 읽는 다른 MCP 서버는 막지 못한다. 파일 도구의 경로는 심링크를 풀고 나서 한 번 더 검사한다. jq가 없거나 훅 입력을 파싱하지 못하면 게이트는 `HARNESS_ROLE=worker`가 아닌 한 호출을 거부한다(fail closed). herdr 패널 밖(`HERDR_ENV`가 1이 아님)에서는 `harness`가 위임할 수 없으므로 게이트가 꺼진다([결정 0005](docs/wiki/decisions/0005-gate-only-inside-herdr.md)). 워커에게 보내는 instruction에 백틱이나 `$(`가 들어가면 작은따옴표로 감싸야 한다.
+게이트가 막는 것은 기본 파일/셸 도구다. 파일을 읽는 다른 MCP 서버는 막지 못한다. 파일 도구의 경로는 심링크를 풀고 나서 한 번 더 검사한다. jq가 없거나 훅 입력을 파싱하지 못하면 게이트는 워커를 포함해 모든 호출을 거부한다(fail closed). herdr 패널 밖(`HERDR_ENV`가 1이 아님)에서는 `harness`가 위임할 수 없으므로 게이트가 꺼진다([결정 0005](docs/wiki/decisions/0005-gate-only-inside-herdr.md)). 워커에게 보내는 instruction에 백틱이나 `$(`가 들어가면 작은따옴표로 감싸야 한다.
 
 워커 세션(`HARNESS_ROLE=worker`)에서는 `harness ask`/`spawn`이 exit 1로 거부된다. 스킬이 사용자 전역이라 워커에서 중첩 위임이 일어나는 것을 막기 위해서다.
 
@@ -127,7 +127,7 @@ conductor 에이전트의 본문은 Claude Code의 기본 시스템 프롬프트
 - 프로젝트 단위: 그 프로젝트의 `.claude/settings.json`에 `{ "agent": "solo", "env": { "HARNESS_ROLE": "worker" } }`를 둔다. 프로젝트 설정이 사용자 단위 `agent`보다 우선한다.
 - 세션 하나만: `HARNESS_ROLE=worker claude --agent solo`.
 
-`HARNESS_ROLE=worker claude`만 쓰면 게이트만 꺼지고, 세션은 여전히 conductor 에이전트로 돈다.
+게이트는 훅 입력의 `agent_type`으로 판단한다. conductor 에이전트 세션은 `HARNESS_ROLE=worker`여도 게이트가 켜져 있고, `agent_type`이 없거나 서브에이전트(`agent_id` 있음)일 때만 `HARNESS_ROLE=worker`가 게이트를 끈다.
 
 ## 디렉터리 구성
 
