@@ -84,15 +84,16 @@ hl_pane() {
 # hl_progress_obj <role> <t0> — extra progress.jsonl fields of the role's last run, as one
 # JSON object (keys session / ctx_after are consumed by the caller)
 hl_progress_obj() {
-  local role=$1 t0=${2:-} ej="$ASK_DIR/$1.exit.json" id resume=false
+  local role=$1 t0=${2:-} ej="$ASK_DIR/$1.exit.json" id resume=false resumed=false
   id=$(awk 'NR == 1 { print $1 }' "$ASK_DIR/$role.current" 2>/dev/null)
   [ -z "$(sed -n 's/^resume=//p' "$ASK_DIR/$role.run" 2>/dev/null | head -n 1)" ] || resume=true
+  [ -f "$ASK_DIR/$role.autoresume" ] && [ "$resume" = true ] && resumed=true
   if [ -f "$ej" ] && { [ -z "$id" ] || hl_done "$role" "$id"; }; then
-    jq -c --argjson resume "$resume" --argjson t0 "$(num_or_null "$t0")" '
+    jq -c --argjson resume "$resume" --argjson resumed "$resumed" --argjson t0 "$(num_or_null "$t0")" '
       {runner: "headless", cost_usd: (.cost_usd // null), turns: (.num_turns // null), result: (.result // null),
        denials: (.denials // null), stream_log: (.stream_log // null), resume: $resume,
        startup_s: (if (.t_init | type) == "number" and $t0 != null then (.t_init - $t0) else null end),
-       session: (.session_id // ""), ctx_after: (.ctx // "")}' "$ej" 2>/dev/null && return 0
+       session: (.session_id // ""), ctx_after: (.ctx // "")} + (if $resumed then {resumed: true} else {} end)' "$ej" 2>/dev/null && return 0
   fi
   jq -n -c --argjson resume "$resume" '{runner: "headless", resume: $resume, session: "", ctx_after: ""}'
 }
@@ -180,7 +181,7 @@ hl_view_tail() { [ -z "${1:-}" ] || herdr pane read "$1" 2>/dev/null | tail -n 3
 
 # ask_headless <role> <text> <timeout-ms> <fresh> <keep> — the whole headless ask; always exits
 ask_headless() {
-  local role=$1 text=$2 timeout=$3 keep=$5 pane id start resume="" sid max_s ctxb="" report="$REPORT_DIR/$1.md"
+  local role=$1 text=$2 timeout=$3 fresh=$4 keep=$5 pane id start resume="" sid max_s ctxb="" report="$REPORT_DIR/$1.md" last
   local a="$ASK_DIR/$role" now deadline poll=${HARNESS_POLL_SEC:-2} start_s=${HARNESS_HL_START_S:-15} s0 g
   mkdir -p "$ASK_DIR" .harness/done "$REPORT_DIR" "$LOG_DIR"
   if hl_alive "$role"; then
@@ -189,6 +190,16 @@ ask_headless() {
   fi
   pane=$(hl_pane "$role") || exit $?
   [ -z "$ASK_WT" ] || wt_update pane "$pane"
+  # implementer only (decision 0009, amends D6): after an ask that did not end cleanly the next one
+  # continues the session, like the pane's maybe_reset; --fresh overrides, --keep needs no help
+  rm -f "$a.autoresume"
+  if [ "$role" = implementer ] && [ "$keep" = 0 ] && [ "$fresh" = 0 ]; then
+    last=$(last_exit "$role")
+    case "$last" in
+      ''|0) ;;
+      *) keep=1; : > "$a.autoresume"; echo "keeping context (last ask exit $last)" >&2 ;;
+    esac
+  fi
   if [ "$keep" = 1 ]; then
     sid=$(sed -n 1p "$a.session" 2>/dev/null)
     if [ -n "$sid" ]; then

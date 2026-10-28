@@ -94,5 +94,35 @@ hrun report implementer
 check "killed mid-verify: report is INTERRUPTED rc 5" [ "$RC" -eq 5 ]
 check "killed mid-verify: INTERRUPTED line" grep -q 'verify: INTERRUPTED' <<<"$OUT"
 
+# 3. auto-resume after a non-zero implementer exit (decision 0009)
+failcmd() { echo "mkdir -p $WORK/.harness/reports $WORK/.harness/verify && printf '# implementer report\nstatus: done\n' > $WORK/.harness/reports/implementer.md && printf '{\"status\":\"fail\",\"step\":\"test\",\"attempts\":3}' > $WORK/.harness/verify/implementer.json"; }
+isetup
+export FAKE_REPORT_CMD=$(failcmd)
+hrun ask implementer "first"
+check "autoresume: first ask exits 5" [ "$RC" -eq 5 ]
+check "autoresume: first ask runs fresh" not_logged "--resume"
+export FAKE_REPORT_CMD="mkdir -p $WORK/.harness/reports && printf '# implementer report\nstatus: done\n' > $WORK/.harness/reports/implementer.md"
+hrun ask implementer "second"
+check "autoresume: second ask resumes the failed session" logged "--resume sess-1"
+check "autoresume: says it keeps context" grep -q 'keeping context (last ask exit 5)' <<<"$OUT"
+check "autoresume: progress resumed:true" jqt '.resumed == true and .resume == true and .exit == 0' <<<"$(lastprog)"
+hrun ask implementer "third"
+check "autoresume: after a clean exit the next ask is fresh" test "$(grep -c -- '--resume' "$FAKE_LOG")" = 1
+check "autoresume: no resumed flag when fresh" jqt '(.resumed // false) == false and .resume == false' <<<"$(lastprog)"
+
+isetup
+export FAKE_REPORT_CMD=$(failcmd)
+hrun ask implementer "first"
+export FAKE_REPORT_CMD="mkdir -p $WORK/.harness/reports && printf '# implementer report\nstatus: done\n' > $WORK/.harness/reports/implementer.md"
+hrun ask implementer "second" --fresh
+check "autoresume: --fresh overrides" not_logged "--resume"
+check "autoresume: --fresh progress not resumed" jqt '(.resumed // false) == false' <<<"$(lastprog)"
+
+isetup
+export FAKE_REPORT_CMD=$(failcmd)
+hrun ask analyst "first"
+hrun ask analyst "second"
+check "autoresume: analyst is not auto-resumed" not_logged "--resume"
+
 echo "PASS $pass / FAIL $fail"
 [ "$fail" -eq 0 ]
