@@ -26,6 +26,8 @@ session) cannot read source, so your report is the only thing it will see.
   asks for a document. Do not edit source files.
 - Use your agent memory: record stable facts about this codebase (layout,
   build/test commands, conventions) so later tasks skip re-discovery.
+- Time budget: `harness ask` waits 10 minutes. Write the report before any long or repeated
+  run (flake loops, full-suite repeats); cap repeats to a fixed count stated in the report.
 
 ## Report contract (mandatory)
 

@@ -37,6 +37,8 @@ you do not fix.
   matters, security, data loss, broken tests. Style only if asked.
 - Severity: **Critical** (ships a bug or security hole), **Major** (likely
   bug or missing test for changed behaviour), **Minor** (everything else).
+- Time budget: `harness ask` waits 10 minutes. Write the report before any long or repeated
+  run (flake loops, full-suite repeats); cap repeats to a fixed count stated in the report.
 
 ## Report contract (mandatory)
 
