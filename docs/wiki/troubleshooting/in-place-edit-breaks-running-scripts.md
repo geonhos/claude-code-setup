@@ -2,7 +2,7 @@
 type: troubleshooting
 status: active
 updated: 2026-10-23
-sources: [ask 1792733060, transcript 46cb17a4 05:04:32Z]
+sources: [ask 1792731600-29108-22965, transcript 46cb17a4 05:04:32Z]
 verified_by: tests/headless.test.sh (in-place rewrite)
 ---
 # Rewriting a bin/ script in place breaks the processes running it
@@ -13,4 +13,4 @@ verified_by: tests/headless.test.sh (in-place rewrite)
 
 **Fix.** The bodies of `bin/harness`, `harness-run`, `harness-view` and `harness-verify` are one `{ ...; exit $?; }` group, so bash parses the whole file first. Still edit with the Edit tool or write a temp file and `mv` it (new inode); never `>` onto a `bin/*` file. A new script in `bin/` must use the same wrapper.
 
-**Evidence.** ask 1792733060; transcript 46cb17a4 at 05:04:32Z; test "in-place rewrite" in `tests/headless.test.sh`.
+**Evidence.** ask 1792731600-29108-22965; transcript 46cb17a4 at 05:04:32Z; test "in-place rewrite" in `tests/headless.test.sh`.
