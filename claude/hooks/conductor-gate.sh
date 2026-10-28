@@ -35,8 +35,10 @@ if [ $? -ne 0 ] || [ -z "$TOOL" ]; then
   exit 0
 fi
 
-# agent_id is set only for subagents (and forked skills) inside a session: they
-# share the session's agent_type, so fall back to the env rule for them.
+# agent_id is set only for subagents (and forked skills) inside a session. Their
+# hook input carries their OWN agent_type (e.g. "tiny"), not the session's, so
+# agent_type alone would wave a conductor's subagent through: the agent_id check
+# catches it and falls back to the env rule.
 AGENT=$(printf '%s' "$INPUT" | jq -r '.agent_type // empty' 2>/dev/null)
 AGENT_ID=$(printf '%s' "$INPUT" | jq -r '.agent_id // empty' 2>/dev/null)
 if [ -n "$AGENT" ] && [ -z "$AGENT_ID" ]; then
