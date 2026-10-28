@@ -652,12 +652,15 @@ setup
 DEF=$(/bin/bash "$HARNESS" _defaults); dv() { printf '%s\n' "$DEF" | sed -n "s/^$1=//p"; }
 check "_defaults lists the roles" [ "$(dv HARNESS_ROLES)" = "analyst implementer reviewer" ]
 check "_defaults needs no herdr" [ -n "$DEF" ]
+CDPATH=. /bin/bash "$HARNESS" _defaults >"$WORK/cdp.out" 2>&1; rc=$?
+check "CDPATH=. harness _defaults exits 0" [ "$rc" = 0 ]
+check "CDPATH=. harness _defaults prints no extra output" [ "$(cat "$WORK/cdp.out")" = "$DEF" ]
 T_DEF=$(dv HARNESS_DEFAULT_TIMEOUT_MS); T_IMPL=$(dv HARNESS_IMPLEMENTER_TIMEOUT_MS)
 for f in claude/agents/conductor.md claude/skills/implement/SKILL.md; do
   check "$f quotes the default timeouts" bash -c 'grep -q "$2" "$1" && grep -q "$3" "$1"' _ "$HERE/../$f" "$T_DEF" "$T_IMPL"
 done
 check "conductor.md Bash caps sit just above the defaults" bash -c 'grep -q "timeout $(($1 + 60000))" "$3" && grep -q "timeout $(($2 + 60000))" "$3"' _ "$T_DEF" "$T_IMPL" "$HERE/../claude/agents/conductor.md"
-check "no stray 7-digit timeout in conductor.md/implement skill" bash -c '! grep -ohE "\b1[0-9]{6}\b" "$1" "$2" | grep -vxE "$3|$4"' _ "$HERE/../claude/agents/conductor.md" "$HERE/../claude/skills/implement/SKILL.md" "$T_IMPL" "$(($T_IMPL + 60000))"
+check "no stray 6-8 digit number in conductor.md/implement skill" bash -c '! grep -ohE "\b[0-9]{6,8}\b" "$1" "$2" | grep -vxE "$3|$4|$5|$6"' _ "$HERE/../claude/agents/conductor.md" "$HERE/../claude/skills/implement/SKILL.md" "$T_IMPL" "$(($T_IMPL + 60000))" "$T_DEF" "$(($T_DEF + 60000))"
 check "header comment quotes the default timeouts" bash -c 'sed -n 1,15p "$1" | grep -q "implementer $2" && sed -n 1,15p "$1" | grep -q "analyst/reviewer $3"' _ "$HARNESS" "$T_IMPL" "$T_DEF"
 OUT=$(HERDR_ENV=1 PATH="$FAKE_BIN:$PATH" /bin/bash "$HARNESS" 2>&1)
 check "usage text prints the default timeouts" bash -c 'grep -q "implementer $2" <<<"$1" && grep -q "others $3" <<<"$1"' _ "$OUT" "$T_IMPL" "$T_DEF"

@@ -65,12 +65,12 @@ set -u
 # The symlinked $0 is resolved by hand (no readlink -f on old macOS).
 src=${BASH_SOURCE[0]}
 while [ -L "$src" ]; do
-  case $src in */*) d=$(cd -P "${src%/*}" && pwd) ;; *) d=$PWD ;; esac
+  case $src in */*) d=$(CDPATH= cd -P "${src%/*}" && pwd) ;; *) d=$PWD ;; esac
   src=$(readlink "$src")
   case $src in /*) ;; *) src=$d/$src ;; esac
 done
 case $src in */*) d=${src%/*} ;; *) d=. ;; esac   # no dirname: PATH may be bare in hooks/tests
-HARNESS_LIB=${HARNESS_LIB:-$(cd -P "$d/../lib" 2>/dev/null && pwd)}
+HARNESS_LIB=${HARNESS_LIB:-$(CDPATH= cd -P "$d/../lib" 2>/dev/null && pwd)}
 . "$HARNESS_LIB/harness-defaults.sh" 2>/dev/null || { echo "harness: cannot load lib/harness-defaults.sh" >&2; exit 1; }
 unset src d
 
@@ -1444,13 +1444,13 @@ has_uncollected() {
   return 1
 }
 
-# log_close <role> <pane> <reason> [runner] — event line in progress.jsonl (key `role`, not
+# log_close <role> <pane> <reason> [runner] [ask-id] — event line in progress.jsonl (key `role`, not
 # `agent`, so per-agent ask lookups never match it) + progress.md refresh
 log_close() {
   [ -n "$3" ] || return 0
   mkdir -p .harness 2>/dev/null || return 0
-  jq -n -c --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg role "$1" --arg pane "$2" --arg reason "$3" --arg runner "${4:-}" \
-    '{ts: $ts, event: "close", role: $role, pane: $pane, reason: $reason}
+  jq -n -c --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg role "$1" --arg pane "$2" --arg reason "$3" --arg runner "${4:-}" --arg aid "${5:-}" \
+    '{ts: $ts, event: "close", role: $role, pane: $pane, reason: $reason, ask_id: (if $aid == "" then null else $aid end)}
      + (if $runner != "" then {runner: $runner} else {} end)' >> "$JSONL" 2>/dev/null
   write_progress_md
   return 0
@@ -1920,14 +1920,14 @@ hl_alive() {
   ps -p "$pid" -o command= 2>/dev/null | grep -q 'harness-run'
 }
 # hl_last_session <role> — session id of the role's latest *successful* headless run (progress
-# line with result "success" and a session). A close event of the role is a boundary: when one
-# came after the last such run, print "closed" instead (no session id looks like that).
+# line with result "success" and a session). A close event of the role with the same ask-id rule as
+# last_ask_record is a boundary: when one came after the last such run, print "closed" instead (no session id looks like that).
 hl_last_session() {
   [ -f "$JSONL" ] || return 1
   tail -n 200 "$JSONL" 2>/dev/null \
     | jq -R -n -r --arg r "$1" --arg id "${ASK_ID:-}" '
         reduce (inputs | fromjson? | select(type == "object")) as $e ({sid: "", closed: false};
-          if $e.event == "close" then (if $e.role == $r then {sid: "", closed: true} else . end)
+          if $e.event == "close" then (if $e.role == $r and ($e.ask_id // "") == $id then {sid: "", closed: true} else . end)
           elif ($e.ask_id // "") != $id then .
           elif $e.agent == $r and $e.runner == "headless" and $e.result == "success" and (($e.session // "") != "") then {sid: $e.session, closed: false}
           else . end)
@@ -2569,7 +2569,7 @@ close_wt() {
     echo "harness: $ASK_KEY not closed (use --force to discard its changes)" >&2
     return 4
   fi
-  log_close "$ASK_KEY" "$pane" manual headless
+  log_close "$ASK_KEY" "$pane" manual headless "$ASK_ID"
   echo "closed $ASK_KEY ($ASK_WT)"
 }
 

@@ -261,6 +261,13 @@ hrun ask analyst "keep" --keep
 check "keep leak: resumes the plain ask's session" logged "--resume sess-1"
 check "keep leak: never the worktree ask's session" not_logged "--resume sess-wt"
 
+# 15b3. a worktree ask's close event (ask_id set) is no boundary for the plain role session
+hsetup
+hrun ask analyst "ok"
+printf '%s\n' '{"ts":"2026-10-28T00:00:00Z","event":"close","role":"analyst","pane":"w1:p9","reason":"manual","runner":"headless","ask_id":"1-2-3"}' >> .harness/progress.jsonl
+hrun ask analyst "keep" --keep
+check "keep wt close: plain session not marked closed" logged "--resume sess-1"
+
 # 15c. close ends the conversation: --keep after a close of a healthy idle worker runs fresh
 hsetup
 hrun ask analyst "ok"
@@ -268,6 +275,7 @@ check "keep healthy close: ask rc 0 (142 = the alarm killed a slow ask before it
 check "keep healthy close: session recorded" [ "$(cat .harness/asks/analyst.session)" = sess-1 ]
 hrun close analyst
 check "keep healthy close: session file removed by close" [ ! -e .harness/asks/analyst.session ]
+check "plain close event carries ask_id null" bash -c 'grep "\"event\":\"close\"" .harness/progress.jsonl | tail -n 1 | jq -e "has(\"ask_id\") and .ask_id == null" >/dev/null'
 hrun ask analyst "after" --keep
 check "keep healthy close: no resume" not_logged "--resume"
 check "keep healthy close: note" grep -q "running fresh" <<<"$OUT"
