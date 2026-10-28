@@ -15,8 +15,8 @@ Read this first. Open a page only when it is relevant. Schema and promotion rule
 - [herdr names are global](troubleshooting/herdr-names-are-global.md): names are `<role>-<repo8>`, cwd check gives exit 6 (active, 2026-10-27)
 - [Daemon inherits worker env](troubleshooting/daemon-inherits-worker-env.md): a Claude daemon started in a worker pane makes every hosted session a worker; gate now keys on agent_type (active, 2026-10-28)
 - [AGENTS.md needs a CLAUDE.md import](troubleshooting/agents-md-ignored-when-claude-md-exists.md): CLAUDE.md must start with `@AGENTS.md`; no symlink (active, 2026-10-21)
-- [In-place edit breaks running scripts](troubleshooting/in-place-edit-breaks-running-scripts.md): bin/ is live; bodies are brace-wrapped, edit via new inode (active, 2026-10-23)
 - [Live gate edit](troubleshooting/live-gate-edit.md): a broken gate script denies everything; bash -n + suite before each save (active, 2026-10-28)
+- [In-place edit breaks running scripts](troubleshooting/in-place-edit-breaks-running-scripts.md): bin/ is live; bodies are brace-wrapped, edit via new inode; lib/ is safe while sourced eagerly (active, 2026-10-28)
 
 ## Troubleshooting: conductor
 - [Conductor shell: one command](troubleshooting/conductor-shell-one-command.md): exactly one simple command: no `;`, `&&`, `|`, redirects (active, 2026-10-21)

@@ -23,7 +23,7 @@ cd ~/workspace/claude-code-setup
 
 - `claude/agents/*.md`를 `~/.claude/agents/`에 심링크
 - `claude/skills/*/`를 `~/.claude/skills/`에 디렉터리 심링크 (이미 있던 다른 스킬은 `~/.claude/skills.bak/`으로 옮긴다)
-- `bin/harness`, `bin/harness-verify`, `bin/harness-run`, `bin/harness-view`를 `~/.local/bin`에 링크
+- `bin/*`(`harness`, `harness-verify`, `harness-run`, `harness-view`)를 `~/.local/bin`에 링크 (`lib/`는 링크 없이 실제 경로로 찾음)
 - `~/.claude/settings.json`에 아래 항목을 병합 (백업을 남긴다)
   - PreToolUse 훅 하나(게이트), SessionStart 훅 하나(`conductor-resume.sh`), UserPromptSubmit 훅 하나(`conductor-route.sh`)
   - `env.BASH_DEFAULT_TIMEOUT_MS`/`BASH_MAX_TIMEOUT_MS`
@@ -134,6 +134,10 @@ conductor 에이전트의 본문은 Claude Code의 기본 시스템 프롬프트
 ```
 bin/harness                      herdr wrapper CLI
 bin/harness-verify               format/lint/test checks used by worker hooks
+lib/harness-defaults.sh         roles and default numbers (sourced by bin/harness, bin/harness-verify)
+lib/harness-metrics.sh          harness metrics + wiki-lint (sourced eagerly by bin/harness)
+lib/harness-worktree.sh         --worktree asks, the wt_* group (sourced eagerly by bin/harness)
+lib/harness-headless.sh         headless runner glue, the hl_* group (sourced eagerly by bin/harness)
 claude/hooks/conductor-gate.sh   PreToolUse gate
 claude/hooks/conductor-resume.sh SessionStart hook: injects .harness/progress.md
 claude/hooks/conductor-route.sh  UserPromptSubmit hook: logs each prompt to .harness/routing.jsonl

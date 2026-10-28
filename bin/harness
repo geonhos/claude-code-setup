@@ -60,15 +60,33 @@
 #                  diagnostics on stderr.
 set -u
 
-AGENTS="analyst implementer reviewer"
+# lib/ is sourced eagerly, here, inside the brace group: bash 3.2 reads a sourced file whole,
+# so an in-place edit cannot corrupt the run (a lazily sourced file would lose that protection).
+# The symlinked $0 is resolved by hand (no readlink -f on old macOS).
+src=${BASH_SOURCE[0]}
+while [ -L "$src" ]; do
+  case $src in */*) d=$(CDPATH= cd -P "${src%/*}" && pwd) ;; *) d=$PWD ;; esac
+  src=$(readlink "$src")
+  case $src in /*) ;; *) src=$d/$src ;; esac
+done
+case $src in */*) d=${src%/*} ;; *) d=. ;; esac   # no dirname: PATH may be bare in hooks/tests
+HARNESS_LIB=${HARNESS_LIB:-$(CDPATH= cd -P "$d/../lib" 2>/dev/null && pwd)}
+# Explicit list, fixed order, no glob: a stray file in lib/ is never sourced. Definitions only.
+for m in defaults metrics worktree headless; do
+  . "$HARNESS_LIB/harness-$m.sh" 2>/dev/null || { echo "harness: cannot load lib/harness-$m.sh" >&2; exit 1; }
+done
+unset src d m
+# end loader
+
+AGENTS=$HARNESS_ROLES
 REPORT_DIR=".harness/reports"
 PANES_FILE=".harness/panes"
 LOG_DIR=".harness/log"
 JSONL=".harness/progress.jsonl"
 PROGRESS_MD=".harness/progress.md"
 ROUTE_JSONL=".harness/routing.jsonl"
-DEFAULT_TIMEOUT=600000
-IMPLEMENTER_TIMEOUT=1740000   # default --timeout for the implementer (Stop-hook verify can take 10 min)
+DEFAULT_TIMEOUT=$HARNESS_DEFAULT_TIMEOUT_MS
+IMPLEMENTER_TIMEOUT=$HARNESS_IMPLEMENTER_TIMEOUT_MS
 TAB=$(printf '\t')
 # Per-ask state (decision 0008). A plain ask uses the main checkout's .harness/asks and reports; a
 # `--worktree` ask (headless analyst/reviewer, detached checkout) points ASK_DIR/REPORT_DIR into
@@ -78,6 +96,9 @@ ASK_DIR=".harness/asks"
 ASK_KEY=""        # pane-registry key of a worktree ask: <role>@<id8> (empty = the role)
 ASK_WT=""         # worktree path of this ask (empty = plain ask)
 ASK_ID=""; ASK_ID8=""; ASK_BASE=""; ASK_WT_WANT=0
+# parsed once by ask_parse_args (cmd_ask); ask_inner only reads them
+ASK_VIA=conductor; ASK_TIMEOUT=$DEFAULT_TIMEOUT; ASK_FRESH=0; ASK_KEEP=0; ASK_BAD=0
+ASK_HAS_BASE=0; ASK_BASE_REF=""; ASK_BASE_NOVAL=0
 WT_HOME=${HARNESS_WT_ROOT:-$HOME/.cache/harness/wt}
 WT_DIR=".harness/wt"
 
@@ -85,7 +106,7 @@ usage() {
   cat >&2 <<EOF
 usage:
   harness spawn  <agent> [--direction right|down]
-  harness ask    <agent> '<instruction>' [--timeout MS (default: implementer 1740000, others 600000)] [--fresh|--keep] [--via skill|conductor|retro]
+  harness ask    <agent> '<instruction>' [--timeout MS (default: implementer $IMPLEMENTER_TIMEOUT, others $DEFAULT_TIMEOUT)] [--fresh|--keep] [--via skill|conductor|retro]
   harness ask    <analyst|reviewer> '<instruction>' --worktree [--base REF] ...   (headless roles only; --base needs --worktree)
   harness report <agent>|<ask-id>
   harness status
@@ -431,10 +452,33 @@ note_clear() {
   return 0
 }
 
-# last_exit <agent> — exit code of the agent's last logged ask (late archives
-# have no exit and are skipped); nothing when unknown
+# last_ask_record <agent> [--ask-id ID|--any-id] [--where JQ] [--field JQ]
+# The newest progress line of <agent> among the last 200 non-close lines that matches the
+# ask-id (default: $ASK_ID, "" = plain asks: a --worktree ask logs `agent: <role>` plus an
+# ask_id, and must never stand in for a plain ask; --any-id reads every line) and the extra
+# jq condition --where. Prints --field (default: the compact line); nothing = unknown.
+# The ids are passed with --arg; --where/--field are jq source from the caller's own literals.
+last_ask_record() {
+  local agent=$1 id=${ASK_ID:-} any=0 where=true field=. prog
+  shift
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --ask-id) id=$2; any=0; shift 2 ;;
+      --any-id) any=1; shift ;;
+      --where) where=$2; shift 2 ;;
+      --field) field=$2; shift 2 ;;
+      *) return 2 ;;
+    esac
+  done
+  prog="fromjson? | select(type == \"object\" and .agent == \$a and (\$any == 1 or (.ask_id // \"\") == \$id)) | select($where) | $field"
+  grep -v '"event":"close"' "$JSONL" 2>/dev/null | tail -n 200 \
+    | jq -R -r -c --arg a "$agent" --arg id "$id" --argjson any "$any" "$prog" 2>/dev/null | tail -n 1
+}
+
+# last_exit <agent> — exit code of the agent's last logged plain ask (late archives
+# have no exit and are skipped; worktree asks are not plain asks); nothing when unknown
 last_exit() {
-  grep -v '"event":"close"' "$JSONL" 2>/dev/null | tail -n 200 | jq -R -r --arg a "$1" 'fromjson? | select(type == "object" and .agent == $a and (.exit | type) == "number") | .exit' 2>/dev/null | tail -n 1
+  last_ask_record "$1" --where '(.exit | type) == "number"' --field .exit
 }
 
 # maybe_reset <agent> <fresh> <keep> <existed> <ctx> — clear a live worker's
@@ -452,7 +496,7 @@ maybe_reset() {
     *)
       case "$ctx" in
         ''|*[!0-9]*) ;;
-        *) [ "$ctx" -gt "${HARNESS_CTX_RESET:-120000}" ] && need=1 ;;
+        *) [ "$ctx" -gt "${HARNESS_CTX_RESET:-$HARNESS_CTX_RESET_DEFAULT}" ] && need=1 ;;
       esac ;;
   esac
   [ "$fresh" = 1 ] && need=1
@@ -690,19 +734,47 @@ cmd_route_log() {
   return 0
 }
 
-# ask_via AGENT TEXT [OPTIONS...] — the value after the last `--via` among the
-# options following the two positionals (so instruction text "--via" is never an
-# option). Default conductor; a `--via` with no value yields "". Validation is
-# cmd_ask's: it must refuse before any log.
-ask_via() {
-  local v=conductor
+# ask_parse_args <agent> <text> [opts...] — the one walk over an ask's options (called by cmd_ask
+# after the agent and text checks). Sets ASK_VIA/TIMEOUT/FRESH/KEEP/WT_WANT/HAS_BASE/BASE_REF.
+# The instruction text is positional, so a "--via" inside it is never an option. A bad option,
+# --timeout value or --fresh with --keep only sets ASK_BAD: ask_inner turns that into the usage
+# error inside the logged subshell (exit 1 is recorded in progress/routing). The errors that die
+# in cmd_ask before any log (--via, --base, --worktree) are raised by ask_via_check/ask_wt_check.
+ask_parse_args() {
+  local agent=$1
   shift 2
+  ASK_VIA=conductor; ASK_FRESH=0; ASK_KEEP=0; ASK_BAD=0
+  ASK_WT_WANT=0; ASK_HAS_BASE=0; ASK_BASE_REF=""; ASK_BASE_NOVAL=0
+  ASK_TIMEOUT=$DEFAULT_TIMEOUT
+  [ "$agent" != implementer ] || ASK_TIMEOUT=$IMPLEMENTER_TIMEOUT
   while [ $# -gt 0 ]; do
-    if [ "$1" = --via ]; then
-      if [ $# -ge 2 ]; then v=$2; shift 2; else v=''; shift; fi
-    else shift; fi
+    case "$1" in
+      --timeout)
+        case "${2:-}" in
+          ''|*[!0-9]*|0) ASK_BAD=1; shift ;;     # missing/invalid value: usage (logged)
+          *) ASK_TIMEOUT=$2; shift 2 ;;
+        esac ;;
+      --fresh) ASK_FRESH=1; shift ;;
+      --keep) ASK_KEEP=1; shift ;;
+      --worktree) ASK_WT_WANT=1; shift ;;
+      --base)
+        ASK_HAS_BASE=1
+        if [ $# -ge 2 ]; then ASK_BASE_REF=$2; shift 2; else ASK_BASE_NOVAL=1; shift; fi ;;
+      --via)
+        if [ $# -ge 2 ]; then ASK_VIA=$2; shift 2; else ASK_VIA=''; shift; fi ;;
+      *) ASK_BAD=1; shift ;;
+    esac
   done
-  printf '%s\n' "$v"
+  [ "$ASK_FRESH$ASK_KEEP" != 11 ] || ASK_BAD=1
+}
+
+# ask_via_check — refuse a bad --via before any log
+ask_via_check() {
+  case "$ASK_VIA" in
+    skill|conductor|retro) ;;
+    '') die "--via needs a value: skill, conductor or retro" ;;
+    *) die "--via expects skill, conductor or retro (got '$ASK_VIA')" ;;
+  esac
 }
 
 # record_route_delegate <agent> <source> <rc> — one `delegate` line in
@@ -724,7 +796,7 @@ archive_late() {
   local agent=$1 report=$2 sha last ts stamp logf n status summary
   sha=$(file_sum "$report")
   # keyed by role + ask: a worktree ask is compared with its own ask-id only, a plain one with plain lines
-  last=$(grep -v '"event":"close"' "$JSONL" 2>/dev/null | tail -n 200 | jq -R -r --arg a "$agent" --arg id "${ASK_ID:-}" 'fromjson? | select(type == "object" and .agent == $a and (.ask_id // "") == $id) | .report_sha // ""' 2>/dev/null | tail -n 1)
+  last=$(last_ask_record "$agent" --field '.report_sha // ""')
   [ -z "$sha" ] || [ "$sha" != "$last" ] || return 0
   ts=$(date -u +%Y-%m-%dT%H:%M:%SZ); stamp=$(date +%Y%m%d-%H%M%S)
   status=$(sed -n 's/^status: *//p' "$report" | head -n 1)
@@ -895,70 +967,6 @@ EOF_LEARNED
   echo "wiki: $n lesson$([ "$n" -eq 1 ] || echo s) queued in $out"
 }
 
-# --- wiki-lint ---------------------------------------------------------------------------
-# harness wiki-lint [DIR]   mechanical checks over DIR (default docs/wiki); prints
-# `file: problem` lines, exit 1 on any error (warnings: old inbox items, fluff).
-cmd_wiki_lint() {
-  local dir=${1:-docs/wiki} errs=0 f rel p n links l c k v t st
-  while [ "${#dir}" -gt 1 ] && [ "${dir%/}" != "$dir" ]; do dir=${dir%/}; done
-  [ -d "$dir" ] || { echo "$dir: wiki directory not found"; return 1; }
-  local idx="$dir/index.md"
-  err() { echo "$1: $2"; errs=$((errs + 1)); }
-  warn() { echo "$1: warning: $2"; }
-  [ -f "$idx" ] || err "$idx" "index.md missing"
-  if [ -f "$idx" ]; then
-    n=$(wc -l < "$idx" | tr -d ' ')
-    [ "$n" -le 80 ] || err "$idx" "$n lines (max 80)"
-    links=$(grep -E '^- \[' "$idx" | sed -n 's/^[^]]*\]( *\([^) ]*\)).*/\1/p')
-    while IFS= read -r l; do
-      [ -n "$l" ] || continue
-      case "$l" in http://*|https://*) continue ;; esac
-      [ -f "$dir/$l" ] || err "$idx" "link does not resolve: $l"
-    done <<EOF_LINKS
-$links
-EOF_LINKS
-  fi
-  while IFS= read -r f; do
-    [ -n "$f" ] || continue
-    rel=${f#"$dir"/}
-    case "$rel" in index.md|log.md|inbox/*) continue ;; esac
-    n=$(wc -l < "$f" | tr -d ' ')
-    [ "$n" -le 150 ] || err "$f" "$n lines (max 150)"
-    if [ "$(sed -n 1p "$f")" != "---" ]; then
-      err "$f" "missing frontmatter"
-    else
-      st=$(awk 'NR == 1 { next } /^---[ \t]*$/ { exit } { print }' "$f")
-      awk 'NR > 1 && /^---[ \t]*$/ { f = 1; exit } END { exit !f }' "$f" || err "$f" "frontmatter not closed"
-      for k in type status updated sources verified_by; do
-        v=$(printf '%s\n' "$st" | sed -n "s/^$k:[ ]*//p" | head -1)
-        if [ -z "$v" ]; then err "$f" "frontmatter key missing or empty: $k"; continue; fi
-        case "$k" in
-          type) case "$v" in troubleshooting|decision|how-to) ;; *) err "$f" "invalid type: $v" ;; esac ;;
-          status) case "$v" in draft|active|stale|superseded) ;; *) err "$f" "invalid status: $v" ;; esac ;;
-          updated) printf '%s\n' "$v" | grep -Eq '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' || err "$f" "invalid updated date: $v" ;;
-          sources) case "$v" in \[*\]) [ "$v" != "[]" ] || err "$f" "sources is empty" ;; *) err "$f" "sources must be a [list]" ;; esac ;;
-        esac
-      done
-    fi
-    if [ -f "$idx" ]; then
-      c=$(grep -E '^- \[' "$idx" | grep -cF "]($rel)")
-      [ "$c" -eq 1 ] || err "$f" "listed $c times in index.md (expected 1)"
-    fi
-    grep -Eqi 'works well|잘 동작|very important|중요하다' "$f" && warn "$f" "fluff phrase (works well / 잘 동작 / very important / 중요하다)"
-  done <<EOF_PAGES
-$(find "$dir" -type f -name '*.md' 2>/dev/null | sort)
-EOF_PAGES
-  if [ -d "$dir/inbox" ]; then
-    while IFS= read -r f; do
-      [ -n "$f" ] && warn "$f" "inbox item older than 14 days; review or delete"
-    done <<EOF_OLD
-$(find "$dir/inbox" -type f -name '*.md' -mtime +14 2>/dev/null | sort)
-EOF_OLD
-  fi
-  [ "$errs" -eq 0 ] || return 1
-  return 0
-}
-
 # finish_report <agent> <report> <pane> — print the report and exit with the
 # verification-aware status (0 pass · 3 reviewer without VERDICT · 5 failed)
 finish_report() {
@@ -1032,13 +1040,9 @@ cmd_ask() {
   local agent=${1:-} text=${2:-} cb
   case " $AGENTS " in *" $agent "*) ;; *) ask_inner "$@" ;; esac
   [ -n "$text" ] || ask_inner "$@"
-  ASK_VIA=$(ask_via "$@")
-  case "$ASK_VIA" in
-    skill|conductor|retro) ;;
-    '') die "--via needs a value: skill, conductor or retro" ;;
-    *) die "--via expects skill, conductor or retro (got '$ASK_VIA')" ;;
-  esac
-  ask_wt_parse "$@"
+  ask_parse_args "$@"
+  ask_via_check
+  ask_wt_check "$agent"
   ASK_PF=".harness/asks/$agent.preflight"
   if [ "$ASK_WT_WANT" = 1 ]; then
     wt_capacity_check
@@ -1065,30 +1069,10 @@ cmd_ask() {
 }
 
 ask_inner() {
-  local agent=${1:-} text=${2:-} timeout=$DEFAULT_TIMEOUT fresh=0 keep=0
+  local agent=${1:-} text=${2:-} timeout=$ASK_TIMEOUT fresh=$ASK_FRESH keep=$ASK_KEEP
   [ -n "$agent" ] && [ -n "$text" ] || usage
   valid_agent "$agent"
-  [ "$agent" != implementer ] || timeout=$IMPLEMENTER_TIMEOUT
-  shift 2
-  while [ $# -gt 0 ]; do
-    case "$1" in
-      --timeout)
-        [ $# -ge 2 ] || usage
-        case "$2" in ''|*[!0-9]*|0) usage ;; esac
-        timeout=$2; shift 2 ;;
-      --fresh) fresh=1; shift ;;
-      --keep) keep=1; shift ;;
-      --worktree) shift ;;     # parsed (and validated) by ask_wt_parse in cmd_ask
-      --base)
-        [ $# -ge 2 ] || usage
-        shift 2 ;;
-      --via)
-        [ $# -ge 2 ] || usage
-        shift 2 ;;
-      *) usage ;;
-    esac
-  done
-  [ "$fresh$keep" != 11 ] || usage
+  [ "$ASK_BAD" = 0 ] || usage      # a bad option found by ask_parse_args: usage error, logged
 
   # pre-flight passed: an exit 1 from here on is an infrastructure failure, not a usage
   # error, and queues a retro candidate (retro_on_ask looks for this marker file; the ask
@@ -1364,7 +1348,7 @@ ensure_config() {
 
 # close_after_policy <role> — never|on_success (env, then config, then default)
 close_after_policy() {
-  local up v def=never
+  local up v def=$HARNESS_CLOSE_AFTER_DEFAULT
   up=$(printf %s "$1" | tr 'a-z' 'A-Z')
   eval "v=\${HARNESS_CLOSE_AFTER_ASK_$up:-}"
   [ -n "$v" ] || v=$(jq -r --arg r "$1" '.close_after_ask[$r] // empty' "$CONFIG_FILE" 2>/dev/null)
@@ -1375,7 +1359,7 @@ close_after_policy() {
 idle_ttl_minutes() {
   local v=${HARNESS_IDLE_TTL_MINUTES:-}
   [ -n "$v" ] || v=$(jq -r '.idle_ttl_minutes // empty' "$CONFIG_FILE" 2>/dev/null)
-  digits_only "$v" || v=30
+  digits_only "$v" || v=$HARNESS_IDLE_TTL_DEFAULT
   echo "$v"
 }
 
@@ -1400,13 +1384,13 @@ has_uncollected() {
   return 1
 }
 
-# log_close <role> <pane> <reason> [runner] — event line in progress.jsonl (key `role`, not
+# log_close <role> <pane> <reason> [runner] [ask-id] — event line in progress.jsonl (key `role`, not
 # `agent`, so per-agent ask lookups never match it) + progress.md refresh
 log_close() {
   [ -n "$3" ] || return 0
   mkdir -p .harness 2>/dev/null || return 0
-  jq -n -c --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg role "$1" --arg pane "$2" --arg reason "$3" --arg runner "${4:-}" \
-    '{ts: $ts, event: "close", role: $role, pane: $pane, reason: $reason}
+  jq -n -c --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg role "$1" --arg pane "$2" --arg reason "$3" --arg runner "${4:-}" --arg aid "${5:-}" \
+    '{ts: $ts, event: "close", role: $role, pane: $pane, reason: $reason, ask_id: (if $aid == "" then null else $aid end)}
      + (if $runner != "" then {runner: $runner} else {} end)' >> "$JSONL" 2>/dev/null
   write_progress_md
   return 0
@@ -1607,8 +1591,7 @@ reap_idle() {
 retro_on_report() {
   local agent=$1 report=$2 last rc instr id
   [ -f "$report" ] && [ -f "$JSONL" ] || return 0
-  last=$(grep -v '"event":"close"' "$JSONL" 2>/dev/null | tail -n 200 \
-    | jq -R -r --arg a "$agent" 'fromjson? | select(type == "object" and .agent == $a and .late != true) | "\(.exit)\t\(.instr // "")"' 2>/dev/null | tail -n 1)
+  last=$(last_ask_record "$agent" --where '.late != true' --field '"\(.exit)\t\(.instr // "")"')
   rc=${last%%$TAB*}; instr=${last#*$TAB}
   digits_only "$rc" || return 0
   case "$rc" in 0|5) return 0 ;; esac
@@ -1706,911 +1689,16 @@ cmd_retro() {
   return "$rc"
 }
 
-# --- harness metrics -------------------------------------------------------------------------
-# cmd_metrics [--since YYYY-MM-DD] [--json] — numbers from .harness/progress.jsonl (the
-# current window and the equal one before it) plus a snapshot of retro and wiki state.
-# Windows: [start, now] and [start - len, start). Default start = now - 28 days.
-# Abnormal = a late-report row or an ask whose exit is not 0/5; rate = abnormal / rows.
-cmd_metrics() {
-  local since="" json=0 now top pend=0 done_n=0 recur=0 wiki="null" pages inbox_n=0 oldest="" f st mt idxl=0 inj=0
-  local act=0 stale=0 draft=0 sup=0 oth=0
-  while [ $# -gt 0 ]; do
-    case "$1" in
-      --json) json=1; shift ;;
-      --since)
-        [ $# -ge 2 ] || usage
-        printf '%s' "$2" | grep -Eq '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' || die "--since expects YYYY-MM-DD (got '$2')"
-        since=$2; shift 2 ;;
-      *) usage ;;
-    esac
-  done
-  now=${HARNESS_NOW:-$(date +%s)}
-  digits_only "$now" || die "HARNESS_NOW must be epoch seconds"
-  if [ -n "$since" ]; then
-    jq -n -e --arg s "$since" '($s + "T00:00:00Z" | fromdateiso8601 | strftime("%Y-%m-%d")) == $s' >/dev/null 2>&1 || die "--since: not a valid date ('$since')"
-    [ ! "$since" \> "$(jq -n -r --argjson n "$now" '$n | strftime("%Y-%m-%d")')" ] || die "--since $since is in the future"
-  fi
-  top=$(git rev-parse --show-toplevel 2>/dev/null) || top=$PWD
-  pend=$(ls "$RETRO_DIR"/*.json 2>/dev/null | wc -l | tr -d ' ')
-  done_n=$(ls "$RETRO_DIR"/done/*.json 2>/dev/null | wc -l | tr -d ' ')
-  if [ -d "$top/docs/wiki" ]; then
-    for f in $(find "$top/docs/wiki" -name '*.md' ! -path "$top/docs/wiki/inbox/*" ! -name index.md ! -name log.md 2>/dev/null); do
-      st=$(sed -n 's/^status: *//p' "$f" | head -n 1)
-      case "$st" in
-        active) act=$((act + 1)) ;; stale) stale=$((stale + 1)) ;;
-        draft) draft=$((draft + 1)) ;; superseded) sup=$((sup + 1)) ;; *) oth=$((oth + 1)) ;;
-      esac
-    done
-    for f in $(find "$top/docs/wiki/inbox" -type f -name '*.md' 2>/dev/null); do
-      inbox_n=$((inbox_n + 1))
-      mt=$(file_mtime "$f") || continue
-      if [ -z "$oldest" ] || [ "$mt" -lt "$oldest" ]; then oldest=$mt; fi
-      recur=$((recur + $(grep -ci 'recurrence of' "$f" 2>/dev/null)))
-    done
-    [ ! -f "$top/docs/wiki/index.md" ] || idxl=$(wc -l < "$top/docs/wiki/index.md" | tr -d ' ')
-    [ ! -f "$top/docs/wiki/index.md" ] || inj=$(LC_ALL=C grep -F '(active,' "$top/docs/wiki/index.md" | wc -c | tr -d ' ')
-    wiki=$(jq -n -c --argjson a "$act" --argjson s "$stale" --argjson d "$draft" --argjson u "$sup" --argjson o "$oth" \
-      --argjson inbox "$inbox_n" --argjson oldest "$(num_or_null "$oldest")" --argjson now "$now" --argjson il "$idxl" --argjson ib "$inj" '
-      {pages: {active: $a, stale: $s, draft: $d, superseded: $u, other: $o}, inbox_items: $inbox,
-       inbox_oldest_days: (if $oldest == null then null else ((($now - $oldest) / 86400) | floor) end),
-       index_lines: $il, session_start_bytes: $ib}')
-  fi
-  { [ -f "$JSONL" ] && cat "$JSONL"; true; } | jq -R -s -r --argjson now "$now" --arg since "$since" --argjson json "$json" \
-    --argjson pend "$pend" --argjson done "$done_n" --argjson recur "$recur" --argjson wiki "$wiki" '
-    def pct($n; $d): if $d == 0 then null else (($n * 1000 / $d) | round) / 10 end;
-    def median: sort | if length == 0 then null elif length % 2 == 1 then .[(length / 2 | floor)]
-      else (((.[length / 2 - 1] + .[length / 2]) / 2) | round) end;
-    def p95: sort | if length == 0 then null else .[((length * 0.95 | ceil) - 1)] end;
-    def day: strftime("%Y-%m-%d");
-    def rows: split("\n") | map(fromjson? | select(type == "object" and .event != "close"))
-      | map(. + {t: (try (.ts | fromdateiso8601) catch null)}) | map(select(.t != null));
-    def abn: .late == true or (.exit != null and .exit != 0 and .exit != 5);
-    def role_stat($rs):
-      ($rs | map(select(.late != true))) as $a
-      | { asks: ($a | length), late: ($rs | map(select(.late == true)) | length),
-          abnormal: ($rs | map(select(abn)) | length),
-          abnormal_rate: pct($rs | map(select(abn)) | length; $rs | length),
-          exit: ($rs | map(if .late == true then "late" else (.exit | if . == null then "?" else tostring end) end)
-                 | group_by(.) | map({key: .[0], value: length}) | from_entries),
-          exit5: ($a | map(select(.exit == 5)) | length),
-          duration_median_s: ($a | map(.dur_s | select(type == "number")) | median),
-          duration_p95_s: ($a | map(.dur_s | select(type == "number")) | p95),
-          mean_verify_attempts: ($a | map(.verify_attempts | select(type == "number")) | if length == 0 then null else ((add / length * 10 | round) / 10) end) };
-    def clear_stat($rs):
-      ($rs | map(select(.late != true))) as $a
-      | ($a | map(select(.clear == "ok")) | length) as $ok
-      | ($a | map(select(.clear == "retry")) | length) as $rt
-      | ($a | map(select(.clear == "respawn")) | length) as $rs2
-      | { ok: $ok, retry: $rt, respawn: $rs2, none: ($a | map(select(.clear == "none")) | length),
-          retry_rate: pct($rt; $ok + $rt + $rs2), respawn_rate: pct($rs2; $ok + $rt + $rs2) };
-    def stat($rs):
-      { total: role_stat($rs), clear: clear_stat($rs),
-        roles: (["analyst", "implementer", "reviewer"] | map(. as $r | {key: $r, value: role_stat($rs | map(select(.agent == $r)))}) | from_entries) }
-      | .roles.implementer.verify_failure_rate = pct(.roles.implementer.exit5; .roles.implementer.asks)
-      | .roles.reviewer.fail_rate = pct(.roles.reviewer.exit5; .roles.reviewer.asks)
-      | .by_runner = ($rs | group_by("\(.agent)/\(.runner // "pane")")
-          | map({key: "\(.[0].agent)/\(.[0].runner // "pane")",
-                 value: (role_stat(.) + {cost_usd_sum: (map(.cost_usd | select(type == "number")) | add // 0),
-                   cost_usd_median: (map(select(.late != true) | .cost_usd | select(type == "number")) | median),
-                   startup_s_median: (map(select(.late != true) | .startup_s | select(type == "number")) | median)})})
-          | from_entries);
-    (rows) as $all
-    | (if $since == "" then $now - 28 * 86400 else ($since + "T00:00:00Z" | fromdateiso8601) end) as $start
-    | ($now - $start) as $len
-    | { window: {start: ($start | day), end: ($now | day), days: (($len / 86400) | round)},
-        previous: {start: ($start - $len | day), end: ($start | day)},
-        current: stat($all | map(select(.t >= $start and .t <= $now))),
-        prev: stat($all | map(select(.t >= $start - $len and .t < $start))),
-        retro: {pending: $pend, processed: $done, recurrences_noted: $recur},
-        wiki: $wiki }
-    | if $json == 1 then tojson else
-      def pad($n): tostring | . + ([range(0; $n - length) | " "] | join(""));
-      def lpad($n): tostring | ([range(0; $n - length) | " "] | join("")) + .;
-      def f: if . == null then "-" else tostring end;
-      def pc: if . == null then "-" else "\(.)%" end;
-      def dist: if (. | length) == 0 then "-" else (to_entries | map("\(.key):\(.value)") | join(" ")) end;
-      def dur: if .duration_median_s == null then "-" else "\(.duration_median_s)s / \(.duration_p95_s)s" end;
-      def row($label; $c; $p): "  " + ($label | pad(34)) + ($c | f | lpad(22)) + ($p | f | lpad(22));
-      . as $m
-      | [ "harness metrics  \(.window.start) .. \(.window.end) (\(.window.days)d)  vs  \(.previous.start) .. \(.previous.end)",
-          "",
-          ("  " + ("" | pad(34)) + ("current" | lpad(22)) + ("previous" | lpad(22))),
-          row("asks"; .current.total.asks; .prev.total.asks),
-          (["analyst", "implementer", "reviewer"][] as $r | row("  \($r)"; .current.roles[$r].asks; .prev.roles[$r].asks)),
-          row("late reports"; .current.total.late; .prev.total.late),
-          row("abnormal rate (exit not 0/5, late)"; (.current.total.abnormal_rate | pc); (.prev.total.abnormal_rate | pc)),
-          (["analyst", "implementer", "reviewer"][] as $r | row("  \($r)"; (.current.roles[$r].abnormal_rate | pc); (.prev.roles[$r].abnormal_rate | pc))),
-          row("implementer verify-failure rate"; (.current.roles.implementer.verify_failure_rate | pc); (.prev.roles.implementer.verify_failure_rate | pc)),
-          row("implementer mean verify attempts"; .current.roles.implementer.mean_verify_attempts; .prev.roles.implementer.mean_verify_attempts),
-          row("/clear retry rate"; (.current.clear.retry_rate | pc); (.prev.clear.retry_rate | pc)),
-          row("/clear respawn rate"; (.current.clear.respawn_rate | pc); (.prev.clear.respawn_rate | pc)),
-          row("reviewer FAIL rate"; (.current.roles.reviewer.fail_rate | pc); (.prev.roles.reviewer.fail_rate | pc)),
-          (["analyst", "implementer", "reviewer"][] as $r | row("duration median / p95  \($r)"; (.current.roles[$r] | dur); (.prev.roles[$r] | dur))),
-          "",
-          (if ((.current.by_runner | keys) + (.prev.by_runner | keys) | any(endswith("/headless"))) then
-            "  runner split (agent/runner: asks, abnormal, duration median, cost sum, startup median)",
-            ((.current.by_runner | to_entries[]) | "    \(.key | pad(24)) \(.value.asks) asks · abn \(.value.abnormal) · \(.value | dur) · $\(.value.cost_usd_sum) · startup \(.value.startup_s_median | f)s")
-           else empty end),
-          "  exits current:  \(.current.total.exit | dist)",
-          "  exits previous: \(.prev.total.exit | dist)",
-          "",
-          "retro: \(.retro.pending) pending · \(.retro.processed) processed · \(.retro.recurrences_noted) recurrence note(s) in the inbox",
-          (if .wiki == null then "wiki: none (no docs/wiki)" else
-            "wiki: pages active \(.wiki.pages.active) · stale \(.wiki.pages.stale) · draft \(.wiki.pages.draft) · superseded \(.wiki.pages.superseded) · other \(.wiki.pages.other)",
-            "wiki: inbox \(.wiki.inbox_items) item(s), oldest \(.wiki.inbox_oldest_days | if . == null then "-" else "\(.)d" end) · index \(.wiki.index_lines) lines · SessionStart wiki \(.wiki.session_start_bytes) bytes" end) ]
-      | .[] end'
-}
-
-# --- headless runner (decision 0007) --------------------------------------------------------------
-# runner.<role> = headless: `harness ask` writes the instruction to a file and runs
-# `harness-run` (claude -p, stream-json) in a kept viewer pane. Completion = the run's
-# .harness/asks/<role>.exit.json carrying this ask-id; no herdr agent, no Stop-hook marker.
-
-# runner_of <role> — headless|pane (env HARNESS_RUNNER_<ROLE>, then config runner.<role>, then pane)
-runner_of() {
-  local up v
-  up=$(printf %s "$1" | tr 'a-z' 'A-Z')
-  eval "v=\${HARNESS_RUNNER_$up:-}"
-  [ -n "$v" ] || v=$(jq -r --arg r "$1" '.runner[$r] // empty' "$CONFIG_FILE" 2>/dev/null)
-  case "$v" in headless) echo headless ;; *) echo pane ;; esac
-}
-
-# use_hl <role> — this role is handled by the headless code: configured so, or (runner flipped
-# back to pane) a headless run is still alive. A leftover .run / exit.json is not enough, and
-# herdr answers never decide it.
-use_hl() {
-  [ -z "$ASK_WT" ] || return 0    # a worktree ask is always headless
-  [ "$(runner_of "$1")" != headless ] || return 0
-  hl_alive "$1"
-}
-is_headless() { [ "$(runner_of "$1")" = headless ]; }
-
-# hl_registered_pane <role> — the viewer pane in .harness/panes (last line for the role)
-hl_registered_pane() { awk -v r="${ASK_KEY:-$1}" '$1 == r { p = $2 } END { if (p != "") print p }' "$PANES_FILE" 2>/dev/null; }
-
-# hl_alive <role> — a harness-run for the role is running (pid file, live harness-run process)
-hl_alive() {
-  local f="$ASK_DIR/$1.pid" id pid
-  [ -f "$f" ] || return 1
-  read -r id pid _ < "$f"
-  digits_only "${pid:-}" && kill -0 "$pid" 2>/dev/null || return 1
-  ps -p "$pid" -o command= 2>/dev/null | grep -q 'harness-run'
-}
-# hl_last_session <role> — session id of the role's latest *successful* headless run (progress
-# line with result "success" and a session). A close event of the role is a boundary: when one
-# came after the last such run, print "closed" instead (no session id looks like that).
-hl_last_session() {
-  [ -f "$JSONL" ] || return 1
-  tail -n 200 "$JSONL" 2>/dev/null \
-    | jq -R -n -r --arg r "$1" '
-        reduce (inputs | fromjson? | select(type == "object")) as $e ({sid: "", closed: false};
-          if $e.event == "close" then (if $e.role == $r then {sid: "", closed: true} else . end)
-          elif $e.agent == $r and $e.runner == "headless" and $e.result == "success" and (($e.session // "") != "") then {sid: $e.session, closed: false}
-          else . end)
-        | if .sid != "" then .sid elif .closed then "closed" else empty end' 2>/dev/null \
-    | grep .
-}
-hl_pid() { awk 'NR == 1 { print $2 }' "$ASK_DIR/$1.pid" 2>/dev/null; }
-# hl_done <role> <ask-id> — exit.json exists for that ask
-hl_done() { grep -q "\"ask_id\":\"$2\"" "$ASK_DIR/$1.exit.json" 2>/dev/null; }
-
-# hl_pane <role> — print the role's viewer pane: reuse the registered one while it exists in
-# this repo, else split a plain shell pane (no herdr agent) and register it
-hl_pane() {
-  local role=$1 pane out c dir
-  if [ -z "$ASK_WT" ] && herdr agent get "$(wname "$role")" >/dev/null 2>&1; then
-    die "a pane-mode $role worker is live; close it first: harness close $role"
-  fi
-  pane=$(hl_registered_pane "$role")
-  if [ -n "$pane" ]; then
-    if out=$(herdr pane get "$pane" 2>/dev/null); then
-      c=$(printf '%s' "$out" | jq -r '.result.pane.cwd // empty' 2>/dev/null)
-      if [ -z "$c" ] || cwd_in_repo "$c"; then printf '%s\n' "$pane"; return 0; fi
-    fi
-    unregister "${ASK_KEY:-$role}" "$pane"
-  fi
-  dir=$(pick_direction)
-  if ! out=$(herdr pane split --current --direction "$dir" --cwd "$PWD" --env HARNESS_ROLE=worker --env CLAUDE_CODE_AUTO_COMPACT_WINDOW=160000 --no-focus 2>&1); then
-    die "pane split failed: $out"
-  fi
-  pane=$(printf '%s' "$out" | jq -r '.result.pane.pane_id // empty' 2>/dev/null)
-  [ -n "$pane" ] || die "pane split returned no pane id: $out"
-  register "${ASK_KEY:-$role}" "$pane"
-  printf '%s\n' "$pane"
-}
-
-# hl_progress_obj <role> <t0> — extra progress.jsonl fields of the role's last run, as one
-# JSON object (keys session / ctx_after are consumed by the caller)
-hl_progress_obj() {
-  local role=$1 t0=${2:-} ej="$ASK_DIR/$1.exit.json" id resume=false
-  id=$(awk 'NR == 1 { print $1 }' "$ASK_DIR/$role.current" 2>/dev/null)
-  [ -z "$(sed -n 's/^resume=//p' "$ASK_DIR/$role.run" 2>/dev/null | head -n 1)" ] || resume=true
-  if [ -f "$ej" ] && { [ -z "$id" ] || hl_done "$role" "$id"; }; then
-    jq -c --argjson resume "$resume" --argjson t0 "$(num_or_null "$t0")" '
-      {runner: "headless", cost_usd: (.cost_usd // null), turns: (.num_turns // null), result: (.result // null),
-       denials: (.denials // null), stream_log: (.stream_log // null), resume: $resume,
-       startup_s: (if (.t_init | type) == "number" and $t0 != null then (.t_init - $t0) else null end),
-       session: (.session_id // ""), ctx_after: (.ctx // "")}' "$ej" 2>/dev/null && return 0
-  fi
-  jq -n -c --argjson resume "$resume" '{runner: "headless", resume: $resume, session: "", ctx_after: ""}'
-}
-
-# hl_status_line <role> status|progress — one line for `harness status` / progress.md
-hl_status_line() {
-  local role=$1 mode=$2 pane st el ctx
-  pane=$(hl_registered_pane "$role")
-  if [ -z "$pane" ]; then
-    if [ "$mode" = status ]; then printf '%-12s %s\n' "$role" "-"; else printf '%s -' "$role"; fi
-    return 0
-  fi
-  ctx=$(jq -r '.ctx // empty' "$ASK_DIR/$role.exit.json" 2>/dev/null)
-  if hl_alive "$role"; then
-    st=running
-    el=$(( $(date +%s) - $(awk 'NR == 1 { print $2 }' "$ASK_DIR/$role.current" 2>/dev/null || echo 0) ))
-  else
-    st=idle; el=""
-  fi
-  if [ "$mode" = status ]; then
-    if [ "$st" = running ]; then printf '%-12s %-8s %-8s hl %ss\n' "$role" "$st" "$pane" "$el"
-    else printf '%-12s %-8s %-8s hl ctx %s\n' "$role" "$st" "$pane" "$(fmt_ctx "$ctx")"; fi
-  else
-    printf '%s %s ctx %s hl' "$role" "$st" "$(fmt_ctx "$ctx")"
-  fi
-}
-
-# hl_collect <role> — a finished run (exit.json present): print the report or explain, exit.
-# First match wins (spec §3). Never returns.
-hl_collect() {
-  local role=$1 ej="$ASK_DIR/$1.exit.json" report="$REPORT_DIR/$1.md" cur="$ASK_DIR/$1.current"
-  local rc res iserr killed sid tinit pane perm ejc
-  ejc=$(cat "$ej" 2>/dev/null)   # one read: a racing close removes the checkout under us
-  rc=$(jq -r '.rc // empty' <<<"$ejc" 2>/dev/null); res=$(jq -r '.result // empty' <<<"$ejc" 2>/dev/null)
-  iserr=$(jq -r '.is_error // false' <<<"$ejc" 2>/dev/null); killed=$(jq -r '.killed // empty' <<<"$ejc" 2>/dev/null)
-  sid=$(jq -r '(.session_id // "") | .[0:8]' <<<"$ejc" 2>/dev/null); tinit=$(jq -r '.t_init // empty' <<<"$ejc" 2>/dev/null)
-  # a worktree ask whose result vanished was closed under it (`harness close --force` kills the
-  # run and removes the checkout while this process is still collecting): that is a kill, not a failure
-  if [ -n "$ASK_WT" ] && [ -z "$ejc" ]; then
-    echo "harness: $role's run was killed (closed); its checkout was removed"
-    exit 3
-  fi
-  pane=$(hl_registered_pane "$role")
-  perm=$(jq -r '.perm // empty' <<<"$ejc" 2>/dev/null)
-  if [ -n "$perm" ] && [ "$perm" != auto ]; then
-    echo "harness: warning: $role ran with permission mode '$perm', not auto; tools may have been denied (see the viewer pane)" >&2
-  fi
-  restore_interrupted "$role" "$report"
-  if [ -f "$report" ] && { [ ! -f "$cur" ] || [ ! "$report" -ot "$cur" ]; }; then
-    if { [ -n "$rc" ] && [ "$rc" != 0 ]; } || [ "$iserr" = true ]; then
-      echo "harness: note: $role's run ended with ${res:-no result} (rc ${rc:-?}) but wrote a report" >&2
-    fi
-    finish_report "$role" "$report" "${pane:--}"
-  fi
-  if [ "$res" = error_max_turns ]; then
-    echo "harness: $role stopped at the max-turns limit without a report; continue with: harness ask $role '...' --keep"
-    hl_view_tail "$pane"; exit 3
-  fi
-  if [ -n "$killed" ]; then
-    echo "harness: $role's run was killed ($killed); --keep resumes session ${sid:-?}"
-    exit 3
-  fi
-  if [ "$rc" = 127 ] || [ -z "$tinit" ]; then
-    echo "harness: $role's claude did not start (rc ${rc:-?}):" >&2
-    tail -n 20 "$ASK_DIR/$role.err" 2>/dev/null >&2
-    exit 1
-  fi
-  if [ "$iserr" = true ] || [ -n "$res" -a "$res" != success ] || { [ -n "$rc" ] && [ "$rc" != 0 ]; }; then
-    echo "harness: $role's worker ended with ${res:-error} (rc ${rc:-?}) and wrote no report"
-    tail -n 20 "$ASK_DIR/$role.err" 2>/dev/null
-    hl_view_tail "$pane"; exit 3
-  fi
-  echo "harness: $role finished without a report at $report; collect: harness report $(ask_ref "$role")"
-  hl_view_tail "$pane"; exit 3
-}
-hl_view_tail() { [ -z "${1:-}" ] || herdr pane read "$1" 2>/dev/null | tail -n 30; return 0; }
-
-# ask_headless <role> <text> <timeout-ms> <fresh> <keep> — the whole headless ask; always exits
-ask_headless() {
-  local role=$1 text=$2 timeout=$3 keep=$5 pane id start resume="" sid max_s ctxb="" report="$REPORT_DIR/$1.md"
-  local a="$ASK_DIR/$role" now deadline poll=${HARNESS_POLL_SEC:-2} start_s=${HARNESS_HL_START_S:-15} s0 g
-  mkdir -p "$ASK_DIR" .harness/done "$REPORT_DIR" "$LOG_DIR"
-  if hl_alive "$role"; then
-    echo "harness: $role is still running (pid $(hl_pid "$role")); nothing sent. Collect with: harness report $role; stop: harness close $role --force" >&2
-    exit 4
-  fi
-  pane=$(hl_pane "$role") || exit $?
-  [ -z "$ASK_WT" ] || wt_update pane "$pane"
-  if [ "$keep" = 1 ]; then
-    sid=$(sed -n 1p "$a.session" 2>/dev/null)
-    if [ -n "$sid" ]; then
-      resume=$sid
-      ctxb=$(jq -r '.ctx // empty' "$a.exit.json" 2>/dev/null)
-    elif sid=$(hl_last_session "$role") && [ "$sid" = closed ]; then
-      echo "harness: note: $role was closed after its last successful run; no session to resume — running fresh"
-    elif [ -n "$sid" ]; then
-      # the previous run died before it reported a session: fall back to the last successful one
-      resume=$sid
-      echo "harness: note: the previous run recorded no session; resuming the last successful one from progress.jsonl (${sid:0:8})"
-    else
-      echo "harness: note: no previous session for $role — running fresh"
-    fi
-  fi
-  # a session file left by an earlier run must never be mistaken for this run's
-  rm -f "$a.session"
-  if [ -f "$report" ]; then
-    archive_late "$role" "$report" || {
-      echo "harness: could not archive the leftover report; kept as $report.unlogged" >&2
-      mv -f "$report" "$report.unlogged"
-    }
-  fi
-  rm -f "$report"
-  id=${ASK_ID:-"$(date +%s)-$$-$RANDOM"}; start=$(date +%s)
-  printf '%s %s\n' "$id" "$start" > "$a.current"
-  rm -f "$a.finished" "$a.exit.json" "$a.pid"
-  if [ "$role" = implementer ]; then verify_tool baseline implementer 2>/dev/null || rm -f .harness/verify/implementer.json; fi
-  max_s=${HARNESS_HL_MAX_S:-}
-  digits_only "$max_s" || { max_s=$(jq -r '.headless_max_minutes // empty' "$CONFIG_FILE" 2>/dev/null); digits_only "$max_s" && max_s=$((max_s * 60)) || max_s=3600; }
-  printf '%s\n' "$text" > "$a.prompt"
-  printf 'resume=%s\nmax_s=%s\nctx_before=%s\n' "$resume" "$max_s" "$ctxb" > "$a.run"
-  # a worktree ask streams into the main checkout's log dir, tagged with its id8
-  [ -z "$ASK_WT" ] || printf 'log_dir=%s\nlog_tag=%s\n' "$(pwd -P)/.harness/log" "$ASK_ID8" >> "$a.run"
-  if ! herdr pane run "$pane" "$(printf 'harness-run %q %q %q' "$role" "$id" "${ASK_WT:-$(pwd -P)}")" >/dev/null 2>&1; then
-    echo "harness: pane run failed for $pane" >&2
-    exit 1
-  fi
-  # the run announces itself with its pid file; a pane whose shell is busy never does
-  s0=$(date +%s)
-  until grep -q "^$id " "$a.pid" 2>/dev/null || hl_done "$role" "$id"; do
-    if [ $(( $(date +%s) - s0 )) -ge "$start_s" ]; then
-      echo "harness: $role's run did not start in $start_s s (is the pane $pane at a shell prompt?)" >&2
-      show_pane_screen "$pane"
-      exit 1
-    fi
-    sleep "$poll"
-  done
-  deadline=$((start + (timeout + 999) / 1000))
-  while :; do
-    if hl_done "$role" "$id"; then hl_collect "$role"; fi
-    if ! hl_alive "$role"; then
-      # the runner may still be writing exit.json (jq, mv) as its pid disappears: give it ~3 s
-      g=0; while [ "$g" -lt 30 ] && ! hl_done "$role" "$id"; do sleep 0.1; g=$((g + 1)); done
-      if hl_done "$role" "$id"; then hl_collect "$role"; fi
-      sid=$(sed -n 1p "$a.session" 2>/dev/null | cut -c1-8)
-      if [ -n "$sid" ]; then
-        echo "harness: $role's run is gone without a result (killed?); --keep resumes session $sid"
-      else
-        echo "harness: $role's run is gone without a result (killed?); it recorded no session (--keep resumes the last successful one, if any)"
-      fi
-      exit 3
-    fi
-    now=$(date +%s)
-    if [ "$now" -ge "$deadline" ]; then
-      echo "harness: $role is still running (pid $(hl_pid "$role"), $((now - start))s); collect: harness report $(ask_ref "$role"); stop: harness close $(ask_ref "$role") --force" >&2
-      exit 4
-    fi
-    sleep "$poll"
-  done
-}
-
-# report_headless <role> — `harness report` for a headless role; always exits
-report_headless() {
-  local role=$1 report="$REPORT_DIR/$1.md"
-  if hl_alive "$role"; then
-    echo "harness: $role is still running (pid $(hl_pid "$role")); wait, then run: harness report $(ask_ref "$role")" >&2
-    exit 4
-  fi
-  if [ ! -f "$ASK_DIR/$role.exit.json" ]; then
-    echo "harness: no finished run for $role" >&2
-    exit 3
-  fi
-  if [ -f "$report" ]; then
-    retro_on_report "$role" "$report" || true
-    archive_late "$role" "$report" || true
-  fi
-  stamp_finished "$role"
-  hl_collect "$role"
-}
-
-# hl_kill <role> — stop the role's run: TERM the runner (it kills its tree and writes
-# exit.json killed:signal), wait up to 5 s, then kill the tree
-hl_kill() {
-  local role=$1 pid i=0 id
-  pid=$(hl_pid "$role"); id=$(awk 'NR == 1 { print $1 }' "$ASK_DIR/$role.pid" 2>/dev/null)
-  digits_only "$pid" || return 0
-  kill -TERM "$pid" 2>/dev/null
-  while [ "$i" -lt 50 ]; do
-    hl_alive "$role" || return 0
-    sleep 0.1; i=$((i + 1))
-  done
-  kill_tree "$pid"; kill -KILL "$pid" 2>/dev/null
-  return 0
-}
-
-# hl_finish_close <role> <pane> <reason> — close the viewer pane, drop the registry line, log
-hl_finish_close() {
-  herdr pane close "$2" >/dev/null || die "pane close failed for $2"
-  pane_gone "$2" || die "pane $2 is still present after close; registry entry kept"
-  unregister "$1" "$2"
-  # a close ends the conversation: --keep must not resume a session across it
-  rm -f "$ASK_DIR/$1.finished" "$ASK_DIR/$1.session"
-  log_close "$1" "$2" "$3" headless
-  echo "closed $1 ($2)"
-}
-
-# close_headless <role> <force> <skip-missing> — close_one for a headless role
-close_headless() {
-  local role=$1 force=$2 skip=$3 pane reason=${CLOSE_REASON:-manual}
-  pane=$(hl_registered_pane "$role")
-  if [ -z "$pane" ]; then
-    [ "$skip" = 1 ] && return 0
-    die "$role is not running"
-  fi
-  if hl_alive "$role"; then
-    if [ "$force" != 1 ]; then
-      echo "harness: $role has a run in progress (pid $(hl_pid "$role")); not closing (use --force to kill it)" >&2
-      return 4
-    fi
-    hl_kill "$role"
-    reason=force_kill
-  elif [ "$force" != 1 ] && has_uncollected "$role"; then
-    echo "harness: $role has a report that was not collected (harness report $role); not closing (use --force to close anyway)" >&2
-    return 4
-  fi
-  hl_finish_close "$role" "$pane" "$reason"
-}
-
-# --- worktree asks (decision 0008, S1) ----------------------------------------------------------
-# A `--worktree` ask of a headless analyst/reviewer runs in its own detached checkout
-# $WT_HOME/<repo8>/<role>-<id8>. The registry .harness/wt/<ask-id>.json (main root) tracks it;
-# <ask-id>.report.md keeps the collected report after the checkout is removed.
-
-# ask_ref <role> — what a message tells the conductor to pass to report/close
-ask_ref() { if [ -n "$ASK_WT" ]; then printf '%s' "$ASK_ID"; else printf '%s' "$1"; fi; }
-
-# ask_wt_parse <agent> <text> [opts...] — sets ASK_WT_WANT/ASK_BASE; usage errors exit 1 here,
-# before any file access, so they queue no retro candidate
-ask_wt_parse() {
-  local agent=$1 keep=0 base="" has_base=0 want=0
-  shift 2
-  ASK_WT_WANT=0
-  while [ $# -gt 0 ]; do
-    case "$1" in
-      --timeout|--via) shift; [ $# -eq 0 ] || shift ;;
-      --worktree) want=1; shift ;;
-      --base) has_base=1; [ $# -ge 2 ] || die "--base needs a ref"; base=$2; shift 2 ;;
-      --keep) keep=1; shift ;;
-      *) shift ;;
-    esac
-  done
-  [ "$has_base" = 0 ] || [ "$want" = 1 ] || die "--base is only with --worktree (usage: harness ask <analyst|reviewer> '<instruction>' --worktree [--base REF])"
-  [ "$want" = 1 ] || return 0
-  ASK_WT_WANT=1
-  case "$agent" in
-    analyst|reviewer) ;;
-    *) die "--worktree is for the headless analyst and reviewer only (not $agent)" ;;
-  esac
-  is_headless "$agent" || die "--worktree needs the headless runner for $agent (config runner.$agent=headless or HARNESS_RUNNER_$(printf %s "$agent" | tr 'a-z' 'A-Z')=headless)"
-  [ "$keep" = 0 ] || die "--keep cannot be combined with --worktree (every worktree ask is a fresh session)"
-  wt_root_check
-  ASK_BASE=$(git rev-parse --verify --quiet "${base:-HEAD}^{commit}") || die "--base: '${base:-HEAD}' is not a commit"
-}
-
-# wt_root_check — HARNESS_WT_ROOT must be absolute, outside the git toplevel and outside .harness/
-# (a checkout inside the repo would show up in its own status and in every search of it)
-wt_root_check() {
-  local top p
-  case "$WT_HOME" in /*) ;; *) die "HARNESS_WT_ROOT must be an absolute path (got '$WT_HOME')" ;; esac
-  case "/$WT_HOME/" in */../*) die "HARNESS_WT_ROOT must not contain a '..' component (got '$WT_HOME')" ;; esac
-  case "$WT_HOME" in */.harness|*/.harness/*) die "HARNESS_WT_ROOT must not be inside a .harness/ directory (got '$WT_HOME')" ;; esac
-  top=$(git rev-parse --show-toplevel 2>/dev/null) || return 0
-  # resolve symlinks through the nearest existing ancestor (the root itself may not exist yet)
-  local rest="" d=$WT_HOME real
-  while [ ! -d "$d" ] && [ "$d" != / ]; do rest="/${d##*/}$rest"; d=${d%/*}; [ -n "$d" ] || d=/; done
-  real=$(cd "$d" 2>/dev/null && pwd -P)${rest}
-  for p in "$top" "$(cd "$top" && pwd -P)" "$(pwd -P)"; do
-    case "$WT_HOME/" in "$p"/*) die "HARNESS_WT_ROOT must be outside the repository (got '$WT_HOME', repo $top)" ;; esac
-    case "$real/" in "$p"/*) die "HARNESS_WT_ROOT must be outside the repository (got '$WT_HOME', repo $top)" ;; esac
-  done
-}
-
-wt_max_parallel() {
-  local v=${HARNESS_MAX_PARALLEL:-}
-  [ -n "$v" ] || v=$(jq -r '.max_parallel // empty' "$CONFIG_FILE" 2>/dev/null)
-  if digits_only "$v" && [ "$v" -gt 0 ]; then echo "$v"; else echo 3; fi
-}
-
-# wt_run_alive <wt-path> <role> — a harness-run of that worktree is running
-wt_run_alive() {
-  local f="$1/.harness/asks/$2.pid" id pid
-  [ -f "$f" ] || return 1
-  read -r id pid _ < "$f"
-  digits_only "${pid:-}" && kill -0 "$pid" 2>/dev/null || return 1
-  ps -p "$pid" -o command= 2>/dev/null | grep -q 'harness-run'
-}
-
-# wt_entry_live <registry-file> — state running and the ask or its run is alive
-wt_entry_live() {
-  local f=$1 st pid path role
-  st=$(jq -r '.state // empty' "$f" 2>/dev/null)
-  [ "$st" = running ] || return 1
-  pid=$(jq -r '.pid // empty' "$f" 2>/dev/null)
-  if digits_only "$pid" && kill -0 "$pid" 2>/dev/null && ps -p "$pid" -o command= 2>/dev/null | grep -q 'harness'; then return 0; fi
-  path=$(jq -r '.path // empty' "$f" 2>/dev/null); role=$(jq -r '.role // empty' "$f" 2>/dev/null)
-  [ -n "$path" ] && wt_run_alive "$path" "$role"
-}
-
-# wt_capacity_check — refuse (exit 4, nothing logged) when max_parallel worktree asks are live
-wt_capacity_check() {
-  local f n=0 max
-  max=$(wt_max_parallel)
-  for f in "$WT_DIR"/*.json; do
-    [ -f "$f" ] || continue
-    ! wt_entry_live "$f" || n=$((n + 1))
-  done
-  if [ "$n" -ge "$max" ]; then
-    echo "harness: $n worktree asks are running (max_parallel $max); wait for one (harness status) or collect/close it" >&2
-    exit 4
-  fi
-}
-
-# wt_update <key> <value> — set a string field of this ask's registry entry (tmp + mv, under a
-# lock). A terminal state (closed by `close`, reaped) is never overwritten by another state: a
-# `close --force` racing the ask's own wrap-up wins.
-wt_update() {
-  local reg="$WT_DIR/$ASK_ID.json" tmp cur rc=0
-  [ -f "$reg" ] || return 0
-  lock_take "$reg.lock"
-  if [ "$1" = state ]; then
-    cur=$(jq -r '.state // empty' "$reg" 2>/dev/null)
-    case "$cur" in closed|reaped) [ "$2" = "$cur" ] || { lock_drop "$reg.lock"; return 0; } ;; esac
-  fi
-  tmp=$(mktemp "$reg.XXXXXX") || { lock_drop "$reg.lock"; return 1; }
-  if jq --arg k "$1" --arg v "$2" '.[$k] = $v' "$reg" > "$tmp" 2>/dev/null; then mv "$tmp" "$reg"; else rm -f "$tmp"; rc=1; fi
-  lock_drop "$reg.lock"
-  return "$rc"
-}
-
-# wt_lookup <ref> — print the registry file of an ask-id, an id8, or role@id8
-wt_lookup() {
-  local ref=$1 f
-  [ -d "$WT_DIR" ] || return 1
-  case "$ref" in ''|*/*|-*) return 1 ;; esac
-  if [ -f "$WT_DIR/$ref.json" ]; then printf '%s\n' "$WT_DIR/$ref.json"; return 0; fi
-  for f in "$WT_DIR"/*.json; do
-    [ -f "$f" ] || continue
-    if [ "$(jq -r '[.id8, (.role + "@" + .id8)] | index("'"$ref"'") // empty' "$f" 2>/dev/null)" != "" ]; then printf '%s\n' "$f"; return 0; fi
-  done
-  return 1
-}
-
-# wt_load <registry-file> — set the per-ask globals from it
-wt_load() {
-  ASK_ID=$(jq -r '.id' "$1"); ASK_ID8=$(jq -r '.id8' "$1"); ASK_AGENT=$(jq -r '.role' "$1")
-  ASK_WT=$(jq -r '.path' "$1"); ASK_BASE=$(jq -r '.base // ""' "$1")
-  ASK_KEY="$ASK_AGENT@$ASK_ID8"
-  ASK_DIR="$ASK_WT/.harness/asks"; REPORT_DIR="$ASK_WT/.harness/reports"
-}
-
-# wt_copy_in <rel> — copy a main-root .harness/ file into the worktree; records top-level .md
-# files (sha) in $WT_DIR/<ask-id>.in so copy-back can tell what the worker changed
-wt_copy_in() {
-  local rel=$1
-  mkdir -p "$ASK_WT/$(dirname "$rel")" && cp "$rel" "$ASK_WT/$rel" || return 1
-  case "$rel" in .harness/*/*) ;; .harness/*.md) printf '%s %s\n' "$(file_sum "$rel")" "${rel#.harness/}" >> "$WT_DIR/$ASK_ID.in" ;; esac
-  return 0
-}
-
-# wt_git <git args> — git worktree add/remove/prune are not safe to run side by side (concurrent
-# asks failed with "failed to read .git/worktrees/<n>/commondir"): serialise them under a lock
-wt_git() {
-  local rc
-  mkdir -p "$WT_DIR" 2>/dev/null
-  lock_take "$WT_DIR/.git.lock"
-  git "$@"; rc=$?
-  lock_drop "$WT_DIR/.git.lock"
-  return $rc
-}
-
-# wt_create — git worktree add --detach, per-ask dirs, brief copy, memory link, registry.
-# The registry entry is written first (state creating); a failing later step removes the checkout.
-wt_create() {
-  local out
-  mkdir -p "$WT_DIR" "$WT_HOME/$REPO8" || return 1
-  if ! out=$(wt_git worktree add --detach "$ASK_WT" "$ASK_BASE" 2>&1); then
-    echo "harness: git worktree add failed: $out" >&2
-    return 1
-  fi
-  jq -n -c --arg id "$ASK_ID" --arg id8 "$ASK_ID8" --arg role "$ASK_AGENT" --arg path "$ASK_WT" --arg base "$ASK_BASE" \
-    --argjson pid "$$" --argjson cs "$(date +%s)" --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-    '{id: $id, id8: $id8, role: $role, path: $path, base: $base, branch: null, pane: "", pid: $pid, created: $ts, created_s: $cs, state: "creating"}' \
-    > "$WT_DIR/$ASK_ID.json" || { wt_create_undo; return 1; }
-  if ! wt_create_rest; then
-    echo "harness: could not prepare the worktree $ASK_WT; removed it" >&2
-    wt_create_undo
-    return 1
-  fi
-  wt_update state running
-  echo "harness: ask $ASK_ID ($ASK_AGENT@$ASK_ID8) in $ASK_WT (base ${ASK_BASE:0:8}); collect: harness report $ASK_ID; stop: harness close $ASK_ID --force" >&2
-}
-
-wt_create_undo() {
-  rm -f "$ASK_WT/.claude/agent-memory" 2>/dev/null
-  wt_git worktree remove --force "$ASK_WT" >/dev/null 2>&1 || rm -rf "$ASK_WT"
-  wt_git worktree prune 2>/dev/null
-  wt_update state closed
-  return 0
-}
-
-wt_create_rest() {
-  local mm f rel seen="" q r
-  mkdir -p "$ASK_DIR" "$REPORT_DIR" || return 1
-  mm="$(pwd -P)/.claude/agent-memory"
-  mkdir -p "$mm" "$ASK_WT/.claude" 2>/dev/null
-  { [ -e "$ASK_WT/.claude/agent-memory" ] || [ -L "$ASK_WT/.claude/agent-memory" ]; } || ln -s "$mm" "$ASK_WT/.claude/agent-memory" || return 1
-  : > "$WT_DIR/$ASK_ID.in" || return 1
-  # the brief (and any other .harness/ file the instruction names) is not in git: copy it in; each
-  # copied .harness/*.md is scanned once more for .harness/ files it names (a spec, a design)
-  for rel in $(printf '%s\n' "$ASK_TEXT" | grep -oE '\.harness/[A-Za-z0-9._/-]+\.(md|json)' | sort -u) .harness/verify.local.json; do
-    case "$rel" in *..*) continue ;; esac
-    [ -f "$rel" ] || continue
-    wt_copy_in "$rel" || return 1
-    seen="$seen $rel"
-  done
-  for q in $seen; do
-    case "$q" in *.md) ;; *) continue ;; esac
-    for r in $(grep -oE '\.harness/[A-Za-z0-9._/-]+\.(md|json)' "$q" 2>/dev/null | sort -u); do
-      case "$r" in *..*) continue ;; esac
-      case " $seen " in *" $r "*) continue ;; esac
-      [ -f "$r" ] || continue
-      wt_copy_in "$r" || return 1
-    done
-  done
-  return 0
-}
-
-# wt_copy_back — new or changed top-level <wt>/.harness/*.md files (detail files, designs) go back
-# to the main .harness/ (an allowlist: regular top-level *.md files only, never goal.md, progress.md
-# or task-*.md, which the harness writes itself; symlinks are skipped); a file the main root changed
-# since the copy-in is not overwritten: the worker's version lands in <name>.<id8>.md.
-wt_copy_back() {
-  local f name base_sha cur_sha dest sum in="$WT_DIR/$ASK_ID.in"
-  for f in "$ASK_WT"/.harness/*.md; do
-    [ -f "$f" ] && [ ! -L "$f" ] || continue   # regular files only: a symlink could point anywhere
-    name=${f##*/}
-    case "$name" in goal.md|progress.md|task-*.md) continue ;; esac   # the harness's own files
-    sum=$(file_sum "$f")
-    base_sha=$(awk -v n="$name" '$2 == n { print $1 }' "$in" 2>/dev/null | tail -n 1)
-    if [ -n "$base_sha" ] && [ "$base_sha" = "$sum" ]; then continue; fi         # the copied-in brief, untouched
-    if [ -z "$base_sha" ] && git -C "$ASK_WT" ls-files --error-unmatch ".harness/$name" >/dev/null 2>&1 \
-       && git -C "$ASK_WT" diff --quiet -- ".harness/$name" 2>/dev/null; then continue; fi   # tracked, untouched
-    dest=".harness/$name"
-    if [ -f "$dest" ]; then
-      cur_sha=$(file_sum "$dest")
-      [ "$cur_sha" != "$sum" ] || continue
-      if [ "$cur_sha" != "$base_sha" ]; then dest=".harness/${name%.md}.$ASK_ID8.md"; fi
-    fi
-    mkdir -p .harness && cp "$f" "$dest" || continue
-    if [ "$dest" = ".harness/$name" ]; then
-      echo "harness: $ASK_KEY wrote $dest (copied back from the worktree)"
-    else
-      echo "harness: $ASK_KEY wrote $dest (main .harness/$name changed meanwhile; not overwritten)"
-    fi
-  done
-}
-
-# wt_patch — any other change in the worktree (tracked or untracked, outside .harness/) is saved
-# as $WT_DIR/<ask-id>.patch in the main root. Sets WT_PATCH to the path, or "" when there is none.
-wt_patch() {
-  local p="$WT_DIR/$ASK_ID.patch" msg
-  WT_PATCH=""
-  [ -d "$ASK_WT" ] || return 0   # checkout gone: the saved patch stays (it outlives the worktree)
-  # A saved patch is replaced only by a new, non-empty one: a tree cleaned in place after the
-  # patch was written keeps it (it is the only copy of those changes).
-  wt_clean "$ASK_WT" && return 0
-  # add warns (rc 1) about the ignored .harness/ pathspec although it staged everything else
-  git -C "$ASK_WT" add -A -- . ':!.harness' ':!.claude/agent-memory' >/dev/null 2>&1
-  # diff against the recorded base, not HEAD: commits the worker made in the detached checkout count
-  git -C "$ASK_WT" diff --cached --binary "${ASK_BASE:-HEAD}" -- . ':!.harness' ':!.claude/agent-memory' > "$p.tmp" 2>/dev/null
-  if [ -s "$p.tmp" ]; then
-    mv "$p.tmp" "$p"
-    WT_PATCH=$p
-    msg="harness: $ASK_KEY changed files outside .harness/; saved as a patch: $p (apply it via /implement; worktree kept)"
-    echo "$msg"; echo "$msg" >&2
-  else
-    rm -f "$p.tmp"
-  fi
-  return 0
-}
-
-# wt_finalize — before any removal: keep the report, bring results back, patch other edits
-wt_finalize() {
-  [ ! -f "$REPORT_DIR/$ASK_AGENT.md" ] || cp "$REPORT_DIR/$ASK_AGENT.md" "$WT_DIR/$ASK_ID.report.md" 2>/dev/null
-  [ -d "$ASK_WT" ] || return 0
-  wt_copy_back
-  wt_patch
-}
-
-# wt_clean <path> — nothing to lose: no modified or untracked files (ignoring the agent-memory link
-# harness made), and the tree equals the base the checkout was created from. A worker commit moves
-# HEAD off the base; that still counts as clean when the tree is back at the base (a commit
-# reverted, an empty commit) because there is then no diff to lose.
-wt_clean() {
-  local ex=(':!.harness' ':!.claude/agent-memory')
-  [ -d "$1" ] || return 1
-  if [ -n "$ASK_BASE" ] && [ "$(git -C "$1" rev-parse HEAD 2>/dev/null)" != "$ASK_BASE" ]; then
-    git -C "$1" diff --quiet "$ASK_BASE" -- . "${ex[@]}" 2>/dev/null || return 1
-    ! git -C "$1" status --porcelain --untracked-files=all 2>/dev/null | grep -E '^\?\? ' | grep -vE '^\?\? (\.claude/agent-memory|\.harness/.*)$' | grep -q .
-    return
-  fi
-  ! git -C "$1" status --porcelain --untracked-files=all 2>/dev/null | grep -vE '^\?\? (\.claude/agent-memory|\.harness/.*)$' | grep -q .
-}
-
-# wt_remove <force> <state> — remove this ask's checkout (agent-memory link first), prune, close its pane
-wt_remove() {
-  local force=$1 state=$2 link="$ASK_WT/.claude/agent-memory" target="" pane out reg="$WT_DIR/$ASK_ID.json"
-  if [ -d "$ASK_WT" ]; then
-    if [ -L "$link" ]; then target=$(readlink "$link"); rm -f "$link"; fi
-    if [ "$force" = 1 ]; then out=$(wt_git worktree remove --force "$ASK_WT" 2>&1); else out=$(wt_git worktree remove "$ASK_WT" 2>&1); fi || {
-      [ -z "$target" ] || ln -s "$target" "$link" 2>/dev/null
-      echo "harness: git worktree remove failed: $out" >&2
-      return 1
-    }
-  fi
-  wt_git worktree prune 2>/dev/null
-  pane=$(jq -r '.pane // empty' "$reg" 2>/dev/null)
-  if [ -n "$pane" ]; then
-    herdr pane close "$pane" >/dev/null 2>&1 || true
-    unregister "$ASK_KEY" "$pane" 2>/dev/null || true
-  fi
-  wt_update state "$state"
-  return 0
-}
-
-# wt_after_ask <rc> — after an ask (or a late `harness report`): save the report, bring results back
-# (.harness/*.md files, other edits as a patch), then remove the checkout when the report was
-# collected (rc 0/5) and nothing is left in it; else keep it. Prints notes on stdout (the ask output).
-wt_after_ask() {
-  local rc=$1 reg="$WT_DIR/$ASK_ID.json" role=$ASK_AGENT g=0
-  [ -f "$reg" ] || return 0
-  [ -d "$ASK_WT" ] || return 0
-  if [ -f "$ASK_DIR/$role.exit.json" ]; then
-    while [ "$g" -lt 30 ] && wt_run_alive "$ASK_WT" "$role"; do sleep 0.1; g=$((g + 1)); done
-  fi
-  if wt_run_alive "$ASK_WT" "$role"; then wt_update state running; return 0; fi
-  wt_finalize
-  case "$rc" in
-    0|5)
-      if [ -z "$WT_PATCH" ]; then
-        if wt_clean "$ASK_WT"; then
-          wt_remove 0 collected && return 0
-        else
-          echo "harness: worktree $ASK_WT has changes; kept (harness close $ASK_ID --force removes it)" >&2
-        fi
-      fi ;;
-    *) echo "harness: ask $ASK_ID ended with exit $rc; worktree $ASK_WT kept (harness report $ASK_ID, or harness close $ASK_ID --force)" >&2 ;;
-  esac
-  wt_update state kept
-  return 0
-}
-
-# report_wt <registry-file> — `harness report <ask-id>`; always exits
-report_wt() {
-  local rc saved
-  wt_load "$1"
-  if [ ! -d "$ASK_WT" ]; then
-    saved="$WT_DIR/$ASK_ID.report.md"
-    [ ! -f "$saved" ] || finish_report "$ASK_AGENT" "$saved" -
-    echo "harness: worktree of $ASK_ID is gone and no report was saved" >&2
-    exit 3
-  fi
-  ( report_headless "$ASK_AGENT" ); rc=$?
-  case "$rc" in 4) ;; *) wt_after_ask "$rc" ;; esac
-  exit "$rc"
-}
-
-# close_wt <registry-file> <force> — `harness close <ask-id>`
-close_wt() {
-  local f=$1 force=$2 pane old
-  wt_load "$f"
-  pane=$(jq -r '.pane // empty' "$f")
-  if wt_run_alive "$ASK_WT" "$ASK_AGENT"; then
-    if [ "$force" != 1 ]; then
-      echo "harness: $ASK_KEY has a run in progress; not closing (use --force to kill it)" >&2
-      return 4
-    fi
-    hl_kill "$ASK_AGENT"
-  fi
-  if [ "$force" = 1 ]; then
-    # discarding the checkout is the point of --force: keep the report and the .harness/*.md results only
-    [ ! -f "$REPORT_DIR/$ASK_AGENT.md" ] || cp "$REPORT_DIR/$ASK_AGENT.md" "$WT_DIR/$ASK_ID.report.md" 2>/dev/null
-    [ ! -d "$ASK_WT" ] || wt_copy_back
-  else
-    old=""; [ ! -s "$WT_DIR/$ASK_ID.patch" ] || old=$(file_sum "$WT_DIR/$ASK_ID.patch")
-    wt_finalize
-    if [ -n "$WT_PATCH" ]; then
-      # the same patch as the saved one: nothing beyond it, so the checkout may go without --force
-      if [ -n "$old" ] && [ "$(file_sum "$WT_PATCH")" = "$old" ]; then force=1
-      else
-        echo "harness: $ASK_KEY not closed: its other changes are in $WT_PATCH (use --force to discard the checkout)" >&2
-        return 4
-      fi
-    fi
-  fi
-  if ! wt_remove "$force" closed; then
-    echo "harness: $ASK_KEY not closed (use --force to discard its changes)" >&2
-    return 4
-  fi
-  log_close "$ASK_KEY" "$pane" manual headless
-  echo "closed $ASK_KEY ($ASK_WT)"
-}
-
-# wt_status_lines — one line per running/kept worktree ask
-wt_status_lines() {
-  local f st now cs
-  now=$(date +%s)
-  for f in "$WT_DIR"/*.json; do
-    [ -f "$f" ] || continue
-    st=$(jq -r '.state // empty' "$f" 2>/dev/null)
-    case "$st" in running|kept) ;; *) continue ;; esac
-    if [ "$st" = running ] && ! wt_entry_live "$f"; then st=stale; fi
-    cs=$(jq -r '.created_s // 0' "$f")
-    printf '%-12s %-8s %-8s detached %ss%s\n' "$(jq -r '.role + "@" + .id8' "$f")" "$st" "$(jq -r '.pane // "-"' "$f")" "$((now - cs))" \
-      "$([ ! -s "${f%.json}.patch" ] || printf ' patch %s' "${f%.json}.patch")"
-  done
-}
-
-# wt_reap <ttl-minutes> <now> — checkouts of kept asks, and of `running` asks whose owner is gone
-# (reboot, killed harness), past the TTL: results are brought back first; the checkout goes only
-# when nothing is left in it. A worktree with a saved patch is never reaped; it stays `kept`
-# until `harness close`. Old collected/closed/reaped entries (and their patch) are forgotten
-# after HARNESS_LOG_DAYS.
-wt_reap() {
-  local ttl=$1 now=$2 f mt st days=${HARNESS_LOG_DAYS:-14}
-  [ -d "$WT_DIR" ] || return 0
-  for f in "$WT_DIR"/*.json; do
-    [ -f "$f" ] || continue
-    st=$(jq -r '.state // empty' "$f" 2>/dev/null)
-    case "$st" in
-      kept) ;;
-      running) ! wt_entry_live "$f" || continue ;;
-      creating) ! wt_entry_live_owner "$f" || continue ;;
-      *) continue ;;
-    esac
-    # a worktree with a saved patch is never reaped (decision 0008): it waits for `harness close`
-    [ ! -s "${f%.json}.patch" ] || continue
-    mt=$(file_mtime "$f") || continue
-    [ $((now - mt)) -ge $((ttl * 60)) ] || continue
-    (
-      wt_load "$f"
-      if [ ! -d "$ASK_WT" ]; then wt_remove 0 reaped; exit 0; fi
-      wt_finalize
-      if [ -n "$WT_PATCH" ]; then wt_update state kept   # the patch now holds changes: keep it
-      elif wt_clean "$ASK_WT"; then wt_remove 1 reaped
-      else wt_update state kept; fi
-    ) >&2 || true
-  done
-  wt_git worktree prune 2>/dev/null
-  for f in "$WT_DIR"/*.json; do
-    [ -f "$f" ] || continue
-    case "$(jq -r '.state // empty' "$f" 2>/dev/null)" in collected|closed|reaped) ;; *) continue ;; esac
-    mt=$(file_mtime "$f") || continue
-    [ $((now - mt)) -ge $((days * 86400)) ] || continue
-    rm -f "$f" "${f%.json}.report.md" "${f%.json}.in" "${f%.json}.patch"
-  done
-  return 0
-}
-
-# wt_entry_live_owner <registry-file> — the harness process that created the entry still runs
-wt_entry_live_owner() {
-  local pid
-  pid=$(jq -r '.pid // empty' "$1" 2>/dev/null)
-  digits_only "$pid" && kill -0 "$pid" 2>/dev/null && ps -p "$pid" -o command= 2>/dev/null | grep -q 'harness'
-}
-
 need jq
 # route-log is called by the UserPromptSubmit hook: no herdr needed
 if [ "${1:-}" = route-log ]; then shift; cmd_route_log "$@"; exit 0; fi
 # _mtime prints a file's epoch mtime (tests: fake GNU/BSD stat on PATH)
 if [ "${1:-}" = _mtime ]; then file_mtime "${2:-}"; exit $?; fi
+# _defaults prints the shared defaults as KEY=VALUE (tests: prose copies are checked against it)
+if [ "${1:-}" = _defaults ]; then
+  for k in $(compgen -v HARNESS_ | grep -E '^HARNESS_(ROLES|WT_ROLES|[A-Z_]+_(MS|DEFAULT))$' | sort); do eval "printf '%s=%s\n' \"$k\" \"\${$k}\""; done
+  exit 0
+fi
 # _wname prints the scoped herdr name for a role (tests, debugging): no herdr needed
 if [ "${1:-}" = _wname ]; then valid_agent "${2:-}"; wname "$2"; echo; exit 0; fi
 # wiki-lint is pure file checking: no herdr needed

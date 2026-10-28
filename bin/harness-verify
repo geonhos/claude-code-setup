@@ -16,6 +16,24 @@
 # repo, or no config all exit 0 (with at most one stderr line).
 set -u
 
+# Shared role list from lib/harness-defaults.sh, sourced eagerly (see bin/harness). This is a
+# Stop hook: a missing lib must never fail it, so fall back to the literal list below.
+src=${BASH_SOURCE[0]}
+while [ -L "$src" ]; do
+  case $src in */*) d=$(CDPATH= cd -P "${src%/*}" && pwd) ;; *) d=$PWD ;; esac
+  src=$(readlink "$src")
+  case $src in /*) ;; *) src=$d/$src ;; esac
+done
+case $src in */*) d=${src%/*} ;; *) d=. ;; esac   # no dirname: PATH may be bare in hooks/tests
+HARNESS_LIB=${HARNESS_LIB:-$(CDPATH= cd -P "$d/../lib" 2>/dev/null && pwd)}
+if ! . "$HARNESS_LIB/harness-defaults.sh" 2>/dev/null; then
+  HARNESS_ROLES="analyst implementer reviewer"
+  role_in() { case " ${2-$HARNESS_ROLES} " in *" $1 "*) return 0 ;; esac; return 1; }
+  echo "harness-verify: lib/harness-defaults.sh not found; using the built-in role list" >&2
+fi
+unset src d
+# end loader
+
 warn() { echo "harness-verify: $*" >&2; }
 
 if ! command -v jq >/dev/null 2>&1; then
@@ -302,7 +320,7 @@ cmd_baseline() {
 mark_done() {
   local role=$1 input=$2 id sid tmp
   [ "${HARNESS_ROLE:-}" = worker ] || return 0
-  case "$role" in analyst|implementer|reviewer) ;; *) return 0 ;; esac
+  role_in "$role" "$HARNESS_ROLES" || return 0
   if [ ! -f ".harness/asks/$role.current" ]; then
     echo "harness-verify: no .harness/asks/$role.current under root $ROOT (hook cwd $HOOK_CWD); done marker not written (root has no ask for $role, or no .harness/asks/ between the hook cwd and the git toplevel)" >&2
     return 0
@@ -424,7 +442,7 @@ cmd_format() {
   case "$file" in
     /*)
       # compare physical paths (macOS /var -> /private/var)
-      d=$(cd -P "${file%/*}" 2>/dev/null && pwd -P) || exit 0
+      d=$(CDPATH= cd -P "${file%/*}" 2>/dev/null && pwd -P) || exit 0
       file="$d/${file##*/}"
       case "$file" in
         "$ROOT"/*) file=${file#"$ROOT"/} ;;
