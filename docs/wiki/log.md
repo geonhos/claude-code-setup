@@ -31,3 +31,4 @@
 - 2026-10-28 · implementer · v22 step 1 (#5) · lib/harness-defaults.sh is the single source for roles/timeouts/TTL; `harness _defaults` + drift tests; install.sh links bin/* by glob
 - 2026-10-28 · implementer · v22 step 2 (#6) · last_ask_record replaces three progress scans; plain asks ignore worktree-ask lines (last_exit, retro, --keep resume); ask args parsed once into ASK_* globals
 - 2026-10-28 · implementer · v22 PR B (#8 stage 1) · metrics+wiki-lint and wt_* move to lib/harness-metrics.sh / lib/harness-worktree.sh; loader sources an explicit list; tests/harness-split.test.sh
+- 2026-10-28 · implementer · v22 PR C (#8 stage 2) · headless group (runner_of, use_hl, hl_*, ask/report/close_headless) moves to lib/harness-headless.sh; loader list gains headless
