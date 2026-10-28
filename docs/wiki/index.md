@@ -11,6 +11,7 @@ Read this first. Open a page only when it is relevant. Schema and promotion rule
 
 ## Troubleshooting: workers, panes and env
 - [Respawn after hook change](troubleshooting/respawn-after-hook-change.md): new prompt/frontmatter hooks need `harness close` + respawn (active, 2026-10-23)
+- [Spawn on a cold shell](troubleshooting/spawn-on-cold-shell.md): first ask after a reap exits 1 with the old report; v20 retries (active, 2026-10-28)
 - [herdr names are global](troubleshooting/herdr-names-are-global.md): names are `<role>-<repo8>`, cwd check gives exit 6 (active, 2026-10-27)
 - [Daemon inherits worker env](troubleshooting/daemon-inherits-worker-env.md): a Claude daemon started in a worker pane makes every hosted session a worker, gate off (active, 2026-10-21)
 - [AGENTS.md needs a CLAUDE.md import](troubleshooting/agents-md-ignored-when-claude-md-exists.md): CLAUDE.md must start with `@AGENTS.md`; no symlink (active, 2026-10-21)
@@ -24,7 +25,7 @@ Read this first. Open a page only when it is relevant. Schema and promotion rule
 - [Whole-second timing](troubleshooting/whole-second-timing.md): `date +%s` grace N s is really (N-1,N] s; tests need ≥ 2 s (active, 2026-10-27)
 - [bash signals and job control](troubleshooting/bash-signals-job-control.md): bg jobs ignore INT; `set -m` hands tty signals to children (active, 2026-10-27)
 - [Tests inherit worker env](troubleshooting/tests-inherit-worker-env.md): suites run by a worker see `HARNESS_ROLE=worker`; unset it (active, 2026-10-27)
-- [Test wait loops](troubleshooting/test-wait-loops.md): barrier on the asserted state; `grep -c` on a missing file breaks `-lt` (active, 2026-10-27)
+- [Test wait loops](troubleshooting/test-wait-loops.md): barrier on the asserted state; `grep -c` on a missing file breaks `-lt` (active, 2026-10-28)
 
 ## How-to
 - [Transcript forensics](how-to/transcript-forensics.md): real Stop-hook time, did /clear run, known model noise (active, 2026-10-27)
