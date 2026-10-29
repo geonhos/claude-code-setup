@@ -70,7 +70,8 @@ note_run
 check "detached: runner pid known" [ -n "$RPID" ]
 PP=$(ps -o ppid= -p "$RPID" | tr -d ' '); PG=$(ps -o pgid= -p "$RPID" | tr -d ' ')
 check "detached: runner ppid is 1" [ "$PP" = 1 ]
-check "detached: runner pgid differs from the test shell" [ -n "$PG" ] && [ "$PG" != "$MYPG" ]
+ok=0; [ -n "$PG" ] && [ "$PG" != "$MYPG" ] && ok=1
+check "detached: runner pgid differs from the test shell" [ "$ok" = 1 ]
 check "detached: runner leads its own session (pgid == pid)" [ "$PG" = "$RPID" ]
 echo "detach evidence: runner pid $RPID ppid $PP pgid $PG (test shell pgid $MYPG)" >&2
 wait "$ASKPID"
@@ -99,7 +100,8 @@ touch "$FAKE_DIR/split_fail"
 OUT=$(HERDR_ENV=1 HERDR_PANE_ID=w1:p1 HARNESS_VIEWER=pane HARNESS_POLL_SEC=0.2 \
   PATH="$FAKE_BIN:$FAKE_CLAUDE:$HERE/../bin:$PATH" perl -e 'alarm(60);exec(@ARGV)' env -u HARNESS_ROLE /bin/bash "$HARNESS" ask analyst "q4b" 2>&1); RC=$?
 check "viewer=pane: split failure exits 1" [ "$RC" -eq 1 ]
-check "viewer=pane: no background run" [ ! -e .harness/asks/analyst.pid ] && [ ! -e .harness/asks/analyst.exit.json ]
+ok=0; [ ! -e .harness/asks/analyst.pid ] && [ ! -e .harness/asks/analyst.exit.json ] && ok=1
+check "viewer=pane: no background run" [ "$ok" = 1 ]
 
 # 5. viewer=none with herdr available: no pane at all
 bsetup

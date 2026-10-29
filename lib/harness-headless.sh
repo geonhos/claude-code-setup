@@ -33,7 +33,7 @@ viewer_mode() {
   [ -n "$v" ] || v=$(jq -r '.viewer // empty' "$CONFIG_FILE" 2>/dev/null)
   case "$v" in auto|pane|none) echo "$v" ;; *) echo "$HARNESS_VIEWER_DEFAULT" ;; esac
 }
-hl_bg_note() { echo "harness: no herdr pane; running $1 in the background (watch: harness watch $1)" >&2; }
+hl_bg_note() { echo "harness: no herdr pane; running $1 in the background (status: harness status; collect: harness report $1)" >&2; }
 
 # env a background run must not inherit: the conductor's herdr and Claude identity (a denylist, not
 # env -i: API keys, CLAUDE_CONFIG_DIR, proxies, PATH, HOME and TMPDIR pass through)
@@ -233,6 +233,8 @@ hl_view_tail() {
 # (the subshell exits at once, so the run is reparented to init and ask_finish's kill_tree never
 # reaches it) in a new session (no controlling tty, and a pgid kill of the caller's call misses it).
 # There is no setsid binary on macOS: perl does it. HARNESS_HL_NO_PERL=1 forces the fallback (tests).
+# Under this spawn harness-run's INT/HUP traps are inert (an async start ignores INT, nohup ignores
+# HUP); only TERM reaches it, which is what hl_kill sends. Intended.
 hl_spawn_bg() {
   local role=$1 id=$2 root=$3 log
   case "$ASK_DIR" in /*) log=$ASK_DIR ;; *) log=$root/$ASK_DIR ;; esac
@@ -263,7 +265,7 @@ hl_launch() {
     if ! herdr pane run "$pane" "$(printf 'harness-run %q %q %q' "$role" "$id" "$root")" >/dev/null 2>&1; then
       echo "harness: pane run failed for $pane" >&2
       [ "$(viewer_mode)" = auto ] || exit 1
-      # nothing was started: drop the just-split pane and run in the background instead
+      # nothing was started: close the pane (freshly split, or a reused registered viewer) and run in the background instead
       herdr pane close "$pane" >/dev/null 2>&1 || echo "harness: could not close pane $pane" >&2
       unregister "${ASK_KEY:-$role}" "$pane"
       [ -z "$ASK_WT" ] || wt_update pane ""

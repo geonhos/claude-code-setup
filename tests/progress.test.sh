@@ -452,7 +452,8 @@ for bad in "--via nope" "--via" "--base x" "--worktree --base"; do
   setup
   runerr ask analyst "q" $bad
   check "early refusal ($bad): rc 1" [ "$RC" -eq 1 ]
-  check "early refusal ($bad): nothing logged" [ ! -e .harness/progress.jsonl ] && [ ! -e .harness/routing.jsonl ]
+  ok=0; [ ! -e .harness/progress.jsonl ] && [ ! -e .harness/routing.jsonl ] && ok=1
+  check "early refusal ($bad): nothing logged" [ "$ok" = 1 ]
 done
 
 # --- late report archived, never deleted unlogged --------------------------------------------------------------------------------
