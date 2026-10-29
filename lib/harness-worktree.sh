@@ -286,7 +286,7 @@ wt_remove() {
   fi
   wt_git worktree prune 2>/dev/null
   pane=$(jq -r '.pane // empty' "$reg" 2>/dev/null)
-  if [ -n "$pane" ]; then
+  if [ -n "$pane" ] && herdr_env_ok; then
     herdr pane close "$pane" >/dev/null 2>&1 || true
     unregister "$ASK_KEY" "$pane" 2>/dev/null || true
   fi

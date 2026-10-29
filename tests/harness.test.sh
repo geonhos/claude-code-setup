@@ -6,8 +6,12 @@ set -u
 # --- preconditions -----------------------------------------------------------
 setup
 OUT=$(env -u HERDR_ENV -u HARNESS_ROLE PATH="$FAKE_BIN:$PATH" /bin/bash "$HARNESS" status 2>&1); RC=$?
-check "refuses outside herdr" [ "$RC" -eq 1 ]
-check "refuses outside herdr: message" grep -q "herdr pane" <<<"$OUT"
+check "status works without herdr" [ "$RC" -eq 0 ]
+check "status without herdr lists the roles" grep -q "analyst" <<<"$OUT"
+setup
+OUT=$(env -u HERDR_ENV -u HARNESS_ROLE PATH="$FAKE_BIN:$PATH" /bin/bash "$HARNESS" spawn analyst 2>&1); RC=$?
+check "spawn (pane mode) still refuses outside herdr" [ "$RC" -eq 1 ]
+check "spawn outside herdr: message" grep -q "herdr pane" <<<"$OUT"
 
 setup
 run spawn bogus

@@ -56,6 +56,8 @@ kill_tree() {
 
 rm -f "$rcf" "$tinit" "$wdflag" "$sigflag" "$exitf" "$sessf" "$pidf"
 : > "$raw"
+# where this run's raw stream is: `harness` reads it for a background run (no viewer pane to read)
+printf '%s %s\n' "$id" "$raw" > "$A/$role.stream.tmp.$$" && mv "$A/$role.stream.tmp.$$" "$A/$role.stream"
 printf '=== %s ask %s %s ===\n' "$role" "$id" "$(date '+%H:%M:%S')"
 
 pipe=""; wd=""
@@ -82,7 +84,7 @@ trap on_signal TERM INT HUP
         if (match($0, /"session_id":"[^"]*"/)) { print substr($0, RSTART + 14, RLENGTH - 15) > sf; close(sf) }
       }
       { print; fflush() }' \
-  | { harness-view || cat >/dev/null; }
+  | { if [ "${HARNESS_RUN_VIEW:-1}" = 0 ]; then cat >/dev/null; else harness-view || cat >/dev/null; fi; }
 ) &
 pipe=$!
 # the pipeline's process group, recorded at start (3rd field; readers only use the first two).

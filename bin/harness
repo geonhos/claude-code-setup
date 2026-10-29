@@ -124,6 +124,17 @@ die() { echo "harness: $*" >&2; exit 1; }
 
 need() { command -v "$1" >/dev/null 2>&1 || die "$1 not found on PATH"; }
 
+# herdr_env_ok — herdr can be talked to: HERDR_ENV=1 and the binary exists. Never execs herdr
+# otherwise (a real herdr may be on the PATH of a test or a worker).
+herdr_env_ok() { [ "${HERDR_ENV:-}" = 1 ] && command -v herdr >/dev/null 2>&1; }
+# herdr_usable — herdr_env_ok, and not a worker: a headless run may be hosted in a viewer pane
+herdr_usable() { herdr_env_ok && [ "${HARNESS_ROLE:-}" != worker ]; }
+# need_herdr — the pane-only paths (spawn, pane-mode ask/report/close/status): headless asks run without herdr
+need_herdr() {
+  need herdr
+  [ "${HERDR_ENV:-}" = 1 ] || die "run Claude inside a herdr pane (HERDR_ENV is not 1)"
+}
+
 valid_agent() {
   case " $AGENTS " in
     *" $1 "*) return 0 ;;
@@ -322,6 +333,7 @@ pick_direction() {
 
 cmd_spawn() {
   [ "${HARNESS_ROLE:-}" != worker ] || die "harness ask/spawn is for the conductor; a worker (HARNESS_ROLE=worker) does its task itself"
+  need_herdr
   local agent=${1:-} dir=""
   [ -n "$agent" ] || usage
   valid_agent "$agent"
@@ -587,7 +599,7 @@ record_progress() {
       printf '\n## Screen / output (no report)\n\n'; cat "$out"
       if [ "$hl" != '{}' ]; then
         printf '\n## Viewer pane (last 40 lines)\n\n'
-        herdr pane read "$(hl_registered_pane "$agent")" 2>/dev/null | tail -n 40
+        hl_view_tail "$agent" 40
       fi
     fi
     if [ -s "${ASK_ERR:-}" ]; then
@@ -878,6 +890,8 @@ write_progress_md() {
     for a in $AGENTS; do
       if use_hl "$a"; then
         q=$(hl_status_line "$a" progress)
+      elif ! herdr_env_ok; then
+        q="$a -"
       elif fields=$(agent_fields "$a"); then
         if [ "$a" = "$known" ]; then c=$knownctx; else c=$(ctx_tokens "$a"); fi
         q="$a ${fields%%$TAB*} ctx $(fmt_ctx "$c")"
@@ -1051,6 +1065,7 @@ cmd_ask() {
     ASK_DIR="$ASK_WT/.harness/asks"; REPORT_DIR="$ASK_WT/.harness/reports"
     ASK_PF=".harness/asks/$agent@$ASK_ID8.preflight"
   fi
+  use_hl "$agent" || need_herdr
   ASK_TMP=$(mktemp "${TMPDIR:-/tmp}/harness-ask.XXXXXX") || ask_inner "$@"
   ASK_AGENT=$agent ASK_TEXT=$text ASK_DONE=0 ASK_PID=""
   rm -f "$ASK_PF" "$ASK_DIR/$agent.clear"
@@ -1282,6 +1297,7 @@ cmd_report() {
   valid_agent "$agent"
   local report="$REPORT_DIR/$agent.md" fields
   if use_hl "$agent"; then report_headless "$agent"; fi
+  need_herdr
   fields=$(agent_fields "$agent")
   ! agent_fields "$agent" >/dev/null || check_worker_cwd "$agent" "$(agent_json "$agent")"
   if [ "${fields%%$TAB*}" = working ]; then
@@ -1304,6 +1320,8 @@ cmd_status() {
   for a in $AGENTS; do
     if use_hl "$a"; then
       hl_status_line "$a" status
+    elif ! herdr_env_ok; then
+      printf '%-12s %s\n' "$a" "-"   # a pane-mode role needs herdr; nothing to ask
     elif fields=$(agent_fields "$a"); then
       printf '%-12s %-8s %-8s %s\n' "$a" "${fields%%$TAB*}" "${fields#*$TAB}" "$(fmt_ctx "$(ctx_tokens "$a")")"
     else
@@ -1451,6 +1469,8 @@ close_refusal() {
 close_one() {
   local agent=$1 force=$2 skip=$3 fields
   if use_hl "$agent"; then close_headless "$agent" "$force" "$skip"; return $?; fi
+  if [ "$skip" = 1 ] && ! herdr_env_ok; then return 0; fi
+  need_herdr
   if ! fields=$(agent_fields "$agent"); then
     [ "$skip" = 1 ] && return 0
     die "$agent is not running"
@@ -1463,6 +1483,7 @@ close_one() {
 # close_legacy <force> — close old unscoped workers (herdr name = role) whose cwd is this repo
 close_legacy() {
   local force=$1 a j c pane st rc=0 found=0
+  need_herdr
   for a in $AGENTS; do
     j=$(herdr agent get "$a" 2>/dev/null) || continue
     c=$(printf '%s' "$j" | jq -r '.result.agent.cwd // empty' 2>/dev/null)
@@ -1543,6 +1564,7 @@ maybe_close_after_ask() {
     return 0
   fi
   # a pane harness did not create is never closed automatically (no noise either)
+  herdr_env_ok || return 0
   pane=$(agent_pane "$agent")
   [ -n "$pane" ] && grep -Fxq -- "$agent $pane" "$PANES_FILE" 2>/dev/null || return 0
   # best effort: never changes the ask's exit code; messages go to stderr
@@ -1566,12 +1588,15 @@ reap_idle() {
     mt=$(file_mtime "$f") || continue
     [ $((now - mt)) -ge $((ttl * 60)) ] || continue
     if use_hl "$a"; then
-      pane=$(hl_registered_pane "$a"); [ -n "$pane" ] || continue
       hl_alive "$a" && continue
       has_uncollected "$a" && continue
+      pane=$(hl_registered_pane "$a")
+      # a registered pane cannot be checked or closed while herdr is unusable: leave it alone
+      if [ -n "$pane" ] && ! herdr_env_ok; then continue; fi
       ( hl_finish_close "$a" "$pane" ttl ) >&2 || true
       continue
     fi
+    herdr_env_ok || continue
     j=$(agent_json "$a") || continue
     c=$(printf '%s' "$j" | jq -r '.result.agent.cwd // empty' 2>/dev/null)
     [ -n "$c" ] && cwd_in_repo "$c" || continue
@@ -1706,8 +1731,6 @@ if [ "${1:-}" = wiki-lint ]; then shift; cmd_wiki_lint "$@"; exit $?; fi
 # retro and metrics read files only; retro's ask is a separate `harness ask` process
 if [ "${1:-}" = retro ]; then shift; cmd_retro "$@"; exit $?; fi
 if [ "${1:-}" = metrics ]; then shift; cmd_metrics "$@"; exit $?; fi
-need herdr
-[ "${HERDR_ENV:-}" = 1 ] || die "run Claude inside a herdr pane (HERDR_ENV is not 1)"
 
 case "${1:-}" in
   spawn|ask|status) ensure_config "$1"; reap_idle ;;
