@@ -71,6 +71,8 @@ check "detached: runner pid known" [ -n "$RPID" ]
 PP=$(ps -o ppid= -p "$RPID" | tr -d ' '); PG=$(ps -o pgid= -p "$RPID" | tr -d ' ')
 check "detached: runner ppid is 1" [ "$PP" = 1 ]
 check "detached: runner pgid differs from the test shell" [ -n "$PG" ] && [ "$PG" != "$MYPG" ]
+check "detached: runner leads its own session (pgid == pid)" [ "$PG" = "$RPID" ]
+echo "detach evidence: runner pid $RPID ppid $PP pgid $PG (test shell pgid $MYPG)" >&2
 wait "$ASKPID"
 check "detached: ask rc 0" [ "$?" -eq 0 ]
 OUT=$(cat "$WORK/ask.out")
@@ -131,11 +133,12 @@ check "close --force logged with pane -" grep -q '"event":"close".*"pane":"-".*"
 # 8. an interrupted ask leaves the run alive; a later report collects it
 bsetup
 export FAKE_CLAUDE_MODE=slow40
-( env -u HERDR_ENV -u HARNESS_ROLE NOHERDR_CALLS="$WORK/herdr.calls" HARNESS_POLL_SEC=0.2 \
-    PATH="$NOHERDR:$FAKE_CLAUDE:$HERE/../bin:$PATH" /bin/bash "$HARNESS" ask analyst "q8" >"$WORK/ask.out" 2>&1 ) &
-ASKPID=$!
+env -u HERDR_ENV -u HARNESS_ROLE NOHERDR_CALLS="$WORK/herdr.calls" HARNESS_POLL_SEC=0.2 \
+    PATH="$NOHERDR:$FAKE_CLAUDE:$HERE/../bin:$PATH" /bin/bash "$HARNESS" ask analyst "q8" >"$WORK/ask.out" 2>&1 &
+ASKPID=$!   # the harness ask itself (no wrapper subshell): TERM reaches it
 note_run
 kill -TERM "$ASKPID" 2>/dev/null; wait "$ASKPID" 2>/dev/null
+check "interrupted: the ask died before collecting" not_grep "analyst report" "$WORK/ask.out"
 check "interrupted: run survives the ask" [ -n "$(live_runs "$RID")" ]
 i=0; while [ $i -lt 100 ] && [ ! -f .harness/asks/analyst.exit.json ]; do sleep 0.1; i=$((i + 1)); done
 nrun report analyst
@@ -154,6 +157,31 @@ check "ttl: .session dropped" [ ! -e .harness/asks/analyst.session ]
 check "ttl: .finished dropped" [ ! -e .harness/asks/analyst.finished ]
 check "ttl: close event pane - reason ttl" grep -q '"event":"close".*"pane":"-".*"reason":"ttl"' .harness/progress.jsonl
 check "ttl: herdr never called" no_herdr_calls
+
+# 9. close_after_ask on_success closes a background run (no pane to close)
+bsetup
+HARNESS_CLOSE_AFTER_ASK_ANALYST=on_success nrun ask analyst "q9"
+check "on_success: rc 0" [ "$RC" -eq 0 ]
+check "on_success: closed (bg)" grep -q "closed analyst (bg)" <<<"$OUT"
+check "on_success: .session gone" [ ! -e .harness/asks/analyst.session ]
+check "on_success: close event pane - reason after_ask" grep -q '"event":"close".*"pane":"-".*"reason":"after_ask"' .harness/progress.jsonl
+check "on_success: herdr never called" no_herdr_calls
+
+# 10. a --worktree ask runs in the background without herdr
+bsetup
+git init -q . && git config user.email t@t && git config user.name t
+echo one > a.txt && git add a.txt && git commit -qm one
+mkdir -p .git/info && echo '.harness/' >> .git/info/exclude
+WTROOT="$WORK.wt"; WORKS="$WORKS $WTROOT"
+export HARNESS_WT_ROOT="$WTROOT" HARNESS_NO_AUTOCLOSE=1
+export FAKE_REPORT_CMD="mkdir -p .harness/reports && printf '# analyst report\nstatus: done\n' > .harness/reports/analyst.md"
+nrun ask analyst "q10" --worktree
+check "worktree bg: rc 0" [ "$RC" -eq 0 ]
+check "worktree bg: report printed" grep -q "analyst report" <<<"$OUT"
+check "worktree bg: herdr never called" no_herdr_calls
+check "worktree bg: checkout removed" [ "$(git worktree list | wc -l | tr -d ' ')" = 1 ]
+check "worktree bg: registry pane empty" bash -c 'for f in .harness/wt/*.json; do [ -e "$f" ] || exit 1; jq -e "(.pane // \"\") == \"\"" "$f" >/dev/null || exit 1; done'
+unset HARNESS_WT_ROOT HARNESS_NO_AUTOCLOSE
 
 # no-perl fallback launcher still runs the ask
 bsetup

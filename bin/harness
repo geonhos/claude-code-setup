@@ -1340,7 +1340,8 @@ config_template() {
 {
   "_doc": "close_after_ask.<role>: never | on_success (close the worker after `harness ask` exits 0; reviewer: 0 or 5). idle_ttl_minutes: close this repo's workers idle longer than N minutes after their last collected report (0 = off). HARNESS_NO_AUTOCLOSE=1 disables both. Env overrides: HARNESS_CLOSE_AFTER_ASK_<ROLE>, HARNESS_IDLE_TTL_MINUTES.",
   "close_after_ask": { "analyst": "never", "implementer": "never", "reviewer": "never" },
-  "idle_ttl_minutes": 30
+  "idle_ttl_minutes": 30,
+  "viewer": "auto"
 }
 EOC
 }
@@ -1354,7 +1355,7 @@ ensure_config() {
   [ "${HARNESS_ROLE:-}" != worker ] || return 0
   if [ -e "$CONFIG_FILE" ]; then
     local old
-    old=$(config_template | sed 's/"implementer": "never"/"implementer": "on_success"/')
+    old=$(config_template | sed '/"viewer":/d; s/"implementer": "never"/"implementer": "on_success"/; s/"idle_ttl_minutes": 30,$/"idle_ttl_minutes": 30/')
     [ "$(cat "$CONFIG_FILE" 2>/dev/null)" = "$old" ] && config_template > "$CONFIG_FILE" 2>/dev/null
     return 0
   fi

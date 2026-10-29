@@ -669,6 +669,7 @@ check "header comment quotes the default timeouts" bash -c 'sed -n 1,15p "$1" | 
 OUT=$(HERDR_ENV=1 PATH="$FAKE_BIN:$PATH" /bin/bash "$HARNESS" 2>&1)
 check "usage text prints the default timeouts" bash -c 'grep -q "implementer $2" <<<"$1" && grep -q "others $3" <<<"$1"' _ "$OUT" "$T_IMPL" "$T_DEF"
 TPL=$(sed -n "/^config_template() {/,/^EOC/p" "$HARNESS" | sed '1,2d;$d')
+check "config template viewer = default" [ "$(printf '%s' "$TPL" | jq -r .viewer)" = "$(dv HARNESS_VIEWER_DEFAULT)" ]
 check "config template idle_ttl_minutes = default" [ "$(printf '%s' "$TPL" | jq -r .idle_ttl_minutes)" = "$(dv HARNESS_IDLE_TTL_DEFAULT)" ]
 check "config template close_after_ask keys = roles" [ "$(printf '%s' "$TPL" | jq -r '.close_after_ask | keys | join(" ")')" = "$(dv HARNESS_ROLES)" ]
 check "config template close_after_ask values = default" [ "$(printf '%s' "$TPL" | jq -r '[.close_after_ask[]] | unique | join(" ")')" = "$(dv HARNESS_CLOSE_AFTER_DEFAULT)" ]
