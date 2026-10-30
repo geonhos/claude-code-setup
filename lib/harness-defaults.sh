@@ -11,6 +11,7 @@ HARNESS_CTX_RESET_DEFAULT=120000             # tokens: analyst/reviewer are clea
 HARNESS_IDLE_TTL_DEFAULT=30                  # idle_ttl_minutes (0 = off)
 HARNESS_CLOSE_AFTER_DEFAULT=never            # close_after_ask.<role>
 HARNESS_RUNNER_DEFAULT=pane                  # runner.<role>: pane | headless
+HARNESS_VIEWER_DEFAULT=auto                  # viewer (top-level key): auto | pane | none; where a headless run is shown
 HARNESS_HL_MAX_S_DEFAULT=3600                # headless run wall-clock cap, seconds (analyst, reviewer)
 HARNESS_HL_MAX_S_IMPLEMENTER_DEFAULT=5400    # same cap for the implementer: a 3x600 s verify loop plus work (90 min)
 

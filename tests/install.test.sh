@@ -300,7 +300,8 @@ for mode in parallel serial; do
   D=$ROOT/rn-fail-$mode; mk_suites "$D" failing
   start=$(date +%s)
   guard run_runner "$D" HARNESS_TEST_SERIAL=$ser; RRC=$(cat "$D.rc" 2>/dev/null || echo 137)
-  check "runner $mode: failing suite exits non-zero" [ "$RRC" -ne 0 ] && [ "$RRC" -lt 128 ]
+  ok=0; [ "$RRC" -ne 0 ] && [ "$RRC" -lt 128 ] && ok=1
+  check "runner $mode: failing suite exits non-zero" [ "$ok" = 1 ]
   check "runner $mode: FAILED line names the suite" grep -qx 'FAILED suites: b' "$D.out"
   check "runner $mode: failing suite block printed" sh -c 'grep -q "boom-b" "$1" && grep -q "b FAILED (exit 1)" "$1"' _ "$D.out"
   check "runner $mode: other suites still printed" sh -c 'grep -q ok-a "$1" && grep -q ok-c "$1"' _ "$D.out"
@@ -309,7 +310,8 @@ for mode in parallel serial; do
   D=$ROOT/rn-hang-$mode; mk_suites "$D" hanging
   start=$(date +%s)
   guard run_runner "$D" HARNESS_TEST_SERIAL=$ser HARNESS_TEST_TIMEOUT=2; RRC=$(cat "$D.rc" 2>/dev/null || echo 137)
-  check "runner $mode: hung suite exits non-zero" [ "$RRC" -ne 0 ] && [ "$RRC" -lt 128 ]
+  ok=0; [ "$RRC" -ne 0 ] && [ "$RRC" -lt 128 ] && ok=1
+  check "runner $mode: hung suite exits non-zero" [ "$ok" = 1 ]
   check "runner $mode: hung suite reported timed out" grep -q 'b timed out after 2s' "$D.out"
   check "runner $mode: timeout run ends quickly" [ $(( $(date +%s) - start )) -lt 15 ]
   check "runner $mode: timeout names FAILED suite" grep -qx 'FAILED suites: b' "$D.out"

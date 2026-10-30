@@ -180,7 +180,8 @@ mkdir -p .harness/reports; printf '# analyst report\nstatus: done\n' > .harness/
 run report analyst
 check "late: report rc 0" [ "$RC" -eq 0 ]
 check "late: notice" grep -q "^retro: candidate queued (late report)" <<<"$OUT"
-check "late: same candidate extended" [ "$(ncand)" -eq 1 ] && [ "$(cand .late)" = true ] && [ "$(cand .ask_id)" = "$id" ]
+ok=0; [ "$(ncand)" -eq 1 ] && [ "$(cand .late)" = true ] && [ "$(cand .ask_id)" = "$id" ] && ok=1
+check "late: same candidate extended" [ "$ok" = 1 ]
 check "late: report snapshot path (stable)" [ "$(cand .report)" = ".harness/retro/reports/$id.md" ]
 check "late: report snapshot exists" grep -q '^# analyst report' ".harness/retro/reports/$id.md"
 run report analyst

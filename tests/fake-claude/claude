@@ -15,6 +15,7 @@ set -u
 mode=${FAKE_CLAUDE_MODE:-success}
 { printf 'claude: '; printf '%q ' "$@"; printf '\n'; } >> "$FAKE_LOG"
 input=$(cat)
+[ -z "${FAKE_ENV_DUMP:-}" ] || env > "$FAKE_ENV_DUMP"   # tests/headless-bg.test.sh: what a background run inherits
 printf 'claude stdin: %s\n' "$input" >> "$FAKE_LOG"
 [ "$mode" != nostart ] || exit 127
 echo $$ > "$FAKE_DIR/claude.pid"

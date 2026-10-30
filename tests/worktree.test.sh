@@ -343,7 +343,8 @@ check "allowlist: rc 0" [ "$RC" -eq 0 ]
 check "allowlist: goal.md untouched" grep -q '^mine$' .harness/goal.md
 check "allowlist: progress.md not overwritten by the worker" not_grep hijack .harness/progress.md
 check "allowlist: task-*.md not copied" [ ! -e .harness/task-new.md ]
-check "allowlist: symlink not copied" [ ! -e .harness/link20.md ] && [ ! -L .harness/link20.md ]
+ok=0; [ ! -e .harness/link20.md ] && [ ! -L .harness/link20.md ] && ok=1
+check "allowlist: symlink not copied" [ "$ok" = 1 ]
 check "allowlist: plain .md still copied" grep -q '^ok$' .harness/notes20.md
 
 # 21. lock takeover: a dead owner, or an old ownerless lock, is taken over; no hang

@@ -261,7 +261,8 @@ hv baseline; echo c > "$R/new.txt"
 hvat "$R" "$(stopat "$R/sub/deep")" stop
 check "deep: marker at .harness root" [ -e "$R/.harness/done/implementer.ask1" ]
 check "deep: result at .harness root" [ "$(result status)" = pass ]
-check "deep: no .harness in subdirs" [ ! -e "$R/sub/.harness" ] && [ ! -e "$R/sub/deep/.harness" ]
+ok=0; [ ! -e "$R/sub/.harness" ] && [ ! -e "$R/sub/deep/.harness" ] && ok=1
+check "deep: no .harness in subdirs" [ "$ok" = 1 ]
 
 # subdir conductor: .harness + config in R/pkg, hook cwd R/pkg/src
 newrepo
@@ -284,7 +285,8 @@ newrepo
 mkdir -p "$R/sub/deep"
 hvat "$R/sub/deep" "" baseline
 check "none: state at hook cwd" [ -s "$R/sub/deep/.harness/verify/implementer.base" ]
-check "none: nothing above" [ ! -e "$R/sub/.harness" ] && [ ! -e "$R/.harness" ]
+ok=0; [ ! -e "$R/sub/.harness" ] && [ ! -e "$R/.harness" ] && ok=1
+check "none: nothing above" [ "$ok" = 1 ]
 
 # stray .harness (config only, no asks/) in a subdir must not capture the root
 newrepo
