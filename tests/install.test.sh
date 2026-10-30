@@ -65,7 +65,7 @@ check "BASH_MAX_TIMEOUT_MS" [ "$(jq -r .env.BASH_MAX_TIMEOUT_MS "$S")" = 1800000
 check "env.FOO preserved" [ "$(jq -r .env.FOO "$S")" = bar ]
 check "backup created" ls "$CLAUDE_DIR"/settings.json.bak.* >/dev/null 2>&1
 
-check "agent set to conductor" [ "$(jq -r .agent "$S")" = conductor ]
+check "install does not write agent conductor (other agent kept)" [ "$(jq -r .agent "$S")" = something ]
 
 for a in analyst implementer reviewer conductor solo; do
   check "agent symlink $a" [ "$(readlink "$CLAUDE_DIR/agents/$a.md")" = "$REPO/claude/agents/$a.md" ]
@@ -104,7 +104,7 @@ check "second run rc" [ "$RC" -eq 0 ]
 check "env still preserved after rerun" [ "$(jq -c '.env' "$S")" = '{"FOO":"bar","BASH_DEFAULT_TIMEOUT_MS":"600000","BASH_MAX_TIMEOUT_MS":"1800000"}' ]
 check "gate hook still once" [ "$(jq --arg g "$GATE" '[.hooks.PreToolUse[] | select(.hooks[] | .command==$g)] | length' "$S")" -eq 1 ]
 check "other hook still once" [ "$(jq '[.hooks.PreToolUse[] | select(.hooks[] | .command=="/opt/other-hook.sh")] | length' "$S")" -eq 1 ]
-check "agent still conductor after rerun" [ "$(jq -r .agent "$S")" = conductor ]
+check "other agent still kept after rerun" [ "$(jq -r .agent "$S")" = something ]
 check "CLAUDE.md still absent after rerun" [ ! -e "$CLAUDE_DIR/CLAUDE.md" ]
 check "gitignore line once" [ "$(grep -cx '.harness/' "$GIT_IGNORE")" -eq 1 ]
 check "route hook still once after rerun" [ "$(jq --arg r "$REPO/claude/hooks/conductor-route.sh" '[.hooks.UserPromptSubmit[]? | select(any(.hooks[]?; .command==$r))] | length' "$S")" -eq 1 ]
@@ -213,7 +213,7 @@ check "resume hook matcher" jq -e --arg r "$RESUME" '.hooks.SessionStart[] | sel
 check "resume hook type command" jq -e --arg r "$RESUME" '.hooks.SessionStart[] | select(any(.hooks[]?; .command==$r)) | .hooks[0].type=="command"' "$S" >/dev/null
 check "other SessionStart hooks preserved" jq -e '[.hooks.SessionStart[]? | select(any(.hooks[]?; .command=="/opt/session.sh"))] | length == 1' "$S" >/dev/null
 
-HW=$(newdir hookwork); mkdir -p "$HW/.harness"
+HW=$(newdir hookwork); mkdir -p "$HW/.harness/asks"
 printf '# Progress — x (main)\nGoal: g\n' > "$HW/.harness/progress.md"
 OUT=$(cd "$HW" && HARNESS_ROLE=worker /bin/bash "$RESUME" </dev/null 2>&1); RC=$?
 check "resume hook silent for workers" [ -z "$OUT" ]
@@ -235,18 +235,32 @@ check "resume hook works with no jq on PATH (rc 0)" [ "$RC" -eq 0 ]
 # wiki index injection
 WK=$(newdir hookwiki); mkdir -p "$WK/docs/wiki"
 printf '# Wiki index\n- [a](troubleshooting/a.md) — one (active, 2026-10-21)\n- [b](troubleshooting/b.md) — two (draft, 2026-10-21)\n- [c](decisions/c.md) — three (stale, 2026-10-21)\n' > "$WK/docs/wiki/index.md"
+# outside a harness checkout (no .harness/asks) the hook injects nothing, wiki included
+OUT=$(cd "$WK" && env -u HARNESS_ROLE /bin/bash "$RESUME" </dev/null 2>/dev/null); RC=$?
+check "no asks/: wiki not injected" [ -z "$OUT" ]
+check "no asks/: rc 0" [ "$RC" -eq 0 ]
+mkdir -p "$WK/.harness"; printf 'Goal: stray\n' > "$WK/.harness/progress.md"
+OUT=$(cd "$WK" && env -u HARNESS_ROLE /bin/bash "$RESUME" </dev/null 2>/dev/null)
+check "only .harness/progress.md (no asks/): silent" [ -z "$OUT" ]
+rm -f "$WK/.harness/progress.md"
+mkdir -p "$WK/.harness/asks"
 OUT=$(cd "$WK" && env -u HARNESS_ROLE /bin/bash "$RESUME" </dev/null 2>/dev/null); RC=$?
 CTX=$(printf '%s' "$OUT" | jq -r .hookSpecificOutput.additionalContext)
-check "wiki only (no progress.md) injects" [ "$RC" -eq 0 ] 
+check "asks/ without progress.md: wiki injected" [ "$RC" -eq 0 ] 
 check "wiki active line present" printf '%s' "$CTX" | grep -q 'troubleshooting/a.md'
 check "wiki draft line absent" sh -c '! printf "%s" "$1" | grep -q troubleshooting/b.md' _ "$CTX"
 check "wiki stale line absent" sh -c '! printf "%s" "$1" | grep -q decisions/c.md' _ "$CTX"
 check "wiki heading line absent" sh -c '! printf "%s" "$1" | grep -q "^# Wiki index"' _ "$CTX"
-mkdir -p "$WK/.harness"; printf 'Goal: g\n' > "$WK/.harness/progress.md"
+printf 'Goal: g\n' > "$WK/.harness/progress.md"
 OUT=$(cd "$WK" && env -u HARNESS_ROLE /bin/bash "$RESUME" </dev/null 2>/dev/null)
 CTX=$(printf '%s' "$OUT" | jq -r .hookSpecificOutput.additionalContext)
 check "progress and wiki both injected" sh -c 'printf "%s" "$1" | grep -qx "Goal: g" && printf "%s" "$1" | grep -q troubleshooting/a.md' _ "$CTX"
 check "progress comes before wiki" [ "$(printf '%s' "$CTX" | grep -n 'Goal: g\|troubleshooting/a.md' | head -1 | cut -d: -f2-)" = "Goal: g" ]
+
+# a session in a subdir of a git checkout resumes from the root's progress.md
+mkdir -p "$WK/.git" "$WK/sub/deep"
+OUT=$(cd "$WK/sub/deep" && env -u HARNESS_ROLE /bin/bash "$RESUME" </dev/null 2>/dev/null)
+check "subdir cwd injects the root's progress.md" sh -c 'printf "%s" "$1" | jq -r .hookSpecificOutput.additionalContext | grep -qx "Goal: g"' _ "$OUT"
 OUT=$(cd "$WK" && HARNESS_ROLE=worker /bin/bash "$RESUME" </dev/null 2>&1)
 check "wiki injection silent for workers" [ -z "$OUT" ]
 # cap: many active lines -> wiki part <= 2048 bytes, truncation note
@@ -382,6 +396,17 @@ HARNESS_TESTS_DIR="$D" /bin/bash "$RUNNER" --test > "$D.out" 2>&1
 check "runner glob: hyphenated suite runs" grep -qx '=== x-y ===' "$D.out"
 check "runner glob: helper not run" not_grep helper-ran "$D.out"
 check "runner: no hardcoded suite list" not_grep 'names="gate' "$RUNNER"
+
+# a previous install's global agent=conductor is removed once; other keys stay
+printf '{"agent":"conductor","model":"keep"}\n' > "$CLAUDE_DIR/settings.json"
+run_install
+check "global agent=conductor removed" [ "$(jq -r '.agent // "none"' "$S")" = none ]
+check "removal keeps other keys" [ "$(jq -r .model "$S")" = keep ]
+check "removal prints a note" grep -q "removed the global agent=conductor" "$T/out.txt"
+printf '{"model":"keep"}\n' > "$CLAUDE_DIR/settings.json"
+run_install
+check "fresh install writes no agent key" [ "$(jq -r '.agent // "none"' "$S")" = none ]
+check "end note mentions harness init and doctor" bash -c 'grep -q "harness init" "$1" && grep -q "harness doctor --fix" "$1"' _ "$T/out.txt"
 
 echo "PASS $pass / FAIL $fail"
 [ "$fail" -eq 0 ]

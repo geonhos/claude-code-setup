@@ -35,3 +35,4 @@
 - 2026-10-28 · implementer · v22 PR C (#8 stage 2) · headless group (runner_of, use_hl, hl_*, ask/report/close_headless) moves to lib/harness-headless.sh; loader list gains headless
 - 2026-10-28 · implementer · v23 headless implementer · decision 0009 (pinned permissions, exit 2 on denials, auto-resume, 90 min cap); 0007 active for analyst/reviewer
 - 2026-10-29 · implementer · worker test-loop rule · implementer/reviewer prompts + AGENTS.md forbid serial suite loops; troubleshooting/serial-suite-loop.md
+- 2026-10-30 · implementer · v24 PR 2 · gate/route/resume act only in a harness checkout (.harness/asks); harness init/doctor; global agent key dropped; decision 0010 draft, 0005 marked
