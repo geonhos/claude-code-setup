@@ -133,12 +133,23 @@ check "hook: no .harness dir -> none created" [ ! -e "$E2/.harness" ]
 E3="$ROOT/stray"; mkdir -p "$E3/.harness"
 hook "$(payload "$E3" 'x')"
 check "hook: stray .harness (no asks) -> no routing.jsonl" [ ! -e "$E3/.harness/routing.jsonl" ]
-# a subdir of a git checkout logs under the root
-mkdir -p "$P/src/deep"
+# a subdir of a git checkout logs under the root, even when the subdir holds a stray .harness/
+# (base logged at the cwd's own .harness; the root is the only place that may change)
+mkdir -p "$P/src/deep/.harness"
 n=$(nlines "$RJ")
 hook "$(payload "$P/src/deep" 'from a subdir')"
 check "hook: subdir cwd logs to the checkout root" [ "$(nlines "$RJ")" -eq $((n + 1)) ]
+check "hook: subdir with a stray .harness: nothing logged there" [ -z "$(ls -A "$P/src/deep/.harness")" ]
+rmdir "$P/src/deep/.harness"
+n=$(nlines "$RJ")
+hook "$(payload "$P/src/deep" 'again, no stray')"
 check "hook: subdir cwd creates no .harness there" [ ! -e "$P/src/deep/.harness" ]
+check "hook: subdir cwd logged at the root again" [ "$(nlines "$RJ")" -eq $((n + 1)) ]
+# a git repo without a marker: nothing is created, at the root or in a subdir
+E4="$ROOT/gitnomark"; mkdir -p "$E4/.git" "$E4/sub"
+hook "$(payload "$E4/sub" 'x')"
+check "hook: git repo without asks -> none at the root" [ ! -e "$E4/.harness" ]
+check "hook: git repo without asks -> none in the subdir" [ ! -e "$E4/sub/.harness" ]
 n=$(nlines "$RJ")
 
 hook 'not json at all'

@@ -19,13 +19,14 @@ if [ ! -t 0 ]; then
   [ -z "$c" ] || [ ! -d "$c" ] || dir=$c
 fi
 # harness_root DIR -> prints the harness checkout root and returns 0, or returns 1.
+# DIR is resolved physically (pwd -P) first, like enter_root.
 # The root is the nearest dir at or above DIR with .harness/asks/, searched up to
 # the dir holding .git (file or dir) inclusive; outside git only DIR counts. Same
 # rule as enter_root in bin/harness-verify. This body is copied byte-for-byte into
 # conductor-gate, -route and -resume (tests/gate.test.sh checks it).
 harness_root() {
-  local start=${1%/} d hit=""
-  [ -n "$start" ] || start=/
+  local start d hit=""
+  start=$(cd "${1:-/}" 2>/dev/null && pwd -P) || return 1
   d=$start
   while :; do
     if [ -z "$hit" ] && [ -d "$d/.harness/asks" ]; then hit=$d; fi

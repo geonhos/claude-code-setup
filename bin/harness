@@ -13,7 +13,7 @@
 #     ~/.cache/harness/wt/<repo8>/<role>-<id8> (decision 0008); the ask-id is printed on stderr.
 #   harness report <agent>|<ask-id>
 #   harness status
-#   harness init [--no-agent]   make this repo a harness checkout (.harness/asks, config, agent=conductor)
+#   harness init [--no-agent] [--shared]   make this repo a harness checkout (.harness/asks, config, agent=conductor in .claude/settings.local.json; --shared: settings.json)
 #   harness doctor [--fix] [DIR...]   clean pollution left by older versions (strays, global agent key)
 #   harness close  <agent>|<ask-id>|--all|--legacy [--force]
 #   harness route-log '<json>'   append one line to .harness/routing.jsonl (never fails)
@@ -113,7 +113,7 @@ usage:
   harness ask    <analyst|reviewer> '<instruction>' --worktree [--base REF] ...   (headless roles only; --base needs --worktree)
   harness report <agent>|<ask-id>
   harness status
-  harness init   [--no-agent]   (once per repo: makes it a harness checkout; ask/spawn refuse without it)
+  harness init   [--no-agent] [--shared]   (once per repo: makes it a harness checkout; ask/spawn refuse without it)
   harness doctor [--fix] [DIR...]   (find/remove stray .harness/ dirs and the old global agent key)
   harness close  <agent>|<ask-id>|--all|--legacy [--force]
   harness wiki-lint [DIR]
@@ -1411,6 +1411,8 @@ has_uncollected() {
 # `agent`, so per-agent ask lookups never match it) + progress.md refresh
 log_close() {
   [ -n "$3" ] || return 0
+  # no marker side effects: create .harness/ only at a checkout root (an existing one is used as is)
+  [ -d .harness ] || [ "$(harness_root "$PWD" 2>/dev/null)" = "$(pwd -P)" ] || return 0
   mkdir -p .harness 2>/dev/null || return 0
   jq -n -c --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg role "$1" --arg pane "$2" --arg reason "$3" --arg runner "${4:-}" --arg aid "${5:-}" \
     '{ts: $ts, event: "close", role: $role, pane: $pane, reason: $reason, ask_id: (if $aid == "" then null else $aid end)}
@@ -1450,7 +1452,7 @@ finish_close() {
   unregister "$1" "$2"
   rm -f ".harness/asks/$1.finished"
   if [ -n "$3" ]; then
-    mkdir -p .harness/asks 2>/dev/null && printf '%s %s\n' "$(date +%s)" "$3" > ".harness/asks/$1.closed" 2>/dev/null
+    [ -d .harness/asks ] && printf '%s %s\n' "$(date +%s)" "$3" > ".harness/asks/$1.closed" 2>/dev/null
   fi
   log_close "$1" "$2" "$3"
   echo "closed $1 ($2)"
@@ -1703,6 +1705,7 @@ cmd_retro() {
     retro_brief "$n" "$files" "$top"
     return 0
   fi
+  [ -d .harness ] || [ "$(harness_root "$PWD" 2>/dev/null)" = "$(pwd -P)" ] || die "not a harness checkout (no .harness/asks); run 'harness init' here first"
   mkdir -p .harness || die "cannot create .harness/"
   retro_brief "$n" "$files" "$top" > "$brief" || die "cannot write $brief"
   "$BASH" "$0" ask analyst 'Read .harness/task-retro.md and do it.' --via retro --fresh
@@ -1721,12 +1724,13 @@ cmd_retro() {
 
 # --- harness checkout: init, doctor (decision 0010) -----------------------------------------
 # harness_root DIR -> prints the harness checkout root and returns 0, or returns 1.
+# DIR is resolved physically (pwd -P) first, like enter_root.
 # The root is the nearest dir at or above DIR with .harness/asks/, searched up to
 # the dir holding .git (file or dir) inclusive; outside git only DIR counts. Same
 # rule as enter_root in bin/harness-verify and the body in the three claude/hooks.
 harness_root() {
-  local start=${1%/} d hit=""
-  [ -n "$start" ] || start=/
+  local start d hit=""
+  start=$(cd "${1:-/}" 2>/dev/null && pwd -P) || return 1
   d=$start
   while :; do
     if [ -z "$hit" ] && [ -d "$d/.harness/asks" ]; then hit=$d; fi
@@ -1748,11 +1752,19 @@ harness_root() {
 require_checkout() {
   local root
   root=$(harness_root "$PWD") || die "not a harness checkout (no .harness/asks); run 'harness init' here first"
-  [ "$root" = "$PWD" ] || cd "$root" || die "cannot enter $root"
+  [ "$root" = "$(pwd -P)" ] || cd "$root" || die "cannot enter $root"
+}
+
+# settings_commit TMP FILE — write TMP into FILE through the file (a symlinked FILE stays a
+# symlink, as install.sh does) after one .bak copy of the original (never overwritten)
+settings_commit() {
+  local tmp=$1 f=$2
+  [ -e "$f.bak" ] || cp "$f" "$f.bak" 2>/dev/null || return 1
+  cat "$tmp" > "$f"
 }
 
 # settings_set_agent FILE — create FILE with {"agent":"conductor"}, or merge the key into it
-# (never clobbering other keys); an existing different agent is kept and noted.
+# (never clobbering other keys; .bak first); an existing different agent is kept and noted.
 settings_set_agent() {
   local f=$1 cur tmp
   if [ ! -e "$f" ]; then
@@ -1771,22 +1783,23 @@ settings_set_agent() {
     return 0
   fi
   tmp=$(mktemp "${TMPDIR:-/tmp}/harness-settings.XXXXXX") || return 0
-  if jq '.agent = "conductor"' "$f" > "$tmp" && mv "$tmp" "$f"; then
-    echo "updated $f (agent: conductor)"
+  if jq '.agent = "conductor"' "$f" > "$tmp" && settings_commit "$tmp" "$f"; then
+    echo "updated $f (agent: conductor; backup $f.bak)"
   else
-    rm -f "$tmp"
     echo "harness init: could not update $f" >&2
   fi
+  rm -f "$tmp"
 }
 
-# cmd_init [--no-agent] — make the current repo (git toplevel, else the cwd) a harness checkout:
-# .harness/asks/, the default config, .claude/settings.json agent=conductor, and .harness/ in
+# cmd_init [--no-agent] [--shared] — make the current repo (git toplevel, else the cwd) a harness
+# checkout: .harness/asks/, the default config, "agent": "conductor" in .claude/settings.local.json
+# (per user, untracked; --shared: .claude/settings.json, committed), and .harness/ in
 # .git/info/exclude when git does not already ignore it. Idempotent.
 cmd_init() {
   [ "${HARNESS_ROLE:-}" != worker ] || die "harness init is for the conductor; a worker (HARNESS_ROLE=worker) does not set up checkouts"
-  local agent=1 a top ex
+  local agent=1 a top ex target=.claude/settings.local.json
   for a in "$@"; do
-    case "$a" in --no-agent) agent=0 ;; *) usage ;; esac
+    case "$a" in --no-agent) agent=0 ;; --shared) target=.claude/settings.json ;; *) usage ;; esac
   done
   top=$(git rev-parse --show-toplevel 2>/dev/null) || top=$PWD
   cd "$top" || die "cannot enter $top"
@@ -1795,8 +1808,8 @@ cmd_init() {
   else mkdir -p .harness/asks || die "cannot create .harness/asks"; echo "created .harness/asks"; fi
   if [ -e "$CONFIG_FILE" ]; then echo "$CONFIG_FILE exists"
   else ensure_config init; [ -e "$CONFIG_FILE" ] && echo "created $CONFIG_FILE"; fi
-  if [ "$agent" = 1 ]; then settings_set_agent .claude/settings.json
-  else echo ".claude/settings.json untouched (--no-agent)"; fi
+  if [ "$agent" = 1 ]; then settings_set_agent "$target"
+  else echo "$target untouched (--no-agent)"; fi
   if git rev-parse --git-dir >/dev/null 2>&1; then
     if git check-ignore -q .harness/asks/x 2>/dev/null; then echo ".harness/ already ignored by git"
     else
@@ -1829,8 +1842,11 @@ EOF
 # cmd_doctor [--fix] [DIR...] — find (and with --fix remove) pollution left by older versions:
 # stray .harness/ dirs without asks/ (DIR and its children, default: the parent of this repo
 # plus the cwd) and the global agent=conductor key in ~/.claude/settings.json. Exit 0.
+# Not for workers; symlinked children and symlinked .harness are never followed; the default
+# scope is refused when it would be $HOME (pass DIR explicitly).
 cmd_doctor() {
-  local fix=0 dirs="" d c h seen="" first sf tmp n=0
+  local fix=0 dirs="" d c h seen="" first sf tmp n=0 home
+  [ "${HARNESS_ROLE:-}" != worker ] || die "harness doctor is for the conductor; a worker (HARNESS_ROLE=worker) does not scan or clean"
   for d in "$@"; do
     case "$d" in
       --fix) fix=1 ;;
@@ -1840,15 +1856,23 @@ $d" ;;
     esac
   done
   if [ -z "$dirs" ]; then
+    home=$(cd "$HOME" 2>/dev/null && pwd -P)
+    for d in "${REPO_TOP%/*}" "$PWD"; do
+      d=$(cd "$d" 2>/dev/null && pwd -P) || continue
+      if [ -n "$home" ] && [ "$d" = "$home" ]; then
+        echo "harness doctor: refusing to scan $HOME; pass DIR explicitly" >&2
+        return 1
+      fi
+    done
     dirs="${REPO_TOP%/*}
 $PWD"
   fi
   while IFS= read -r d; do
     [ -n "$d" ] && [ -d "$d" ] || continue
-    d=$(cd "$d" && pwd -P)
+    d=$(cd "$d" && pwd -P) || continue
     for c in "$d" "$d"/*/; do
       c=${c%/}
-      [ -d "$c" ] || continue
+      [ -d "$c" ] && [ ! -L "$c" ] || continue
       case "$seen" in *"|$c|"*) continue ;; esac
       seen="$seen|$c|"
       h=$c/.harness
@@ -1870,8 +1894,9 @@ EOF
     n=$((n + 1))
     if [ "$fix" = 1 ]; then
       tmp=$(mktemp "${TMPDIR:-/tmp}/harness-settings.XXXXXX") || return 0
-      if jq 'del(.agent)' "$sf" > "$tmp" && mv "$tmp" "$sf"; then echo "removed: agent key from $sf"
-      else rm -f "$tmp"; echo "harness doctor: could not update $sf" >&2; fi
+      if jq 'del(.agent)' "$sf" > "$tmp" && settings_commit "$tmp" "$sf"; then echo "removed: agent key from $sf (backup $sf.bak)"
+      else echo "harness doctor: could not update $sf" >&2; fi
+      rm -f "$tmp"
     else
       echo "global: $sf sets agent conductor (harness init sets it per repo; --fix removes it)"
     fi

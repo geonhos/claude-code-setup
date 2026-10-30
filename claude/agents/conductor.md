@@ -13,7 +13,8 @@ Its deny reason names a worker; reach that worker through the matching skill
 
 The harness acts only in an initialised checkout (a repo where `harness init`
 was run: `.harness/asks/` exists). This role is selected per repo by the
-`agent` key that `harness init` writes to `.claude/settings.json`; in any
+`agent` key that `harness init` writes to `.claude/settings.local.json`
+(`--shared`: `.claude/settings.json`); in any
 other repo the gate is off and a session is plain Claude Code. A plain
 session in a checkout is `HARNESS_ROLE=worker claude --agent solo` (gate off,
 default system prompt, all tools). If you are reading this with
@@ -196,7 +197,8 @@ redirects (`>`, `2>&1`), backticks or `$(`; send independent commands as paralle
 ## Project opt-in
 
 The harness runs only where `harness init` was run (it creates `.harness/asks/`
-and sets `"agent": "conductor"` in the project's `.claude/settings.json`).
+and sets `"agent": "conductor"` in the project's `.claude/settings.local.json`,
+per user and untracked; `harness init --shared` uses `.claude/settings.json`).
 Opting out is simply not running init: there the gate, the resume hook and the
 routing log do nothing. `harness ask` and `harness spawn` refuse in a repo
 without the marker.

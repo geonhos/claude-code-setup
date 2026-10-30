@@ -32,9 +32,9 @@ cd ~/workspace/claude-code-setup
 - 전역 gitignore에 `.harness/` 추가
 - `herdr integration install claude` 실행
 
-설치 뒤에는 harness를 쓰려는 저장소마다 `harness init`을 한 번 실행한다. `.harness/asks/`(체크아웃 표시), 기본 설정, 그 저장소의 `.claude/settings.json`에 `"agent": "conductor"`를 만든다(이미 다른 `agent`가 있으면 그대로 두고 알린다. `--no-agent`는 settings를 건드리지 않는다). init하지 않은 저장소에서는 게이트·resume 훅·라우팅 로그가 모두 꺼지고 `harness ask`/`spawn`은 거부된다.
+설치 뒤에는 harness를 쓰려는 저장소마다 `harness init`을 한 번 실행한다. `.harness/asks/`(체크아웃 표시), 기본 설정, 그 저장소의 `.claude/settings.local.json`(사용자별, 추적 안 됨)에 `"agent": "conductor"`를 만든다(`--shared`는 커밋되는 `.claude/settings.json`에 쓴다. 이미 다른 `agent`가 있으면 그대로 두고 알린다. 기존 파일은 `.bak`을 한 번 남기고, 심링크는 유지한다. `--no-agent`는 settings를 건드리지 않는다). init하지 않은 저장소에서는 게이트·resume 훅·라우팅 로그가 모두 꺼지고 `harness ask`/`spawn`은 거부된다.
 
-이전 버전이 남긴 오염(`asks/` 없는 `.harness/` 디렉터리, 전역 `agent: conductor`)은 `harness doctor`로 찾고 `harness doctor --fix`로 지운다. 아는 파일만 든 디렉터리만 지우고, 모르는 파일이 있으면 건너뛴다.
+이전 버전이 남긴 오염(`asks/` 없는 `.harness/` 디렉터리, 전역 `agent: conductor`)은 `harness doctor`로 찾고 `harness doctor --fix`로 지운다. 아는 파일만 든 디렉터리만 지우고, 모르는 파일이 있으면 건너뛴다. 심링크 디렉터리와 심링크된 `.harness`는 따라가지 않고, 기본 범위가 `$HOME`이면 거부하며(DIR을 직접 지정), 워커(`HARNESS_ROLE=worker`)에서는 실행되지 않는다.
 
 테스트는 `./install.sh --test`로 돌린다. 스위트는 병렬로 실행되고, 디버깅용으로 `HARNESS_TEST_SERIAL=1`을 주면 하나씩 돌린다.
 
@@ -46,7 +46,7 @@ cd ~/workspace/claude-code-setup
 4. 워커의 작업은 각 패널에서 볼 수 있다. conductor가 보는 것은 리포트뿐이다.
 
 ```
-harness init   [--no-agent]                                        # 이 저장소를 체크아웃으로 만든다 (asks/, 설정, .claude/settings.json agent)
+harness init   [--no-agent] [--shared]                              # 이 저장소를 체크아웃으로 만든다 (asks/, 설정, .claude/settings.local.json agent)
 harness doctor [--fix] [DIR...]                                    # 과거 오염(asks/ 없는 .harness/, 전역 agent 키)을 찾고 --fix로 지운다
 harness spawn  <agent> [--direction right|down]
 harness ask    <agent> '<instruction>' [--timeout MS] [--fresh|--keep] [--via skill|conductor|retro]   # exit 2 blocked · 3 no report · 4 still working · 5 verification failed · 6 worker runs outside this repo
@@ -91,7 +91,7 @@ ask 전에 살아 있는 워커의 컨텍스트를 `/clear`로 비운다. 새 �
 
 ## 검증 루프
 
-`.harness/`(리포트, 패널, 검증 상태)는 conductor를 실행한 디렉터리에 만들어진다. 훅은 `cwd`에서 `.git`이 있는 디렉터리까지 올라가며 `.harness/asks/`가 있는 가장 가까운 디렉터리를 체크아웃 루트로 쓴다. 없으면 훅은 아무것도 하지 않는다(`harness init`이 만든다).
+`.harness/`(리포트, 패널, 검증 상태)는 `harness init`이 저장소 루트에 만든다(conductor를 시작한 디렉터리에는 만들어지지 않는다). 훅은 `cwd`에서 `.git`이 있는 디렉터리까지 올라가며 `.harness/asks/`가 있는 가장 가까운 디렉터리를 체크아웃 루트로 쓴다. 없으면 훅은 아무것도 하지 않는다(`harness init`이 만든다).
 
 implementer는 자기 작업을 스스로 판정하지 않는다. `claude/agents/implementer.md`의 훅이 `harness-verify`를 루프 안에서 돌린다. `PostToolUse` 훅이 수정한 파일마다 포맷을 적용하고 파일 단위 lint 오류를 돌려주며, `Stop` 훅은 변경분 전체에 lint와 테스트를 돌려서 실패하면 실패 출력과 함께 워커를 되돌려 보낸다. 최대 `maxAttempts`회(기본 3)까지 반복하고, 검증하는 동안은 리포트를 숨기며 실패할 때마다 리포트를 지운다. 횟수를 다 쓰면 리포트를 그대로 둔다.
 `harness ask implementer`는 `./install.sh`로 설치한 `harness-verify`가 있어야 하고(없으면 exit 1), 먼저 baseline을 기록한다. 재시도 상한까지 검증에 실패하면 exit **5**(리포트와 `verify: FAIL (<step>, <n> attempts)` 줄)로 종료한다. `harness report`도 같은 검사를 한다.
@@ -130,7 +130,7 @@ conductor 에이전트의 본문은 Claude Code의 기본 시스템 프롬프트
 
 ## 끄는 방법
 
-- 저장소 단위: `harness init`을 하지 않으면 된다(이미 했다면 `.harness/asks/`를 지운다).
+- 저장소 단위: `harness init`을 하지 않으면 된다(이미 했다면 두 단계: `.harness/asks/`를 지우고, `.claude/settings.local.json`(`--shared`였다면 `settings.json`)에서 `agent` 키를 지운다).
 - 세션 하나만: `HARNESS_ROLE=worker claude --agent solo`.
 
 게이트는 훅 입력의 `agent_type`으로 판단한다. conductor 에이전트 세션은 `HARNESS_ROLE=worker`여도 게이트가 켜져 있고, `agent_type`이 없거나 서브에이전트(`agent_id` 있음)일 때만 `HARNESS_ROLE=worker`가 게이트를 끈다.

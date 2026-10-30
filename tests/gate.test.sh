@@ -570,14 +570,26 @@ agree() {  # LABEL DIR WANT(gated|free) — enter_root must land on the marker i
   else report bad "agree: $1" "$3" "gate=$gate verify=$ver" x; fi
 }
 AG=$GATE_HOME/agree
-mkdir -p "$AG/g1/.git" "$AG/g1/.harness/asks" "$AG/g1/sub" "$AG/g2/.git" "$AG/g2/sub" "$AG/ng/.harness/asks" "$AG/ng2" "$AG/wt/sub"
-echo "gitdir: /nowhere" > "$AG/wt/.git"; mkdir -p "$AG/wt/.harness/asks"
+mkdir -p "$AG/g1/.git" "$AG/g1/.harness/asks" "$AG/g1/sub" "$AG/g2/.git" "$AG/g2/sub" "$AG/ng/.harness/asks" "$AG/ng2"
+# a real `git worktree add` checkout: its .git is a FILE (gitdir: ...)
+mkdir -p "$AG/wtmain"
+(cd "$AG/wtmain" && git init -q . && git -c user.email=t@t -c user.name=t -c core.hooksPath=/dev/null commit -q --allow-empty -m s && git worktree add -q "$AG/wt" 2>/dev/null)
+mkdir -p "$AG/wt/sub" "$AG/wt/.harness/asks"
 (cd "$AG/g1" && git init -q . 2>/dev/null); (cd "$AG/g2" && git init -q . 2>/dev/null)
 agree "git root"            "$AG/g1"     gated
 agree "git subdir"          "$AG/g1/sub" gated
 agree "git, no marker"      "$AG/g2/sub" free
 agree "no git, marker here" "$AG/ng"     gated
 agree "no git, no marker"   "$AG/ng2"    free
+if [ -f "$AG/wt/.git" ]; then report ok "fixture: worktree .git is a file" file file x; else report bad "fixture: worktree .git is a file" file "not a file" x; fi
+agree "worktree root (.git file)"   "$AG/wt"     gated
+agree "worktree subdir (.git file)" "$AG/wt/sub" gated
+gchk deny "$AG/wt"     "HARNESS_ROLE=conductor" "$EDIT_SRC" "worktree root: deny"
+gchk deny "$AG/wt/sub" "HARNESS_ROLE=conductor" "$EDIT_SRC" "worktree subdir: deny"
+# a symlinked cwd resolves physically, like enter_root: L -> real/sub inside a marked git checkout
+mkdir -p "$AG/g1/real/sub"; ln -s "$AG/g1/real/sub" "$AG/L"
+gchk deny "$AG/g1" "HARNESS_ROLE=conductor" "$(jq -n -c --arg c "$AG/L" '{tool_name:"Edit",cwd:$c,tool_input:{file_path:"src/a.ts"}}')" "symlinked cwd L -> g1/real/sub: deny"
+agree "symlinked cwd"       "$AG/L"      gated
 expect_reason "Conductor gate could not parse" "reason: unparseable" 'not json at all'
 
 # --- deny output shape -------------------------------------------------------

@@ -20,8 +20,9 @@ harness must never interfere with repos that do not use it.
 3. The gate, route and resume hooks are no-ops outside a harness checkout, checked before
    jq and parsing. Inside one, the gate keys on agent_type / agent_id / HARNESS_ROLE (0005
    steps 2-4; steps 2-3 now apply only inside a checkout). No env switch: `HERDR_ENV` is ignored.
-4. The conductor agent is set per repo by `harness init` (`.claude/settings.json`,
-   `"agent": "conductor"`; `--no-agent` skips it). The global `agent` key is gone:
+4. The conductor agent is set per repo by `harness init` (`.claude/settings.local.json`,
+   per user and untracked; `--shared` writes `.claude/settings.json`; `"agent": "conductor"`;
+   `--no-agent` skips it; a symlinked file stays a symlink, a `.bak` is made once). The global `agent` key is gone:
    `install.sh` removes a previous `agent: conductor` once, `harness doctor --fix` too.
 5. `harness doctor [--fix]` lists and removes pollution of older versions (stray
    `.harness/` without `asks/`); it skips directories holding unknown files.
