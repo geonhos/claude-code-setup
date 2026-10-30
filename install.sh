@@ -1,8 +1,9 @@
 #!/bin/bash
 # install.sh — wire this repo into ~/.claude as the conductor setup:
 # agent and skill symlinks, the harness CLI, and settings.json (gate hook,
-# resume hook, routing-log hook, cache TTLs, Bash timeouts, and the `agent`
-# key that makes `conductor` the default role).
+# resume hook, routing-log hook, cache TTLs, Bash timeouts). It no longer sets
+# the global `agent` key (a previous `agent: conductor` is removed once): the
+# conductor role is per repo, set by `harness init` in .claude/settings.json.
 # Idempotent. Re-run after pulling changes.
 #
 #   ./install.sh          install
@@ -189,13 +190,16 @@ case ":$PATH:" in
   *) echo "warning: $BIN_DIR is not on PATH; add it so the conductor can run 'harness'" >&2 ;;
 esac
 
-# 3. settings.json: default agent + cache TTLs + exactly one entry each for the gate, resume and route hooks
+# 3. settings.json: cache TTLs + exactly one entry each for the gate, resume and route hooks
 bak="$SETTINGS.bak.$(date +%Y%m%d%H%M%S)"
 cp "$SETTINGS" "$bak"
 tmp=$(mktemp)
 trap 'rm -f "$tmp"' EXIT
+if [ "$(jq -r '.agent // empty' "$SETTINGS")" = conductor ]; then
+  echo "note: removed the global agent=conductor from $SETTINGS; run 'harness init' in each repo that should use the conductor"
+fi
 jq --arg gate "$GATE" --arg matcher "$MATCHER" --arg resume "$RESUME" --arg route "$ROUTE" '
-  .agent = "conductor"
+  (if .agent == "conductor" then del(.agent) else . end)
   | .promptCacheTtl = "1h"
   | .subagentPromptCacheTtl = "1h"
   | .env //= {}
@@ -237,9 +241,9 @@ installed:
   harness-run    $BIN_DIR/harness-run
   harness-view   $BIN_DIR/harness-view
   settings       $SETTINGS (backup: $bak)
-  agent          settings.agent = conductor (workers override with --agent <name>)
+  agent          not set globally; 'harness init' in a repo writes .claude/settings.json agent=conductor
   cache TTL      promptCacheTtl=1h subagentPromptCacheTtl=1h
   bash timeouts  env.BASH_DEFAULT_TIMEOUT_MS=600000 env.BASH_MAX_TIMEOUT_MS=1800000
   gitignore      $GIT_IGNORE (+ .harness/)
-next: start Claude inside a herdr pane and give it work. Escape hatch: HARNESS_ROLE=worker claude --agent solo
+next: run "harness init" in a repo to opt it in, then start Claude there. Past pollution (stray .harness/ dirs): "harness doctor --fix"
 EOF

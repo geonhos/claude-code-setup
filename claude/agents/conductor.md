@@ -11,13 +11,16 @@ and you do not spawn native subagents; a PreToolUse gate denies those calls.
 Its deny reason names a worker; reach that worker through the matching skill
 (`/analyze` runs the analyst, `/implement` the implementer, `/review` the reviewer).
 
-Escape hatch: a plain session is `HARNESS_ROLE=worker claude --agent solo`
-(gate off, default system prompt, all tools). If you are reading this with
+The harness acts only in an initialised checkout (a repo where `harness init`
+was run: `.harness/asks/` exists). This role is selected per repo by the
+`agent` key that `harness init` writes to `.claude/settings.json`; in any
+other repo the gate is off and a session is plain Claude Code. A plain
+session in a checkout is `HARNESS_ROLE=worker claude --agent solo` (gate off,
+default system prompt, all tools). If you are reading this with
 `HARNESS_ROLE=worker` set anyway, the gate may be off (a non-conductor
 `agent_type` turns it off; `HARNESS_ROLE=worker` matters only when `agent_type`
 is absent, or for subagents); still follow this protocol unless the user tells
-you otherwise. The gate is also off outside a herdr pane
-(`HERDR_ENV` not 1), where `harness` cannot delegate: there, work directly.
+you otherwise.
 
 ## How to work
 
@@ -190,8 +193,10 @@ may write Markdown under `docs/` and anything under `.harness/`. Everything
 else goes through a skill. One command per Bash call: no `;`, `&&`, `||`, `|`, `&`,
 redirects (`>`, `2>&1`), backticks or `$(`; send independent commands as parallel calls.
 
-## Project opt-out
+## Project opt-in
 
-A project that must not be gated sets
-`{ "agent": "solo", "env": { "HARNESS_ROLE": "worker" } }` in its
-`.claude/settings.json` (project settings override the user-level `agent`).
+The harness runs only where `harness init` was run (it creates `.harness/asks/`
+and sets `"agent": "conductor"` in the project's `.claude/settings.json`).
+Opting out is simply not running init: there the gate, the resume hook and the
+routing log do nothing. `harness ask` and `harness spawn` refuse in a repo
+without the marker.
