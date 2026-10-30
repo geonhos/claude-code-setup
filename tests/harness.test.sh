@@ -802,6 +802,14 @@ check "close --legacy outside a checkout: closes" logged "pane close w1:p5"
 check "close --legacy outside a checkout: no .harness created" [ ! -e .harness ]
 run retro
 check "retro outside a checkout: nothing pending, no .harness" bash -c '[ ! -e .harness ] && grep -q "nothing pending" <<<"$1"' _ "$OUT"
+# a stray .harness/ (no asks/) in an un-init dir is never written to
+setup; rm -rf .harness; mkdir -p .harness/retro; echo '{"ask_id":"a1","role":"analyst","reason":"x"}' > .harness/retro/a1.json
+echo idle > "$FAKE_DIR/live.analyst"; echo w1:p5 > "$FAKE_DIR/pane.analyst"
+STRAY_BEFORE=$(find .harness | sort | tr '\n' ' ')
+run close --legacy
+check "close --legacy: stray .harness/ (no asks/) unchanged" [ "$(find .harness | sort | tr '\n' ' ')" = "$STRAY_BEFORE" ]
+run retro
+check "retro: stray .harness/ (no asks/) refused and unchanged" bash -c '[ "$(find .harness | sort | tr "\n" " ")" = "$1" ] && grep -q "not a harness checkout" <<<"$2"' _ "$STRAY_BEFORE" "$OUT"
 setup; run spawn analyst; rm -rf .harness/asks
 run close analyst
 check "close does not recreate .harness/asks" [ ! -e .harness/asks ]
@@ -834,9 +842,11 @@ OUT=$(cd "$S/me" && HOME=$H2 /bin/bash "$HARNESS" doctor 2>&1)
 check "doctor default scope: lists the sibling repo stray" grep -q "stray: $S/sib/.harness" <<<"$OUT"
 check "doctor default scope: does not go two levels down" bash -c '! grep -q "deeper" <<<"$1"' _ "$OUT"
 mkdir -p "$S/hh/me" "$S/hh/other/.harness"; echo '{}' > "$S/hh/other/.harness/config.json"; ( cd "$S/hh/me" && git init -q . )
+mkdir -p "$S/hh/.claude"; echo '{"agent":"conductor","model":"m"}' > "$S/hh/.claude/settings.json"
 OUT=$(cd "$S/hh/me" && HOME="$S/hh" /bin/bash "$HARNESS" doctor --fix 2>&1); RC=$?
 check "doctor refuses a default scope of \$HOME" bash -c '[ "$1" != 0 ] && grep -q "refusing to scan" <<<"$2"' _ "$RC" "$OUT"
 check "doctor refusing \$HOME removed nothing" [ -d "$S/hh/other/.harness" ]
+check "doctor from \$HOME: global key fixed before the refusal" bash -c '[ "$(jq -r ".agent // \"none\"" "$1/.claude/settings.json")" = none ] && grep -q "removed: agent key" <<<"$2"' _ "$S/hh" "$OUT"
 # global settings: symlink kept, .bak made once
 mkdir -p "$H2/real"; printf '{"agent":"conductor","model":"m"}\n' > "$H2/real/s.json"; mkdir -p "$H2/.claude"; ln -s "$H2/real/s.json" "$H2/.claude/settings.json"
 OUT=$(cd "$D" && HOME=$H2 /bin/bash "$HARNESS" doctor --fix "$D/s" 2>&1)

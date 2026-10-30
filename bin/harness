@@ -1412,7 +1412,7 @@ has_uncollected() {
 log_close() {
   [ -n "$3" ] || return 0
   # no marker side effects: create .harness/ only at a checkout root (an existing one is used as is)
-  [ -d .harness ] || [ "$(harness_root "$PWD" 2>/dev/null)" = "$(pwd -P)" ] || return 0
+  [ -d .harness/asks ] || [ "$(harness_root "$PWD" 2>/dev/null)" = "$(pwd -P)" ] || return 0
   mkdir -p .harness 2>/dev/null || return 0
   jq -n -c --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg role "$1" --arg pane "$2" --arg reason "$3" --arg runner "${4:-}" --arg aid "${5:-}" \
     '{ts: $ts, event: "close", role: $role, pane: $pane, reason: $reason, ask_id: (if $aid == "" then null else $aid end)}
@@ -1705,7 +1705,7 @@ cmd_retro() {
     retro_brief "$n" "$files" "$top"
     return 0
   fi
-  [ -d .harness ] || [ "$(harness_root "$PWD" 2>/dev/null)" = "$(pwd -P)" ] || die "not a harness checkout (no .harness/asks); run 'harness init' here first"
+  [ -d .harness/asks ] || [ "$(harness_root "$PWD" 2>/dev/null)" = "$(pwd -P)" ] || die "not a harness checkout (no .harness/asks); run 'harness init' here first"
   mkdir -p .harness || die "cannot create .harness/"
   retro_brief "$n" "$files" "$top" > "$brief" || die "cannot write $brief"
   "$BASH" "$0" ask analyst 'Read .harness/task-retro.md and do it.' --via retro --fresh
@@ -1855,6 +1855,19 @@ cmd_doctor() {
 $d" ;;
     esac
   done
+  # the global key is checked first so it is reported/fixed even when the dir scan is refused
+  sf=${CLAUDE_SETTINGS:-$HOME/.claude/settings.json}
+  if [ -f "$sf" ] && [ "$(jq -r '.agent // empty' "$sf" 2>/dev/null)" = conductor ]; then
+    n=$((n + 1))
+    if [ "$fix" = 1 ]; then
+      tmp=$(mktemp "${TMPDIR:-/tmp}/harness-settings.XXXXXX") || return 0
+      if jq 'del(.agent)' "$sf" > "$tmp" && settings_commit "$tmp" "$sf"; then echo "removed: agent key from $sf (backup $sf.bak)"
+      else echo "harness doctor: could not update $sf" >&2; fi
+      rm -f "$tmp"
+    else
+      echo "global: $sf sets agent conductor (harness init sets it per repo; --fix removes it)"
+    fi
+  fi
   if [ -z "$dirs" ]; then
     home=$(cd "$HOME" 2>/dev/null && pwd -P)
     for d in "${REPO_TOP%/*}" "$PWD"; do
@@ -1889,18 +1902,6 @@ $PWD"
   done <<EOF
 $dirs
 EOF
-  sf=${CLAUDE_SETTINGS:-$HOME/.claude/settings.json}
-  if [ -f "$sf" ] && [ "$(jq -r '.agent // empty' "$sf" 2>/dev/null)" = conductor ]; then
-    n=$((n + 1))
-    if [ "$fix" = 1 ]; then
-      tmp=$(mktemp "${TMPDIR:-/tmp}/harness-settings.XXXXXX") || return 0
-      if jq 'del(.agent)' "$sf" > "$tmp" && settings_commit "$tmp" "$sf"; then echo "removed: agent key from $sf (backup $sf.bak)"
-      else echo "harness doctor: could not update $sf" >&2; fi
-      rm -f "$tmp"
-    else
-      echo "global: $sf sets agent conductor (harness init sets it per repo; --fix removes it)"
-    fi
-  fi
   [ "$n" -gt 0 ] || echo "doctor: nothing to clean"
   return 0
 }
