@@ -15,7 +15,7 @@ check() { local label=$1; shift; if "$@"; then pass=$((pass + 1)); else fail=$((
 ROOT=$(mktemp -d)
 trap 'rm -rf "$ROOT"' EXIT
 BIN="$ROOT/bin"; mkdir -p "$BIN"; ln -s "$HARNESS" "$BIN/harness"
-P="$ROOT/proj"; mkdir -p "$P/.harness"
+P="$ROOT/proj"; mkdir -p "$P/.harness/asks" "$P/.git"
 RJ="$P/.harness/routing.jsonl"
 nlines() { if [ -f "$1" ]; then wc -l < "$1" | tr -d ' '; else echo 0; fi; }
 last() { tail -n 1 "$RJ" 2>/dev/null | jq -r "$1"; }
@@ -128,6 +128,18 @@ E2="$ROOT/noharness"; mkdir -p "$E2"
 hook "$(payload "$E2" 'x')"
 check "hook: no .harness dir -> rc 0" [ "$RC" -eq 0 ]
 check "hook: no .harness dir -> nothing" [ ! -e "$E2/.harness/routing.jsonl" ]
+check "hook: no .harness dir -> none created" [ ! -e "$E2/.harness" ]
+# a stray .harness/ without asks/ is not a checkout
+E3="$ROOT/stray"; mkdir -p "$E3/.harness"
+hook "$(payload "$E3" 'x')"
+check "hook: stray .harness (no asks) -> no routing.jsonl" [ ! -e "$E3/.harness/routing.jsonl" ]
+# a subdir of a git checkout logs under the root
+mkdir -p "$P/src/deep"
+n=$(nlines "$RJ")
+hook "$(payload "$P/src/deep" 'from a subdir')"
+check "hook: subdir cwd logs to the checkout root" [ "$(nlines "$RJ")" -eq $((n + 1)) ]
+check "hook: subdir cwd creates no .harness there" [ ! -e "$P/src/deep/.harness" ]
+n=$(nlines "$RJ")
 
 hook 'not json at all'
 check "hook: garbage rc 0" [ "$RC" -eq 0 ]

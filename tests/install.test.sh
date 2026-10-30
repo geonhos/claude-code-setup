@@ -213,7 +213,7 @@ check "resume hook matcher" jq -e --arg r "$RESUME" '.hooks.SessionStart[] | sel
 check "resume hook type command" jq -e --arg r "$RESUME" '.hooks.SessionStart[] | select(any(.hooks[]?; .command==$r)) | .hooks[0].type=="command"' "$S" >/dev/null
 check "other SessionStart hooks preserved" jq -e '[.hooks.SessionStart[]? | select(any(.hooks[]?; .command=="/opt/session.sh"))] | length == 1' "$S" >/dev/null
 
-HW=$(newdir hookwork); mkdir -p "$HW/.harness"
+HW=$(newdir hookwork); mkdir -p "$HW/.harness/asks"
 printf '# Progress — x (main)\nGoal: g\n' > "$HW/.harness/progress.md"
 OUT=$(cd "$HW" && HARNESS_ROLE=worker /bin/bash "$RESUME" </dev/null 2>&1); RC=$?
 check "resume hook silent for workers" [ -z "$OUT" ]
@@ -235,18 +235,32 @@ check "resume hook works with no jq on PATH (rc 0)" [ "$RC" -eq 0 ]
 # wiki index injection
 WK=$(newdir hookwiki); mkdir -p "$WK/docs/wiki"
 printf '# Wiki index\n- [a](troubleshooting/a.md) — one (active, 2026-10-21)\n- [b](troubleshooting/b.md) — two (draft, 2026-10-21)\n- [c](decisions/c.md) — three (stale, 2026-10-21)\n' > "$WK/docs/wiki/index.md"
+# outside a harness checkout (no .harness/asks) the hook injects nothing, wiki included
+OUT=$(cd "$WK" && env -u HARNESS_ROLE /bin/bash "$RESUME" </dev/null 2>/dev/null); RC=$?
+check "no asks/: wiki not injected" [ -z "$OUT" ]
+check "no asks/: rc 0" [ "$RC" -eq 0 ]
+mkdir -p "$WK/.harness"; printf 'Goal: stray\n' > "$WK/.harness/progress.md"
+OUT=$(cd "$WK" && env -u HARNESS_ROLE /bin/bash "$RESUME" </dev/null 2>/dev/null)
+check "only .harness/progress.md (no asks/): silent" [ -z "$OUT" ]
+rm -f "$WK/.harness/progress.md"
+mkdir -p "$WK/.harness/asks"
 OUT=$(cd "$WK" && env -u HARNESS_ROLE /bin/bash "$RESUME" </dev/null 2>/dev/null); RC=$?
 CTX=$(printf '%s' "$OUT" | jq -r .hookSpecificOutput.additionalContext)
-check "wiki only (no progress.md) injects" [ "$RC" -eq 0 ] 
+check "asks/ without progress.md: wiki injected" [ "$RC" -eq 0 ] 
 check "wiki active line present" printf '%s' "$CTX" | grep -q 'troubleshooting/a.md'
 check "wiki draft line absent" sh -c '! printf "%s" "$1" | grep -q troubleshooting/b.md' _ "$CTX"
 check "wiki stale line absent" sh -c '! printf "%s" "$1" | grep -q decisions/c.md' _ "$CTX"
 check "wiki heading line absent" sh -c '! printf "%s" "$1" | grep -q "^# Wiki index"' _ "$CTX"
-mkdir -p "$WK/.harness"; printf 'Goal: g\n' > "$WK/.harness/progress.md"
+printf 'Goal: g\n' > "$WK/.harness/progress.md"
 OUT=$(cd "$WK" && env -u HARNESS_ROLE /bin/bash "$RESUME" </dev/null 2>/dev/null)
 CTX=$(printf '%s' "$OUT" | jq -r .hookSpecificOutput.additionalContext)
 check "progress and wiki both injected" sh -c 'printf "%s" "$1" | grep -qx "Goal: g" && printf "%s" "$1" | grep -q troubleshooting/a.md' _ "$CTX"
 check "progress comes before wiki" [ "$(printf '%s' "$CTX" | grep -n 'Goal: g\|troubleshooting/a.md' | head -1 | cut -d: -f2-)" = "Goal: g" ]
+
+# a session in a subdir of a git checkout resumes from the root's progress.md
+mkdir -p "$WK/.git" "$WK/sub/deep"
+OUT=$(cd "$WK/sub/deep" && env -u HARNESS_ROLE /bin/bash "$RESUME" </dev/null 2>/dev/null)
+check "subdir cwd injects the root's progress.md" sh -c 'printf "%s" "$1" | jq -r .hookSpecificOutput.additionalContext | grep -qx "Goal: g"' _ "$OUT"
 OUT=$(cd "$WK" && HARNESS_ROLE=worker /bin/bash "$RESUME" </dev/null 2>&1)
 check "wiki injection silent for workers" [ -z "$OUT" ]
 # cap: many active lines -> wiki part <= 2048 bytes, truncation note

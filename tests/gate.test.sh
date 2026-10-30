@@ -2,14 +2,18 @@
 # Tests for claude/hooks/conductor-gate.sh. Run: /bin/bash tests/gate.test.sh
 set -u
 HERE=$(cd "$(dirname "$0")" && pwd)
-GATE="$HERE/../claude/hooks/conductor-gate.sh"
+GATE="${GATE_UNDER_TEST:-$HERE/../claude/hooks/conductor-gate.sh}"
 CWD=/repo
+# chk is a harness checkout (has .harness/asks), plain is not. The payloads say
+# cwd=/repo (absent), so the gate falls back to $PWD = chk.
+GATE_HOME=$(cd "$(mktemp -d)" && pwd -P)
+mkdir -p "$GATE_HOME/chk/.harness/asks" "$GATE_HOME/plain"
 pass=0
 fail=0
 
 # run_gate ROLE JSON -> prints the gate's stdout; returns the gate's exit code
 run_gate() {
-  printf '%s' "$2" | HERDR_ENV=1 HARNESS_ROLE="$1" /bin/bash "$GATE" 2>/dev/null
+  printf '%s' "$2" | (cd "$GATE_HOME/chk" && HARNESS_ROLE="$1" /bin/bash "$GATE" 2>/dev/null)
 }
 
 # decision ROLE JSON -> prints allow|deny, or exit=<rc> when the gate exits
@@ -294,7 +298,7 @@ expect deny  $C "bash cat backslash"      "$(bcmd 'cat .harness/\.\./src/a.ts')"
 # --- hardening: jq missing fails closed (spec 5) ----------------------------
 JQBIN=$(mktemp -d)
 for b in cat awk sed tr grep; do ln -s "$(command -v $b)" "$JQBIN/$b"; done
-nojq() { printf '%s' "$2" | PATH="$JQBIN" HERDR_ENV=1 HARNESS_ROLE="$1" /bin/bash "$GATE" 2>/dev/null; }
+nojq() { printf '%s' "$2" | (cd "${3:-$GATE_HOME/chk}" && PATH="$JQBIN" HARNESS_ROLE="$1" /bin/bash "$GATE" 2>/dev/null); }
 got=$(nojq conductor "$(bcmd 'ls')")
 if [ "$got" = '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"Conductor gate requires jq. Install jq, or run a worker session."}}' ]
 then report ok "no jq: conductor denied" deny deny x; else report bad "no jq: conductor denied" deny "$got" "$(bcmd 'ls')"; fi
@@ -357,7 +361,7 @@ expect allow $C "ls -la docs"             "$(bcmd 'ls -la docs')"
 
 # --- hardening: symlink-resolved paths (spec 4) ------------------------------
 SL=$(mktemp -d); SLOUT=$(mktemp -d)
-mkdir -p "$SL/src" "$SL/docs" "$SL/.harness"
+mkdir -p "$SL/src" "$SL/docs" "$SL/.harness/asks"
 echo x > "$SL/src/a.sh"; echo x > "$SL/docs/real.md"; echo x > "$SL/.harness/ok.txt"
 ln -s ../src/a.sh "$SL/docs/link.md"
 ln -s real.md "$SL/docs/ln2.md"
@@ -507,26 +511,73 @@ expect deny  $C "missing tool_name"       '{"tool_input":{}}'
 expect deny  $C "empty input"             ''
 expect deny  $W "worker garbage input"    'not json at all'
 
-# --- outside herdr: gate is off (decision 0005) ------------------------------
-# off_herdr ENVSPEC JSON -> allow|deny; ENVSPEC is passed to env (e.g. -u HERDR_ENV)
-off_herdr() {
+# --- the gate acts only in a harness checkout (decision 0010) -----------------
+# gate_at DIR ENVSPEC JSON -> allow|deny; runs the gate with cwd DIR, ENVSPEC passed to env
+gate_at() {
   local out
-  out=$(printf '%s' "$2" | env $1 HARNESS_ROLE=conductor /bin/bash "$GATE" 2>/dev/null)
+  out=$(printf '%s' "$3" | (cd "$1" && env $2 /bin/bash "$GATE" 2>/dev/null))
   if [ -z "$out" ]; then echo allow; else printf '%s' "$out" | jq -r '.hookSpecificOutput.permissionDecision'; fi
 }
-offchk() {
+gchk() {  # WANT DIR ENVSPEC JSON LABEL
   local got
-  got=$(off_herdr "$2" "$3")
-  if [ "$got" = "$1" ]; then report ok "$4" "$1" "$got" "$3"; else report bad "$4" "$1" "$got" "$3"; fi
+  got=$(gate_at "$2" "$3" "$4")
+  if [ "$got" = "$1" ]; then report ok "$5" "$1" "$got" "$4"; else report bad "$5" "$1" "$got" "$4"; fi
 }
-offchk allow "-u HERDR_ENV" "$(tool Edit '{"file_path":"src/a.ts","old_string":"a","new_string":"b"}')" "no HERDR_ENV: Edit src"
-offchk allow "-u HERDR_ENV" "$(tool Read '{"file_path":"/repo/src/a.ts"}')"                          "no HERDR_ENV: Read src"
-offchk allow "-u HERDR_ENV" "$(bcmd 'npm test')"                                                    "no HERDR_ENV: Bash"
-offchk allow "-u HERDR_ENV" "$(tool Agent '{"prompt":"x"}')"                                        "no HERDR_ENV: Agent"
-offchk allow "-u HERDR_ENV" 'not json at all'                                                       "no HERDR_ENV: garbage"
-offchk allow "HERDR_ENV=0"  "$(tool Edit '{"file_path":"src/a.ts","old_string":"a","new_string":"b"}')" "HERDR_ENV=0: Edit src"
-offchk allow "HERDR_ENV="   "$(bcmd 'npm test')"                                                    "HERDR_ENV empty: Bash"
-offchk deny  "HERDR_ENV=1"  "$(tool Edit '{"file_path":"src/a.ts","old_string":"a","new_string":"b"}')" "HERDR_ENV=1: Edit src"
+EDIT_SRC="$(tool Edit '{"file_path":"src/a.ts","old_string":"a","new_string":"b"}')"
+CHK=$GATE_HOME/chk
+PLAIN=$GATE_HOME/plain
+# 1-3: inside a checkout HERDR_ENV does not matter
+gchk deny  "$CHK" "-u HERDR_ENV HARNESS_ROLE=conductor" "$EDIT_SRC"          "chk, no HERDR_ENV: Edit src"
+gchk deny  "$CHK" "HERDR_ENV=0 HARNESS_ROLE=conductor"  "$(bcmd 'npm test')" "chk, HERDR_ENV=0: Bash"
+gchk deny  "$CHK" "HARNESS_ROLE=conductor" 'not json at all'                 "chk: garbage"
+# 4-6: a plain repo is never gated
+gchk allow "$PLAIN" "HARNESS_ROLE=conductor" "$EDIT_SRC"                                        "plain: Edit src"
+gchk allow "$PLAIN" "HARNESS_ROLE=conductor" "$(tool Read '{"file_path":"/repo/src/a.ts"}')"    "plain: Read src"
+gchk allow "$PLAIN" "HARNESS_ROLE=conductor" "$(bcmd 'npm test')"                               "plain: Bash"
+gchk allow "$PLAIN" "HARNESS_ROLE=conductor" "$(tool Agent '{"prompt":"x"}')"                   "plain: Agent"
+gchk allow "$PLAIN" "HARNESS_ROLE=conductor" 'not json at all'                                  "plain: garbage"
+got=$(nojq conductor "$(bcmd 'ls')" "$PLAIN")
+if [ -z "$got" ]; then report ok "plain, no jq: allow" allow allow x; else report bad "plain, no jq: allow" allow "$got" x; fi
+# 7: chk without jq stays denied (see the nojq cases above)
+# 8: .cwd wins over $PWD
+gchk deny  "$PLAIN" "HARNESS_ROLE=conductor" "$(jq -n -c --arg c "$CHK" '{tool_name:"Edit",cwd:$c,tool_input:{file_path:"src/a.ts"}}')" "cwd=chk while PWD=plain: deny"
+gchk allow "$CHK"   "HARNESS_ROLE=conductor" "$(jq -n -c --arg c "$PLAIN" '{tool_name:"Edit",cwd:$c,tool_input:{file_path:"src/a.ts"}}')" "cwd=plain while PWD=chk: allow"
+# 9: a subdir of a git checkout resolves to the root's marker
+mkdir -p "$CHK/.git" "$CHK/sub/deep"
+gchk deny  "$CHK" "HARNESS_ROLE=conductor" "$(jq -n -c --arg c "$CHK/sub/deep" '{tool_name:"Edit",cwd:$c,tool_input:{file_path:"src/a.ts"}}')" "cwd=chk/sub/deep: deny"
+# 10: a stray .harness/config.json without asks/ gates nothing
+mkdir -p "$PLAIN/.harness" && echo '{}' > "$PLAIN/.harness/config.json"
+gchk allow "$PLAIN" "HARNESS_ROLE=conductor" "$EDIT_SRC" "stray config.json: allow"
+# 11: an asks/ above a .git boundary does not count
+mkdir -p "$GATE_HOME/up/.harness/asks" "$GATE_HOME/up/repo/.git"
+gchk allow "$GATE_HOME/up/repo" "HARNESS_ROLE=conductor" "$EDIT_SRC" "asks above .git: allow"
+# 12: daemon case (conductor agent_type with an inherited worker env) stays gated
+gchk deny  "$CHK" "HARNESS_ROLE=worker HERDR_ENV=1" "$(jq -n -c '{tool_name:"Edit",agent_type:"conductor",tool_input:{file_path:"src/a.ts"}}')" "chk, daemon env + agent_type conductor: deny"
+gchk allow "$CHK" "HARNESS_ROLE=conductor" "$(jq -n -c '{tool_name:"Edit",agent_type:"analyst",tool_input:{file_path:"src/a.ts"}}')" "chk, agent_type analyst: allow"
+# 13: harness_root is byte-identical in the gate, route and resume hooks
+fn_body() { awk -v n="$2" 'index($0, n "() {") == 1 {p=1} p{print} p&&/^}/{exit}' "$1"; }
+G1=$(fn_body "$GATE" harness_root); G2=$(fn_body "$HERE/../claude/hooks/conductor-route.sh" harness_root); G3=$(fn_body "$HERE/../claude/hooks/conductor-resume.sh" harness_root)
+if [ -n "$G1" ] && [ "$G1" = "$G2" ] && [ "$G1" = "$G3" ]; then report ok "harness_root identical in 3 hooks" same same x
+else report bad "harness_root identical in 3 hooks" same differs x; fi
+# 14: the gate's checkout verdict agrees with harness-verify enter_root
+ENTER=$(fn_body "$HERE/../bin/harness-verify" enter_root)
+agree() {  # LABEL DIR WANT(gated|free) — enter_root must land on the marker iff the gate is gated
+  local d=$2 gate ver
+  gate=$(gate_at "$d" "HARNESS_ROLE=conductor" "$EDIT_SRC")
+  [ "$gate" = deny ] && gate=gated || gate=free
+  ver=$(cd "$d" && /bin/bash -c "$ENTER"'; IS_GIT=0; ROOT=$PWD; enter_root; [ -d "$ROOT/.harness/asks" ] && echo gated || echo free' 2>/dev/null)
+  if [ "$gate" = "$3" ] && [ "$ver" = "$3" ]; then report ok "agree: $1" "$3" "$gate/$ver" x
+  else report bad "agree: $1" "$3" "gate=$gate verify=$ver" x; fi
+}
+AG=$GATE_HOME/agree
+mkdir -p "$AG/g1/.git" "$AG/g1/.harness/asks" "$AG/g1/sub" "$AG/g2/.git" "$AG/g2/sub" "$AG/ng/.harness/asks" "$AG/ng2" "$AG/wt/sub"
+echo "gitdir: /nowhere" > "$AG/wt/.git"; mkdir -p "$AG/wt/.harness/asks"
+(cd "$AG/g1" && git init -q . 2>/dev/null); (cd "$AG/g2" && git init -q . 2>/dev/null)
+agree "git root"            "$AG/g1"     gated
+agree "git subdir"          "$AG/g1/sub" gated
+agree "git, no marker"      "$AG/g2/sub" free
+agree "no git, marker here" "$AG/ng"     gated
+agree "no git, no marker"   "$AG/ng2"    free
 expect_reason "Conductor gate could not parse" "reason: unparseable" 'not json at all'
 
 # --- deny output shape -------------------------------------------------------
