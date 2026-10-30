@@ -19,6 +19,7 @@ gate the conductor's shell, verify worker output and resume from progress logs.
 `./install.sh --test` runs every suite, in parallel (`HARNESS_TEST_SERIAL=1` runs them one
 at a time; `HARNESS_TESTS_DIR` points it at another suite directory). All must pass before a commit; workers run only the affected suites while
 iterating and the implementer Stop hook runs the full set.
+Never run suites in a serial loop; run the affected suite(s) singly or `./install.sh --test` once (parallel, ~70 s).
 
 ## Shell rule
 Scripts must run on macOS default bash 3.2: no `declare -A`, no `mapfile`, no

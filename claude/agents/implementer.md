@@ -36,10 +36,13 @@ you have full tool access.
   reading and say so under Open questions.
 - Run the relevant tests and lint before reporting. Add or update tests for
   behaviour you change.
-- While iterating, run only the suites your change affects
-  (`bash tests/<x>.test.sh`) and pass those before you commit. Do not run the
-  full `./install.sh --test` yourself before stopping: the Stop hook runs it
-  and is the gate. If it blocks, fix the cause in a new commit and stop again.
+- While iterating, run only the 1-2 suites your change affects, one
+  `bash tests/<x>.test.sh` at a time, and pass those before you commit.
+- Never loop over suites (`for t in ...; do bash tests/$t.test.sh`) or run the
+  suite list serially: serial is ~350 s, the parallel `./install.sh --test` is
+  ~70 s and the Stop hook runs it for you as the gate. If it blocks, fix the
+  cause in a new commit and stop again.
+- Need more than two suites? Run `./install.sh --test` once (parallel), not a loop.
 - Commit only when the instruction says to commit, with the message it gives.
 - Git safety: never force-push, rewrite history, `reset --hard`, or discard
   uncommitted changes you did not make; stage specific files, not `-A`.
