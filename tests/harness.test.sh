@@ -678,5 +678,80 @@ check "metrics --json lists every role" bash -c 'cd "$1" && HERDR_ENV=1 "$2" met
 check "_defaults: headless cap implementer 90 min, others 60" bash -c '[ "$1" = 5400 ] && [ "$2" = 3600 ]' _ "$(dv HARNESS_HL_MAX_S_IMPLEMENTER_DEFAULT)" "$(dv HARNESS_HL_MAX_S_DEFAULT)"
 check "README quotes the headless caps (60 / 90 min)" bash -c 'grep -q "headless_max_minutes" "$1" && grep -q "implementer 90" "$1"' _ "$HERE/../README.md"
 
+# --- harness init / checkout marker (decision 0010) ---
+setup; rm -rf .harness
+run ask analyst "q"
+check "ask without marker: exit 1" [ "$RC" = 1 ]
+check "ask without marker: message" grep -q "not a harness checkout (no .harness/asks); run 'harness init' here first" <<<"$OUT"
+check "ask without marker: no .harness created" [ ! -e .harness ]
+run spawn analyst
+check "spawn without marker: exit 1, nothing created" bash -c '[ "$1" = 1 ] && [ ! -e .harness ]' _ "$RC"
+run status
+check "status without marker still works" [ "$RC" = 0 ]
+check "status without marker creates nothing" [ ! -e .harness ]
+
+setup; rm -rf .harness
+run init
+check "init: exit 0" [ "$RC" = 0 ]
+check "init creates asks/" [ -d .harness/asks ]
+check "init creates config.json" [ -s .harness/config.json ]
+check "init writes settings agent conductor" [ "$(jq -r .agent .claude/settings.json)" = conductor ]
+run init
+check "init is idempotent" bash -c '[ "$1" = 0 ] && [ "$(jq -r .agent .claude/settings.json)" = conductor ]' _ "$RC"
+run init --bogus
+check "init rejects unknown flag" [ "$RC" != 0 ]
+
+setup; rm -rf .harness; mkdir .claude; printf '{"model":"x","env":{"A":"1"}}\n' > .claude/settings.json
+run init
+check "init merges: agent set" [ "$(jq -r .agent .claude/settings.json)" = conductor ]
+check "init merges: other keys kept" [ "$(jq -r '.model + .env.A' .claude/settings.json)" = x1 ]
+
+setup; rm -rf .harness; mkdir .claude; printf '{"agent":"solo","model":"x"}\n' > .claude/settings.json
+run init
+check "init keeps a different agent" [ "$(jq -r .agent .claude/settings.json)" = solo ]
+check "init notes the kept agent" grep -q "kept" <<<"$OUT"
+
+setup; rm -rf .harness
+run init --no-agent
+check "init --no-agent: no settings written" [ ! -e .claude/settings.json ]
+check "init --no-agent: asks created" [ -d .harness/asks ]
+
+setup; rm -rf .harness; git init -q .; export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 XDG_CONFIG_HOME=$WORK/xdg
+run init --no-agent
+check "init in git: .harness/ excluded" grep -qx '.harness/' .git/info/exclude
+run init --no-agent
+check "init in git: exclude not duplicated" [ "$(grep -cx '.harness/' .git/info/exclude)" = 1 ]
+check "init in git: git status clean of .harness" bash -c '! git status --porcelain | grep -q harness'
+
+setup; rm -rf .harness
+run init --no-agent
+run ask analyst "q"
+check "after init, ask gets past the marker check" bash -c '! grep -q "not a harness checkout" <<<"$1"' _ "$OUT"
+unset GIT_CONFIG_GLOBAL GIT_CONFIG_NOSYSTEM XDG_CONFIG_HOME
+
+# --- harness doctor ---
+setup; D=$(cd "$(mktemp -d)" && pwd -P); H2=$(mktemp -d)
+mkdir -p "$D/a/.harness" "$D/b/.harness/asks" "$D/c/.harness"
+echo '{}' > "$D/a/.harness/config.json"
+echo '{}' > "$D/b/.harness/config.json"
+echo x > "$D/c/.harness/mystery.txt"; echo '{}' > "$D/c/.harness/config.json"
+mkdir -p "$H2/.claude"; printf '{"agent":"conductor","model":"m"}\n' > "$H2/.claude/settings.json"
+OUT=$(HOME=$H2 /bin/bash "$HARNESS" doctor "$D" 2>&1); RC=$?
+check "doctor: exit 0" [ "$RC" = 0 ]
+check "doctor: lists stray with only config" grep -q "stray: $D/a/.harness" <<<"$OUT"
+check "doctor: never lists a checkout with asks" bash -c '! grep -q "$1/b" <<<"$2"' _ "$D" "$OUT"
+check "doctor: lists unknown-file stray" grep -q "$D/c/.harness.*unknown" <<<"$OUT"
+check "doctor: reports global agent key" grep -q "global:" <<<"$OUT"
+check "doctor dry run removes nothing" [ -d "$D/a/.harness" ]
+OUT=$(HOME=$H2 /bin/bash "$HARNESS" doctor --fix "$D" 2>&1); RC=$?
+check "doctor --fix: exit 0" [ "$RC" = 0 ]
+check "doctor --fix removes the plain stray" [ ! -e "$D/a/.harness" ]
+check "doctor --fix keeps checkout with asks" [ -d "$D/b/.harness/asks" ]
+check "doctor --fix skips unknown files" bash -c '[ -e "$1/c/.harness/mystery.txt" ] && grep -q "skipped (unknown files)" <<<"$2"' _ "$D" "$OUT"
+check "doctor --fix removes global agent key" [ "$(jq -r '.agent // "none"' "$H2/.claude/settings.json")" = none ]
+check "doctor --fix keeps other settings keys" [ "$(jq -r .model "$H2/.claude/settings.json")" = m ]
+OUT=$(HOME=$H2 /bin/bash "$HARNESS" doctor "$D" 2>&1)
+check "doctor: second run lists only the skipped one" bash -c '! grep -q "$1/a" <<<"$2" && grep -q "$1/c" <<<"$2"' _ "$D" "$OUT"
+
 echo "PASS $pass / FAIL $fail"
 [ "$fail" -eq 0 ]

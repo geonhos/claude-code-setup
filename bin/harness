@@ -13,6 +13,8 @@
 #     ~/.cache/harness/wt/<repo8>/<role>-<id8> (decision 0008); the ask-id is printed on stderr.
 #   harness report <agent>|<ask-id>
 #   harness status
+#   harness init [--no-agent]   make this repo a harness checkout (.harness/asks, config, agent=conductor)
+#   harness doctor [--fix] [DIR...]   clean pollution left by older versions (strays, global agent key)
 #   harness close  <agent>|<ask-id>|--all|--legacy [--force]
 #   harness route-log '<json>'   append one line to .harness/routing.jsonl (never fails)
 #   harness retro [--dry-run]    one batched analyst ask over the queued failure candidates
@@ -33,7 +35,8 @@
 #   is still working. It never sends a prompt.
 # Worker herdr names are repo-scoped: <role>-<repo8> (see wname).
 # Workers (HARNESS_ROLE=worker) may not ask or spawn: skills are user-global and would otherwise nest.
-# .harness/ lives in the directory where the conductor runs ($PWD).
+# .harness/ lives in the checkout root: `harness init` creates it; ask/spawn refuse without it
+# and, run from a subdir of the checkout, continue at the root.
 # Every ask is logged to .harness/log/ and .harness/progress.jsonl, and
 # .harness/progress.md is regenerated (log errors only warn on stderr).
 # Every ask also appends a `delegate` line to .harness/routing.jsonl (source =
@@ -110,6 +113,8 @@ usage:
   harness ask    <analyst|reviewer> '<instruction>' --worktree [--base REF] ...   (headless roles only; --base needs --worktree)
   harness report <agent>|<ask-id>
   harness status
+  harness init   [--no-agent]   (once per repo: makes it a harness checkout; ask/spawn refuse without it)
+  harness doctor [--fix] [DIR...]   (find/remove stray .harness/ dirs and the old global agent key)
   harness close  <agent>|<ask-id>|--all|--legacy [--force]
   harness wiki-lint [DIR]
   harness route-log '<json>'
@@ -1350,17 +1355,16 @@ EOC
 # An existing file that is byte-for-byte the pre-decision-0006 template (implementer
 # on_success) is rewritten once with the current one; any edited file is left alone.
 ensure_config() {
-  # Workers never create .harness/ (stray dirs break harness-verify's root lookup);
-  # read-only `status` does not start a project; ask/spawn from a conductor do.
+  # Never creates .harness/ (stray dirs break harness-verify's root lookup): `harness init`
+  # does that. Workers and anything outside an initialised checkout (no .harness/asks) skip.
   [ "${HARNESS_ROLE:-}" != worker ] || return 0
+  [ -d .harness/asks ] || return 0
   if [ -e "$CONFIG_FILE" ]; then
     local old
     old=$(config_template | sed '/"viewer":/d; s/"implementer": "never"/"implementer": "on_success"/; s/"idle_ttl_minutes": 30,$/"idle_ttl_minutes": 30/')
     [ "$(cat "$CONFIG_FILE" 2>/dev/null)" = "$old" ] && config_template > "$CONFIG_FILE" 2>/dev/null
     return 0
   fi
-  [ "${1:-}" != status ] || [ -d .harness ] || return 0
-  mkdir -p .harness 2>/dev/null || return 0
   config_template > "$CONFIG_FILE" 2>/dev/null
   return 0
 }
@@ -1715,6 +1719,167 @@ cmd_retro() {
   return "$rc"
 }
 
+# --- harness checkout: init, doctor (decision 0010) -----------------------------------------
+# harness_root DIR -> prints the harness checkout root and returns 0, or returns 1.
+# The root is the nearest dir at or above DIR with .harness/asks/, searched up to
+# the dir holding .git (file or dir) inclusive; outside git only DIR counts. Same
+# rule as enter_root in bin/harness-verify and the body in the three claude/hooks.
+harness_root() {
+  local start=${1%/} d hit=""
+  [ -n "$start" ] || start=/
+  d=$start
+  while :; do
+    if [ -z "$hit" ] && [ -d "$d/.harness/asks" ]; then hit=$d; fi
+    if [ -e "$d/.git" ]; then
+      [ -n "$hit" ] || return 1
+      printf '%s' "$hit"
+      return 0
+    fi
+    [ "$d" = / ] && break
+    d=${d%/*}
+    [ -n "$d" ] || d=/
+  done
+  [ -d "$start/.harness/asks" ] || return 1
+  printf '%s' "$start"
+}
+
+# require_checkout — ask/spawn act only in an initialised checkout; run from a subdir,
+# they continue at the checkout root (the conductor cannot cd), so .harness/ stays in one place
+require_checkout() {
+  local root
+  root=$(harness_root "$PWD") || die "not a harness checkout (no .harness/asks); run 'harness init' here first"
+  [ "$root" = "$PWD" ] || cd "$root" || die "cannot enter $root"
+}
+
+# settings_set_agent FILE — create FILE with {"agent":"conductor"}, or merge the key into it
+# (never clobbering other keys); an existing different agent is kept and noted.
+settings_set_agent() {
+  local f=$1 cur tmp
+  if [ ! -e "$f" ]; then
+    mkdir -p "${f%/*}" || { echo "harness init: cannot create ${f%/*}" >&2; return 0; }
+    jq -n '{agent: "conductor"}' > "$f" && echo "created $f (agent: conductor)"
+    return 0
+  fi
+  if ! jq -e 'type == "object"' "$f" >/dev/null 2>&1; then
+    echo "note: $f is not a JSON object; left alone (set \"agent\": \"conductor\" yourself)" >&2
+    return 0
+  fi
+  cur=$(jq -r '.agent // empty' "$f")
+  if [ "$cur" = conductor ]; then echo "$f: agent already conductor"; return 0; fi
+  if [ -n "$cur" ]; then
+    echo "note: $f sets agent \"$cur\"; kept (use --no-agent to silence this)"
+    return 0
+  fi
+  tmp=$(mktemp "${TMPDIR:-/tmp}/harness-settings.XXXXXX") || return 0
+  if jq '.agent = "conductor"' "$f" > "$tmp" && mv "$tmp" "$f"; then
+    echo "updated $f (agent: conductor)"
+  else
+    rm -f "$tmp"
+    echo "harness init: could not update $f" >&2
+  fi
+}
+
+# cmd_init [--no-agent] — make the current repo (git toplevel, else the cwd) a harness checkout:
+# .harness/asks/, the default config, .claude/settings.json agent=conductor, and .harness/ in
+# .git/info/exclude when git does not already ignore it. Idempotent.
+cmd_init() {
+  [ "${HARNESS_ROLE:-}" != worker ] || die "harness init is for the conductor; a worker (HARNESS_ROLE=worker) does not set up checkouts"
+  local agent=1 a top ex
+  for a in "$@"; do
+    case "$a" in --no-agent) agent=0 ;; *) usage ;; esac
+  done
+  top=$(git rev-parse --show-toplevel 2>/dev/null) || top=$PWD
+  cd "$top" || die "cannot enter $top"
+  echo "harness init: $top"
+  if [ -d .harness/asks ]; then echo ".harness/asks exists"
+  else mkdir -p .harness/asks || die "cannot create .harness/asks"; echo "created .harness/asks"; fi
+  if [ -e "$CONFIG_FILE" ]; then echo "$CONFIG_FILE exists"
+  else ensure_config init; [ -e "$CONFIG_FILE" ] && echo "created $CONFIG_FILE"; fi
+  if [ "$agent" = 1 ]; then settings_set_agent .claude/settings.json
+  else echo ".claude/settings.json untouched (--no-agent)"; fi
+  if git rev-parse --git-dir >/dev/null 2>&1; then
+    if git check-ignore -q .harness/asks/x 2>/dev/null; then echo ".harness/ already ignored by git"
+    else
+      ex=$(git rev-parse --git-path info/exclude 2>/dev/null)
+      if [ -n "$ex" ] && mkdir -p "${ex%/*}" && printf '.harness/\n' >> "$ex"; then echo "added .harness/ to $ex"
+      else echo "note: could not add .harness/ to git's exclude file" >&2; fi
+    fi
+  fi
+  return 0
+}
+
+# doctor_stray_ok DIR — 0 when a stray .harness/ holds only files this harness wrote itself
+# (prints the first other file on stdout and returns 1 otherwise)
+doctor_stray_ok() {
+  local h=$1 f rel
+  while IFS= read -r f; do
+    rel=${f#"$h"/}
+    case "$rel" in
+      config.json|verify.local.json|panes|progress.md|progress.jsonl|routing.jsonl|.DS_Store) ;;
+      log/*|reports/*|done/*|retro/*)
+        case "$rel" in */*.md|*/*.jsonl|*/*.jsonl.*|*/*.json|*/*.log) ;; *) printf '%s' "$rel"; return 1 ;; esac ;;
+      *) printf '%s' "$rel"; return 1 ;;
+    esac
+  done <<EOF
+$(find "$h" -mindepth 1 ! -type d 2>/dev/null)
+EOF
+  return 0
+}
+
+# cmd_doctor [--fix] [DIR...] — find (and with --fix remove) pollution left by older versions:
+# stray .harness/ dirs without asks/ (DIR and its children, default: the parent of this repo
+# plus the cwd) and the global agent=conductor key in ~/.claude/settings.json. Exit 0.
+cmd_doctor() {
+  local fix=0 dirs="" d c h seen="" first sf tmp n=0
+  for d in "$@"; do
+    case "$d" in
+      --fix) fix=1 ;;
+      -*) usage ;;
+      *) dirs="$dirs
+$d" ;;
+    esac
+  done
+  if [ -z "$dirs" ]; then
+    dirs="${REPO_TOP%/*}
+$PWD"
+  fi
+  while IFS= read -r d; do
+    [ -n "$d" ] && [ -d "$d" ] || continue
+    d=$(cd "$d" && pwd -P)
+    for c in "$d" "$d"/*/; do
+      c=${c%/}
+      [ -d "$c" ] || continue
+      case "$seen" in *"|$c|"*) continue ;; esac
+      seen="$seen|$c|"
+      h=$c/.harness
+      [ -d "$h" ] && [ ! -L "$h" ] && [ ! -d "$h/asks" ] || continue
+      n=$((n + 1))
+      if first=$(doctor_stray_ok "$h"); then
+        if [ "$fix" = 1 ]; then rm -rf "$h" && echo "removed: $h (stray, no asks/)"
+        else echo "stray: $h (no asks/)"; fi
+      else
+        if [ "$fix" = 1 ]; then echo "skipped (unknown files): $h (e.g. $first)"
+        else echo "stray: $h (no asks/; has unknown files, e.g. $first; --fix would skip it)"; fi
+      fi
+    done
+  done <<EOF
+$dirs
+EOF
+  sf=${CLAUDE_SETTINGS:-$HOME/.claude/settings.json}
+  if [ -f "$sf" ] && [ "$(jq -r '.agent // empty' "$sf" 2>/dev/null)" = conductor ]; then
+    n=$((n + 1))
+    if [ "$fix" = 1 ]; then
+      tmp=$(mktemp "${TMPDIR:-/tmp}/harness-settings.XXXXXX") || return 0
+      if jq 'del(.agent)' "$sf" > "$tmp" && mv "$tmp" "$sf"; then echo "removed: agent key from $sf"
+      else rm -f "$tmp"; echo "harness doctor: could not update $sf" >&2; fi
+    else
+      echo "global: $sf sets agent conductor (harness init sets it per repo; --fix removes it)"
+    fi
+  fi
+  [ "$n" -gt 0 ] || echo "doctor: nothing to clean"
+  return 0
+}
+
 need jq
 # route-log is called by the UserPromptSubmit hook: no herdr needed
 if [ "${1:-}" = route-log ]; then shift; cmd_route_log "$@"; exit 0; fi
@@ -1727,12 +1892,19 @@ if [ "${1:-}" = _defaults ]; then
 fi
 # _wname prints the scoped herdr name for a role (tests, debugging): no herdr needed
 if [ "${1:-}" = _wname ]; then valid_agent "${2:-}"; wname "$2"; echo; exit 0; fi
+# init and doctor are file work: no herdr, no checkout needed
+if [ "${1:-}" = init ]; then shift; cmd_init "$@"; exit $?; fi
+if [ "${1:-}" = doctor ]; then shift; cmd_doctor "$@"; exit $?; fi
 # wiki-lint is pure file checking: no herdr needed
 if [ "${1:-}" = wiki-lint ]; then shift; cmd_wiki_lint "$@"; exit $?; fi
 # retro and metrics read files only; retro's ask is a separate `harness ask` process
 if [ "${1:-}" = retro ]; then shift; cmd_retro "$@"; exit $?; fi
 if [ "${1:-}" = metrics ]; then shift; cmd_metrics "$@"; exit $?; fi
 
+# ask/spawn act only in an initialised checkout (decision 0010); status/report/close work anywhere
+case "${1:-}" in
+  spawn|ask) [ "${HARNESS_ROLE:-}" = worker ] || require_checkout ;;
+esac
 case "${1:-}" in
   spawn|ask|status) ensure_config "$1"; reap_idle ;;
 esac

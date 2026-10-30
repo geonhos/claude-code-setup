@@ -19,6 +19,7 @@ setup() {
   : > "$FAKE_LOG"
   unset FAKE_PROMPT_HOOK HARNESS_LOG_KEEP HARNESS_LOG_DAYS HARNESS_NOW
   cd "$WORK" || exit 1
+  env -u HARNESS_ROLE /bin/bash "$HARNESS" init --no-agent >/dev/null 2>&1
   git init -q . && git config user.email t@t && git config user.name t && echo s > s.txt && git add s.txt && git -c core.hooksPath=/dev/null commit -q -m s
 }
 GUARD="perl -e alarm(10);exec(@ARGV)"
