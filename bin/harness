@@ -1476,7 +1476,9 @@ close_refusal() {
 # 4 refused (exits 1/6 through die/check_worker_cwd like the single-agent form)
 close_one() {
   local agent=$1 force=$2 skip=$3 fields
-  if use_hl "$agent"; then close_headless "$agent" "$force" "$skip"; return $?; fi
+  # a live legacy pane worker (registered pane, a herdr agent behind it, no headless run) takes the
+  # pane close path with its working/blocked refusal, even though the configured runner is headless
+  if use_hl "$agent" && ! hl_pane_worker_live "$agent"; then close_headless "$agent" "$force" "$skip"; return $?; fi
   if [ "$skip" = 1 ] && ! herdr_env_ok; then return 0; fi
   need_herdr
   if ! fields=$(agent_fields "$agent"); then
@@ -1819,7 +1821,10 @@ cmd_init() {
       else echo "note: could not add .harness/ to git's exclude file" >&2; fi
     fi
   fi
-  echo "workers run as detached headless Claude sessions: no herdr needed (herdr is an optional viewer)"
+  local panes=""
+  for a in $AGENTS; do [ "$(runner_of "$a")" = headless ] || panes="$panes${panes:+, }$a"; done
+  if [ -z "$panes" ]; then echo "workers run as detached headless Claude sessions: no herdr needed (herdr is an optional viewer)"
+  else echo "runner: pane for $panes; herdr required for those"; fi
   return 0
 }
 

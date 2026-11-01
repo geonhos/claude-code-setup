@@ -66,9 +66,9 @@ harness route-log '<json>'                               # append one line to .h
 
 ## 워커 패널 자동 종료
 
-`harness close`는 herdr의 `herdr pane close <pane>`으로 패널을 닫고 `.harness/panes`에서 지운다. 워커가 `working`/`blocked`이거나 아직 수집하지 않은 리포트(`.pending` 포함)가 있으면 exit 4로 거절한다(`--force`로 무시). 다른 디렉터리의 워커는 exit 6. 닫은 뒤 `harness ask`는 평소처럼 워커를 새로 띄운다.
+(옛 pane 러너 동작) `harness close`는 herdr의 `herdr pane close <pane>`으로 패널을 닫고 `.harness/panes`에서 지운다. 워커가 `working`/`blocked`이거나 아직 수집하지 않은 리포트(`.pending` 포함)가 있으면 exit 4로 거절한다(`--force`로 무시). 다른 디렉터리의 워커는 exit 6. 닫은 뒤 `harness ask`는 평소처럼 워커를 새로 띄운다.
 자동 종료 설정은 `.harness/config.json`(없으면 첫 실행 때 기본값으로 만든다):
-- `close_after_ask.<role>`: `never`|`on_success`. 기본은 모든 역할 `never`(결정 0006: implementer pane도 ask 사이에 유지, 컨텍스트는 ask마다 /clear). `on_success`는 ask가 0으로 끝나면 닫음(reviewer는 0 또는 5). 환경변수 `HARNESS_CLOSE_AFTER_ASK_<ROLE>`. 기존 저장소: 수정하지 않은 옛 기본 파일(implementer `on_success`)만 자동으로 새 기본값으로 바뀐다. 직접 고친 설정은 그대로이므로 `close_after_ask.implementer`를 `never`로 손수 바꾼다.
+- `close_after_ask.<role>`: `never`|`on_success`. 기본은 모든 역할 `never`(결정 0006: implementer pane도 ask 사이에 유지, 옛 pane 러너: 컨텍스트는 ask마다 /clear). `on_success`는 ask가 0으로 끝나면 닫음(reviewer는 0 또는 5). 환경변수 `HARNESS_CLOSE_AFTER_ASK_<ROLE>`. 기존 저장소: 수정하지 않은 옛 기본 파일(implementer `on_success`)만 자동으로 새 기본값으로 바뀐다. 직접 고친 설정은 그대로이므로 `close_after_ask.implementer`를 `never`로 손수 바꾼다.
 - `runner.<role>`: `headless`(기본, 키 없으면 headless; 결정 0011)|`pane`(옛 러너, herdr 필요, prune 3단계에서 제거 예정). `headless`는 `harness-run`이 `claude -p`를 detached로 돌린다(viewer pane이 있으면 `harness-view`가 스트림을 보여준다). 완료 = `.harness/asks/<role>.exit.json`(프로세스 종료), 마감 시간에 죽이지 않고 exit 4(`harness report <role>`로 수집), `--keep`이 아니면 매번 새 세션. 환경변수 `HARNESS_RUNNER_<ROLE>`이 우선. `headless_max_minutes`(기본 60, implementer 90)가 한 번의 실행 상한. implementer(결정 0009)는 `--permission-mode auto --permission-prompts none`으로 고정되고, 거부된 도구 호출은 `exit.json`의 `denied[]`에 기록되며 report 없이 거부만 있으면 exit 2, Stop hook 검증 중에 마감되면 exit 4 "still verifying", 직전 ask가 0이 아니었으면 다음 ask가 자동으로 `--resume`(`--fresh`로 끔). 옛 pane 러너로 되돌리기: `runner.<role>`을 `pane`으로 바꾸고 `harness close <role> --force`. 원본 스트림(`.harness/log/*.jsonl`)은 conductor 게이트가 읽기를 막는다. `viewer`(최상위 키, 환경변수 `HARNESS_VIEWER`가 우선)는 headless 실행을 어디에 보여줄지: `auto`(기본)=herdr를 쓸 수 있으면 viewer pane, 아니면(또는 pane split/run 실패 시) herdr 없이 백그라운드로 분리 실행(stderr에 한 줄 안내, 로그 `.harness/asks/<role>.runner.log`), `pane`=항상 pane(herdr 필요), `none`=항상 백그라운드. `pane` 러너는 herdr 전용.
 - `idle_ttl_minutes`(기본 30, 0이면 끔, 환경변수 `HARNESS_IDLE_TTL_MINUTES`): `harness ask|spawn|status` 시작 때 이 저장소의 워커 중 마지막 리포트 수집 후 TTL이 지났고 idle/done이며 수집 안 한 리포트가 없는 것을 닫는다. 데몬은 없다.
 - `HARNESS_NO_AUTOCLOSE=1`이면 둘 다 꺼진다(수동 `harness close`는 그대로).
@@ -84,7 +84,7 @@ harness route-log '<json>'                               # append one line to .h
 ask가 끝날 때마다 로그를 정리한다. 최신 200개만 남기고, 14일이 지난 로그는 지우고, 1 MB를 넘은 `progress.jsonl`은 `progress.jsonl.<ts>.gz`로 압축해 옮긴다.
 조절 변수: `HARNESS_LOG_KEEP`, `HARNESS_LOG_DAYS`, `HARNESS_JSONL_MAX`(바이트).
 
-ask 전에 살아 있는 워커의 컨텍스트를 `/clear`로 비운다. 새 세션 id가 생길 때까지 기다리고, 10초 안에 안 생기면 패널을 닫고 다시 띄운다. implementer는 항상 비우고, analyst/reviewer는 컨텍스트가 `HARNESS_CTX_RESET` 토큰(기본 120000)을 넘었거나 `--fresh`일 때 비운다. `--keep`은 해당 ask 한 번만 비우기를 건너뛴다. 방금 띄운 워커는 비우지 않는다. 패널에는 마지막 안전장치로 `CLAUDE_CODE_AUTO_COMPACT_WINDOW=160000`을 준다.
+(옛 pane 러너 동작) ask 전에 살아 있는 워커의 컨텍스트를 `/clear`로 비운다. 새 세션 id가 생길 때까지 기다리고, 10초 안에 안 생기면 패널을 닫고 다시 띄운다. implementer는 항상 비우고, analyst/reviewer는 컨텍스트가 `HARNESS_CTX_RESET` 토큰(기본 120000)을 넘었거나 `--fresh`일 때 비운다. `--keep`은 해당 ask 한 번만 비우기를 건너뛴다. 방금 띄운 워커는 비우지 않는다. 패널에는 마지막 안전장치로 `CLAUDE_CODE_AUTO_COMPACT_WINDOW=160000`을 준다.
 `harness status`의 `ctx` 열은 `~/.claude/projects` 아래 트랜스크립트에서 읽은 토큰 수이고, 알 수 없으면 `-`다. 디렉터리는 `HARNESS_PROJECTS_DIR`로 바꾼다.
 실측: `/clear`를 해도 `--agent` 프롬프트는 유지되고, 1초 안에 끝난다.
 

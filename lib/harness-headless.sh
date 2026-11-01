@@ -1,10 +1,10 @@
-# harness-headless.sh — headless runner glue (decision 0007): runner_of, use_hl, hl_*, ask/report/close_headless.
+# harness-headless.sh — headless runner glue (decisions 0007, 0011): runner_of, use_hl, hl_*, ask/report/close_headless.
 # Sourced eagerly by bin/harness (see the loader there): definitions only, no side effects.
 # Shared helpers (die, has_uncollected, ...) stay in bin/harness and resolve at call time.
 
 # --- headless runner (decision 0007) --------------------------------------------------------------
 # runner.<role> = headless: `harness ask` writes the instruction to a file and runs
-# `harness-run` (claude -p, stream-json) in a kept viewer pane. Completion = the run's
+# `harness-run` (claude -p, stream-json), shown in a viewer pane when herdr is usable. Completion = the run's
 # .harness/asks/<role>.exit.json carrying this ask-id; no herdr agent, no Stop-hook marker.
 
 # runner_of <role> — headless|pane (env HARNESS_RUNNER_<ROLE>, then config runner.<role>, then headless)
@@ -445,6 +445,14 @@ hl_finish_close() {
   rm -f "$a.finished" "$a.session" "$a.current"
   log_close "$1" "${2:--}" "$3" headless
   echo "closed $1 (${2:-bg})"
+}
+
+# hl_pane_worker_live <role> — the role's live worker is a legacy pane worker: no headless run is
+# alive, a pane is registered and herdr has an agent behind it (a headless viewer pane is plain)
+hl_pane_worker_live() {
+  [ -z "$ASK_WT" ] || return 1
+  hl_alive "$1" && return 1
+  [ -n "$(hl_registered_pane "$1")" ] && herdr_env_ok && agent_fields "$1" >/dev/null 2>&1
 }
 
 # close_headless <role> <force> <skip-missing> — close_one for a headless role

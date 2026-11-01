@@ -705,6 +705,18 @@ run init --bogus
 check "init rejects unknown flag" [ "$RC" != 0 ]
 
 setup; rm -rf .harness
+run init
+check "init: pane roles named, herdr required" grep -q "runner: pane for analyst, implementer, reviewer; herdr required for those" <<<"$OUT"
+check "init: pane roles: no 'no herdr needed'" not_grep -q "no herdr needed" <(printf '%s' "$OUT")
+setup; rm -rf .harness; unset HARNESS_RUNNER_ANALYST HARNESS_RUNNER_IMPLEMENTER HARNESS_RUNNER_REVIEWER
+run init
+check "init: all headless: no herdr needed" grep -q "no herdr needed" <<<"$OUT"
+export HARNESS_RUNNER_REVIEWER=pane
+run init
+check "init: one pane role named" grep -q "runner: pane for reviewer; herdr required for those" <<<"$OUT"
+unset HARNESS_RUNNER_REVIEWER
+
+setup; rm -rf .harness
 run init --shared
 check "init --shared: writes settings.json" [ "$(jq -r .agent .claude/settings.json)" = conductor ]
 check "init --shared: no settings.local.json" [ ! -e .claude/settings.local.json ]
