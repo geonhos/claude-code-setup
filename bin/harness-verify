@@ -362,10 +362,29 @@ cmd_stop() {
   exit 0
 }
 
+# report_gate — a harness ask must end with a fresh report: block the stop (at most twice per ask)
+# so the worker writes it instead of the ask exiting 3. `[no-report]` in the instruction opts out.
+report_gate() {
+  local a=.harness/asks/$AGENT id n rep=.harness/reports/$AGENT.md
+  case "$AGENT" in analyst|implementer|reviewer) ;; *) return 0 ;; esac
+  [ -f "$a.current" ] || return 0
+  grep -qF '[no-report]' "$a.prompt" 2>/dev/null && return 0
+  [ -f "$rep" ] && [ ! "$rep" -ot "$a.current" ] && return 0
+  [ -f "$rep.pending" ] && [ ! "$rep.pending" -ot "$a.current" ] && return 0
+  id=$(awk 'NR==1 { print $1 }' "$a.current")
+  n=$(awk -v i="$id" '$1==i { print $2 }' "$a.reportblocks" 2>/dev/null)
+  case "$n" in ''|*[!0-9]*) n=0 ;; esac
+  [ "$n" -lt 2 ] || return 0
+  printf '%s %s\n' "$id" $((n + 1)) > "$a.reportblocks"
+  jq -n -c --arg r "write .harness/reports/$AGENT.md for this ask (the report contract in your prompt), then stop" '{decision: "block", reason: $r}'
+  exit 0
+}
+
 stop_body() {
   local input=$STOP_INPUT attempts max files step="" out reason rep pend cls hb
   set_agent "$(printf '%s' "$input" | jq -r '.agent_type // empty' 2>/dev/null)"
   enter_root "$(printf '%s' "$input" | jq -r '.cwd // empty' 2>/dev/null)"
+  report_gate
   if [ "$IS_GIT" != 1 ]; then
     exit 0
   fi

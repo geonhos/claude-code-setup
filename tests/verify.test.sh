@@ -301,6 +301,7 @@ check "stray: failing test blocks (config from real root)" [ "$(printf '%s' "$OU
 check "stray: state at real root" [ "$(jq -r .status "$R/.harness/verify/implementer.json")" = fail ]
 check "stray: no verify dir in stray" [ ! -e "$R/tests/.harness/verify" ]
 printf '%s' '{"test":"true"}' > "$R/.claude/harness.json"
+echo rep > "$R/.harness/reports/implementer.md"  # the worker rewrites the report after the block
 hvat "$R/tests" "$(stopat "$R/tests")" stop
 check "stray: marker at real root" [ -e "$R/.harness/done/implementer.ask3" ]
 check "stray: no done dir in stray" [ ! -e "$R/tests/.harness/done" ]
@@ -437,7 +438,7 @@ check "no jq mentions jq" grep -q jq <<<"$OUT"
 rm -rf "$JB"
 
 # --- done marker (Stop hook -> harness ask completion) --------------------------------
-doneset() { mkdir -p "$R/.harness/asks"; echo "ask1 100" > "$R/.harness/asks/implementer.current"; }
+doneset() { mkdir -p "$R/.harness/asks"; echo "ask1 100" > "$R/.harness/asks/implementer.current"; echo "[no-report]" > "$R/.harness/asks/implementer.prompt"; }
 stopj() { jq -n -c --arg c "$R" --argjson a "$1" '{hook_event_name:"Stop",agent_type:"implementer",session_id:"S1",cwd:$c,stop_hook_active:$a}'; }
 hvw() { local j=$1; shift; OUT=$(cd "$R" && printf '%s' "$j" | HARNESS_ROLE=worker /bin/bash "$VERIFY" "$@" 2>/dev/null); RC=$?; }
 marker() { [ -f "$R/.harness/done/implementer.ask1" ]; }
@@ -614,6 +615,29 @@ for p in claude/agents/x.md AGENTS.md README.md; do
   hvin "$(stopjson)" stop
   check "non-docs $p: test ran" [ -s "$R/ran.out" ]
 done
+
+# --- report gate: a harness ask must end with a fresh report (2 blocks max) -----------
+rg_setup() { newrepo; mkdir -p "$R/.harness/asks" "$R/.harness/reports"; printf 'id1 100\n' > "$R/.harness/asks/implementer.current"; printf 'do it\n%s\n' "${1:-}" > "$R/.harness/asks/implementer.prompt"; }
+rg_setup
+hvin "$(stopjson)" stop
+check "report gate: missing report blocks" reason_grep -q 'reports/implementer.md'
+echo "# r" > "$R/.harness/reports/implementer.md"
+hvin "$(stopjson)" stop
+check "report gate: fresh report allowed" not_out_has '"block"'
+check "report gate: report kept" [ -f "$R/.harness/reports/implementer.md" ]
+rg_setup "[no-report]"
+hvin "$(stopjson)" stop
+check "report gate: [no-report] not blocked" not_out_has '"block"'
+rg_setup
+hvin "$(stopjson)" stop; b1=$OUT
+hvin "$(stopjson)" stop; b2=$OUT
+hvin "$(stopjson)" stop
+check "report gate: first two stops block" [ -n "$b1$b2" ]
+check "report gate: third stop not blocked" not_out_has '"block"'
+rg_setup
+echo old > "$R/.harness/reports/implementer.md"; touch -t 200001010000 "$R/.harness/reports/implementer.md"
+hvin "$(stopjson)" stop
+check "report gate: stale report blocks" reason_grep -q 'reports/implementer.md'
 
 echo "PASS $pass / FAIL $fail"
 [ "$fail" -eq 0 ]
