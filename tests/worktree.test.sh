@@ -170,7 +170,7 @@ check "plain: report in the main root" [ -f .harness/reports/analyst.md ]
 
 # 8. the conductor gate denies reading source under the worktree home
 payload=$(jq -n --arg p "$HOME/.cache/harness/wt/abcd1234/analyst-12345678/bin/harness" '{tool_name:"Read",cwd:"/repo",tool_input:{file_path:$p}}')
-got=$(printf '%s' "$payload" | HERDR_ENV=1 HARNESS_ROLE=conductor /bin/bash "$GATE" 2>/dev/null | jq -r '.hookSpecificOutput.permissionDecision // empty')
+got=$(printf '%s' "$payload" | HARNESS_ROLE=conductor /bin/bash "$GATE" 2>/dev/null | jq -r '.hookSpecificOutput.permissionDecision // empty')
 OUT="gate said: $got"
 check "gate: Read under wt home denied" [ "$got" = deny ]
 

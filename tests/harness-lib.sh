@@ -8,7 +8,11 @@ WN() { env -u HARNESS_ROLE /bin/bash "$HARNESS" _wname "$1"; }
 pass=0
 fail=0
 
-# fresh WORK FAKE_DIR per case; all of them removed on exit
+# hinit — make the current dir a harness checkout (what `harness init` does, minus the agent
+# settings); ask/spawn refuse without it. Leaves OUT/RC alone.
+hinit() { env -u HARNESS_ROLE /bin/bash "$HARNESS" init --no-agent >/dev/null 2>&1; }
+
+# fresh WORK FAKE_DIR per case; every case starts as an initialised checkout (hinit); all of them removed on exit
 WORKS=""
 trap 'cd / && for d in $WORKS; do rm -rf "$d"; done' EXIT
 setup() {
@@ -21,6 +25,7 @@ setup() {
   unset FAKE_PROMPT_HOOK
   export HARNESS_IDLE_GRACE=1 HARNESS_POLL_SEC=0.2 HARNESS_CLEAR_INTERVAL=0
   cd "$WORK" || exit 1
+  hinit
 }
 
 # run ARGS... -> sets OUT, RC  (killed by SIGALRM after 5s so a hang fails fast)

@@ -8,18 +8,48 @@
 #         agent, not the env, closes the daemon-inherits-worker-env hole: a
 #         conductor hosted by a daemon that exported HARNESS_ROLE=worker is still
 #         gated. Without agent_type, HARNESS_ROLE=worker allows (older hosts).
-#         HERDR_ENV != 1       -> allow everything (not in a herdr pane: harness
-#                                 cannot delegate there, so gating would only
-#                                 strand the session; decision 0005)
+#         Harness checkout: the gate acts only where .harness/asks/ exists (nearest
+#                                 dir from the cwd up to the .git dir; decision 0010).
+#                                 Elsewhere it allows everything, before jq or parsing,
+#                                 so it never touches a repo that does not use the harness.
+#                                 HERDR_ENV is ignored.
 #         otherwise            -> conductor rules below
 # Output: nothing (allow) or a PreToolUse deny JSON on stdout. Always exit 0.
 set -u
 
-if [ "${HERDR_ENV:-}" != 1 ]; then
-  exit 0
-fi
+# harness_root DIR -> prints the harness checkout root and returns 0, or returns 1.
+# DIR is resolved physically (pwd -P) first, like enter_root.
+# The root is the nearest dir at or above DIR with .harness/asks/, searched up to
+# the dir holding .git (file or dir) inclusive; outside git only DIR counts. Same
+# rule as enter_root in bin/harness-verify. This body is copied byte-for-byte into
+# conductor-gate, -route and -resume (tests/gate.test.sh checks it).
+harness_root() {
+  local start d hit=""
+  start=$(cd "${1:-/}" 2>/dev/null && pwd -P) || return 1
+  d=$start
+  while :; do
+    if [ -z "$hit" ] && [ -d "$d/.harness/asks" ]; then hit=$d; fi
+    if [ -e "$d/.git" ]; then
+      [ -n "$hit" ] || return 1
+      printf '%s' "$hit"
+      return 0
+    fi
+    [ "$d" = / ] && break
+    d=${d%/*}
+    [ -n "$d" ] || d=/
+  done
+  [ -d "$start/.harness/asks" ] || return 1
+  printf '%s' "$start"
+}
 
 INPUT=$(cat)
+
+DIR=$PWD
+if command -v jq >/dev/null 2>&1; then
+  c=$(printf '%s' "$INPUT" | jq -r 'if type == "object" then (.cwd // empty) else empty end' 2>/dev/null)
+  if [ -n "$c" ] && [ -d "$c" ]; then DIR=$c; fi
+fi
+harness_root "$DIR" >/dev/null || exit 0
 
 if ! command -v jq >/dev/null 2>&1; then
   # fail closed; static JSON because jq is unavailable

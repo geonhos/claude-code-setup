@@ -23,6 +23,7 @@ setup() {
   : > "$FAKE_LOG"
   unset FAKE_PROMPT_HOOK FAKE_CLEAR HARNESS_CTX_RESET HARNESS_LOG_KEEP HARNESS_LOG_DAYS HARNESS_JSONL_MAX HARNESS_ROUTE_LOG
   cd "$WORK" || exit 1
+  env -u HARNESS_ROLE /bin/bash "$HARNESS" init --no-agent >/dev/null 2>&1
   printf 'fake/\nherdr.log\nprojects/\n' > .gitignore
 }
 
