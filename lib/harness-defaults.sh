@@ -5,8 +5,8 @@
 # this file; tests/harness.test.sh checks them against `harness _defaults`.
 HARNESS_ROLES="analyst implementer reviewer"
 HARNESS_WT_ROLES="analyst reviewer"          # roles that may run `--worktree` asks
-HARNESS_DEFAULT_TIMEOUT_MS=600000            # ask --timeout: analyst, reviewer
-HARNESS_IMPLEMENTER_TIMEOUT_MS=1740000       # ask --timeout: implementer (Stop-hook verify can take 10 min)
+HARNESS_DEFAULT_TIMEOUT_MS=3600000           # ask --timeout default: analyst, reviewer = their headless cap below (60 min)
+HARNESS_IMPLEMENTER_TIMEOUT_MS=5400000       # same for the implementer = its cap (90 min); a background ask returns when the run ends
 HARNESS_CTX_RESET_DEFAULT=120000             # tokens: analyst/reviewer are cleared above this
 HARNESS_IDLE_TTL_DEFAULT=30                  # idle_ttl_minutes (0 = off)
 HARNESS_CLOSE_AFTER_DEFAULT=never            # close_after_ask.<role>

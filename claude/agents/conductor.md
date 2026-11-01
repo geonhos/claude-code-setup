@@ -75,11 +75,12 @@ router that will later suggest the route.
    For long briefs, write them to `.harness/task-<worker>.md` (the gate allows
    writes under `.harness/`) and send
    `harness ask <worker> 'Read .harness/task-<worker>.md and do it.' --via skill`. Always
-   call `harness ask` with the Bash tool timeout raised (analyst/reviewer:
-   timeout 660000, a little above the worker wait of 600000; implementer:
-   Bash timeout 1800000, a little above its default worker wait of 1740000;
-   `--timeout` is optional) or
-   in the background; the worker may take minutes.
+   call `harness ask` with the Bash tool's `run_in_background: true`. The ask
+   waits for the run to end (default wait = the role's headless cap:
+   implementer 5400000 ms, analyst/reviewer 3600000 ms; `--timeout` overrides), so the
+   Bash task notification wakes you the moment the report is ready: do not poll.
+   After a restart or compaction, re-attach with `harness wait <worker>`
+   (blocks until the run ends, never collects), then `harness report <worker>`.
    `harness ask` clears a live worker's context before each task (the
    implementer always; analyst/reviewer when their context is large). Add
    `--fresh` to force a clear for a new topic, or `--keep` for a follow-up
@@ -125,19 +126,18 @@ of the progress file.
   report for the task you just finished.' --via skill` (a follow-up to a
   skill-run ask stays labelled skill). The worker's context is kept
   automatically unless the last ask exited 0 (or 5 for the reviewer); no `--keep` needed.
-- `4` still working, stalled, timed out, the prompt was not accepted, a turn
-  ended without a report ("maybe waiting on background tasks"), or a report
-  whose Stop hook has not signalled yet: run `harness status`; if idle,
+- `4` still working or timed out (headless: the ask outlived `--timeout`), the
+  prompt was not accepted, or a report whose Stop hook has not signalled yet:
+  `harness wait <worker>` (blocks until the run ends), then
   `harness report <worker>`; if that exits 3 (no report), ask it to write the
-  report. Otherwise wait for the task notification of the background
-  `harness ask` (or poll `harness status`), then `harness report <worker>`; do
-  not resend. A worker that hit the subscription usage limit sits waiting for
+  report. Do not resend. (`harness report` while the run is alive also exits 4
+  and says `harness wait <worker> blocks until done`.) A worker that hit the subscription usage limit sits waiting for
   the reset and looks exactly like this: tell the user and wait, or they can
   switch the worker's model.
   An implementer message "still verifying (Stop hook running ...)" means its
   verification outlived the ask timeout: leave `.pending` alone, wait for
   idle (headless: the run ends), then `harness report implementer`. A stale `.pending` (hook killed)
-  makes the ask wait the full timeout (implementer 1740000 ms by default) before exit 5 INTERRUPTED.
+  makes the ask wait the full timeout (implementer 5400000 ms by default) before exit 5 INTERRUPTED.
 - `5` verification failed: the implementer gave up after its lint/test
   attempts (its report and a `verify: FAIL (<step>, <n> attempts)` line are
   printed), or the reviewer's report ends with `VERDICT: FAIL`. Send the

@@ -7,11 +7,14 @@
 #
 #   harness spawn  <agent> [--direction right|down]
 #   harness ask    <agent> '<instruction>' [--timeout MS] [--fresh|--keep] [--via skill|conductor]
-#     default --timeout: implementer 1740000, analyst/reviewer 600000
+#     default --timeout = the role's headless run cap (a background ask returns when the run ends):
+#     implementer 5400000, analyst/reviewer 3600000
 #   harness ask    <analyst|reviewer> '<instruction>' --worktree [--base REF]
 #     headless roles only: the ask runs in its own detached git worktree under
 #     ~/.cache/harness/wt/<repo8>/<role>-<id8> (decision 0008); the ask-id is printed on stderr.
 #   harness report <agent>|<ask-id>
+#   harness wait   <agent>|<ask-id> [--timeout MS]   block until the run ends (0 done, 3 no ask/gone, 4 timeout); does not collect
+#   harness watch  <agent>|<ask-id> [-n N]   human terminal only: follow a live run, or the last N lines of a finished one
 #   harness status
 #   harness init [--no-agent] [--shared]   make this repo a harness checkout (.harness/asks, config, agent=conductor in .claude/settings.local.json; --shared: settings.json)
 #   harness doctor [--fix] [DIR...]   clean pollution left by older versions (strays, global agent key)
@@ -100,7 +103,7 @@ ASK_KEY=""        # pane-registry key of a worktree ask: <role>@<id8> (empty = t
 ASK_WT=""         # worktree path of this ask (empty = plain ask)
 ASK_ID=""; ASK_ID8=""; ASK_BASE=""; ASK_WT_WANT=0
 # parsed once by ask_parse_args (cmd_ask); ask_inner only reads them
-ASK_VIA=conductor; ASK_TIMEOUT=$DEFAULT_TIMEOUT; ASK_FRESH=0; ASK_KEEP=0; ASK_BAD=0
+ASK_VIA=conductor; ASK_TIMEOUT=$DEFAULT_TIMEOUT; ASK_TIMEOUT_SET=0; ASK_FRESH=0; ASK_KEEP=0; ASK_BAD=0
 ASK_HAS_BASE=0; ASK_BASE_REF=""; ASK_BASE_NOVAL=0
 WT_HOME=${HARNESS_WT_ROOT:-$HOME/.cache/harness/wt}
 WT_DIR=".harness/wt"
@@ -112,6 +115,8 @@ usage:
   harness ask    <agent> '<instruction>' [--timeout MS (default: implementer $IMPLEMENTER_TIMEOUT, others $DEFAULT_TIMEOUT)] [--fresh|--keep] [--via skill|conductor|retro]
   harness ask    <analyst|reviewer> '<instruction>' --worktree [--base REF] ...   (headless roles only; --base needs --worktree)
   harness report <agent>|<ask-id>
+  harness wait   <agent>|<ask-id> [--timeout MS]
+  harness watch  <agent>|<ask-id> [-n N]   (human terminal only)
   harness status
   harness init   [--no-agent] [--shared]   (once per repo: makes it a harness checkout; ask/spawn refuse without it)
   harness doctor [--fix] [DIR...]   (find/remove stray .harness/ dirs and the old global agent key)
@@ -762,14 +767,14 @@ ask_parse_args() {
   shift 2
   ASK_VIA=conductor; ASK_FRESH=0; ASK_KEEP=0; ASK_BAD=0
   ASK_WT_WANT=0; ASK_HAS_BASE=0; ASK_BASE_REF=""; ASK_BASE_NOVAL=0
-  ASK_TIMEOUT=$DEFAULT_TIMEOUT
+  ASK_TIMEOUT=$DEFAULT_TIMEOUT; ASK_TIMEOUT_SET=0
   [ "$agent" != implementer ] || ASK_TIMEOUT=$IMPLEMENTER_TIMEOUT
   while [ $# -gt 0 ]; do
     case "$1" in
       --timeout)
         case "${2:-}" in
           ''|*[!0-9]*|0) ASK_BAD=1; shift ;;     # missing/invalid value: usage (logged)
-          *) ASK_TIMEOUT=$2; shift 2 ;;
+          *) ASK_TIMEOUT=$2; ASK_TIMEOUT_SET=1; shift 2 ;;
         esac ;;
       --fresh) ASK_FRESH=1; shift ;;
       --keep) ASK_KEEP=1; shift ;;
@@ -1945,6 +1950,8 @@ case "${1:-}" in
   spawn)  shift; cmd_spawn "$@" ;;
   ask)    shift; cmd_ask "$@" ;;
   report) shift; cmd_report "$@" ;;
+  wait)   shift; cmd_wait "$@" ;;
+  watch)  shift; cmd_watch "$@" ;;
   status) cmd_status ;;
   _projdir) shift; project_dir_name "${1:-$(pwd -P)}"; echo ;;
   close)  shift; cmd_close "$@" ;;

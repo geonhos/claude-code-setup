@@ -43,7 +43,7 @@ cd ~/workspace/claude-code-setup
 
 1. 프로젝트(`harness init`을 한 저장소)에서 평소처럼 `claude`를 시작한다. 터미널이면 충분하고 herdr는 필요 없다.
 2. 질문하거나 작업을 맡긴다. 일반 질문은 conductor가 바로 답한다. 소스를 읽거나 고치려 하면 게이트가 호출을 거부하고, conductor는 맞는 스킬(`/analyze` 조사 · `/implement` 변경 · `/review` 검토)을 호출한다. 직접 `/implement …`처럼 쳐도 된다.
-3. 스킬이 `harness ask <worker> '<instruction>' --via skill`을 실행한다. 워커는 detached headless Claude 세션(`claude -p`)으로 백그라운드에서 돈다. 워커가 끝나면 리포트(`.harness/reports/<worker>.md`, 40줄 이하)가 출력된다. 설치 스크립트가 Bash 도구 타임아웃을 늘려 두므로(`BASH_DEFAULT_TIMEOUT_MS=600000`) 긴 워커 작업도 중간에 끊기지 않는다.
+3. 스킬이 `harness ask <worker> '<instruction>' --via skill`을 실행한다. 워커는 detached headless Claude 세션(`claude -p`)으로 백그라운드에서 돈다. 워커가 끝나면 리포트(`.harness/reports/<worker>.md`, 40줄 이하)가 출력된다. 설치 스크립트가 Bash 도구 타임아웃을 늘려 두므로(`BASH_DEFAULT_TIMEOUT_MS=600000`) 긴 워커 작업도 중간에 끊기지 않는다. 스킬은 `harness ask`를 항상 `run_in_background: true`로 돌린다: 기본 대기 시간이 워커의 headless 상한(analyst·reviewer 60분, implementer 90분)과 같아 실행이 끝나는 순간 ask가 돌아오고 Bash 완료 알림이 conductor를 깨운다. 재시작·compaction 뒤에는 `harness wait <worker>`로 다시 붙는다. 워커가 리포트 없이 멈추려 하면 Stop hook이 (ask당 최대 2번) 막고 리포트를 쓰게 한다(지시문에 `[no-report]`가 있으면 제외). 노트북 절전으로 시계가 크게 건너뛰면 마감도 그만큼 늦춘다.
 4. 워커의 진행은 `harness status`로 보고, herdr를 쓰면 viewer pane에서도 볼 수 있다(읽기 전용). conductor가 보는 것은 리포트뿐이다.
 
 ```
@@ -51,6 +51,8 @@ harness init   [--no-agent] [--shared]                              # 이 저장
 harness doctor [--fix] [DIR...]                                    # 과거 오염(asks/ 없는 .harness/, 전역 agent 키)을 찾고 --fix로 지운다
 harness spawn  <agent> [--direction right|down]
 harness ask    <agent> '<instruction>' [--timeout MS] [--fresh|--keep] [--via skill|conductor|retro]   # exit 2 blocked · 3 no report · 4 still working · 5 verification failed · 6 worker runs outside this repo
+harness wait   <agent>|<ask-id> [--timeout MS]                       # run이 끝날 때까지 block(수집은 안 함): 0 done · 3 ask 없음/러너 죽음 · 4 timeout; 끝나면 `harness report`
+harness watch  <agent>|<ask-id> [-n N]                              # 사람용 터미널 뷰어(tty 필요, conductor 게이트가 거부)
 harness report <agent>|<ask-id>                                   # print existing report (same exit codes as ask), 3 none, 4 still working, 6 worker runs outside this repo (worker names are `<role>-<repo8>`)
 harness ask    <analyst|reviewer> '<instruction>' --worktree [--base REF]   # headless 전용: ask마다 detached git worktree(~/.cache/harness/wt/<repo8>/<role>-<id8>), 병렬 ask 가능 (결정 0008)
 harness status

@@ -21,7 +21,7 @@ investigation yourself (`harness ask` refuses to run in a worker session anyway)
      ranges, current behaviour, options with trade-offs when asked.
    - Long detail goes to `.harness/<topic>-detail.md`; the report summarises
      it and names the file.
-2. Run, with the Bash tool timeout raised to 660000 or in the background:
+2. Run with the Bash tool's `run_in_background: true` (the task notification wakes you when the run ends):
 
    ```
    harness ask analyst 'Read .harness/task-analyst.md and do it.' --via skill
@@ -31,7 +31,7 @@ investigation yourself (`harness ask` refuses to run in a worker session anyway)
    analyst's previous conversation. Keep the instruction in single quotes.
 3. Handle the exit code as conductor.md's "Exit codes from `harness ask`"
    section says: 2 blocked: show the user the screen and ask; 3 no report:
-   ask it to write the report; 4 still working: `harness status`, then
-   `harness report analyst`.
+   ask it to write the report; 4 still working: `harness wait analyst`,
+   then `harness report analyst`.
 4. Relay the substance of the report, not the report verbatim. Read any
    `.harness/*-detail.md` it points at yourself (the gate allows `.harness/`).
