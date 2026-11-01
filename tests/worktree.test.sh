@@ -99,7 +99,7 @@ wsetup
 hrun ask implementer "q" --worktree
 check "impl: rc 1" [ "$RC" -eq 1 ]
 check "impl: clear message" grep -q "analyst and reviewer only" <<<"$OUT"
-unset HARNESS_RUNNER_ANALYST
+export HARNESS_RUNNER_ANALYST=pane
 hrun ask analyst "q" --worktree
 check "pane runner: rc 1" [ "$RC" -eq 1 ]
 check "pane runner: says headless" grep -q "headless" <<<"$OUT"

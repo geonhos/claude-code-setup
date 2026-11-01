@@ -23,6 +23,8 @@ setup() {
   mkdir -p "$FAKE_DIR"
   : > "$FAKE_LOG"
   unset FAKE_PROMPT_HOOK
+  # headless is the default runner (decision 0011); these suites test pane behaviour, so opt in
+  export HARNESS_RUNNER_ANALYST=pane HARNESS_RUNNER_IMPLEMENTER=pane HARNESS_RUNNER_REVIEWER=pane
   export HARNESS_IDLE_GRACE=1 HARNESS_POLL_SEC=0.2 HARNESS_CLEAR_INTERVAL=0
   cd "$WORK" || exit 1
   hinit

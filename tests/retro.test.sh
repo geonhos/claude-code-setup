@@ -17,6 +17,7 @@ setup() {
   export HARNESS_IDLE_GRACE=1 HARNESS_POLL_SEC=0.2 HARNESS_CLEAR_INTERVAL=0
   mkdir -p "$FAKE_DIR"
   : > "$FAKE_LOG"
+  export HARNESS_RUNNER_ANALYST=pane HARNESS_RUNNER_IMPLEMENTER=pane HARNESS_RUNNER_REVIEWER=pane   # headless is the default (decision 0011); these suites test the pane runner
   unset FAKE_PROMPT_HOOK HARNESS_LOG_KEEP HARNESS_LOG_DAYS HARNESS_NOW
   cd "$WORK" || exit 1
   env -u HARNESS_ROLE /bin/bash "$HARNESS" init --no-agent >/dev/null 2>&1

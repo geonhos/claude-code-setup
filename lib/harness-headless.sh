@@ -7,13 +7,13 @@
 # `harness-run` (claude -p, stream-json) in a kept viewer pane. Completion = the run's
 # .harness/asks/<role>.exit.json carrying this ask-id; no herdr agent, no Stop-hook marker.
 
-# runner_of <role> — headless|pane (env HARNESS_RUNNER_<ROLE>, then config runner.<role>, then pane)
+# runner_of <role> — headless|pane (env HARNESS_RUNNER_<ROLE>, then config runner.<role>, then headless)
 runner_of() {
   local up v
   up=$(printf %s "$1" | tr 'a-z' 'A-Z')
   eval "v=\${HARNESS_RUNNER_$up:-}"
   [ -n "$v" ] || v=$(jq -r --arg r "$1" '.runner[$r] // empty' "$CONFIG_FILE" 2>/dev/null)
-  case "$v" in headless) echo headless ;; *) echo "$HARNESS_RUNNER_DEFAULT" ;; esac
+  case "$v" in headless|pane) echo "$v" ;; *) echo "$HARNESS_RUNNER_DEFAULT" ;; esac
 }
 
 # use_hl <role> — this role is handled by the headless code: configured so, or (runner flipped
