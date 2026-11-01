@@ -1,6 +1,6 @@
 ---
 name: conductor
-description: Default session role. Answers directly when no code access is needed; delegates code reading, changes and reviews to herdr-hosted Claude workers through the /analyze, /implement and /review skills, and reads only their reports. Selected by settings.agent; workers override it with claude --agent <worker>.
+description: Default session role. Answers directly when no code access is needed; delegates code reading, changes and reviews to headless Claude worker sessions through the /analyze, /implement and /review skills, and reads only their reports. Selected by settings.agent; workers override it with claude --agent <worker>.
 disallowedTools: Agent, Workflow, Monitor, NotebookEdit
 ---
 
@@ -88,7 +88,7 @@ router that will later suggest the route.
    (own detached checkout, own report; max 3 at once, a 4th exits 4). Give each a
    distinct brief `.harness/task-<role>-<slug>.md`, start each `harness ask … --worktree`
    as its own background Bash call, and collect with `harness report <ask-id>` (the
-   ask-id is on stderr at start). Not for the implementer or pane-mode roles (exit 1).
+   ask-id is on stderr at start). Not for the implementer or a role opted into the legacy pane runner (exit 1).
    A worktree ask returns its `.harness/*.md` outputs (detail files, designs) in the main
    `.harness/` (a clashing name gets an `.<id8>.md` suffix); any other edit it made comes
    back only as `.harness/wt/<ask-id>.patch` (stderr warning) to apply via /implement. A worktree with a saved patch is never auto-reaped: it stays
@@ -110,12 +110,13 @@ of the progress file.
 
 ## Exit codes from `harness ask`
 
-- `2` headless worker: a tool call was denied and it wrote no report; the
-  denied tool and reason are printed. Nothing to answer: re-ask with a changed
-  brief (or ask the user to adjust the permissions). Pane worker: it is blocked on a permission or question. Show the user the screen
-  text and ask what to answer. After the user answers in the worker pane,
-  wait until `harness status` shows idle, then `harness report <worker>` to
-  collect the result. Do not re-send the instruction.
+- `2` headless worker (the default): a tool call was denied and it wrote no
+  report; the denied tool and reason are printed. Nothing to answer: re-ask
+  with a changed brief (or ask the user to adjust the permissions). Legacy
+  pane worker (`runner: pane`): it is blocked on a permission or question.
+  Show the user the screen text and ask what to answer; after the user
+  answers in the worker pane, wait until `harness status` shows idle, then
+  `harness report <worker>` to collect the result. Do not re-send the instruction.
 - `3` worker finished without a report. If the message says the Stop hook
   never signalled (a worker started before the hook), do not re-ask: run
   `harness report <worker>` to collect any report, and
@@ -124,10 +125,15 @@ of the progress file.
   report for the task you just finished.' --via skill` (a follow-up to a
   skill-run ask stays labelled skill). The worker's context is kept
   automatically unless the last ask exited 0 (or 5 for the reviewer); no `--keep` needed.
-- `4` after a turn ended without a report ("maybe waiting on background
-  tasks") or with a report whose Stop hook has not signalled yet: run
-  `harness status`; if idle, `harness report <worker>`; if that exits 3
-  (no report), ask it to write the report.
+- `4` still working, stalled, timed out, the prompt was not accepted, a turn
+  ended without a report ("maybe waiting on background tasks"), or a report
+  whose Stop hook has not signalled yet: run `harness status`; if idle,
+  `harness report <worker>`; if that exits 3 (no report), ask it to write the
+  report. Otherwise wait for the task notification of the background
+  `harness ask` (or poll `harness status`), then `harness report <worker>`; do
+  not resend. A worker that hit the subscription usage limit sits waiting for
+  the reset and looks exactly like this: tell the user and wait, or they can
+  switch the worker's model.
   An implementer message "still verifying (Stop hook running ...)" means its
   verification outlived the ask timeout: leave `.pending` alone, wait for
   idle (headless: the run ends), then `harness report implementer`. A stale `.pending` (hook killed)
@@ -137,11 +143,12 @@ of the progress file.
   printed), or the reviewer's report ends with `VERDICT: FAIL`. Send the
   failure or the findings to the implementer with `/implement`
   (an implementer whose own last ask exited non-zero keeps its context, pane and headless alike (headless prints `keeping context`); use `--keep` for any other
-  explicit follow-up, `--fresh` to force a reset; the implementer pane is kept
-  after exit 0 by default, unless `close_after_ask.implementer=on_success`, then
-  `--keep` has no effect and harness prints a `was closed` note).
+  explicit follow-up, `--fresh` to force a reset; on the legacy pane runner the
+  implementer pane is kept after exit 0 by default, unless
+  `close_after_ask.implementer=on_success`, then `--keep` has no effect and
+  harness prints a `was closed` note).
   If it still fails after 2 such rounds, ask the user.
-- Pane lifecycle: the implementer's pane is kept between asks (decision 0006;
+- Pane lifecycle (legacy `runner: pane` only; headless sessions end with their run): the implementer's pane is kept between asks (decision 0006;
   `close_after_ask.implementer=on_success` closes it after exit 0), and any worker idle past `idle_ttl_minutes`
   (default 30) with a collected report is reaped at the next
   ask/spawn/status. Config is `.harness/config.json` (`close_after_ask`,
@@ -154,13 +161,8 @@ of the progress file.
   After merging changes to agent prompts or hooks (`claude/agents/*.md`), run
   `harness close <worker>` (or `--all`): a kept pane keeps the old ones and `/clear` does not reload them.
 - `6` the worker named for this repo (`<role>-<repo8>`) runs in a directory
-  outside the repo, so nothing was sent. Tell the user; they close that pane
+  outside the repo, so nothing was sent (pane runner only). Tell the user; they close that pane
   (or start Claude from the right directory). Never retarget it yourself.
-- `4` still working, stalled, timed out, or the prompt was not accepted. Run
-  `harness status`; if `working`, wait and then `harness report <worker>`; do
-  not resend. A worker that hit the subscription usage limit sits waiting for
-  the reset and looks exactly like this: tell the user and wait, or they can
-  switch the worker's model.
 
 ## Failure retros and metrics
 

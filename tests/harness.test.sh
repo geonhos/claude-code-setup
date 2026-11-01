@@ -670,6 +670,7 @@ OUT=$(HERDR_ENV=1 PATH="$FAKE_BIN:$PATH" /bin/bash "$HARNESS" 2>&1)
 check "usage text prints the default timeouts" bash -c 'grep -q "implementer $2" <<<"$1" && grep -q "others $3" <<<"$1"' _ "$OUT" "$T_IMPL" "$T_DEF"
 TPL=$(sed -n "/^config_template() {/,/^EOC/p" "$HARNESS" | sed '1,2d;$d')
 check "config template viewer = default" [ "$(printf '%s' "$TPL" | jq -r .viewer)" = "$(dv HARNESS_VIEWER_DEFAULT)" ]
+check "config template runner = default (headless) for every role" [ "$(printf '%s' "$TPL" | jq -r '[.runner[]] | unique | join(" ")')" = "$(dv HARNESS_RUNNER_DEFAULT)" ] && [ "$(printf '%s' "$TPL" | jq -r '.runner | keys | join(" ")')" = "$(dv HARNESS_ROLES)" ]
 check "config template idle_ttl_minutes = default" [ "$(printf '%s' "$TPL" | jq -r .idle_ttl_minutes)" = "$(dv HARNESS_IDLE_TTL_DEFAULT)" ]
 check "config template close_after_ask keys = roles" [ "$(printf '%s' "$TPL" | jq -r '.close_after_ask | keys | join(" ")')" = "$(dv HARNESS_ROLES)" ]
 check "config template close_after_ask values = default" [ "$(printf '%s' "$TPL" | jq -r '[.close_after_ask[]] | unique | join(" ")')" = "$(dv HARNESS_CLOSE_AFTER_DEFAULT)" ]
@@ -702,6 +703,18 @@ run init
 check "init is idempotent" bash -c '[ "$1" = 0 ] && [ "$(jq -r .agent .claude/settings.local.json)" = conductor ]' _ "$RC"
 run init --bogus
 check "init rejects unknown flag" [ "$RC" != 0 ]
+
+setup; rm -rf .harness
+run init
+check "init: pane roles named, herdr required" grep -q "runner: pane for analyst, implementer, reviewer; herdr required for those" <<<"$OUT"
+check "init: pane roles: no 'no herdr needed'" not_grep "no herdr needed" <(printf "%s" "$OUT")
+setup; rm -rf .harness; unset HARNESS_RUNNER_ANALYST HARNESS_RUNNER_IMPLEMENTER HARNESS_RUNNER_REVIEWER
+run init
+check "init: all headless: no herdr needed" grep -q "no herdr needed" <<<"$OUT"
+export HARNESS_RUNNER_REVIEWER=pane
+run init
+check "init: one pane role named" grep -q "runner: pane for reviewer; herdr required for those" <<<"$OUT"
+unset HARNESS_RUNNER_REVIEWER
 
 setup; rm -rf .harness
 run init --shared

@@ -134,8 +134,10 @@ if [ "${1:-}" = "--test" ]; then
 fi
 
 need jq
-if [ "${SKIP_HERDR_INTEGRATION:-0}" != 1 ]; then
-  need herdr
+# herdr is optional (decision 0011): without it the integration step is skipped
+if [ "${SKIP_HERDR_INTEGRATION:-0}" != 1 ] && ! command -v herdr >/dev/null 2>&1; then
+  echo "herdr not found: skipping its Claude integration (optional; only the pane runner/viewer need it)"
+  SKIP_HERDR_INTEGRATION=1
 fi
 
 # 0. validate before modifying anything

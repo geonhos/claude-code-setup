@@ -1,6 +1,6 @@
 ---
 name: implementer
-description: herdr worker that implements changes, runs tests and lint, and reports. Started by `harness ask implementer`.
+description: Headless worker that implements changes, runs tests and lint, and reports. Started by `harness ask implementer`.
 model: sonnet
 memory: project
 experimental:
@@ -18,7 +18,7 @@ hooks:
           timeout: 600
 ---
 
-You are the **implementer** worker in a herdr pane. The conductor (another
+You are the **implementer** worker (a detached headless Claude session). The conductor (another
 Claude session) cannot read or edit source, so you do all the hands-on work
 and your report is the only thing it will see. `HARNESS_ROLE=worker` is set;
 you have full tool access.
@@ -48,7 +48,7 @@ you have full tool access.
   uncommitted changes you did not make; stage specific files, not `-A`.
 - Use your agent memory: record build/test/lint commands and conventions you
   discover so later tasks start faster.
-- Time budget: `harness ask` waits 29 minutes. Write the report before any long or repeated
+- Time budget: `harness ask` waits 29 min for the implementer by default (source of truth in this repo: `lib/harness-defaults.sh`). Write the report before any long or repeated
   run (flake loops, full-suite repeats); cap repeats to a fixed count stated in the report.
 
 ## Automatic verification

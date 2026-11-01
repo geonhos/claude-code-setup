@@ -25,6 +25,17 @@ run close analyst --force
 check "close working --force: rc 0" [ "$RC" -eq 0 ]
 check "close working --force: closed" logged "pane close w1:p2"
 check "close --force: unregistered" not_grep "^analyst " "$WORK/.harness/panes"
+# runner is headless by config, but the live worker is a pane worker: the pane refusals still apply
+setup
+export HARNESS_RUNNER_ANALYST=headless
+live_worker analyst working w1:p2
+run close analyst
+check "close pane worker under headless config: rc 4" [ "$RC" -eq 4 ]
+check "close pane worker under headless config: working message" grep -q "is working" <<<"$OUT"
+check "close pane worker under headless config: no pane close" not_logged "pane close"
+run close analyst --force
+check "close pane worker under headless config --force: closed" logged "pane close w1:p2"
+unset HARNESS_RUNNER_ANALYST
 setup
 live_worker analyst blocked w1:p2
 run close analyst

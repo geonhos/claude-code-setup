@@ -166,10 +166,21 @@ check "nostart: rc 1" [ "$RC" -eq 1 ]
 setup
 export FAKE_CLAUDE_MODE=success
 unset HARNESS_RUNNER_ANALYST HARNESS_RUNNER_REVIEWER
-export FAKE_PROMPT_HOOK="$(REPORT_HOOK analyst)"
+export FAKE_REPORT_CMD="mkdir -p $WORK/.harness/reports && printf '# analyst report\nstatus: done\n' > $WORK/.harness/reports/analyst.md"
 hrun ask analyst "q"
-check "default runner: pane (agent start)" logged "agent start"
-check "default runner: no harness-run" not_logged "harness-run"
+check "default runner: headless (rc 0)" [ "$RC" -eq 0 ]
+check "default runner: headless (no agent start)" not_logged "agent start"
+# a hand-written config with no runner key: the built-in default decides (not init's template)
+setup
+unset HARNESS_RUNNER_ANALYST HARNESS_RUNNER_IMPLEMENTER HARNESS_RUNNER_REVIEWER
+mkdir -p .harness; echo '{"idle_ttl_minutes":30}' > .harness/config.json
+export FAKE_CLAUDE_MODE=success FAKE_REPORT_CMD="mkdir -p $WORK/.harness/reports && printf '# analyst report\nstatus: done\n' > $WORK/.harness/reports/analyst.md"
+hrun ask analyst "q"
+check "no runner key: headless rc 0" [ "$RC" -eq 0 ]
+check "no runner key: no agent start" not_logged "agent start"
+check "no runner key: ran harness-run" logged "harness-run"
+hrun status
+check "no runner key: status shows hl" grep -Eq '^analyst .* hl' <<<"$OUT"
 setup
 mkdir -p .harness; echo '{"runner":{"analyst":"headless"}}' > .harness/config.json
 export FAKE_CLAUDE_MODE=success FAKE_REPORT_CMD="mkdir -p $WORK/.harness/reports && printf '# analyst report\nstatus: done\n' > $WORK/.harness/reports/analyst.md"

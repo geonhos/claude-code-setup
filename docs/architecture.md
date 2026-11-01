@@ -1,6 +1,8 @@
 # 아키텍처
 
-이 harness는 **conductor(지휘 세션)** Claude 세션 하나와 워커 Claude 세션 셋(analyst, implementer, reviewer)으로 이뤄진다. 워커는 [herdr](https://herdr.dev) 패널에서 돈다. conductor에는 PreToolUse 훅 게이트가 걸려 있어 리포트 읽기와 `harness` 실행만 할 수 있다. 프로젝트 디렉터리의 `.harness/`는 리포트, 로그, 검증 상태, 진행 요약을 두는 공용 저장소다.
+> Diagrams reflect commit bdcf357; prose updated 2026-11-01; full regeneration in prune step 7.
+
+이 harness는 **conductor(지휘 세션)** Claude 세션 하나와 워커 Claude 세션 셋(analyst, implementer, reviewer)으로 이뤄진다. 워커는 detached headless Claude 세션(`claude -p`)으로 돈다. [herdr](https://herdr.dev) 패널은 선택 사항인 viewer다. conductor에는 PreToolUse 훅 게이트가 걸려 있어 리포트 읽기와 `harness` 실행만 할 수 있다. 프로젝트 디렉터리의 `.harness/`는 리포트, 로그, 검증 상태, 진행 요약을 두는 공용 저장소다.
 
 아래 다이어그램은 스펙이 아니라 `main`의 코드(커밋 `bdcf357`, PR #10을 main에 머지한 시점)를 기준으로 그렸다. Mermaid 원본은 [`diagrams/`](diagrams/README.md)에 있다. 8절과 2·7절의 Mermaid 텍스트는 feature/v8-skill-routing 변경을 반영했고 SVG는 아직 재렌더하지 않았다.
 
@@ -28,7 +30,7 @@ flowchart LR
   cond["Conductor session<br/>claude, settings.agent = conductor"]
   hcli["harness CLI<br/>bin/harness"]
   herdr["herdr<br/>terminal multiplexer"]
-  subgraph workers["worker panes (in herdr)"]
+  subgraph workers["workers (headless sessions; herdr pane = optional viewer)"]
     an["analyst<br/>opus"]
     im["implementer<br/>sonnet"]
     rv["reviewer<br/>opus"]
@@ -44,8 +46,8 @@ flowchart LR
 
   user <-- "request, answers ⇄ summary, questions" --> cond
   cond <-- "harness ask/report/status (Bash) ⇄ stdout report + exit 0-5" --> hcli
-  hcli <-- "pane split, agent start/prompt/get ⇄ status, session id, screen text" --> herdr
-  herdr -. "hosts" .- workers
+  hcli <-- "optional viewer: pane split/run ⇄ pane id (legacy pane runner: agent start/prompt/get)" --> herdr
+  herdr -. "optional viewer" .- workers
   workers -- "write report" --> rep
   rep -- "read" --> hcli
   hcli -- "log + jsonl + regen md" --> log
@@ -354,7 +356,7 @@ flowchart TD
 
 ## 워커 패널 종료 (close / after-ask / TTL)
 
-`harness close <role>|--all|--legacy [--force]`는 `herdr pane close`로 패널을 닫고 `herdr pane get`으로 사라졌는지 확인한 뒤(남아 있으면 exit 1, 레지스트리 유지) `.harness/panes`에서 지운다. 워커가 working/blocked이거나 수집하지 않은 리포트(`.pending` 포함)가 있으면 exit 4, 다른 저장소의 워커는 exit 6이다. 자동 종료는 두 가지다. (1) `close_after_ask.<role>=on_success`(implementer 기본)이면 ask가 0으로 끝난 뒤(reviewer는 0 또는 5) 닫는다. (2) `idle_ttl_minutes`(기본 30)가 지난 워커는 `ask|spawn|status` 시작 때 닫는다. 수집 여부는 `.harness/asks/<role>.finished`(ask가 0/5로 끝나거나 `harness report`가 리포트를 돌려줄 때 만들고, ask가 시작되면 지운다)로 판단한다. 닫은 이유는 `.harness/asks/<role>.closed`에 남아 `ask --keep`이 이전 컨텍스트가 사라졌다는 안내를 출력한다. 모든 종료는 `progress.jsonl`의 `event: close` 줄(role, reason)로 기록되고 `progress.md`에는 최근 5개가 따로 한 줄로 나온다. `HARNESS_NO_AUTOCLOSE=1`이면 자동 종료가 꺼진다.
+(옛 pane 러너 동작; headless 종료는 `herdr pane close`를 쓰지 않는다) `harness close <role>|--all|--legacy [--force]`는 `herdr pane close`로 패널을 닫고 `herdr pane get`으로 사라졌는지 확인한 뒤(남아 있으면 exit 1, 레지스트리 유지) `.harness/panes`에서 지운다. 워커가 working/blocked이거나 수집하지 않은 리포트(`.pending` 포함)가 있으면 exit 4, 다른 저장소의 워커는 exit 6이다. 자동 종료는 두 가지다. (1) `close_after_ask.<role>=on_success`(기본은 모든 역할 `never`, 결정 0006)이면 ask가 0으로 끝난 뒤(reviewer는 0 또는 5) 닫는다. (2) `idle_ttl_minutes`(기본 30)가 지난 워커는 `ask|spawn|status` 시작 때 닫는다. 수집 여부는 `.harness/asks/<role>.finished`(ask가 0/5로 끝나거나 `harness report`가 리포트를 돌려줄 때 만들고, ask가 시작되면 지운다)로 판단한다. 닫은 이유는 `.harness/asks/<role>.closed`에 남아 `ask --keep`이 이전 컨텍스트가 사라졌다는 안내를 출력한다. 모든 종료는 `progress.jsonl`의 `event: close` 줄(role, reason)로 기록되고 `progress.md`에는 최근 5개가 따로 한 줄로 나온다. `HARNESS_NO_AUTOCLOSE=1`이면 자동 종료가 꺼진다.
 
 ## Exit code
 
