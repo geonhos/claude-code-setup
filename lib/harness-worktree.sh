@@ -250,8 +250,17 @@ wt_patch() {
   return 0
 }
 
+# wt_record_stream — the raw stream lives in the main log dir: keep its absolute path in the registry,
+# `harness watch <ask-id>` needs it once the checkout is gone (every removal path goes through here)
+wt_record_stream() {
+  local g
+  [ -d "$ASK_WT" ] || return 0
+  g=$(hl_stream_of "$ASK_AGENT"); [ -z "$g" ] || wt_update stream "$g"
+}
+
 # wt_finalize — before any removal: keep the report, bring results back, patch other edits
 wt_finalize() {
+  wt_record_stream
   [ ! -f "$REPORT_DIR/$ASK_AGENT.md" ] || cp "$REPORT_DIR/$ASK_AGENT.md" "$WT_DIR/$ASK_ID.report.md" 2>/dev/null
   [ -d "$ASK_WT" ] || return 0
   wt_copy_back
@@ -350,6 +359,7 @@ close_wt() {
   fi
   if [ "$force" = 1 ]; then
     # discarding the checkout is the point of --force: keep the report and the .harness/*.md results only
+    wt_record_stream
     [ ! -f "$REPORT_DIR/$ASK_AGENT.md" ] || cp "$REPORT_DIR/$ASK_AGENT.md" "$WT_DIR/$ASK_ID.report.md" 2>/dev/null
     [ ! -d "$ASK_WT" ] || wt_copy_back
   else

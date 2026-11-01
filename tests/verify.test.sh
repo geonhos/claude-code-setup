@@ -301,6 +301,7 @@ check "stray: failing test blocks (config from real root)" [ "$(printf '%s' "$OU
 check "stray: state at real root" [ "$(jq -r .status "$R/.harness/verify/implementer.json")" = fail ]
 check "stray: no verify dir in stray" [ ! -e "$R/tests/.harness/verify" ]
 printf '%s' '{"test":"true"}' > "$R/.claude/harness.json"
+echo rep > "$R/.harness/reports/implementer.md"  # the worker rewrites the report after the block
 hvat "$R/tests" "$(stopat "$R/tests")" stop
 check "stray: marker at real root" [ -e "$R/.harness/done/implementer.ask3" ]
 check "stray: no done dir in stray" [ ! -e "$R/tests/.harness/done" ]
@@ -437,7 +438,7 @@ check "no jq mentions jq" grep -q jq <<<"$OUT"
 rm -rf "$JB"
 
 # --- done marker (Stop hook -> harness ask completion) --------------------------------
-doneset() { mkdir -p "$R/.harness/asks"; echo "ask1 100" > "$R/.harness/asks/implementer.current"; }
+doneset() { mkdir -p "$R/.harness/asks"; echo "ask1 100" > "$R/.harness/asks/implementer.current"; echo "[no-report]" > "$R/.harness/asks/implementer.prompt"; }
 stopj() { jq -n -c --arg c "$R" --argjson a "$1" '{hook_event_name:"Stop",agent_type:"implementer",session_id:"S1",cwd:$c,stop_hook_active:$a}'; }
 hvw() { local j=$1; shift; OUT=$(cd "$R" && printf '%s' "$j" | HARNESS_ROLE=worker /bin/bash "$VERIFY" "$@" 2>/dev/null); RC=$?; }
 marker() { [ -f "$R/.harness/done/implementer.ask1" ]; }
@@ -467,7 +468,7 @@ check "done: verify gave up at the cap: marker" marker
 newrepo; doneset
 hvw '{"agent_type":"analyst","session_id":"S2","cwd":"'"$R"'"}' done analyst
 check "done: analyst has no current ask -> no marker" [ ! -d "$R/.harness/done" ]
-echo "ask9 5" > "$R/.harness/asks/analyst.current"
+echo "ask9 5" > "$R/.harness/asks/analyst.current"; echo "[no-report]" > "$R/.harness/asks/analyst.prompt"
 hvw '{"agent_type":"analyst","session_id":"S2","cwd":"'"$R"'"}' done analyst
 check "done: analyst marker" [ -f "$R/.harness/done/analyst.ask9" ]
 echo '../x 5' > "$R/.harness/asks/analyst.current"
@@ -481,7 +482,7 @@ check "done: unknown role ignored" [ "$RC" -eq 0 ]
 newrepo; doneset; mkdir -p "$R/.harness/deep"
 hvw "$(jq -n -c --arg c "$R/.harness/deep" '{agent_type:"analyst",session_id:"S3",cwd:$c}')" done analyst
 check "done: subdir cwd, no analyst ask -> still no marker" [ ! -d "$R/.harness/done" ]
-echo "ask7 5" > "$R/.harness/asks/analyst.current"
+echo "ask7 5" > "$R/.harness/asks/analyst.current"; echo "[no-report]" > "$R/.harness/asks/analyst.prompt"
 hvw "$(jq -n -c --arg c "$R/.harness/deep" '{agent_type:"analyst",session_id:"S3",cwd:$c}')" done analyst
 check "done: subdir cwd writes marker at toplevel" [ -f "$R/.harness/done/analyst.ask7" ]
 check "done: no marker under subdir" [ ! -e "$R/.harness/deep/.harness" ]
@@ -614,6 +615,68 @@ for p in claude/agents/x.md AGENTS.md README.md; do
   hvin "$(stopjson)" stop
   check "non-docs $p: test ran" [ -s "$R/ran.out" ]
 done
+
+# --- report gate: a harness ask must end with a fresh report (2 blocks max) -----------
+rg_setup() { newrepo; mkdir -p "$R/.harness/asks" "$R/.harness/reports"; printf 'id1 100\n' > "$R/.harness/asks/implementer.current"; printf '%s\ndo it\n' "${1:-}" > "$R/.harness/asks/implementer.prompt"; }
+rg_setup
+hvin "$(stopjson)" stop
+check "report gate: missing report blocks" reason_grep -q 'reports/implementer.md'
+echo "# r" > "$R/.harness/reports/implementer.md"
+hvin "$(stopjson)" stop
+check "report gate: fresh report allowed" not_out_has '"block"'
+check "report gate: report kept" [ -f "$R/.harness/reports/implementer.md" ]
+rg_setup "[no-report]"
+hvin "$(stopjson)" stop
+check "report gate: [no-report] not blocked" not_out_has '"block"'
+rg_setup
+hvin "$(stopjson)" stop; b1=$OUT
+hvin "$(stopjson)" stop; b2=$OUT
+hvin "$(stopjson)" stop
+check "report gate: first stop blocks" [ -n "$b1" ]
+check "report gate: second stop blocks" [ -n "$b2" ]
+check "report gate: third stop not blocked" not_out_has '"block"'
+rg_setup
+echo old > "$R/.harness/reports/implementer.md"; touch -t 200001010000 "$R/.harness/reports/implementer.md"
+hvin "$(stopjson)" stop
+check "report gate: stale report blocks" reason_grep -q 'reports/implementer.md'
+
+# analyst / reviewer wire `done <role>`: the gate must run there too, counter per ask id
+for role in analyst reviewer; do
+  newrepo; mkdir -p "$R/.harness/asks" "$R/.harness/reports"
+  printf 'id1 100\n' > "$R/.harness/asks/$role.current"; printf 'look\n' > "$R/.harness/asks/$role.prompt"
+  dj=$(jq -n -c --arg c "$R" --arg a "$role" '{hook_event_name:"Stop",agent_type:$a,cwd:$c}')
+  hvin "$dj" done "$role"
+  check "report gate $role: missing report blocks" reason_grep -q "reports/$role.md"
+  echo "# r" > "$R/.harness/reports/$role.md"
+  hvin "$dj" done "$role"
+  check "report gate $role: written allowed" not_out_has '"block"'
+  rm -f "$R/.harness/reports/$role.md"
+  printf 'id2 200\n' > "$R/.harness/asks/$role.current"
+  hvin "$dj" done "$role"
+  check "report gate $role: counter per ask id" reason_grep -q "reports/$role.md"
+  hvin "$dj" done "$role"; hvin "$dj" done "$role"
+  check "report gate $role: capped at 2 blocks" not_out_has '"block"'
+done
+
+# [no-report] inside the brief an instruction points at, and inline
+rg_setup; mkdir -p "$R/.harness"; printf 'x\n[no-report]\n' > "$R/.harness/task-implementer.md"
+printf 'Read .harness/task-implementer.md and do it.\n' > "$R/.harness/asks/implementer.prompt"
+hvin "$(stopjson)" stop
+check "report gate: [no-report] in brief honoured" not_out_has '"block"'
+rg_setup; printf 'x\n' > "$R/.harness/task-implementer.md"
+printf 'Read .harness/task-implementer.md and do it.\n' > "$R/.harness/asks/implementer.prompt"
+hvin "$(stopjson)" stop
+check "report gate: brief without [no-report] blocks" reason_grep -q 'reports/implementer.md'
+
+# a brief that merely mentions the marker mid-sentence does not opt out
+rg_setup; printf 'never write [no-report] here\nmore [no-report] text\n' > "$R/.harness/task-implementer.md"
+printf 'Read .harness/task-implementer.md and do it.\n' > "$R/.harness/asks/implementer.prompt"
+hvin "$(stopjson)" stop
+check "report gate: brief mentioning [no-report] mid-sentence blocks" reason_grep -q 'reports/implementer.md'
+# nor does an instruction that mentions it mid-sentence (even on a later line)
+rg_setup; printf 'do it, do not use [no-report] here\n[no-report]x is not it\nsay [no-report]\n' > "$R/.harness/asks/implementer.prompt"
+hvin "$(stopjson)" stop
+check "report gate: instruction mentioning [no-report] mid-sentence blocks" reason_grep -q 'reports/implementer.md'
 
 echo "PASS $pass / FAIL $fail"
 [ "$fail" -eq 0 ]

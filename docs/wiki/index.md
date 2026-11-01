@@ -42,5 +42,5 @@ Read this first. Open a page only when it is relevant. Schema and promotion rule
 - [0007 Headless runner pilot](decisions/0007-headless-runner-pilot.md): `runner.<role>: headless` = `claude -p` in a viewer pane; completion = exit file (active, 2026-10-28)
 - [0008 Worktree per ask](decisions/0008-worktree-per-ask.md): `ask --worktree` gives a headless analyst/reviewer its own detached checkout; ask-id addressing (active, 2026-10-23)
 - [0009 Headless implementer](decisions/0009-headless-implementer.md): headless implementer: pinned permissions, exit 2 on denials, auto-resume after non-zero exit, 90 min cap (active, 2026-10-28)
-- [0010 Harness acts only in a checkout](decisions/0010-herdr-optional-gate-by-checkout.md): gate/route/resume key on .harness/asks (made by `harness init`); per-repo conductor agent; no HERDR_ENV switch (draft, 2026-10-30)
+- [0010 Harness acts only in a checkout](decisions/0010-herdr-optional-gate-by-checkout.md): gate/route/resume key on .harness/asks (made by `harness init`); per-repo conductor agent; no HERDR_ENV switch; `harness wait`/`watch` (active, 2026-11-01)
 - [0011 One runner: headless](decisions/0011-single-runner-headless.md): headless is the only runner; herdr is a viewer; prune plan steps 1-7 (active, 2026-11-01)

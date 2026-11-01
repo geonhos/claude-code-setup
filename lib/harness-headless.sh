@@ -304,10 +304,46 @@ hl_resume_missing() {
   [ -z "$raw" ] || grep -qi 'no conversation found' "$raw" 2>/dev/null
 }
 
+# hl_max_s <role> — the role's headless run cap in seconds: env, then config headless_max_minutes, then the default
+hl_max_s() {
+  local m=${HARNESS_HL_MAX_S:-}
+  digits_only "$m" && { echo "$m"; return 0; }
+  m=$(jq -r '.headless_max_minutes // empty' "$CONFIG_FILE" 2>/dev/null)
+  digits_only "$m" && { echo $((m * 60)); return 0; }
+  if [ "$1" = implementer ]; then echo "$HARNESS_HL_MAX_S_IMPLEMENTER_DEFAULT"; else echo "$HARNESS_HL_MAX_S_DEFAULT"; fi
+}
+
+# hl_clock_gap <prev-epoch> <now-epoch> <poll-s> — print the seconds to add to a deadline when the
+# wall clock jumped between two polls (laptop sleep): a gap above 5x the poll interval + 5 s counts as a
+# suspend; 0 otherwise. Pure arithmetic, so tests inject the timestamps.
+hl_clock_gap() {
+  awk -v p="$1" -v n="$2" -v i="${3:-2}" 'BEGIN { g = n - p; if (g > 5 * i + 5) printf "%d\n", g; else print 0 }'
+}
+# hl_deadline_bump <prev> <now> <poll> <deadline> [<cap-s> <deadline0>] — print the (possibly extended) deadline;
+# one stderr line when it moved. With a cap, one bump is at most <cap-s> and all bumps together at most
+# 2x<cap-s> over <deadline0> (the deadline before any bump), so a bogus clock jump cannot keep an ask alive forever.
+hl_deadline_bump() {
+  local g=0 cap=${5:-} d0=${6:-$4} room
+  g=$(hl_clock_gap "$1" "$2" "$3")
+  case "$cap" in ''|*[!0-9]*) cap=0 ;; esac
+  if [ "$g" -gt 0 ] && [ "$cap" -gt 0 ]; then
+    [ "$g" -le "$cap" ] || g=$cap
+    room=$((2 * cap - ($4 - d0)))
+    [ "$room" -gt 0 ] || room=0
+    [ "$g" -le "$room" ] || g=$room
+  fi
+  if [ "$g" -gt 0 ]; then
+    echo "harness: clock jumped ${g}s (sleep?); deadline extended" >&2
+    echo $(($4 + g))
+  else
+    echo "$4"
+  fi
+}
+
 # ask_headless <role> <text> <timeout-ms> <fresh> <keep> — the whole headless ask; always exits
 ask_headless() {
   local role=$1 text=$2 timeout=$3 fresh=$4 keep=$5 pane id start retried resume="" sid max_s ctxb="" report="$REPORT_DIR/$1.md" last
-  local a="$ASK_DIR/$role" now deadline poll=${HARNESS_POLL_SEC:-2} start_s=${HARNESS_HL_START_S:-15} s0 g
+  local a="$ASK_DIR/$role" now prev deadline dl0 poll=${HARNESS_POLL_SEC:-2} start_s=${HARNESS_HL_START_S:-15} s0 g
   mkdir -p "$ASK_DIR" .harness/done "$REPORT_DIR" "$LOG_DIR"
   if hl_alive "$role"; then
     echo "harness: $role is still running (pid $(hl_pid "$role")); nothing sent. Collect with: harness report $role; stop: harness close $role --force" >&2
@@ -353,12 +389,15 @@ ask_headless() {
   printf '%s %s\n' "$id" "$start" > "$a.current"
   rm -f "$a.finished" "$a.exit.json" "$a.pid"
   if [ "$role" = implementer ]; then verify_tool baseline implementer 2>/dev/null || rm -f .harness/verify/implementer.json; fi
-  max_s=${HARNESS_HL_MAX_S:-}
-  digits_only "$max_s" || { max_s=$(jq -r '.headless_max_minutes // empty' "$CONFIG_FILE" 2>/dev/null); digits_only "$max_s" && max_s=$((max_s * 60)) || { max_s=$HARNESS_HL_MAX_S_DEFAULT; [ "$role" != implementer ] || max_s=$HARNESS_HL_MAX_S_IMPLEMENTER_DEFAULT; }; }
+  max_s=$(hl_max_s "$role")
   printf '%s\n' "$text" > "$a.prompt"
   hl_launch "$role" "$id" "$pane" "$resume" "$max_s" "$ctxb" "$start_s" "$poll"
   pane=$HL_PANE   # a failed `pane run` under viewer auto fell back to the background
   deadline=$((start + (timeout + 999) / 1000))
+  # no --timeout: wait for the run to end (its cap plus a margin for the watchdog kill and exit.json), so a
+  # background `harness ask` returns exactly when the run does and the conductor's task notification fires
+  [ "${ASK_TIMEOUT_SET:-0}" = 1 ] || deadline=$((start + max_s + 30))
+  prev=$(date +%s); dl0=$deadline
   retried=0
   while :; do
     if hl_done "$role" "$id"; then
@@ -385,6 +424,7 @@ ask_headless() {
       exit 3
     fi
     now=$(date +%s)
+    deadline=$(hl_deadline_bump "$prev" "$now" "$poll" "$deadline" "$max_s" "$dl0"); prev=$now
     if [ "$now" -ge "$deadline" ]; then
       if [ "$role" = implementer ] && [ -f "$report.pending" ]; then
         # the Stop hook has hidden the report while it verifies; the run is never killed at the deadline
@@ -402,7 +442,7 @@ ask_headless() {
 report_headless() {
   local role=$1 report="$REPORT_DIR/$1.md"
   if hl_alive "$role"; then
-    echo "harness: $role is still running (pid $(hl_pid "$role")); wait, then run: harness report $(ask_ref "$role")" >&2
+    echo "harness: still running ($(( $(date +%s) - $(awk 'NR == 1 { print $2 }' "$ASK_DIR/$role.current" 2>/dev/null || echo 0) ))s); harness wait $(ask_ref "$role") blocks until done" >&2
     exit 4
   fi
   if [ ! -f "$ASK_DIR/$role.exit.json" ]; then
@@ -477,4 +517,119 @@ close_headless() {
     return 4
   fi
   hl_finish_close "$role" "$pane" "$reason"
+}
+
+# hl_target <cmd> <target> — resolve a role or a worktree ask-id for wait/watch: sets ASK_AGENT (and, for a
+# worktree ask, ASK_WT/ASK_DIR/... through wt_load); dies for an unknown target or a pane-mode role
+hl_target() {
+  local cmd=$1 t=$2 f
+  case " $AGENTS " in
+    *" $t "*) ASK_AGENT=$t ;;
+    *) f=$(wt_lookup "$t") || die "$cmd: unknown agent or ask-id '$t'"; wt_load "$f" ;;
+  esac
+  use_hl "$ASK_AGENT" || die "pane-mode role: use herdr agent wait"
+}
+# hl_starting <role> <id> — the run was just launched and has not written its pid file yet
+hl_starting() {
+  local a="$ASK_DIR/$1" st
+  grep -q "^$2 " "$a.pid" 2>/dev/null && return 1
+  st=$(awk -v i="$2" 'NR == 1 && $1 == i { print $2 }' "$a.current" 2>/dev/null)
+  digits_only "${st:-}" && [ $(( $(date +%s) - st )) -lt "${HARNESS_HL_START_S:-15}" ]
+}
+
+# cmd_wait <role|ask-id> [--timeout ms] — block until the target's run ends; never collects.
+# 0 done (exit.json carries the ask), 3 no ask / run gone without a result, 4 timeout.
+cmd_wait() {
+  local t=${1:-} timeout="" role id a start deadline dl0 max_s prev now g poll=${HARNESS_POLL_SEC:-2}
+  [ -n "$t" ] || usage
+  shift
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --timeout) case "${2:-}" in ''|*[!0-9]*|0) die "--timeout needs a number of milliseconds" ;; esac; timeout=$2; shift 2 ;;
+      *) usage ;;
+    esac
+  done
+  hl_target wait "$t"
+  role=$ASK_AGENT; a="$ASK_DIR/$role"
+  if [ -n "$ASK_WT" ] && [ ! -d "$ASK_WT" ]; then
+    [ -f "$WT_DIR/$ASK_ID.report.md" ] && { echo "done; collect: harness report $ASK_ID"; exit 0; }
+    echo "harness: worktree of $ASK_ID is gone and no report was saved" >&2; exit 3
+  fi
+  id=$(awk 'NR == 1 { print $1 }' "$a.current" 2>/dev/null)
+  [ -n "$id" ] || { echo "harness: no ask for $role" >&2; exit 3; }
+  [ -n "$timeout" ] || timeout=$(( $(hl_max_s "$role") * 1000 ))
+  start=$(date +%s); deadline=$((start + (timeout + 999) / 1000)); prev=$start; dl0=$deadline; max_s=$(hl_max_s "$role")
+  while :; do
+    if hl_done "$role" "$id"; then echo "done; collect: harness report $(ask_ref "$role")"; exit 0; fi
+    if ! hl_alive "$role" && ! hl_starting "$role" "$id"; then
+      # the runner may still be writing exit.json as its pid disappears: the same ~3 s grace as ask
+      g=0; while [ "$g" -lt 30 ] && ! hl_done "$role" "$id"; do sleep 0.1; g=$((g + 1)); done
+      if hl_done "$role" "$id"; then continue; fi
+      echo "harness: $role's run is gone without a result (killed?); harness report $(ask_ref "$role") explains" >&2
+      exit 3
+    fi
+    now=$(date +%s)
+    deadline=$(hl_deadline_bump "$prev" "$now" "$poll" "$deadline" "$max_s" "$dl0"); prev=$now
+    if [ "$now" -ge "$deadline" ]; then
+      echo "harness: $role is still running ($((now - start))s waited); harness wait $(ask_ref "$role") again, or harness close $(ask_ref "$role") --force" >&2
+      exit 4
+    fi
+    sleep "$poll"
+  done
+}
+
+# hl_stream_of <role> — the raw stream of the role's current/last run (empty when unknown): .stream when its
+# id is the current ask, else exit.json's stream_log; a rotated stream is <raw>.gz
+hl_stream_of() {
+  local a="$ASK_DIR/$1" raw cur
+  cur=$(awk 'NR == 1 { print $1 }' "$a.current" 2>/dev/null)
+  raw=$(awk -v i="$cur" 'NR == 1 && $1 == i { print $2 }' "$a.stream" 2>/dev/null)
+  [ -n "$raw" ] || raw=$(jq -r '.stream_log // empty' "$a.exit.json" 2>/dev/null)
+  [ -n "$raw" ] || raw=$(awk 'NR == 1 { print $2 }' "$a.stream" 2>/dev/null)
+  printf '%s' "$raw"
+}
+
+hl_stream_id() { awk 'NR == 1 { print $1 }' "$ASK_DIR/$1.stream" 2>/dev/null; }
+
+# cmd_watch <role|ask-id> [-n N] — human only: follow a live run's rendered stream, or print the last N
+# (default 40) rendered lines of a finished one. 0 ok, 1 refused (not a tty), 3 no stream known.
+cmd_watch() {
+  local t=${1:-} n=40 role raw tp vp i fifo id
+  [ -n "$t" ] || usage
+  shift
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      -n) case "${2:-}" in ''|*[!0-9]*) die "-n needs a number of lines" ;; esac; n=$2; shift 2 ;;
+      *) usage ;;
+    esac
+  done
+  [ -t 1 ] || die "watch is for a human terminal; the conductor reads the report"
+  hl_target watch "$t"
+  role=$ASK_AGENT
+  id=$(awk 'NR == 1 { print $1 }' "$ASK_DIR/$role.current" 2>/dev/null)
+  raw=$(hl_stream_of "$role"); i=0
+  # a run that is still starting has not announced its stream yet: give it a few seconds
+  while [ "$(hl_stream_id "$role")" != "$id" ] && [ "$i" -lt 100 ] && { hl_alive "$role" || hl_starting "$role" "$id"; }; do
+    sleep 0.2; i=$((i + 1)); raw=$(hl_stream_of "$role")
+  done
+  # a worktree ask whose checkout is gone: the registry kept the absolute stream path
+  [ -n "$raw" ] || [ -z "$ASK_WT" ] || raw=$(jq -r '.stream // empty' "$WT_DIR/$ASK_ID.json" 2>/dev/null)
+  if [ -z "$raw" ]; then echo "harness: no stream known for $t" >&2; exit 3; fi
+  if ! hl_alive "$role"; then
+    if [ -f "$raw" ]; then harness-view < "$raw" | tail -n "$n"
+    elif [ -f "$raw.gz" ]; then gzip -dc "$raw.gz" | harness-view | tail -n "$n"
+    else echo "harness: stream $raw is gone" >&2; exit 3; fi
+    exit 0
+  fi
+  # live: tail -F into harness-view through a fifo (BSD tail has no --pid, so the tail's pid is kept to kill it)
+  fifo=$(mktemp -u "${TMPDIR:-/tmp}/harness-watch.XXXXXX") && mkfifo "$fifo" || die "watch: cannot make a fifo"
+  tail -n +1 -F "$raw" > "$fifo" 2>/dev/null & tp=$!
+  harness-view < "$fifo" & vp=$!
+  trap 'kill "$tp" "$vp" 2>/dev/null; rm -f "$fifo"; exit 130' INT TERM
+  while hl_alive "$role" && ! hl_done "$role" "$id"; do sleep 0.5; done
+  sleep 1   # drain what the run printed last
+  kill "$tp" 2>/dev/null
+  wait "$vp" 2>/dev/null
+  rm -f "$fifo"
+  exit 0
 }

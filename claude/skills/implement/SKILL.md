@@ -22,13 +22,13 @@ change yourself (`harness ask` refuses to run in a worker session anyway).
      attribution lines given in this conversation), and whether to push.
      Say "do not commit" when unsure.
    - **Report**: files touched, how it verified, the commit hash.
-2. Run, with the Bash tool timeout raised to 1800000 or in the background:
+2. Run with the Bash tool's `run_in_background: true` **and** `timeout: 7200000` (the Bash tool's maximum; without it the call is killed at the tool's default timeout, long before the 60-90 min wait ends) (the task notification wakes you when the run ends):
 
    ```
    harness ask implementer 'Read .harness/task-implementer.md and do it.' --via skill
    ```
 
-   Why: harness waits 1740000 ms (29 min) for the implementer by default (p95 is above the 600000 analyst/reviewer wait), so no `--timeout` is needed; the Bash foreground cap is 1800000, which must be raised to cover it.
+   Why: harness waits for the run to end by default (5400000 ms, the implementer's run cap; analyst/reviewer 3600000), so no `--timeout` is needed and no polling loop. After a restart or compaction use `harness wait implementer` (background, `timeout: 7200000`), then `harness report implementer`.
 
    Use `--keep` only for a follow-up that needs its previous conversation. The implementer runs headless by default: no `/clear`, a fresh session starts every ask, except that an implementer whose last ask exited non-zero resumes its session automatically (`--fresh` starts clean). Exit 2 means a tool call was denied and no report was written: re-ask with a changed brief. (Legacy `runner: pane`: the implementer pane is kept between asks and cleared with /clear, decision 0006.)
 3. Handle the exit code as conductor.md's "Exit codes from `harness ask`"

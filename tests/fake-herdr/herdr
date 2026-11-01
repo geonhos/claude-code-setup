@@ -142,6 +142,8 @@ case "$sub" in
       idle|done)
         if [ ! -f "$FAKE_DIR/no_stop_hook" ]; then
           role=${name%-*}
+          # pane asks write no .prompt; the fake worker ends without a report on purpose, so opt out of the report gate
+          if [ -f .harness/asks/$role.current ] && [ ! -f .harness/asks/$role.prompt ]; then echo "[no-report]" > .harness/asks/$role.prompt; fi
           printf '{"hook_event_name":"Stop","session_id":"sess-%s","agent_type":"%s","cwd":"%s","stop_hook_active":false}' "$role" "$role" "$PWD" \
             | HARNESS_ROLE=worker /bin/bash "$(dirname "$0")/../../bin/harness-verify" done "$role"
         fi ;;

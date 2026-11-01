@@ -135,7 +135,7 @@ export FAKE_PROMPT_HOOK="mkdir -p $WORK/.harness/reports && printf '# analyst re
 run ask analyst "Describe the repo"
 check "ask rc" [ "$RC" -eq 0 ]
 check "ask spawns first" logged "agent start $(WN analyst)"
-check "ask prompts with wait" logged "agent prompt $(WN analyst) Describe\\ the\\ repo --wait --timeout 600000"
+check "ask prompts with wait" logged "agent prompt $(WN analyst) Describe\\ the\\ repo --wait --timeout 3600000"
 check "ask prints report" grep -q "status: done" <<<"$OUT"
 OUT=$(HERDR_ENV=1 HERDR_PANE_ID=w1:p1 PATH="$FAKE_BIN:$PATH" $GUARD env -u HARNESS_ROLE /bin/bash "$HARNESS" ask analyst "again" 2>/dev/null); RC=$?
 check "ask stdout is exactly the report" [ "$OUT" = "$(printf '# analyst report\nstatus: done')" ]
@@ -175,16 +175,16 @@ run ask implementer "do it" --timeout 1000
 check "ask reuse: no spawn" not_logged "agent start"
 check "ask custom timeout" logged "--wait --timeout 1000"
 check "ask stale report replaced" [ "$OUT" = "NEW" ]
-# role-aware default timeout: implementer 1740000, reviewer 600000, explicit wins
+# role-aware default timeout = the role's headless cap: implementer 5400000, reviewer 3600000, explicit wins
 : > "$FAKE_LOG"
 run ask implementer "do it"
-check "default timeout: implementer 1740000" logged "--wait --timeout 1740000"
+check "default timeout: implementer 5400000" logged "--wait --timeout 5400000"
 : > "$FAKE_LOG"
 echo idle > "$FAKE_DIR/live.$(WN reviewer)"
 export FAKE_PROMPT_HOOK="mkdir -p $WORK/.harness/reports && printf 'R\n' > $WORK/.harness/reports/reviewer.md"
 run ask reviewer "review"
-check "default timeout: reviewer 600000" logged "--wait --timeout 600000"
-check "default timeout: reviewer not 1740000" not_logged "--timeout 1740000"
+check "default timeout: reviewer 3600000" logged "--wait --timeout 3600000"
+check "default timeout: reviewer not 5400000" not_logged "--timeout 5400000"
 unset FAKE_PROMPT_HOOK
 
 # --- ask: blocked before prompt --------------------------------------------------
@@ -554,7 +554,7 @@ setup; gitwork
 echo idle > "$FAKE_DIR/live.$(WN implementer)"
 mkdir -p .claude; echo '{"test":"exit 1","maxAttempts":1}' > .claude/harness.json
 printf 'fake/\nherdr.log\n' > .gitignore   # harness noise must not count as changes
-STOPJ="printf '{\"agent_type\":\"implementer\",\"cwd\":\"$WORK\"}' | harness-verify stop >/dev/null"
+STOPJ="mkdir -p $WORK/.harness/reports; printf '# r\nstatus: partial\n' > $WORK/.harness/reports/implementer.md; printf '{\"agent_type\":\"implementer\",\"cwd\":\"$WORK\"}' | harness-verify stop >/dev/null"
 export FAKE_PROMPT_HOOK="echo c > $WORK/new.txt; $STOPJ; $STOPJ; mkdir -p $WORK/.harness/reports; printf '# r\nstatus: partial\n' > $WORK/.harness/reports/implementer.md"
 run ask implementer "do it"
 check "refail: first ask exit 5" [ "$RC" -eq 5 ]
@@ -663,8 +663,8 @@ T_DEF=$(dv HARNESS_DEFAULT_TIMEOUT_MS); T_IMPL=$(dv HARNESS_IMPLEMENTER_TIMEOUT_
 for f in claude/agents/conductor.md claude/skills/implement/SKILL.md; do
   check "$f quotes the default timeouts" bash -c 'grep -q "$2" "$1" && grep -q "$3" "$1"' _ "$HERE/../$f" "$T_DEF" "$T_IMPL"
 done
-check "conductor.md Bash caps sit just above the defaults" bash -c 'grep -q "timeout $(($1 + 60000))" "$3" && grep -q "timeout $(($2 + 60000))" "$3"' _ "$T_DEF" "$T_IMPL" "$HERE/../claude/agents/conductor.md"
-check "no stray 6-8 digit number in conductor.md/implement skill" bash -c '! grep -ohE "\b[0-9]{6,8}\b" "$1" "$2" | grep -vxE "$3|$4|$5|$6"' _ "$HERE/../claude/agents/conductor.md" "$HERE/../claude/skills/implement/SKILL.md" "$T_IMPL" "$(($T_IMPL + 60000))" "$T_DEF" "$(($T_DEF + 60000))"
+check "default ask timeouts equal the headless caps (ms)" bash -c '[ "$1" = $(($3 * 1000)) ] && [ "$2" = $(($4 * 1000)) ]' _ "$T_DEF" "$T_IMPL" "$(dv HARNESS_HL_MAX_S_DEFAULT)" "$(dv HARNESS_HL_MAX_S_IMPLEMENTER_DEFAULT)"
+check "no stray 6-8 digit number in conductor.md/implement skill" bash -c '! grep -ohE "\b[0-9]{6,8}\b" "$1" "$2" | grep -vxE "$3|$4|7200000"' _ "$HERE/../claude/agents/conductor.md" "$HERE/../claude/skills/implement/SKILL.md" "$T_IMPL" "$T_DEF"
 check "header comment quotes the default timeouts" bash -c 'sed -n 1,15p "$1" | grep -q "implementer $2" && sed -n 1,15p "$1" | grep -q "analyst/reviewer $3"' _ "$HARNESS" "$T_IMPL" "$T_DEF"
 OUT=$(HERDR_ENV=1 PATH="$FAKE_BIN:$PATH" /bin/bash "$HARNESS" 2>&1)
 check "usage text prints the default timeouts" bash -c 'grep -q "implementer $2" <<<"$1" && grep -q "others $3" <<<"$1"' _ "$OUT" "$T_IMPL" "$T_DEF"

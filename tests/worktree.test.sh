@@ -527,5 +527,17 @@ hrun ask analyst "q28b" --worktree
 id=$(ask_id); path=$(jq -r .path ".harness/wt/$id.json")
 check "real commit: still kept" [ -d "$path" ]
 
+# 20. an ask killed, then `harness close`: the registry kept the stream path, `watch <ask-id>` still renders
+wsetup; export FAKE_CLAUDE_MODE=hang
+( hrun ask analyst "q20" --worktree --timeout 60000; echo "$RC" > "$WORK/a.rc" ) &
+wait_pid 1
+id=$(basename "$(ls .harness/wt/*.json | head -n 1)" .json)
+hrun close "$id" --force
+check "close-then-watch: closed, checkout gone" bash -c '[ "$1" = 0 ] && [ "$2" = 0 ]' _ "$RC" "$(wt_dirs)"
+check "close-then-watch: registry has an absolute stream path" jqt '(.stream // "") | startswith("/")' ".harness/wt/$id.json"
+wait
+OUT=$(env -u HERDR_ENV -u HERDR_PANE_ID -u HARNESS_ROLE NO_COLOR=1 PATH="$FAKE_BIN:$FAKE_CLAUDE:$HERE/../bin:$PATH" perl -e 'alarm(25);exec(@ARGV)' script -q /dev/null /bin/bash "$HARNESS" watch "$id" 2>&1 </dev/null | tr -d '\r')
+check "close-then-watch: watch <ask-id> renders the stream" bash -c '! grep -q "no stream known" <<<"$1" && grep -q . <<<"$1"' _ "$OUT"
+
 echo "PASS $pass / FAIL $fail"
 [ "$fail" -eq 0 ]

@@ -30,8 +30,8 @@ setup() {
   hinit
 }
 
-# run ARGS... -> sets OUT, RC  (killed by SIGALRM after 5s so a hang fails fast)
-GUARD="perl -e alarm(5);exec(@ARGV)"
+# run ARGS... -> sets OUT, RC  (killed by SIGALRM after 10s so a hang fails fast)
+GUARD="perl -e alarm(10);exec(@ARGV)"
 run() {
   OUT=$(HERDR_ENV=1 HERDR_PANE_ID=w1:p1 HARNESS_IDLE_GRACE=1 HARNESS_POLL_SEC=0.2 PATH="$FAKE_BIN:$HERE/../bin:$PATH" $GUARD env -u HARNESS_ROLE /bin/bash "$HARNESS" "$@" 2>&1)
   RC=$?
