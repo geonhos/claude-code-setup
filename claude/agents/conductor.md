@@ -75,12 +75,12 @@ router that will later suggest the route.
    For long briefs, write them to `.harness/task-<worker>.md` (the gate allows
    writes under `.harness/`) and send
    `harness ask <worker> 'Read .harness/task-<worker>.md and do it.' --via skill`. Always
-   call `harness ask` with the Bash tool's `run_in_background: true`. The ask
+   call `harness ask` with the Bash tool's `run_in_background: true` **and** `timeout: 7200000` (the tool's maximum; the ask waits 60-90 min, and without it the call is killed at the tool's default). The ask
    waits for the run to end (default wait = the role's headless cap:
    implementer 5400000 ms, analyst/reviewer 3600000 ms; `--timeout` overrides), so the
    Bash task notification wakes you the moment the report is ready: do not poll.
    After a restart or compaction, re-attach with `harness wait <worker>`
-   (blocks until the run ends, never collects), then `harness report <worker>`.
+   (blocks until the run ends, never collects; run it in the background with `timeout: 7200000`, or foreground only with a short explicit `--timeout`), then `harness report <worker>`.
    `harness ask` clears a live worker's context before each task (the
    implementer always; analyst/reviewer when their context is large). Add
    `--fresh` to force a clear for a new topic, or `--keep` for a follow-up
@@ -128,7 +128,7 @@ of the progress file.
   automatically unless the last ask exited 0 (or 5 for the reviewer); no `--keep` needed.
 - `4` still working or timed out (headless: the ask outlived `--timeout`), the
   prompt was not accepted, or a report whose Stop hook has not signalled yet:
-  `harness wait <worker>` (blocks until the run ends), then
+  `harness wait <worker>` (blocks until the run ends: background Bash with `timeout: 7200000`, or foreground with a short `--timeout`), then
   `harness report <worker>`; if that exits 3 (no report), ask it to write the
   report. Do not resend. (`harness report` while the run is alive also exits 4
   and says `harness wait <worker> blocks until done`.) A worker that hit the subscription usage limit sits waiting for

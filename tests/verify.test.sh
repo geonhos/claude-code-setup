@@ -468,7 +468,7 @@ check "done: verify gave up at the cap: marker" marker
 newrepo; doneset
 hvw '{"agent_type":"analyst","session_id":"S2","cwd":"'"$R"'"}' done analyst
 check "done: analyst has no current ask -> no marker" [ ! -d "$R/.harness/done" ]
-echo "ask9 5" > "$R/.harness/asks/analyst.current"
+echo "ask9 5" > "$R/.harness/asks/analyst.current"; echo "[no-report]" > "$R/.harness/asks/analyst.prompt"
 hvw '{"agent_type":"analyst","session_id":"S2","cwd":"'"$R"'"}' done analyst
 check "done: analyst marker" [ -f "$R/.harness/done/analyst.ask9" ]
 echo '../x 5' > "$R/.harness/asks/analyst.current"
@@ -482,7 +482,7 @@ check "done: unknown role ignored" [ "$RC" -eq 0 ]
 newrepo; doneset; mkdir -p "$R/.harness/deep"
 hvw "$(jq -n -c --arg c "$R/.harness/deep" '{agent_type:"analyst",session_id:"S3",cwd:$c}')" done analyst
 check "done: subdir cwd, no analyst ask -> still no marker" [ ! -d "$R/.harness/done" ]
-echo "ask7 5" > "$R/.harness/asks/analyst.current"
+echo "ask7 5" > "$R/.harness/asks/analyst.current"; echo "[no-report]" > "$R/.harness/asks/analyst.prompt"
 hvw "$(jq -n -c --arg c "$R/.harness/deep" '{agent_type:"analyst",session_id:"S3",cwd:$c}')" done analyst
 check "done: subdir cwd writes marker at toplevel" [ -f "$R/.harness/done/analyst.ask7" ]
 check "done: no marker under subdir" [ ! -e "$R/.harness/deep/.harness" ]
@@ -632,12 +632,40 @@ rg_setup
 hvin "$(stopjson)" stop; b1=$OUT
 hvin "$(stopjson)" stop; b2=$OUT
 hvin "$(stopjson)" stop
-check "report gate: first two stops block" [ -n "$b1$b2" ]
+check "report gate: first two stops block" [ -n "$b1" ] && [ -n "$b2" ]
 check "report gate: third stop not blocked" not_out_has '"block"'
 rg_setup
 echo old > "$R/.harness/reports/implementer.md"; touch -t 200001010000 "$R/.harness/reports/implementer.md"
 hvin "$(stopjson)" stop
 check "report gate: stale report blocks" reason_grep -q 'reports/implementer.md'
+
+# analyst / reviewer wire `done <role>`: the gate must run there too, counter per ask id
+for role in analyst reviewer; do
+  newrepo; mkdir -p "$R/.harness/asks" "$R/.harness/reports"
+  printf 'id1 100\n' > "$R/.harness/asks/$role.current"; printf 'look\n' > "$R/.harness/asks/$role.prompt"
+  dj=$(jq -n -c --arg c "$R" --arg a "$role" '{hook_event_name:"Stop",agent_type:$a,cwd:$c}')
+  hvin "$dj" done "$role"
+  check "report gate $role: missing report blocks" reason_grep -q "reports/$role.md"
+  echo "# r" > "$R/.harness/reports/$role.md"
+  hvin "$dj" done "$role"
+  check "report gate $role: written allowed" not_out_has '"block"'
+  rm -f "$R/.harness/reports/$role.md"
+  printf 'id2 200\n' > "$R/.harness/asks/$role.current"
+  hvin "$dj" done "$role"
+  check "report gate $role: counter per ask id" reason_grep -q "reports/$role.md"
+  hvin "$dj" done "$role"; hvin "$dj" done "$role"
+  check "report gate $role: capped at 2 blocks" not_out_has '"block"'
+done
+
+# [no-report] inside the brief an instruction points at, and inline
+rg_setup; mkdir -p "$R/.harness"; printf 'x\n[no-report]\n' > "$R/.harness/task-implementer.md"
+printf 'Read .harness/task-implementer.md and do it.\n' > "$R/.harness/asks/implementer.prompt"
+hvin "$(stopjson)" stop
+check "report gate: [no-report] in brief honoured" not_out_has '"block"'
+rg_setup; printf 'x\n' > "$R/.harness/task-implementer.md"
+printf 'Read .harness/task-implementer.md and do it.\n' > "$R/.harness/asks/implementer.prompt"
+hvin "$(stopjson)" stop
+check "report gate: brief without [no-report] blocks" reason_grep -q 'reports/implementer.md'
 
 echo "PASS $pass / FAIL $fail"
 [ "$fail" -eq 0 ]

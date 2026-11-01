@@ -305,6 +305,8 @@ wt_after_ask() {
     while [ "$g" -lt 30 ] && wt_run_alive "$ASK_WT" "$role"; do sleep 0.1; g=$((g + 1)); done
   fi
   if wt_run_alive "$ASK_WT" "$role"; then wt_update state running; return 0; fi
+  # the raw stream lives in the main log dir: record its absolute path, `harness watch` needs it once the checkout is gone
+  g=$(hl_stream_of "$role"); [ -z "$g" ] || wt_update stream "$g"
   wt_finalize
   case "$rc" in
     0|5)

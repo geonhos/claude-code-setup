@@ -206,7 +206,7 @@ jq --arg gate "$GATE" --arg matcher "$MATCHER" --arg resume "$RESUME" --arg rout
   | .subagentPromptCacheTtl = "1h"
   | .env //= {}
   | .env.BASH_DEFAULT_TIMEOUT_MS = "600000"
-  | .env.BASH_MAX_TIMEOUT_MS = "1800000"
+  | .env.BASH_MAX_TIMEOUT_MS = "7200000"
   | .hooks //= {}
   | .hooks.PreToolUse //= []
   # strip our gate from every entry; drop entries left empty; re-append one canonical entry
@@ -245,7 +245,7 @@ installed:
   settings       $SETTINGS (backup: $bak)
   agent          not set globally; 'harness init' in a repo writes .claude/settings.json agent=conductor
   cache TTL      promptCacheTtl=1h subagentPromptCacheTtl=1h
-  bash timeouts  env.BASH_DEFAULT_TIMEOUT_MS=600000 env.BASH_MAX_TIMEOUT_MS=1800000
+  bash timeouts  env.BASH_DEFAULT_TIMEOUT_MS=600000 env.BASH_MAX_TIMEOUT_MS=7200000
   gitignore      $GIT_IGNORE (+ .harness/)
 next: run "harness init" in a repo to opt it in, then start Claude there. Past pollution (stray .harness/ dirs): "harness doctor --fix"
 EOF

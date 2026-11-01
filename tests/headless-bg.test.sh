@@ -169,6 +169,15 @@ check "on_success: .session gone" [ ! -e .harness/asks/analyst.session ]
 check "on_success: close event pane - reason after_ask" grep -q '"event":"close".*"pane":"-".*"reason":"after_ask"' .harness/progress.jsonl
 check "on_success: herdr never called" no_herdr_calls
 
+tty_run() {
+  env -u HERDR_ENV -u HERDR_PANE_ID -u HERDR_SOCKET_PATH -u HARNESS_ROLE NO_COLOR=1 \
+    NOHERDR_CALLS="$WORK/herdr.calls" HARNESS_POLL_SEC=0.2 HARNESS_HL_START_S=10 \
+    PATH="$NOHERDR:$FAKE_CLAUDE:$HERE/../bin:$PATH" perl -e 'alarm($ENV{HRUN_ALARM_S} || 60);exec(@ARGV)' \
+    script -q /dev/null /bin/bash "$HARNESS" "$@" >"$WORK/tty.out" 2>&1 </dev/null
+  RC=$?
+  OUT=$(tr -d '\r' <"$WORK/tty.out")
+}
+
 # 10. a --worktree ask runs in the background without herdr
 bsetup
 git init -q . && git config user.email t@t && git config user.name t
@@ -183,6 +192,11 @@ check "worktree bg: report printed" grep -q "analyst report" <<<"$OUT"
 check "worktree bg: herdr never called" no_herdr_calls
 check "worktree bg: checkout removed" [ "$(git worktree list | wc -l | tr -d ' ')" = 1 ]
 check "worktree bg: registry pane empty" bash -c 'for f in .harness/wt/*.json; do [ -e "$f" ] || exit 1; jq -e "(.pane // \"\") == \"\"" "$f" >/dev/null || exit 1; done'
+WTID=$(jq -r .id .harness/wt/*.json | head -n 1)
+nrun wait "$WTID"
+check "worktree wait <ask-id>: rc 0 after the checkout is gone" bash -c '[ "$1" = 0 ] && grep -q "^done; collect" <<<"$2"' _ "$RC" "$OUT"
+tty_run watch "$WTID"
+check "worktree watch <ask-id> after removal: still renders the stream" bash -c '[ "$1" = 0 ] && grep -q "■ success" <<<"$2"' _ "$RC" "$OUT"
 unset HARNESS_WT_ROOT HARNESS_NO_AUTOCLOSE
 
 # no-perl fallback launcher still runs the ask
@@ -237,13 +251,6 @@ nrun ask analyst "q14"
 check "watch: setup ask ok" [ "$RC" -eq 0 ]
 nrun watch analyst
 check "watch without a tty: refused rc 1" bash -c '[ "$1" = 1 ] && grep -q "human terminal" <<<"$2"' _ "$RC" "$OUT"
-tty_run() {
-  OUT=$(env -u HERDR_ENV -u HERDR_PANE_ID -u HERDR_SOCKET_PATH -u HARNESS_ROLE NO_COLOR=1 \
-    NOHERDR_CALLS="$WORK/herdr.calls" HARNESS_POLL_SEC=0.2 HARNESS_HL_START_S=10 \
-    PATH="$NOHERDR:$FAKE_CLAUDE:$HERE/../bin:$PATH" perl -e 'alarm($ENV{HRUN_ALARM_S} || 60);exec(@ARGV)' \
-    script -q /dev/null /bin/bash "$HARNESS" "$@" 2>&1 </dev/null | tr -d '\r')
-  RC=${PIPESTATUS[0]}
-}
 tty_run watch analyst
 check "watch finished (tty): rendered lines" bash -c 'grep -q "▶ fake-model" <<<"$1" && grep -q "■ success" <<<"$1" && grep -q "→ Bash echo hi" <<<"$1"' _ "$OUT"
 tty_run watch analyst -n 1
@@ -268,6 +275,10 @@ gapchk() { /bin/bash -c "$HL_SRC"'
   [ "$(hl_deadline_bump 100 102 2 500 2>&1)" = 500 ] || exit 5
   [ "$(hl_deadline_bump 100 1000 2 1500 2>/dev/null)" = 2400 ] || exit 6
   hl_deadline_bump 100 1000 2 1500 2>&1 >/dev/null | grep -q "clock jumped 900s (sleep?); deadline extended" || exit 7
+  [ "$(hl_deadline_bump 100 1000 2 1500 300 1500 2>/dev/null)" = 1800 ] || exit 8
+  [ "$(hl_deadline_bump 100 1000 2 2400 500 1500 2>/dev/null)" = 2500 ] || exit 9
+  [ "$(hl_deadline_bump 100 1000 2 2100 300 1500 2>/dev/null)" = 2100 ] || exit 10
+  hl_deadline_bump 100 1000 2 1500 300 1500 2>&1 >/dev/null | grep -q "clock jumped 300s" || exit 11
   exit 0'; }
 gapchk; grc=$?
 OUT="gap helper rc $grc"

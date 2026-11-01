@@ -507,7 +507,7 @@ case "$TOOL" in
     case "$GP" in .harness|.harness/*|docs|docs/*) ;; *) deny "$MSG_READ" ;; esac ;;
   Bash)
     BCMD=$(field command)
-    printf '%s' "$BCMD" | grep -Eq '^[[:space:]]*harness[[:space:]]+watch([[:space:]]|$)' && deny "$MSG_WATCH"
+    printf '%s' "$BCMD" | grep -Eq '^[[:space:]]*harness[[:space:]]+["'"'"']?watch["'"'"']?([[:space:]]|$)' && deny "$MSG_WATCH"
     bash_ok "$BCMD" || deny "$MSG_BASH" ;;
 esac
 

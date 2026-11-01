@@ -61,7 +61,7 @@ check "gate matcher" jq -e --arg g "$GATE" '.hooks.PreToolUse[] | select(.hooks[
 check "promptCacheTtl" [ "$(jq -r .promptCacheTtl "$S")" = 1h ]
 check "subagentPromptCacheTtl" [ "$(jq -r .subagentPromptCacheTtl "$S")" = 1h ]
 check "BASH_DEFAULT_TIMEOUT_MS" [ "$(jq -r .env.BASH_DEFAULT_TIMEOUT_MS "$S")" = 600000 ]
-check "BASH_MAX_TIMEOUT_MS" [ "$(jq -r .env.BASH_MAX_TIMEOUT_MS "$S")" = 1800000 ]
+check "BASH_MAX_TIMEOUT_MS" [ "$(jq -r .env.BASH_MAX_TIMEOUT_MS "$S")" = 7200000 ]
 check "env.FOO preserved" [ "$(jq -r .env.FOO "$S")" = bar ]
 check "backup created" ls "$CLAUDE_DIR"/settings.json.bak.* >/dev/null 2>&1
 
@@ -101,7 +101,7 @@ check "global gitignore keeps old lines" grep -qx 'node_modules/' "$GIT_IGNORE"
 # second run: idempotent
 run_install
 check "second run rc" [ "$RC" -eq 0 ]
-check "env still preserved after rerun" [ "$(jq -c '.env' "$S")" = '{"FOO":"bar","BASH_DEFAULT_TIMEOUT_MS":"600000","BASH_MAX_TIMEOUT_MS":"1800000"}' ]
+check "env still preserved after rerun" [ "$(jq -c '.env' "$S")" = '{"FOO":"bar","BASH_DEFAULT_TIMEOUT_MS":"600000","BASH_MAX_TIMEOUT_MS":"7200000"}' ]
 check "gate hook still once" [ "$(jq --arg g "$GATE" '[.hooks.PreToolUse[] | select(.hooks[] | .command==$g)] | length' "$S")" -eq 1 ]
 check "other hook still once" [ "$(jq '[.hooks.PreToolUse[] | select(.hooks[] | .command=="/opt/other-hook.sh")] | length' "$S")" -eq 1 ]
 check "other agent still kept after rerun" [ "$(jq -r .agent "$S")" = something ]
