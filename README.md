@@ -1,6 +1,6 @@
-# claude-code-setup: herdr conductor
+# claude-code-setup: conductor
 
-메인 세션(Fable)을 **conductor(지휘 세션)** 로 쓰는 사용자 단위 Claude Code 설정. 평범한 질의는 conductor가 직접 답하고, 소스를 읽거나 고치거나 검증해야 하는 일은 `/analyze` `/implement` `/review` 스킬로 [herdr](https://herdr.dev) 패널에서 도는 Claude 워커에게 맡긴다. conductor는 워커 리포트만 읽는다.
+메인 세션(Fable)을 **conductor(지휘 세션)** 로 쓰는 사용자 단위 Claude Code 설정. 평범한 질의는 conductor가 직접 답하고, 소스를 읽거나 고치거나 검증해야 하는 일은 `/analyze` `/implement` `/review` 스킬로 백그라운드에서 도는 headless Claude 워커(`claude -p`)에게 맡긴다. [herdr](https://herdr.dev)는 선택 사항이고 워커 화면을 보여 주는 viewer일 뿐이다. conductor는 워커 리포트만 읽는다.
 아키텍처 다이어그램은 [docs/architecture.md](docs/architecture.md)에 있다.
 
 이렇게 하는 이유: Fable 토큰이 비싸다. conductor는 소스를 컨텍스트에 올리지 않고, 워커(`analyst` opus · `implementer` sonnet · `reviewer` opus)가 일을 한다. analyst와 implementer는 프로젝트 메모리를 가져서 코드베이스를 매번 다시 파악하지 않는다. reviewer는 일부러 메모리를 두지 않는다. 리뷰마다 선입견 없이 시작하게 하려는 것이다.
@@ -8,7 +8,8 @@
 ## 요구 사항
 
 - macOS, `/bin/bash` 3.2면 충분
-- `jq`, `herdr` ≥ 0.9, Claude Code ≥ 2.1.248
+- `jq`, Claude Code ≥ 2.1.248
+- `herdr` ≥ 0.9는 선택: `runner: pane` 또는 `viewer: pane`을 쓸 때만 필요하다
 - `PATH`에 `~/.local/bin`
 
 ## 설치
@@ -30,9 +31,9 @@ cd ~/workspace/claude-code-setup
   - `promptCacheTtl`/`subagentPromptCacheTtl: 1h`
   - 전역 `agent` 키는 더 이상 쓰지 않는다. 이전 설치가 남긴 `agent: conductor`는 한 번 제거한다(다른 키는 건드리지 않는다). conductor 역할은 저장소 단위로 `harness init`이 정한다.
 - 전역 gitignore에 `.harness/` 추가
-- `herdr integration install claude` 실행
+- herdr가 설치돼 있으면 `herdr integration install claude` 실행 (없으면 건너뜀)
 
-설치 뒤에는 harness를 쓰려는 저장소마다 `harness init`을 한 번 실행한다. `.harness/asks/`(체크아웃 표시), 기본 설정, 그 저장소의 `.claude/settings.local.json`(사용자별, 추적 안 됨)에 `"agent": "conductor"`를 만든다(`--shared`는 커밋되는 `.claude/settings.json`에 쓴다. 이미 다른 `agent`가 있으면 그대로 두고 알린다. 기존 파일은 `.bak`을 한 번 남기고, 심링크는 유지한다. `--no-agent`는 settings를 건드리지 않는다). init하지 않은 저장소에서는 게이트·resume 훅·라우팅 로그가 모두 꺼지고 `harness ask`/`spawn`은 거부된다.
+설치는 `./install.sh` 한 번, 그 뒤 harness를 쓰려는 저장소마다 `harness init`을 한 번 실행한다. herdr는 필요 없다. `.harness/asks/`(체크아웃 표시), 기본 설정, 그 저장소의 `.claude/settings.local.json`(사용자별, 추적 안 됨)에 `"agent": "conductor"`를 만든다(`--shared`는 커밋되는 `.claude/settings.json`에 쓴다. 이미 다른 `agent`가 있으면 그대로 두고 알린다. 기존 파일은 `.bak`을 한 번 남기고, 심링크는 유지한다. `--no-agent`는 settings를 건드리지 않는다). init하지 않은 저장소에서는 게이트·resume 훅·라우팅 로그가 모두 꺼지고 `harness ask`/`spawn`은 거부된다.
 
 이전 버전이 남긴 오염(`asks/` 없는 `.harness/` 디렉터리, 전역 `agent: conductor`)은 `harness doctor`로 찾고 `harness doctor --fix`로 지운다. 아는 파일만 든 디렉터리만 지우고, 모르는 파일이 있으면 건너뛴다. 심링크 디렉터리와 심링크된 `.harness`는 따라가지 않고, 기본 범위가 `$HOME`이면 거부하며(DIR을 직접 지정), 워커(`HARNESS_ROLE=worker`)에서는 실행되지 않는다.
 
@@ -40,10 +41,10 @@ cd ~/workspace/claude-code-setup
 
 ## 사용법
 
-1. 프로젝트의 herdr 패널에서 평소처럼 `claude`를 시작한다.
+1. 프로젝트(`harness init`을 한 저장소)에서 평소처럼 `claude`를 시작한다. 터미널이면 충분하고 herdr는 필요 없다.
 2. 질문하거나 작업을 맡긴다. 일반 질문은 conductor가 바로 답한다. 소스를 읽거나 고치려 하면 게이트가 호출을 거부하고, conductor는 맞는 스킬(`/analyze` 조사 · `/implement` 변경 · `/review` 검토)을 호출한다. 직접 `/implement …`처럼 쳐도 된다.
-3. 스킬이 `harness ask <worker> '<instruction>' --via skill`을 실행한다. 옆에 패널이 열리고 Claude 워커가 뜬다. 워커가 끝나면 리포트(`.harness/reports/<worker>.md`, 40줄 이하)가 출력된다. 설치 스크립트가 Bash 도구 타임아웃을 늘려 두므로(`BASH_DEFAULT_TIMEOUT_MS=600000`) 긴 워커 작업도 중간에 끊기지 않는다.
-4. 워커의 작업은 각 패널에서 볼 수 있다. conductor가 보는 것은 리포트뿐이다.
+3. 스킬이 `harness ask <worker> '<instruction>' --via skill`을 실행한다. 워커는 detached headless Claude 세션(`claude -p`)으로 백그라운드에서 돈다. 워커가 끝나면 리포트(`.harness/reports/<worker>.md`, 40줄 이하)가 출력된다. 설치 스크립트가 Bash 도구 타임아웃을 늘려 두므로(`BASH_DEFAULT_TIMEOUT_MS=600000`) 긴 워커 작업도 중간에 끊기지 않는다.
+4. 워커의 진행은 `harness status`로 보고, herdr를 쓰면 viewer pane에서도 볼 수 있다(읽기 전용). conductor가 보는 것은 리포트뿐이다.
 
 ```
 harness init   [--no-agent] [--shared]                              # 이 저장소를 체크아웃으로 만든다 (asks/, 설정, .claude/settings.local.json agent)
@@ -68,7 +69,7 @@ harness route-log '<json>'                               # append one line to .h
 `harness close`는 herdr의 `herdr pane close <pane>`으로 패널을 닫고 `.harness/panes`에서 지운다. 워커가 `working`/`blocked`이거나 아직 수집하지 않은 리포트(`.pending` 포함)가 있으면 exit 4로 거절한다(`--force`로 무시). 다른 디렉터리의 워커는 exit 6. 닫은 뒤 `harness ask`는 평소처럼 워커를 새로 띄운다.
 자동 종료 설정은 `.harness/config.json`(없으면 첫 실행 때 기본값으로 만든다):
 - `close_after_ask.<role>`: `never`|`on_success`. 기본은 모든 역할 `never`(결정 0006: implementer pane도 ask 사이에 유지, 컨텍스트는 ask마다 /clear). `on_success`는 ask가 0으로 끝나면 닫음(reviewer는 0 또는 5). 환경변수 `HARNESS_CLOSE_AFTER_ASK_<ROLE>`. 기존 저장소: 수정하지 않은 옛 기본 파일(implementer `on_success`)만 자동으로 새 기본값으로 바뀐다. 직접 고친 설정은 그대로이므로 `close_after_ask.implementer`를 `never`로 손수 바꾼다.
-- `runner.<role>`: `pane`(기본, 키 없으면 pane)|`headless`(결정 0007, 시범). `headless`는 보관되는 viewer pane에서 `harness-run`이 `claude -p`를 돌리고 `harness-view`가 스트림을 보여준다. 완료 = `.harness/asks/<role>.exit.json`(프로세스 종료), 마감 시간에 죽이지 않고 exit 4(`harness report <role>`로 수집), `--keep`이 아니면 매번 새 세션. 환경변수 `HARNESS_RUNNER_<ROLE>`이 우선. `headless_max_minutes`(기본 60, implementer 90)가 한 번의 실행 상한. implementer(결정 0009)는 `--permission-mode auto --permission-prompts none`으로 고정되고, 거부된 도구 호출은 `exit.json`의 `denied[]`에 기록되며 report 없이 거부만 있으면 exit 2, Stop hook 검증 중에 마감되면 exit 4 "still verifying", 직전 ask가 0이 아니었으면 다음 ask가 자동으로 `--resume`(`--fresh`로 끔). 되돌리기: `pane`으로 바꾸고 `harness close <role> --force`. 원본 스트림(`.harness/log/*.jsonl`)은 conductor 게이트가 읽기를 막는다. `viewer`(최상위 키, 환경변수 `HARNESS_VIEWER`가 우선)는 headless 실행을 어디에 보여줄지: `auto`(기본)=herdr를 쓸 수 있으면 viewer pane, 아니면(또는 pane split/run 실패 시) herdr 없이 백그라운드로 분리 실행(stderr에 한 줄 안내, 로그 `.harness/asks/<role>.runner.log`), `pane`=항상 pane(herdr 필요), `none`=항상 백그라운드. `pane` 러너는 herdr 전용.
+- `runner.<role>`: `headless`(기본, 키 없으면 headless; 결정 0011)|`pane`(옛 러너, herdr 필요, prune 3단계에서 제거 예정). `headless`는 `harness-run`이 `claude -p`를 detached로 돌린다(viewer pane이 있으면 `harness-view`가 스트림을 보여준다). 완료 = `.harness/asks/<role>.exit.json`(프로세스 종료), 마감 시간에 죽이지 않고 exit 4(`harness report <role>`로 수집), `--keep`이 아니면 매번 새 세션. 환경변수 `HARNESS_RUNNER_<ROLE>`이 우선. `headless_max_minutes`(기본 60, implementer 90)가 한 번의 실행 상한. implementer(결정 0009)는 `--permission-mode auto --permission-prompts none`으로 고정되고, 거부된 도구 호출은 `exit.json`의 `denied[]`에 기록되며 report 없이 거부만 있으면 exit 2, Stop hook 검증 중에 마감되면 exit 4 "still verifying", 직전 ask가 0이 아니었으면 다음 ask가 자동으로 `--resume`(`--fresh`로 끔). 옛 pane 러너로 되돌리기: `runner.<role>`을 `pane`으로 바꾸고 `harness close <role> --force`. 원본 스트림(`.harness/log/*.jsonl`)은 conductor 게이트가 읽기를 막는다. `viewer`(최상위 키, 환경변수 `HARNESS_VIEWER`가 우선)는 headless 실행을 어디에 보여줄지: `auto`(기본)=herdr를 쓸 수 있으면 viewer pane, 아니면(또는 pane split/run 실패 시) herdr 없이 백그라운드로 분리 실행(stderr에 한 줄 안내, 로그 `.harness/asks/<role>.runner.log`), `pane`=항상 pane(herdr 필요), `none`=항상 백그라운드. `pane` 러너는 herdr 전용.
 - `idle_ttl_minutes`(기본 30, 0이면 끔, 환경변수 `HARNESS_IDLE_TTL_MINUTES`): `harness ask|spawn|status` 시작 때 이 저장소의 워커 중 마지막 리포트 수집 후 TTL이 지났고 idle/done이며 수집 안 한 리포트가 없는 것을 닫는다. 데몬은 없다.
 - `HARNESS_NO_AUTOCLOSE=1`이면 둘 다 꺼진다(수동 `harness close`는 그대로).
 닫을 때마다 `progress.jsonl`에 `{"event":"close","role","reason":"manual|after_ask|ttl|legacy"}`가 남고 `progress.md` 최근 항목에 `close <role> (<reason>)`로 보인다.
@@ -138,7 +139,7 @@ conductor 에이전트의 본문은 Claude Code의 기본 시스템 프롬프트
 ## 디렉터리 구성
 
 ```
-bin/harness                      herdr wrapper CLI
+bin/harness                      harness CLI (ask, report, status, init, ...; herdr is optional)
 bin/harness-verify               format/lint/test checks used by worker hooks
 lib/harness-defaults.sh         roles and default numbers (sourced by bin/harness, bin/harness-verify)
 lib/harness-metrics.sh          harness metrics + wiki-lint (sourced eagerly by bin/harness)

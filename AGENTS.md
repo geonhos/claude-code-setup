@@ -2,7 +2,8 @@
 
 A conductor/worker harness for Claude Code. The conductor session cannot read or
 edit source; it delegates through `harness ask` to analyst / implementer /
-reviewer workers running in herdr panes, and reads only their reports. Hooks
+reviewer workers that run as detached headless Claude sessions (`claude -p`; a
+herdr pane is an optional viewer), and reads only their reports. Hooks
 gate the conductor's shell, verify worker output and resume from progress logs.
 `install.sh` symlinks everything into `~/.claude` and `~/bin`.
 
@@ -14,6 +15,9 @@ gate the conductor's shell, verify worker output and resume from progress logs.
 - `claude/skills/`: /analyze, /implement, /review (conductor-only)
 - `tests/`: `*.test.sh` suites plus `fake-herdr`
 - `docs/`: `wiki/` (durable knowledge), `superpowers/plans/`, `research/`
+
+## Harness rules
+No new mode or mechanism without removing one; a mechanism with no reader after two weeks is removed.
 
 ## Test
 `./install.sh --test` runs every suite, in parallel (`HARNESS_TEST_SERIAL=1` runs them one

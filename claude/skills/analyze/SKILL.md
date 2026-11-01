@@ -1,6 +1,6 @@
 ---
 name: analyze
-description: Conductor only. Delegate a read-only investigation (unknown code, design questions, plans, "what/why/where") to the herdr analyst worker and relay its report. Use when the answer needs source code read but not changed.
+description: Conductor only. Delegate a read-only investigation (unknown code, design questions, plans, "what/why/where") to the analyst worker and relay its report. Use when the answer needs source code read but not changed.
 argument-hint: <what to find out, and what decision it feeds>
 ---
 

@@ -1,6 +1,6 @@
 ---
 name: review
-description: Conductor only. Delegate judging a diff (a commit range, a branch against main, or the working tree) to the herdr reviewer worker and relay its findings and VERDICT. Use before calling a change done or opening a PR.
+description: Conductor only. Delegate judging a diff (a commit range, a branch against main, or the working tree) to the reviewer worker and relay its findings and VERDICT. Use before calling a change done or opening a PR.
 argument-hint: <commit range | branch | "working tree"> [focus]
 ---
 
