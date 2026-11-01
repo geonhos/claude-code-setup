@@ -11,4 +11,4 @@ verified_by: human (conductor session 2026-10-21)
 
 **Cause.** The value is milliseconds (`--timeout MS`), and the default is the role's headless cap (analyst/reviewer 3600000, implementer 5400000). Passing seconds gives a ~1s deadline. The worker keeps running fine.
 
-**Fix.** Pass ms (`--timeout 1200000`) and run the ask with `run_in_background: true`. If you already got exit 4, don't re-send: `harness wait <role>`, then `harness report <role>`. Defaults are role-aware, so `--timeout` is rarely needed.
+**Fix.** Pass ms (`--timeout 1200000`) and run the ask with `run_in_background: true` and `timeout: 7200000`. If you already got exit 4, don't re-send: `harness wait <role>`, then `harness report <role>`. Defaults are role-aware, so `--timeout` is rarely needed.

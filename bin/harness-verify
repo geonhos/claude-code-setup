@@ -365,15 +365,16 @@ cmd_stop() {
 }
 
 # report_gate — a harness ask must end with a fresh report: block the stop (at most twice per ask)
-# so the worker writes it instead of the ask exiting 3. `[no-report]` in the instruction opts out.
+# so the worker writes it instead of the ask exiting 3. `[no-report]` opts out, as a marker only: at the
+# start of the instruction, or on a line of its own in the brief the instruction points at.
 report_gate() {
   local a=.harness/asks/$AGENT id n brief rep=.harness/reports/$AGENT.md
   case "$AGENT" in analyst|implementer|reviewer) ;; *) return 0 ;; esac
   [ -f "$a.current" ] || return 0
-  grep -qF '[no-report]' "$a.prompt" 2>/dev/null && return 0
+  case "$(head -n 1 "$a.prompt" 2>/dev/null)" in '[no-report]'*) return 0 ;; esac
   # an instruction that only says "Read .harness/<brief>.md and do it": the opt-out may sit in the brief
   brief=$(sed -n 's/.*Read \(\.harness\/[^ ]*\.md\).*/\1/p' "$a.prompt" 2>/dev/null | head -n 1)
-  case "$brief" in ''|*..*) ;; *) grep -qF '[no-report]' "$brief" 2>/dev/null && return 0 ;; esac
+  case "$brief" in ''|*..*) ;; *) grep -qx '[[:space:]]*\[no-report\][[:space:]]*' "$brief" 2>/dev/null && return 0 ;; esac
   [ -f "$rep" ] && [ ! "$rep" -ot "$a.current" ] && return 0
   [ -f "$rep.pending" ] && [ ! "$rep.pending" -ot "$a.current" ] && return 0
   id=$(awk 'NR==1 { print $1 }' "$a.current")

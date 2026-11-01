@@ -617,7 +617,7 @@ for p in claude/agents/x.md AGENTS.md README.md; do
 done
 
 # --- report gate: a harness ask must end with a fresh report (2 blocks max) -----------
-rg_setup() { newrepo; mkdir -p "$R/.harness/asks" "$R/.harness/reports"; printf 'id1 100\n' > "$R/.harness/asks/implementer.current"; printf 'do it\n%s\n' "${1:-}" > "$R/.harness/asks/implementer.prompt"; }
+rg_setup() { newrepo; mkdir -p "$R/.harness/asks" "$R/.harness/reports"; printf 'id1 100\n' > "$R/.harness/asks/implementer.current"; printf '%s\ndo it\n' "${1:-}" > "$R/.harness/asks/implementer.prompt"; }
 rg_setup
 hvin "$(stopjson)" stop
 check "report gate: missing report blocks" reason_grep -q 'reports/implementer.md'
@@ -632,7 +632,8 @@ rg_setup
 hvin "$(stopjson)" stop; b1=$OUT
 hvin "$(stopjson)" stop; b2=$OUT
 hvin "$(stopjson)" stop
-check "report gate: first two stops block" [ -n "$b1" ] && [ -n "$b2" ]
+check "report gate: first stop blocks" [ -n "$b1" ]
+check "report gate: second stop blocks" [ -n "$b2" ]
 check "report gate: third stop not blocked" not_out_has '"block"'
 rg_setup
 echo old > "$R/.harness/reports/implementer.md"; touch -t 200001010000 "$R/.harness/reports/implementer.md"
@@ -666,6 +667,16 @@ rg_setup; printf 'x\n' > "$R/.harness/task-implementer.md"
 printf 'Read .harness/task-implementer.md and do it.\n' > "$R/.harness/asks/implementer.prompt"
 hvin "$(stopjson)" stop
 check "report gate: brief without [no-report] blocks" reason_grep -q 'reports/implementer.md'
+
+# a brief that merely mentions the marker mid-sentence does not opt out
+rg_setup; printf 'never write [no-report] here\nmore [no-report] text\n' > "$R/.harness/task-implementer.md"
+printf 'Read .harness/task-implementer.md and do it.\n' > "$R/.harness/asks/implementer.prompt"
+hvin "$(stopjson)" stop
+check "report gate: brief mentioning [no-report] mid-sentence blocks" reason_grep -q 'reports/implementer.md'
+# nor does an instruction that mentions it mid-sentence (even on a later line)
+rg_setup; printf 'do it, do not use [no-report] here\n[no-report]x is not it\nsay [no-report]\n' > "$R/.harness/asks/implementer.prompt"
+hvin "$(stopjson)" stop
+check "report gate: instruction mentioning [no-report] mid-sentence blocks" reason_grep -q 'reports/implementer.md'
 
 echo "PASS $pass / FAIL $fail"
 [ "$fail" -eq 0 ]
