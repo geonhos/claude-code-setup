@@ -1,10 +1,12 @@
 ---
 type: decision
-status: active
-updated: 2026-10-23
+status: superseded
+updated: 2026-11-01
 sources: [docs/research/2026-10-21-subagent-model-poc.md, commit 1978486, https://code.claude.com/docs/en/sub-agents]
 verified_by: docs/research/2026-10-21-subagent-model-poc.md (modelUsage split)
 ---
+> Superseded by [0011](0011-single-runner-headless.md): its revisit clause fired (0 interventions); headless is the only runner.
+
 # 0001: Keep herdr worker panes although subagent `model:` works
 
 **Context.** The herdr layer was justified by "native subagents inherit the conductor's (Fable) model". The PoC proved that false: a subagent with `model: sonnet` under an opus parent was billed on sonnet, and `inherit` billed opus only.

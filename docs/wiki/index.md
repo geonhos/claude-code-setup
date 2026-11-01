@@ -33,7 +33,7 @@ Read this first. Open a page only when it is relevant. Schema and promotion rule
 - [Transcript forensics](how-to/transcript-forensics.md): real Stop-hook time, did /clear run, known model noise (active, 2026-10-27)
 
 ## Decisions
-- [0001 Keep herdr panes](decisions/0001-keep-herdr-panes-despite-subagent-model.md): subagent `model:` works; panes kept for visibility (active, 2026-10-23)
+- [0001 Keep herdr panes](decisions/0001-keep-herdr-panes-despite-subagent-model.md): subagent `model:` works; panes kept for visibility; superseded by 0011 (superseded, 2026-11-01)
 - [0002 Stop-hook completion](decisions/0002-completion-by-stop-hook-marker.md): marker ≥ report ≥ ask start (active, 2026-10-21)
 - [0003 Pane lifecycle](decisions/0003-pane-lifecycle-defaults.md): 30 min idle TTL, close safety rules; implementer default replaced by 0006 (active, 2026-10-23)
 - [0004 Failure-only retros](decisions/0004-failure-only-batched-retros.md): queue on failure, one batched analyst ask, reviewer FAIL never queues (active, 2026-10-21)
@@ -43,3 +43,4 @@ Read this first. Open a page only when it is relevant. Schema and promotion rule
 - [0008 Worktree per ask](decisions/0008-worktree-per-ask.md): `ask --worktree` gives a headless analyst/reviewer its own detached checkout; ask-id addressing (active, 2026-10-23)
 - [0009 Headless implementer](decisions/0009-headless-implementer.md): headless implementer: pinned permissions, exit 2 on denials, auto-resume after non-zero exit, 90 min cap (active, 2026-10-28)
 - [0010 Harness acts only in a checkout](decisions/0010-herdr-optional-gate-by-checkout.md): gate/route/resume key on .harness/asks (made by `harness init`); per-repo conductor agent; no HERDR_ENV switch (draft, 2026-10-30)
+- [0011 One runner: headless](decisions/0011-single-runner-headless.md): headless is the only runner; herdr is a viewer; prune plan steps 1-7 (active, 2026-11-01)
