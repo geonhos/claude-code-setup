@@ -15,7 +15,6 @@
 #   harness watch  <agent>|<ask-id> [-n N]   human terminal only: follow a live run, or the last N lines of a finished one
 #   harness status
 #   harness init [--no-agent] [--shared]   make this repo a harness checkout (.harness/asks, config, agent=conductor in .claude/settings.local.json; --shared: settings.json)
-#   harness doctor [--fix] [DIR...]   clean pollution left by older versions (strays, global agent key)
 #   harness close  <agent>|<ask-id>|--all [--force]
 #   harness route-log '<json>'   append one line to .harness/routing.jsonl (never fails)
 #   harness retro [--dry-run]    one batched analyst ask over the queued failure candidates
@@ -102,7 +101,6 @@ usage:
   harness watch  <agent>|<ask-id> [-n N]   (human terminal only)
   harness status
   harness init   [--no-agent] [--shared]   (once per repo: makes it a harness checkout; ask refuses without it)
-  harness doctor [--fix] [DIR...]   (find/remove stray .harness/ dirs and the old global agent key)
   harness close  <agent>|<ask-id>|--all [--force]
   harness wiki-lint [DIR]
   harness route-log '<json>'
@@ -804,39 +802,14 @@ config_template() {
 EOC
 }
 
-# config_template_v1 — the template before prune step 3 (pane lifecycle keys); a file that is
-# byte-for-byte this is rewritten with the current template
-config_template_v1() {
-  cat <<'EOC'
-{
-  "_doc": "close_after_ask.<role>: never | on_success (close the worker after `harness ask` exits 0; reviewer: 0 or 5). idle_ttl_minutes: close this repo's workers idle longer than N minutes after their last collected report (0 = off). HARNESS_NO_AUTOCLOSE=1 disables both. Env overrides: HARNESS_CLOSE_AFTER_ASK_<ROLE>, HARNESS_IDLE_TTL_MINUTES.",
-  "close_after_ask": { "analyst": "never", "implementer": "never", "reviewer": "never" },
-  "idle_ttl_minutes": 30,
-  "runner": { "analyst": "headless", "implementer": "headless", "reviewer": "headless" },
-  "viewer": "auto"
-}
-EOC
-}
-
-# ensure_config — create the documented default config when absent (never fatal).
-# A file that is byte-for-byte the previous template is rewritten once; any edited file is
-# left alone. Keys of the removed pane runner (runner, close_after_ask, idle_ttl_minutes) in an
-# edited file are ignored, with one stderr note the first time.
+# ensure_config — create the documented default config when absent (never fatal); an existing
+# file is never touched.
 ensure_config() {
   # Never creates .harness/ (stray dirs break harness-verify's root lookup): `harness init`
   # does that. Workers and anything outside an initialised checkout (no .harness/asks) skip.
   [ "${HARNESS_ROLE:-}" != worker ] || return 0
   [ -d .harness/asks ] || return 0
-  if [ -e "$CONFIG_FILE" ]; then
-    if [ "$(cat "$CONFIG_FILE" 2>/dev/null)" = "$(config_template_v1)" ]; then
-      config_template > "$CONFIG_FILE" 2>/dev/null
-    elif [ ! -e .harness/asks/.config-noted ] && jq -e 'has("runner") or has("close_after_ask") or has("idle_ttl_minutes")' "$CONFIG_FILE" >/dev/null 2>&1; then
-      echo "harness: note: $CONFIG_FILE keys runner, close_after_ask and idle_ttl_minutes are ignored (the pane runner was removed; headless is the only runner)" >&2
-      : > .harness/asks/.config-noted 2>/dev/null
-    fi
-    return 0
-  fi
-  config_template > "$CONFIG_FILE" 2>/dev/null
+  [ -e "$CONFIG_FILE" ] || config_template > "$CONFIG_FILE" 2>/dev/null
   return 0
 }
 
@@ -1016,7 +989,7 @@ cmd_retro() {
   return "$rc"
 }
 
-# --- harness checkout: init, doctor (decision 0010) -----------------------------------------
+# --- harness checkout: init (decision 0010) -----------------------------------------
 # harness_root DIR -> prints the harness checkout root and returns 0, or returns 1.
 # DIR is resolved physically (pwd -P) first, like enter_root.
 # The root is the nearest dir at or above DIR with .harness/asks/, searched up to
@@ -1116,91 +1089,6 @@ cmd_init() {
   return 0
 }
 
-# doctor_stray_ok DIR — 0 when a stray .harness/ holds only files this harness wrote itself
-# (prints the first other file on stdout and returns 1 otherwise)
-doctor_stray_ok() {
-  local h=$1 f rel
-  while IFS= read -r f; do
-    rel=${f#"$h"/}
-    case "$rel" in
-      config.json|verify.local.json|panes|progress.md|progress.jsonl|routing.jsonl|.DS_Store) ;;
-      log/*|reports/*|done/*|retro/*)
-        case "$rel" in */*.md|*/*.jsonl|*/*.jsonl.*|*/*.json|*/*.log) ;; *) printf '%s' "$rel"; return 1 ;; esac ;;
-      *) printf '%s' "$rel"; return 1 ;;
-    esac
-  done <<EOF
-$(find "$h" -mindepth 1 ! -type d 2>/dev/null)
-EOF
-  return 0
-}
-
-# cmd_doctor [--fix] [DIR...] — find (and with --fix remove) pollution left by older versions:
-# stray .harness/ dirs without asks/ (DIR and its children, default: the parent of this repo
-# plus the cwd) and the global agent=conductor key in ~/.claude/settings.json. Exit 0.
-# Not for workers; symlinked children and symlinked .harness are never followed; the default
-# scope is refused when it would be $HOME (pass DIR explicitly).
-cmd_doctor() {
-  local fix=0 dirs="" d c h seen="" first sf tmp n=0 home
-  [ "${HARNESS_ROLE:-}" != worker ] || die "harness doctor is for the conductor; a worker (HARNESS_ROLE=worker) does not scan or clean"
-  for d in "$@"; do
-    case "$d" in
-      --fix) fix=1 ;;
-      -*) usage ;;
-      *) dirs="$dirs
-$d" ;;
-    esac
-  done
-  # the global key is checked first so it is reported/fixed even when the dir scan is refused
-  sf=${CLAUDE_SETTINGS:-$HOME/.claude/settings.json}
-  if [ -f "$sf" ] && [ "$(jq -r '.agent // empty' "$sf" 2>/dev/null)" = conductor ]; then
-    n=$((n + 1))
-    if [ "$fix" = 1 ]; then
-      tmp=$(mktemp "${TMPDIR:-/tmp}/harness-settings.XXXXXX") || return 0
-      if jq 'del(.agent)' "$sf" > "$tmp" && settings_commit "$tmp" "$sf"; then echo "removed: agent key from $sf (backup $sf.bak)"
-      else echo "harness doctor: could not update $sf" >&2; fi
-      rm -f "$tmp"
-    else
-      echo "global: $sf sets agent conductor (harness init sets it per repo; --fix removes it)"
-    fi
-  fi
-  if [ -z "$dirs" ]; then
-    home=$(cd "$HOME" 2>/dev/null && pwd -P)
-    for d in "${REPO_TOP%/*}" "$PWD"; do
-      d=$(cd "$d" 2>/dev/null && pwd -P) || continue
-      if [ -n "$home" ] && [ "$d" = "$home" ]; then
-        echo "harness doctor: refusing to scan $HOME; pass DIR explicitly" >&2
-        return 1
-      fi
-    done
-    dirs="${REPO_TOP%/*}
-$PWD"
-  fi
-  while IFS= read -r d; do
-    [ -n "$d" ] && [ -d "$d" ] || continue
-    d=$(cd "$d" && pwd -P) || continue
-    for c in "$d" "$d"/*/; do
-      c=${c%/}
-      [ -d "$c" ] && [ ! -L "$c" ] || continue
-      case "$seen" in *"|$c|"*) continue ;; esac
-      seen="$seen|$c|"
-      h=$c/.harness
-      [ -d "$h" ] && [ ! -L "$h" ] && [ ! -d "$h/asks" ] || continue
-      n=$((n + 1))
-      if first=$(doctor_stray_ok "$h"); then
-        if [ "$fix" = 1 ]; then rm -rf "$h" && echo "removed: $h (stray, no asks/)"
-        else echo "stray: $h (no asks/)"; fi
-      else
-        if [ "$fix" = 1 ]; then echo "skipped (unknown files): $h (e.g. $first)"
-        else echo "stray: $h (no asks/; has unknown files, e.g. $first; --fix would skip it)"; fi
-      fi
-    done
-  done <<EOF
-$dirs
-EOF
-  [ "$n" -gt 0 ] || echo "doctor: nothing to clean"
-  return 0
-}
-
 need jq
 # route-log is called by the UserPromptSubmit hook: no herdr needed
 if [ "${1:-}" = route-log ]; then shift; cmd_route_log "$@"; exit 0; fi
@@ -1211,9 +1099,8 @@ if [ "${1:-}" = _defaults ]; then
   for k in $(compgen -v HARNESS_ | grep -E '^HARNESS_(ROLES|WT_ROLES|[A-Z_]+_(MS|DEFAULT))$' | sort); do eval "printf '%s=%s\n' \"$k\" \"\${$k}\""; done
   exit 0
 fi
-# init and doctor are file work: no herdr, no checkout needed
+# init is file work: no herdr, no checkout needed
 if [ "${1:-}" = init ]; then shift; cmd_init "$@"; exit $?; fi
-if [ "${1:-}" = doctor ]; then shift; cmd_doctor "$@"; exit $?; fi
 # wiki-lint is pure file checking: no herdr needed
 if [ "${1:-}" = wiki-lint ]; then shift; cmd_wiki_lint "$@"; exit $?; fi
 # retro and metrics read files only; retro's ask is a separate `harness ask` process

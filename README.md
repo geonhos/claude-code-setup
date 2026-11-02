@@ -35,7 +35,6 @@ cd ~/workspace/claude-code-setup
 
 설치는 `./install.sh` 한 번, 그 뒤 harness를 쓰려는 저장소마다 `harness init`을 한 번 실행한다. herdr는 필요 없다. `.harness/asks/`(체크아웃 표시), 기본 설정, 그 저장소의 `.claude/settings.local.json`(사용자별, 추적 안 됨)에 `"agent": "conductor"`를 만든다(`--shared`는 커밋되는 `.claude/settings.json`에 쓴다. 이미 다른 `agent`가 있으면 그대로 두고 알린다. 기존 파일은 `.bak`을 한 번 남기고, 심링크는 유지한다. `--no-agent`는 settings를 건드리지 않는다). init하지 않은 저장소에서는 게이트·resume 훅·라우팅 로그가 모두 꺼지고 `harness ask`/`spawn`은 거부된다.
 
-이전 버전이 남긴 오염(`asks/` 없는 `.harness/` 디렉터리, 전역 `agent: conductor`)은 `harness doctor`로 찾고 `harness doctor --fix`로 지운다. 아는 파일만 든 디렉터리만 지우고, 모르는 파일이 있으면 건너뛴다. 심링크 디렉터리와 심링크된 `.harness`는 따라가지 않고, 기본 범위가 `$HOME`이면 거부하며(DIR을 직접 지정), 워커(`HARNESS_ROLE=worker`)에서는 실행되지 않는다.
 
 테스트는 `./install.sh --test`로 돌린다. 스위트는 병렬로 실행되고, 디버깅용으로 `HARNESS_TEST_SERIAL=1`을 주면 하나씩 돌린다.
 
@@ -48,7 +47,6 @@ cd ~/workspace/claude-code-setup
 
 ```
 harness init   [--no-agent] [--shared]                              # 이 저장소를 체크아웃으로 만든다 (asks/, 설정, .claude/settings.local.json agent)
-harness doctor [--fix] [DIR...]                                    # 과거 오염(asks/ 없는 .harness/, 전역 agent 키)을 찾고 --fix로 지운다
 harness ask    <agent> '<instruction>' [--timeout MS] [--fresh|--keep] [--via skill|conductor|retro]   # exit 2 tool call denied, no report · 3 no report · 4 still working · 5 verification failed
 harness wait   <agent>|<ask-id> [--timeout MS]                       # run이 끝날 때까지 block(수집은 안 함): 0 done · 3 ask 없음/러너 죽음 · 4 timeout; 끝나면 `harness report`
 harness watch  <agent>|<ask-id> [-n N]                              # 사람용 터미널 뷰어(tty 필요, conductor 게이트가 거부)

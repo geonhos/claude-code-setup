@@ -243,17 +243,7 @@ mkdir -p .harness; echo '{"runner":{"analyst":"pane"},"close_after_ask":{"analys
 export FAKE_CLAUDE_MODE=success FAKE_REPORT_CMD="mkdir -p $WORK/.harness/reports && printf '# analyst report\nstatus: done\n' > $WORK/.harness/reports/analyst.md"
 hrun ask analyst "q"
 check "removed keys: ask still runs headless (rc 0)" [ "$RC" -eq 0 ]
-check "removed keys: one stderr note" grep -q "are ignored" <<<"$OUT"
-hrun ask analyst "q2"
-check "removed keys: note only the first time" not_grep "are ignored" <(printf '%s' "$OUT")
 check "removed keys: config untouched" jqt 'has("runner")' .harness/config.json
-setup
-mkdir -p .harness; echo '{"runner":{"analyst":"headless"}}' > .harness/config.json
-export HARNESS_RUNNER_ANALYST=pane FAKE_CLAUDE_MODE=success FAKE_REPORT_CMD="mkdir -p $WORK/.harness/reports && printf '# analyst report\nstatus: done\n' > $WORK/.harness/reports/analyst.md"
-hrun ask analyst "q"
-check "HARNESS_RUNNER_* env ignored" not_logged "agent start"
-unset HARNESS_RUNNER_ANALYST
-
 # 14. permission mode other than auto: warning; ## Run line in the ask log
 hsetup; export FAKE_PERM=default
 hrun ask analyst "q"

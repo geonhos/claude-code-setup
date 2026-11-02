@@ -247,5 +247,5 @@ installed:
   cache TTL      promptCacheTtl=1h subagentPromptCacheTtl=1h
   bash timeouts  env.BASH_DEFAULT_TIMEOUT_MS=600000 env.BASH_MAX_TIMEOUT_MS=7200000
   gitignore      $GIT_IGNORE (+ .harness/)
-next: run "harness init" in a repo to opt it in, then start Claude there. Past pollution (stray .harness/ dirs): "harness doctor --fix"
+next: run "harness init" in a repo to opt it in, then start Claude there.
 EOF

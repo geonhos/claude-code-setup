@@ -406,7 +406,7 @@ check "removal prints a note" grep -q "removed the global agent=conductor" "$T/o
 printf '{"model":"keep"}\n' > "$CLAUDE_DIR/settings.json"
 run_install
 check "fresh install writes no agent key" [ "$(jq -r '.agent // "none"' "$S")" = none ]
-check "end note mentions harness init and doctor" bash -c 'grep -q "harness init" "$1" && grep -q "harness doctor --fix" "$1"' _ "$T/out.txt"
+check "end note mentions harness init" grep -q "harness init" "$T/out.txt"
 
 # herdr integration branches (SKIP_HERDR_INTEGRATION unset)
 T5=$(newdir noherdr); mkdir -p "$T5/claude"
