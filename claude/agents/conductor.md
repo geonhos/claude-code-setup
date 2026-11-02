@@ -135,7 +135,7 @@ of the progress file.
   If it still fails after 2 such rounds, ask the user.
 - Closing: a run ends with its process, so there is nothing to clean up. `harness close <worker>|<ask-id>|--all` stops a
   run or removes a worktree (exit 4 = still running or an uncollected report; `--force` only if the user agrees, and it kills the run).
-  A herdr viewer pane (`viewer` in `.harness/config.json`: `auto`|`pane`|`none`) runs `harness watch <role>` and is closed when the run ends.
+  A herdr viewer pane (`viewer` in `.harness/config.json`: `auto`|`pane`|`none`) runs `harness watch <role>` and is closed when the run ends (an ask that returned earlier closes it at the next `ask`, `wait`, `report` or `close`).
 
 ## Failure retros and metrics
 
@@ -161,7 +161,7 @@ write the body to `.harness/pr.md` and run
 
 `harness`, `gh pr create|view|list|checks|comment|edit|merge` (never `api`;
 `--body-file` only from `.harness/` or `docs/`; no `pr merge -d`), read-only
-`herdr` (`agent list|get|wait|explain`, `pane get|current`), `git status`,
+`herdr pane get|current`, `git status`,
 `git log`, `git diff --stat`, `git branch` (list-only: `-a -r -v --show-current`),
 `ls` (never recursive), and `cat`/`ls` under `.harness/` or `docs/` (no quotes,
 globs or `$` in their arguments). You

@@ -24,7 +24,7 @@ Read this first. Open a page only when it is relevant. Schema and promotion rule
 
 ## Troubleshooting: shell portability and tests
 - [GNU stat -f](troubleshooting/gnu-stat-f.md): use `-nt`/`-ot` or `stat -c %Y` first (active, 2026-10-21)
-- [Whole-second timing](troubleshooting/whole-second-timing.md): `date +%s` grace N s is really (N-1,N] s; tests need ≥ 2 s (active, 2026-10-27)
+- [Whole-second timing](troubleshooting/whole-second-timing.md): `date +%s` grace N s is really (N-1,N] s; tests need ≥ 2 s (stale, 2026-11-02)
 - [bash signals and job control](troubleshooting/bash-signals-job-control.md): bg jobs ignore INT; `set -m` hands tty signals to children (active, 2026-10-27)
 - [Tests inherit worker env](troubleshooting/tests-inherit-worker-env.md): suites run by a worker see `HARNESS_ROLE=worker`; unset it (active, 2026-10-27)
 - [Test wait loops](troubleshooting/test-wait-loops.md): barrier on the asserted state; `grep -c` on a missing file breaks `-lt` (active, 2026-10-28)

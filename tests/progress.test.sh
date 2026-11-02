@@ -219,7 +219,7 @@ for bad in "--via nope" "--via" "--base x" "--worktree --base"; do
   check "early refusal ($bad): nothing logged" [ "$ok" = 1 ]
 done
 
-# --- signals: the ask wrapper ends with the real signal exit, logs it, and kills the run -------------------------
+# --- signals: the ask wrapper ends with the real signal exit, logs it; the detached run survives (lib/harness-headless.sh hl_spawn_bg) -------------------------
 sigtest() { # sigtest SIGNAL — start a slow ask, signal the wrapper while it waits
   setup
   FAKE_CLAUDE_MODE=slow300 PATH="$FAKE_BIN:$HERE/../bin:$PATH" env -u HERDR_ENV -u HARNESS_ROLE /bin/bash "$HARNESS" ask analyst "long" > "$WORK/sig.out" 2>/dev/null &
@@ -232,11 +232,13 @@ sigtest() { # sigtest SIGNAL — start a slow ask, signal the wrapper while it w
 sigtest HUP
 check "HUP: rc 129" [ "$KRC" -eq 129 ]
 check "HUP: jsonl exit 129" [ "$(jl .exit)" = 129 ]
-check "HUP: run gone" [ -n "$GC" ] && ! kill -0 "$GC" 2>/dev/null
+check "HUP: run survives the wrapper" kill -0 "$GC"
+kill "$GC" 2>/dev/null   # do not leak the fake run
 sigtest TERM
 check "TERM: rc 143" [ "$KRC" -eq 143 ]
 check "TERM: jsonl exit 143" [ "$(jl .exit)" = 143 ]
-check "TERM: run gone" [ -n "$GC" ] && ! kill -0 "$GC" 2>/dev/null
+check "TERM: run survives the wrapper" kill -0 "$GC"
+kill "$GC" 2>/dev/null   # do not leak the fake run
 check "TERM: log written" [ "$(logfiles | wc -l | tr -d ' ')" -eq 1 ]
 
 echo "PASS $pass / FAIL $fail"

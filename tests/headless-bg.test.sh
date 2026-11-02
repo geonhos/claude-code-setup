@@ -50,7 +50,6 @@ check "bg success: rc 0" [ "$RC" -eq 0 ]
 check "bg success: report printed" grep -q "analyst report" <<<"$OUT"
 check "bg success: note on stderr" grep -q "running analyst in the background" <<<"$OUT"
 check "bg success: herdr never called" no_herdr_calls
-check "bg success: .harness/panes untouched" [ ! -s .harness/panes ]
 check "bg success: .run viewer=bg" grep -qx "viewer=bg" .harness/asks/analyst.run
 check "bg success: .stream written" grep -q "^[^ ]* .*\.jsonl$" .harness/asks/analyst.stream
 check "bg success: exit.json rc 0" jqt '.rc == 0' .harness/asks/analyst.exit.json

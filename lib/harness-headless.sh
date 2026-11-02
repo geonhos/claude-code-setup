@@ -306,6 +306,7 @@ ask_headless() {
     exit 4
   fi
   if [ "$(viewer_mode)" = pane ] && ! herdr_usable; then die "viewer is 'pane' but herdr is not usable here (HERDR_ENV=1 and herdr on PATH); set viewer to auto or none"; fi
+  hl_close_viewer "$role"   # the previous run is over: close its viewer before the record goes
   rm -f "$a.run"   # a stale viewer record must not carry over
   # implementer only (decision 0009, amends D6): after an ask that did not end cleanly the next one
   # continues the session; --fresh overrides, --keep needs no help
@@ -435,7 +436,7 @@ hl_finish_close() {
 
 # close_headless <role> <force> <skip-missing> — close the role's run slot: kill a live run (--force), close its viewer
 close_headless() {
-  local role=$1 force=$2 skip=$3 pane reason=${CLOSE_REASON:-manual}
+  local role=$1 force=$2 skip=$3 pane reason=manual
   pane=$(hl_run_viewer "$role")
   # a viewer pane cannot be closed while herdr is unusable: close the run state only
   if [ -n "$pane" ] && ! herdr_env_ok; then pane=""; fi
@@ -497,7 +498,7 @@ cmd_wait() {
   [ -n "$timeout" ] || timeout=$(( $(hl_max_s "$role") * 1000 ))
   start=$(date +%s); deadline=$((start + (timeout + 999) / 1000)); prev=$start; dl0=$deadline; max_s=$(hl_max_s "$role")
   while :; do
-    if hl_done "$role" "$id"; then echo "done; collect: harness report $(ask_ref "$role")"; exit 0; fi
+    if hl_done "$role" "$id"; then hl_close_viewer "$role"; echo "done; collect: harness report $(ask_ref "$role")"; exit 0; fi
     if ! hl_alive "$role" && ! hl_starting "$role" "$id"; then
       # the runner may still be writing exit.json as its pid disappears: the same ~3 s grace as ask
       g=0; while [ "$g" -lt 30 ] && ! hl_done "$role" "$id"; do sleep 0.1; g=$((g + 1)); done

@@ -63,7 +63,7 @@ harness route-log '<json>'                               # append one line to .h
 
 ## 병렬 ask: `--worktree` (결정 0008)
 
-analyst·reviewer는 `--worktree [--base REF]`로 ask마다 자기 작업 트리(`git worktree add --detach`, 브랜치·머지 없음)를 받는다. 경로는 `~/.cache/harness/wt/<repo8>/<role>-<id8>`(`.harness/` 밖). ask-id는 시작할 때 stderr에 찍히고 `harness report <ask-id>`·`harness close <ask-id> [--force]`·`harness status`에 쓴다. 진행 로그·routing·retro는 메인 루트에 그대로 쌓인다(progress.jsonl에 `wt`/`base`/`ask_id`). 리포트를 정상 수집(exit 0/5)했고 작업 트리가 깨끗하면 자동 제거, 아니면 유지. 패치가 저장된 작업 트리는 자동으로 절대 지워지지 않고(idle TTL·LOG_DAYS 포함) `harness status`에 `kept`+패치 경로로 남아 `harness close <ask-id>`를 기다린다(저장된 패치 외 변경이 더 있을 때만 `--force`). 패치 파일은 close 뒤에도 남고 HARNESS_LOG_DAYS 후 정리된다. 패치 없는 깨끗한 kept는 idle TTL로 정리될 수 있다. 작업 트리 안에서 워커가 만든 커밋도 base 기준으로 패치(바이너리 포함)에 저장되고 그 트리는 깨끗하지 않은 것으로 보아 유지한다; 저장된 패치는 새 패치가 쓰일 때만 교체된다. 락은 소유 pid가 살아 있고 명령줄에 `harness`가 있을 때만 살아 있는 것으로 보며, `HARNESS_LOCK_MAX_S`(기본 120초)가 지나면 경고를 찍고 넘겨받는다. 동시에 `max_parallel`(기본 3, `HARNESS_MAX_PARALLEL`)개까지, 넘으면 exit 4. implementer에 쓰면 exit 1. 작업 트리 안의 `.harness/*.md` 산출물은 끝날 때 메인 `.harness/`로 복사되고(예약 이름 `goal.md`·`progress.md`·`task-*.md`와 심볼릭 링크는 제외; 메인 쪽이 그사이 바뀌었으면 `<name>.<id8>.md`), 그 밖의 변경은 `.harness/wt/<ask-id>.patch`로 저장되며 작업 트리는 유지된다. `HARNESS_WT_ROOT`는 저장소 밖 절대경로여야 하고, `--base`는 `--worktree`와 함께만 쓴다.
+analyst·reviewer는 `--worktree [--base REF]`로 ask마다 자기 작업 트리(`git worktree add --detach`, 브랜치·머지 없음)를 받는다. 경로는 `~/.cache/harness/wt/<repo8>/<role>-<id8>`(`.harness/` 밖). ask-id는 시작할 때 stderr에 찍히고 `harness report <ask-id>`·`harness close <ask-id> [--force]`·`harness status`에 쓴다. 진행 로그·routing·retro는 메인 루트에 그대로 쌓인다(progress.jsonl에 `wt`/`base`/`ask_id`). 리포트를 정상 수집(exit 0/5)했고 작업 트리가 깨끗하면 자동 제거, 아니면 유지. 패치가 저장된 작업 트리는 자동으로 절대 지워지지 않고(30분 고정 reap·LOG_DAYS 포함) `harness status`에 `kept`+패치 경로로 남아 `harness close <ask-id>`를 기다린다(저장된 패치 외 변경이 더 있을 때만 `--force`). 패치 파일은 close 뒤에도 남고 HARNESS_LOG_DAYS 후 정리된다. 패치 없는 깨끗한 kept는 30분 고정 reap으로 정리될 수 있다. 작업 트리 안에서 워커가 만든 커밋도 base 기준으로 패치(바이너리 포함)에 저장되고 그 트리는 깨끗하지 않은 것으로 보아 유지한다; 저장된 패치는 새 패치가 쓰일 때만 교체된다. 락은 소유 pid가 살아 있고 명령줄에 `harness`가 있을 때만 살아 있는 것으로 보며, `HARNESS_LOCK_MAX_S`(기본 120초)가 지나면 조용히 넘겨받는다. 동시에 `max_parallel`(기본 3, `HARNESS_MAX_PARALLEL`)개까지, 넘으면 exit 4. implementer에 쓰면 exit 1. 작업 트리 안의 `.harness/*.md` 산출물은 끝날 때 메인 `.harness/`로 복사되고(예약 이름 `goal.md`·`progress.md`·`task-*.md`와 심볼릭 링크는 제외; 메인 쪽이 그사이 바뀌었으면 `<name>.<id8>.md`), 그 밖의 변경은 `.harness/wt/<ask-id>.patch`로 저장되며 작업 트리는 유지된다. `HARNESS_WT_ROOT`는 저장소 밖 절대경로여야 하고, `--base`는 `--worktree`와 함께만 쓴다.
 
 ## 러너와 viewer
 
@@ -80,7 +80,7 @@ analyst·reviewer는 `--worktree [--base REF]`로 ask마다 자기 작업 트리
 ask가 끝날 때마다 로그를 정리한다. 최신 200개만 남기고, 14일이 지난 로그는 지우고, 1 MB를 넘은 `progress.jsonl`은 `progress.jsonl.<ts>.gz`로 압축해 옮긴다.
 조절 변수: `HARNESS_LOG_KEEP`, `HARNESS_LOG_DAYS`, `HARNESS_JSONL_MAX`(바이트).
 
-`harness status`의 `ctx` 열은 끝난 run의 `exit.json`에서 읽은 토큰 수이고, 알 수 없으면 `-`다.
+`harness status`의 `ctx` 열은 끝난 run의 `exit.json`에서 읽은 토큰 수이고, 알 수 없으면 `-`다. 늦게 도착한 리포트를 보관하는 archive는 없다: 끝난 뒤 `report <ask-id>`는 retro 후보만 큐에 넣는다. 0이 아닌 exit 뒤에는 role 세션을 시간 제한 없이 이어 쓰며(implementer는 자동 `--resume`), `--fresh`나 exit 0이 나올 때까지 계속된다.
 
 프롬프트마다 UserPromptSubmit 훅이 `.harness/routing.jsonl`에 `prompt` 줄을, `harness ask`가 끝날 때마다 `delegate` 줄(`source`: 스킬 경유면 `skill`, 아니면 `conductor`)을 남긴다. 직접 답변은 "다음 프롬프트까지 delegate 줄 없음"으로 나중에 도출한다. 이 로그는 결정 모델을 학습시켜 라우팅 힌트를 주기 위한 데이터다, 배경은 [docs/research/2026-10-20-decision-models-kev-vs-laya.md](docs/research/2026-10-20-decision-models-kev-vs-laya.md). `HARNESS_ROUTE_LOG=0`으로 끈다.
 
@@ -106,7 +106,7 @@ jq, git, 설정 중 무엇이 없어도 워커를 막지 않는다.
 
 - `harness`
 - `gh pr create|view|list|checks|comment|edit|merge`: `api`는 금지. `--body-file`은 `.harness/` 또는 `docs/` 아래 파일만 가능. `pr merge -d`는 금지.
-- 읽기 전용 `herdr`: `agent list|get|wait|explain`, `pane get|current`
+- 읽기 전용 `herdr`: `pane get|current`
 - 읽기 전용 `git`: `status`, `log`, `diff --stat`, `branch`(목록만: `-a -r -v --show-current`). patch, output, 삭제 플래그는 금지.
 - `ls` (재귀 금지)
 - `.harness/`와 `docs/` 아래의 `cat`/`ls` (인자에 따옴표, glob, `$` 금지)

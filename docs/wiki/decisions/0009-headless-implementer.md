@@ -23,7 +23,7 @@ verified_by: tests/headless-implementer.test.sh
 
 **Consequences.**
 - No deadline-restore race: `claude -p` waits for the Stop hook, so a report is never hidden when the run ends normally.
-- `.pending` means verification is in flight or was killed: it blocks the idle TTL reap and makes `harness report` say "still verifying".
+- `.pending` means verification is in flight or was killed: it makes `harness report` say "still verifying".
 - `harness close implementer --force` kills the tree, tests included; the next report is INTERRUPTED (5) and the following ask resumes the session.
 - The viewer tail applies to any failed multi-line tool result (the stateless jq stream cannot tell Bash apart); "verify done" carries no seconds.
 - Rollback: `runner.implementer` back to `pane`, `harness close implementer --force`.

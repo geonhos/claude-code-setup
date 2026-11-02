@@ -133,6 +133,36 @@ OUT=$(env -u HERDR_ENV HARNESS_VIEWER=pane HARNESS_POLL_SEC=0.2 PATH="$FAKE_BIN:
 check "viewer=pane without herdr: refused" [ "$RC" -eq 1 ]
 unset HARNESS_VIEWER
 
+# 8b. an ask that returns before the run ends (exit 4) must not leak the viewer pane: the next ask,
+# `report`, `wait` or `close --force` closes it once (split == close per run)
+hsetup; export FAKE_CLAUDE_MODE=slow20
+hrun ask analyst "q" --timeout 500
+check "viewer leak: early return rc 4" [ "$RC" -eq 4 ]
+sleep 4
+export FAKE_CLAUDE_MODE=success
+hrun ask analyst "q2"
+check "viewer leak: next ask rc 0" [ "$RC" -eq 0 ]
+check "viewer leak: 2 splits for 2 runs" [ "$(grep -c 'pane split' "$FAKE_LOG")" -eq 2 ]
+check "viewer leak: 2 closes for 2 runs" [ "$(grep -c 'pane close' "$FAKE_LOG")" -eq 2 ]
+hsetup; export FAKE_CLAUDE_MODE=slow20
+hrun ask analyst "q" --timeout 500
+sleep 4
+hrun report analyst
+check "viewer leak: report closes the pane once" [ "$(grep -c 'pane close' "$FAKE_LOG")" -eq 1 ]
+hrun close analyst --force
+check "viewer leak: close after report closes no second time" [ "$(grep -c 'pane close' "$FAKE_LOG")" -eq 1 ]
+hsetup; export FAKE_CLAUDE_MODE=slow20
+hrun ask analyst "q" --timeout 500
+hrun wait analyst
+check "viewer leak: wait closes the pane once" [ "$(grep -c 'pane close' "$FAKE_LOG")" -eq 1 ]
+hrun report analyst
+check "viewer leak: report after wait closes no second time" [ "$(grep -c 'pane close' "$FAKE_LOG")" -eq 1 ]
+hsetup; export FAKE_CLAUDE_MODE=slow20
+hrun ask analyst "q" --timeout 500
+hrun close analyst --force
+check "viewer leak: close --force closes the pane once" [ "$(grep -c 'pane close' "$FAKE_LOG")" -eq 1 ]
+export FAKE_CLAUDE_MODE=success
+
 # 9. watchdog
 hsetup; export FAKE_CLAUDE_MODE=hang HARNESS_HL_MAX_S=1
 hrun ask analyst "q" --timeout 30000

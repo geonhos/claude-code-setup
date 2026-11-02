@@ -85,7 +85,7 @@ CWD=${CWD%/}
 MSG_WRITE="Conductor cannot edit source. Delegate with the /implement skill (implementer worker). Direct writes are allowed only under docs/**/*.md and .harness/."
 MSG_READ="Conductor does not read source. Delegate with the /analyze skill (analyst worker) and read its report. Direct reads are allowed only under .harness/, docs/, and *.md files."
 MSG_WATCH="harness watch is for a human terminal; the conductor reads the report (harness report <worker>, or harness wait <worker> to block until the run ends)."
-MSG_BASH="Conductor shell is limited to ONE command per call: harness; gh pr create|view|list|checks|comment|edit|merge (no api, no merge -d); herdr agent list|get|wait|explain and pane get|current; git status / log / diff --stat / branch (list); cat or ls (no -R) under .harness/ and docs/. No ; & | redirects, backticks or \$(. Delegate command execution with the /implement skill (implementer worker)."
+MSG_BASH="Conductor shell is limited to ONE command per call: harness; gh pr create|view|list|checks|comment|edit|merge (no api, no merge -d); herdr pane get|current; git status / log / diff --stat / branch (list); cat or ls (no -R) under .harness/ and docs/. No ; & | redirects, backticks or \$(. Delegate command execution with the /implement skill (implementer worker)."
 
 # --- Bash allow/deny lists ---------------------------------------------------
 # Each piece below is one alternative; they are joined with | into one regex.
@@ -93,7 +93,6 @@ MSG_BASH="Conductor shell is limited to ONE command per call: harness; gh pr cre
 # Commands the conductor may run (matched against a whole masked segment).
 BASH_ALLOW='harness( .*)?'                                        # delegation CLI
 BASH_ALLOW="$BASH_ALLOW|"'herdr pane (get|current)( .*)?'        # herdr, read-only state ...
-BASH_ALLOW="$BASH_ALLOW|"'herdr agent (list|get|wait|explain)( .*)?'
 BASH_ALLOW="$BASH_ALLOW|"'gh( .*)?'                               # GitHub CLI (see GH_ALLOW, gh_segment_ok)
 BASH_ALLOW="$BASH_ALLOW|"'git status( (-[sb]+|--short|--branch|--porcelain(=v[12])?|--untracked-files=(no|normal|all)))*' # read-only git; no -v (prints diffs) ...
 BASH_ALLOW="$BASH_ALLOW|"'git log( .*)?'

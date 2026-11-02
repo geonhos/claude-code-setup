@@ -221,31 +221,28 @@ fmt_ctx() {
   esac
 }
 
-# last_ask_record <agent> [--ask-id ID|--any-id] [--where JQ] [--field JQ]
+# last_ask_record <agent> [--where JQ] [--field JQ]
 # The newest progress line of <agent> among the last 200 non-close lines that matches the
 # ask-id (default: $ASK_ID, "" = plain asks: a --worktree ask logs `agent: <role>` plus an
-# ask_id, and must never stand in for a plain ask; --any-id reads every line) and the extra
+# ask_id, and must never stand in for a plain ask) and the extra
 # jq condition --where. Prints --field (default: the compact line); nothing = unknown.
 # The ids are passed with --arg; --where/--field are jq source from the caller's own literals.
 last_ask_record() {
-  local agent=$1 id=${ASK_ID:-} any=0 where=true field=. prog
+  local agent=$1 id=${ASK_ID:-} where=true field=. prog
   shift
   while [ $# -gt 0 ]; do
     case "$1" in
-      --ask-id) id=$2; any=0; shift 2 ;;
-      --any-id) any=1; shift ;;
       --where) where=$2; shift 2 ;;
       --field) field=$2; shift 2 ;;
       *) return 2 ;;
     esac
   done
-  prog="fromjson? | select(type == \"object\" and .agent == \$a and (\$any == 1 or (.ask_id // \"\") == \$id)) | select($where) | $field"
+  prog="fromjson? | select(type == \"object\" and .agent == \$a and (.ask_id // \"\") == \$id) | select($where) | $field"
   grep -v '"event":"close"' "$JSONL" 2>/dev/null | tail -n 200 \
-    | jq -R -r -c --arg a "$agent" --arg id "$id" --argjson any "$any" "$prog" 2>/dev/null | tail -n 1
+    | jq -R -r -c --arg a "$agent" --arg id "$id" "$prog" 2>/dev/null | tail -n 1
 }
 
-# last_exit <agent> — exit code of the agent's last logged plain ask (late archives
-# have no exit and are skipped; worktree asks are not plain asks); nothing when unknown
+# last_exit <agent> — exit code of the agent's last logged plain ask (worktree asks are not plain asks); nothing when unknown
 last_exit() {
   last_ask_record "$1" --where '(.exit | type) == "number"' --field .exit
 }
@@ -894,15 +891,15 @@ cmd_close() {
     --all)
       for a in $AGENTS; do
         ( close_headless "$a" "$force" 1 ); r=$?
-        # keep the most significant failure: 6 (other repo) > 4 (refused) > 1
-        case "$r" in 0) ;; 6) rc=6 ;; 4) [ "$rc" = 6 ] || rc=4 ;; *) [ "$rc" != 0 ] || rc=$r ;; esac
+        # keep the most significant failure: 4 (refused) > 1
+        case "$r" in 0) ;; 4) rc=4 ;; *) [ "$rc" != 0 ] || rc=$r ;; esac
       done
       # worktree asks too (a live run is refused unless --force, like a plain worker)
       for a in $WT_DIR/*.json; do
         [ -f "$a" ] || continue
         case "$(jq -r '.state // empty' "$a" 2>/dev/null)" in running|kept|creating) ;; *) continue ;; esac
         ( close_wt "$a" "$force" ); r=$?
-        case "$r" in 0) ;; 6) rc=6 ;; 4) [ "$rc" = 6 ] || rc=4 ;; *) [ "$rc" != 0 ] || rc=$r ;; esac
+        case "$r" in 0) ;; 4) rc=4 ;; *) [ "$rc" != 0 ] || rc=$r ;; esac
       done
       exit "$rc" ;;
   esac
