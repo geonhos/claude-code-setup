@@ -8,10 +8,10 @@ gate the conductor's shell, verify worker output and resume from progress logs.
 `install.sh` symlinks everything into `~/.claude` and `~/bin`.
 
 ## Layout
-- `bin/`: `harness` (CLI: ask, wait, report, watch, close, status, retro, metrics) and `harness-verify`
-- `lib/`: `harness-defaults.sh` (roles, default timeouts, viewer default; sourced by `harness` and `harness-verify`), `harness-metrics.sh` (metrics + wiki-lint), `harness-worktree.sh` (`--worktree` asks), `harness-headless.sh` (headless runner glue); `bin/harness` sources its lib files eagerly from an explicit list
+- `bin/`: `harness` (CLI: ask, wait, report, watch, close, status, metrics, wiki-lint) and `harness-verify`
+- `lib/`: `harness-defaults.sh` (roles, default timeouts, viewer default; sourced by `harness` and `harness-verify`), `harness-metrics.sh` (metrics + wiki-lint), `harness-headless.sh` (headless runner glue); `bin/harness` sources its lib files eagerly from an explicit list
 - `claude/agents/`: conductor, analyst, implementer, reviewer, solo prompts
-- `claude/hooks/`: conductor-gate, conductor-route, conductor-resume (SessionStart)
+- `claude/hooks/`: conductor-gate, conductor-resume (SessionStart)
 - `claude/skills/`: /analyze, /implement, /review (conductor-only)
 - `tests/`: `*.test.sh` suites plus `fake-herdr`
 - `docs/`: `wiki/` (durable knowledge), `superpowers/plans/`, `research/`
@@ -65,7 +65,5 @@ file:line or log).
 
 Promotions happen only through a human-approved PR.
 
-Failed asks queue retro candidates (`.harness/retro/`); `harness retro` batches
-them into one analyst ask whose lessons go to `docs/wiki/inbox/` (decision 0004).
 `harness metrics` reports ask/exit/duration rates and wiki health; run it before
 proposing harness changes.

@@ -1,7 +1,7 @@
 #!/bin/bash
 # install.sh — wire this repo into ~/.claude as the conductor setup:
 # agent and skill symlinks, the harness CLI, and settings.json (gate hook,
-# resume hook, routing-log hook, cache TTLs, Bash timeouts). It no longer sets
+# resume hook, cache TTLs, Bash timeouts). It no longer sets
 # the global `agent` key (a previous `agent: conductor` is removed once): the
 # conductor role is per repo, set by `harness init` in .claude/settings.json.
 # Idempotent. Re-run after pulling changes.
@@ -21,7 +21,6 @@ GIT_IGNORE=${GIT_IGNORE:-${XDG_CONFIG_HOME:-$HOME/.config}/git/ignore}
 SETTINGS="$CLAUDE_DIR/settings.json"
 GATE="$REPO/claude/hooks/conductor-gate.sh"
 RESUME="$REPO/claude/hooks/conductor-resume.sh"
-ROUTE="$REPO/claude/hooks/conductor-route.sh"
 MATCHER="Edit|Write|Read|Grep|Glob|Bash"
 
 die() { echo "install: $*" >&2; exit 1; }
@@ -192,7 +191,7 @@ case ":$PATH:" in
   *) echo "warning: $BIN_DIR is not on PATH; add it so the conductor can run 'harness'" >&2 ;;
 esac
 
-# 3. settings.json: cache TTLs + exactly one entry each for the gate, resume and route hooks
+# 3. settings.json: cache TTLs + exactly one entry each for the gate and resume hooks (and drops the retired route hook)
 bak="$SETTINGS.bak.$(date +%Y%m%d%H%M%S)"
 cp "$SETTINGS" "$bak"
 tmp=$(mktemp)
@@ -200,7 +199,7 @@ trap 'rm -f "$tmp"' EXIT
 if [ "$(jq -r '.agent // empty' "$SETTINGS")" = conductor ]; then
   echo "note: removed the global agent=conductor from $SETTINGS; run 'harness init' in each repo that should use the conductor"
 fi
-jq --arg gate "$GATE" --arg matcher "$MATCHER" --arg resume "$RESUME" --arg route "$ROUTE" '
+jq --arg gate "$GATE" --arg matcher "$MATCHER" --arg resume "$RESUME" '
   (if .agent == "conductor" then del(.agent) else . end)
   | .promptCacheTtl = "1h"
   | .subagentPromptCacheTtl = "1h"
@@ -216,10 +215,13 @@ jq --arg gate "$GATE" --arg matcher "$MATCHER" --arg resume "$RESUME" --arg rout
   | .hooks.SessionStart //= []
   | .hooks.SessionStart |= map(if any(.hooks[]?; .command == $resume) then (.hooks |= map(select(.command != $resume))) | select((.hooks | length) > 0) else . end)
   | .hooks.SessionStart += [{matcher: "startup|clear|compact", hooks: [{type: "command", command: $resume}]}]
-  # same for the UserPromptSubmit routing-log hook (no matcher: every prompt)
-  | .hooks.UserPromptSubmit //= []
-  | .hooks.UserPromptSubmit |= map(if any(.hooks[]?; .command == $route) then (.hooks |= map(select(.command != $route))) | select((.hooks | length) > 0) else . end)
-  | .hooks.UserPromptSubmit += [{hooks: [{type: "command", command: $route}]}]
+  # the routing-log hook was removed: drop any stale entry by path suffix (the repo may have moved)
+  | if .hooks.UserPromptSubmit then
+      .hooks.UserPromptSubmit |= map(if any(.hooks[]?; (.command // "") | endswith("/conductor-route.sh"))
+        then (.hooks |= map(select((.command // "") | endswith("/conductor-route.sh") | not))) | select((.hooks | length) > 0)
+        else . end)
+      | if .hooks.UserPromptSubmit == [] then del(.hooks.UserPromptSubmit) else . end
+    else . end
 ' "$SETTINGS" > "$tmp"
 cat "$tmp" > "$SETTINGS" || die "failed to write $SETTINGS; restore from $bak"
 
@@ -235,7 +237,6 @@ cat <<EOF
 installed:
   gate hook      $GATE  (matcher: $MATCHER)
   resume hook    $RESUME  (SessionStart: startup|clear|compact)
-  route hook     $ROUTE  (UserPromptSubmit: logs prompts to .harness/routing.jsonl)
   agents         $CLAUDE_DIR/agents/ ($(cd "$REPO/claude/agents" && ls *.md | tr '\n' ' '))
   skills         $CLAUDE_DIR/skills/ ($(cd "$REPO/claude/skills" && ls -d */ | tr -d / | tr '\n' ' '))
   harness        $BIN_DIR/harness
@@ -247,5 +248,5 @@ installed:
   cache TTL      promptCacheTtl=1h subagentPromptCacheTtl=1h
   bash timeouts  env.BASH_DEFAULT_TIMEOUT_MS=600000 env.BASH_MAX_TIMEOUT_MS=7200000
   gitignore      $GIT_IGNORE (+ .harness/)
-next: run "harness init" in a repo to opt it in, then start Claude there. Past pollution (stray .harness/ dirs): "harness doctor --fix"
+next: run "harness init" in a repo to opt it in, then start Claude there.
 EOF

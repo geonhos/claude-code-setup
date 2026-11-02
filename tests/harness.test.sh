@@ -1,5 +1,5 @@
 #!/bin/bash
-# bin/harness (headless runner only): preconditions, worker guard, report, defaults, init/doctor. Run: /bin/bash tests/harness.test.sh
+# bin/harness (headless runner only): preconditions, worker guard, report, defaults, init. Run: /bin/bash tests/harness.test.sh
 set -u
 . "$(dirname "$0")/harness-lib.sh"
 
@@ -32,7 +32,6 @@ OUT=$(HERDR_ENV=1 HERDR_PANE_ID=w1:p1 PATH="$FAKE_BIN:$PATH" HARNESS_ROLE=worker
 check "worker ask rc 1" [ "$RC" -eq 1 ]
 check "worker ask message" grep -q conductor <<<"$OUT"
 check "worker ask: no progress.jsonl" [ ! -e "$WORK/.harness/progress.jsonl" ]
-check "worker ask: no routing.jsonl" [ ! -e "$WORK/.harness/routing.jsonl" ]
 check "worker ask: no viewer pane" not_logged "pane split"
 OUT=$(HERDR_ENV=1 HERDR_PANE_ID=w1:p1 PATH="$FAKE_BIN:$PATH" HARNESS_ROLE=worker $GUARD /bin/bash "$HARNESS" status 2>&1); RC=$?
 check "worker status still works" [ "$RC" -eq 0 ]
@@ -206,20 +205,6 @@ check "init (default) leaves the tracked settings.json alone" [ ! -e .claude/set
 check "init names the target file" grep -q "settings.local.json" <<<"$OUT"
 run init
 check "init is idempotent" bash -c '[ "$1" = 0 ] && [ "$(jq -r .agent .claude/settings.local.json)" = conductor ]' _ "$RC"
-# config migration: the exact pre-step-3 template is rewritten; an edited file with pane keys is
-# kept, ignored, and noted once on stderr (never an error)
-V1=$(sed -n "/^config_template_v1() {/,/^EOC/p" "$HARNESS" | sed '1,2d;$d')
-printf '%s\n' "$V1" > .harness/config.json
-run status
-check "config v1 template: status ok" [ "$RC" = 0 ]
-check "config v1 template: rewritten to _doc + viewer" [ "$(jq -r 'keys | join(" ")' .harness/config.json)" = "_doc viewer" ]
-printf '{"runner":{"analyst":"pane"},"close_after_ask":{"analyst":"on_success"},"viewer":"none"}\n' > .harness/config.json
-run status
-check "config with pane keys: no error" [ "$RC" = 0 ]
-check "config with pane keys: one-time note" grep -q "keys runner, close_after_ask and idle_ttl_minutes are ignored" <<<"$OUT"
-check "config with pane keys: file untouched" [ "$(jq -r .viewer .harness/config.json)" = none ]
-run status
-check "config with pane keys: note only once" [ -z "$(grep 'are ignored' <<<"$OUT")" ]
 run init --bogus
 check "init rejects unknown flag" [ "$RC" != 0 ]
 
@@ -275,31 +260,6 @@ run ask analyst "q"
 check "after init, ask gets past the marker check" bash -c '! grep -q "not a harness checkout" <<<"$1"' _ "$OUT"
 unset GIT_CONFIG_GLOBAL GIT_CONFIG_NOSYSTEM XDG_CONFIG_HOME
 
-# --- harness doctor ---
-unset HARNESS_ROLE  # a worker's env must not leak in; the refusal test sets it explicitly
-setup; D=$(cd "$(mktemp -d)" && pwd -P); H2=$(mktemp -d)
-mkdir -p "$D/a/.harness" "$D/b/.harness/asks" "$D/c/.harness"
-echo '{}' > "$D/a/.harness/config.json"
-echo '{}' > "$D/b/.harness/config.json"
-echo x > "$D/c/.harness/mystery.txt"; echo '{}' > "$D/c/.harness/config.json"
-mkdir -p "$H2/.claude"; printf '{"agent":"conductor","model":"m"}\n' > "$H2/.claude/settings.json"
-OUT=$(HOME=$H2 /bin/bash "$HARNESS" doctor "$D" 2>&1); RC=$?
-check "doctor: exit 0" [ "$RC" = 0 ]
-check "doctor: lists stray with only config" grep -q "stray: $D/a/.harness" <<<"$OUT"
-check "doctor: never lists a checkout with asks" bash -c '! grep -q "$1/b" <<<"$2"' _ "$D" "$OUT"
-check "doctor: lists unknown-file stray" grep -q "$D/c/.harness.*unknown" <<<"$OUT"
-check "doctor: reports global agent key" grep -q "global:" <<<"$OUT"
-check "doctor dry run removes nothing" [ -d "$D/a/.harness" ]
-OUT=$(HOME=$H2 /bin/bash "$HARNESS" doctor --fix "$D" 2>&1); RC=$?
-check "doctor --fix: exit 0" [ "$RC" = 0 ]
-check "doctor --fix removes the plain stray" [ ! -e "$D/a/.harness" ]
-check "doctor --fix keeps checkout with asks" [ -d "$D/b/.harness/asks" ]
-check "doctor --fix skips unknown files" bash -c '[ -e "$1/c/.harness/mystery.txt" ] && grep -q "skipped (unknown files)" <<<"$2"' _ "$D" "$OUT"
-check "doctor --fix removes global agent key" [ "$(jq -r '.agent // "none"' "$H2/.claude/settings.json")" = none ]
-check "doctor --fix keeps other settings keys" [ "$(jq -r .model "$H2/.claude/settings.json")" = m ]
-OUT=$(HOME=$H2 /bin/bash "$HARNESS" doctor "$D" 2>&1)
-check "doctor: second run lists only the skipped one" bash -c '! grep -q "$1/a" <<<"$2" && grep -q "$1/c" <<<"$2"' _ "$D" "$OUT"
-
 # --- init from a subdir lands at the git toplevel (and from a git worktree) ---
 setup; rm -rf .harness; git init -q .; mkdir -p deep/er
 ( cd deep/er && HERDR_ENV=1 env -u HARNESS_ROLE /bin/bash "$HARNESS" init --no-agent >/dev/null 2>&1 )
@@ -320,48 +280,12 @@ check "symlinked cwd: ask finds the checkout" bash -c '! grep -q "not a harness 
 
 # --- marker side effects: nothing creates .harness/ outside a checkout ---
 setup; rm -rf .harness
-run retro
-check "retro outside a checkout: nothing pending, no .harness" bash -c '[ ! -e .harness ] && grep -q "nothing pending" <<<"$1"' _ "$OUT"
+run status
+check "status outside a checkout: no .harness created" [ ! -e .harness ]
 # a stray .harness/ (no asks/) in an un-init dir is never written to
-setup; rm -rf .harness; mkdir -p .harness/retro; echo '{"ask_id":"a1","role":"analyst","reason":"x"}' > .harness/retro/a1.json
+setup; rm -rf .harness; mkdir -p .harness/log; echo x > .harness/log/a1.md
 STRAY_BEFORE=$(find .harness | sort | tr '\n' ' ')
-run retro
-check "retro: stray .harness/ (no asks/) refused and unchanged" bash -c '[ "$(find .harness | sort | tr "\n" " ")" = "$1" ] && grep -q "not a harness checkout" <<<"$2"' _ "$STRAY_BEFORE" "$OUT"
-# --- doctor hardening ---
-setup; D=$(cd "$(mktemp -d)" && pwd -P); H2=$(mktemp -d)
-OUT=$(HARNESS_ROLE=worker HOME=$H2 /bin/bash "$HARNESS" doctor "$D" 2>&1); RC=$?
-check "doctor refuses under HARNESS_ROLE=worker" bash -c '[ "$1" != 0 ] && grep -q "conductor" <<<"$2"' _ "$RC" "$OUT"
-# symlinked child dir and symlinked .harness are not followed
-mkdir -p "$D/real/.harness" "$D/lnk-target/x" "$D/s/.harness-real"
-echo '{}' > "$D/real/.harness/config.json"
-ln -s "$D/real" "$D/link-child"
-mkdir -p "$D/p" "$H2/p-real/.harness"; echo '{}' > "$H2/p-real/.harness/config.json"; ln -s "$H2/p-real/.harness" "$D/p/.harness"
-OUT=$(HOME=$H2 /bin/bash "$HARNESS" doctor --fix "$D" 2>&1)
-check "doctor: real stray removed" [ ! -e "$D/real/.harness" ]
-check "doctor: symlinked child dir not followed" bash -c '! grep -q "link-child" <<<"$1"' _ "$OUT"
-check "doctor: symlinked .harness skipped, target kept" bash -c '[ -L "$1/p/.harness" ] && [ -d "$2/p-real/.harness" ]' _ "$D" "$H2"
-# DIR itself given as a symlink is resolved physically
-mkdir -p "$D/t/.harness"; echo '{}' > "$D/t/.harness/config.json"; ln -s "$D/t" "$D/tl"
-OUT=$(HOME=$H2 /bin/bash "$HARNESS" doctor "$D/tl" 2>&1)
-check "doctor: DIR symlink resolved physically" grep -q "stray: $D/t/.harness" <<<"$OUT"
-# default scope: sibling repos of this repo, never $HOME
-S=$(cd "$(mktemp -d)" && pwd -P); mkdir -p "$S/me" "$S/sib/.harness" "$S/far/deeper/.harness"; echo '{}' > "$S/sib/.harness/config.json"; echo '{}' > "$S/far/deeper/.harness/config.json"
-( cd "$S/me" && git init -q . )
-OUT=$(cd "$S/me" && HOME=$H2 /bin/bash "$HARNESS" doctor 2>&1)
-check "doctor default scope: lists the sibling repo stray" grep -q "stray: $S/sib/.harness" <<<"$OUT"
-check "doctor default scope: does not go two levels down" bash -c '! grep -q "deeper" <<<"$1"' _ "$OUT"
-mkdir -p "$S/hh/me" "$S/hh/other/.harness"; echo '{}' > "$S/hh/other/.harness/config.json"; ( cd "$S/hh/me" && git init -q . )
-mkdir -p "$S/hh/.claude"; echo '{"agent":"conductor","model":"m"}' > "$S/hh/.claude/settings.json"
-OUT=$(cd "$S/hh/me" && HOME="$S/hh" /bin/bash "$HARNESS" doctor --fix 2>&1); RC=$?
-check "doctor refuses a default scope of \$HOME" bash -c '[ "$1" != 0 ] && grep -q "refusing to scan" <<<"$2"' _ "$RC" "$OUT"
-check "doctor refusing \$HOME removed nothing" [ -d "$S/hh/other/.harness" ]
-check "doctor from \$HOME: global key fixed before the refusal" bash -c '[ "$(jq -r ".agent // \"none\"" "$1/.claude/settings.json")" = none ] && grep -q "removed: agent key" <<<"$2"' _ "$S/hh" "$OUT"
-# global settings: symlink kept, .bak made once
-mkdir -p "$H2/real"; printf '{"agent":"conductor","model":"m"}\n' > "$H2/real/s.json"; mkdir -p "$H2/.claude"; ln -s "$H2/real/s.json" "$H2/.claude/settings.json"
-OUT=$(cd "$D" && HOME=$H2 /bin/bash "$HARNESS" doctor --fix "$D/s" 2>&1)
-check "doctor --fix: symlinked global settings stays a symlink" [ -L "$H2/.claude/settings.json" ]
-check "doctor --fix: agent key removed through the link" [ "$(jq -r '.agent // "none"' "$H2/real/s.json")" = none ]
-check "doctor --fix: .bak keeps the original" [ "$(jq -r .agent "$H2/.claude/settings.json.bak")" = conductor ]
-
+run status
+check "status: stray .harness/ (no asks/) left unchanged" [ "$(find .harness | sort | tr '\n' ' ')" = "$STRAY_BEFORE" ]
 echo "PASS $pass / FAIL $fail"
 [ "$fail" -eq 0 ]

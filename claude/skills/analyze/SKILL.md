@@ -24,7 +24,7 @@ investigation yourself (`harness ask` refuses to run in a worker session anyway)
 2. Run with the Bash tool's `run_in_background: true` **and** `timeout: 7200000` (the Bash tool's maximum; without it the call is killed at the tool's default timeout, long before the 60-90 min wait ends) (the task notification wakes you when the run ends):
 
    ```
-   harness ask analyst 'Read .harness/task-analyst.md and do it.' --via skill
+   harness ask analyst 'Read .harness/task-analyst.md and do it.'
    ```
 
    Every ask starts a fresh session; add `--keep` for a follow-up that needs the

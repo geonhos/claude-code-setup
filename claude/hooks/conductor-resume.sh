@@ -23,7 +23,7 @@ fi
 # The root is the nearest dir at or above DIR with .harness/asks/, searched up to
 # the dir holding .git (file or dir) inclusive; outside git only DIR counts. Same
 # rule as enter_root in bin/harness-verify. This body is copied byte-for-byte into
-# conductor-gate, -route and -resume (tests/gate.test.sh checks it).
+# conductor-gate and -resume (tests/gate.test.sh checks it).
 harness_root() {
   local start d hit=""
   start=$(cd "${1:-/}" 2>/dev/null && pwd -P) || return 1

@@ -1,7 +1,7 @@
 ---
 type: decision
 status: active
-updated: 2026-11-01
+updated: 2026-11-02
 sources: [.harness/herdr-optional-design.md, .harness/pr2-gate-design.md, PR #36, claude/hooks/conductor-gate.sh, bin/harness]
 verified_by: tests/gate.test.sh, tests/harness.test.sh, tests/install.test.sh
 ---
@@ -36,3 +36,5 @@ harness must never interfere with repos that do not use it.
 - Outside a checkout the conductor prompt and its disallowedTools still apply only if
   the session was started with `--agent conductor`; plain sessions are untouched.
 - A stray `.harness/config.json` without `asks/` no longer gates or logs anything.
+
+Prune step 4 (2026-11-02): `harness doctor` and `--worktree` were removed; the route hook went with the routing log.

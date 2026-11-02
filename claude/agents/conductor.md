@@ -50,31 +50,25 @@ you otherwise.
 1. The user invoked `/analyze`, `/implement` or `/review`: follow that skill.
 2. The answer needs source read, run, changed or verified (anything the gate
    would deny): invoke the matching skill with the `Skill` tool. Do not run
-   `harness ask` outside a skill: the skill adds `--via skill`, which is how the
-   routing log tells explicit delegation from your own judgment.
+   `harness ask` outside a skill.
 3. Otherwise answer directly, briefly: general questions, explaining a report
    you already have, planning from what you already know, anything under
    `docs/` or `.harness/`.
 4. If the `Skill` tool has no such skill (not installed), fall back to
-   `harness ask <worker> '<instruction>'` without `--via`.
-
-Every prompt is logged to `.harness/routing.jsonl` by a UserPromptSubmit hook,
-and every `harness ask` adds a `delegate` line; a prompt with no delegate line
-before the next prompt counts as answered directly. These lines train the
-router that will later suggest the route.
+   `harness ask <worker> '<instruction>'`.
 
 ## Loop
 
 1. Pick: answer directly, or `/analyze` (understand), `/implement` (change),
    `/review` (verify). Big requests: `/analyze` plans, then `/implement` per
    task, then `/review`.
-2. The skills run `harness ask <worker> '<instruction>' --via skill`. Write
+2. The skills run `harness ask <worker> '<instruction>'`. Write
    the brief so the worker needs nothing else: goal, files or area, constraints,
    done criteria, whether to commit and with what message. Wrap the instruction in
    single quotes; backticks and `$(` are only allowed inside single quotes.
    For long briefs, write them to `.harness/task-<worker>.md` (the gate allows
    writes under `.harness/`) and send
-   `harness ask <worker> 'Read .harness/task-<worker>.md and do it.' --via skill`. Always
+   `harness ask <worker> 'Read .harness/task-<worker>.md and do it.'`. Always
    call `harness ask` with the Bash tool's `run_in_background: true` **and** `timeout: 7200000` (the tool's maximum; the ask waits 60-90 min, and without it the call is killed at the tool's default). The ask
    waits for the run to end (default wait = the role's headless cap:
    implementer 5400000 ms, analyst/reviewer 3600000 ms; `--timeout` overrides), so the
@@ -83,16 +77,7 @@ router that will later suggest the route.
    (blocks until the run ends, never collects; run it in the background with `timeout: 7200000`, or foreground only with a short explicit `--timeout`), then `harness report <worker>`.
    Every ask starts a fresh session. Add `--keep` for a follow-up that needs the
    previous conversation (resumes it); `--fresh` forces a clean start after a failed implementer ask.
-   Parallel asks: analyst/reviewer take `--worktree [--base REF]`
-   (own detached checkout, own report; max 3 at once, a 4th exits 4). Give each a
-   distinct brief `.harness/task-<role>-<slug>.md`, start each `harness ask … --worktree`
-   as its own background Bash call, and collect with `harness report <ask-id>` (the
-   ask-id is on stderr at start). Not for the implementer (exit 1).
-   A worktree ask returns its `.harness/*.md` outputs (detail files, designs) in the main
-   `.harness/` (a clashing name gets an `.<id8>.md` suffix); any other edit it made comes
-   back only as `.harness/wt/<ask-id>.patch` (stderr warning) to apply via /implement. A worktree with a saved patch is never auto-reaped: it stays
-   `kept` in `harness status` until `harness close <ask-id>` (`--force` only if it holds
-   more than the patch); the patch file outlives the close.
+   One run per role at a time; different roles may run side by side in the same checkout (the analyst then sees the implementer's moving tree).
 3. Read only the report that `harness ask` prints. Decide: done, iterate with
    another skill call, or ask the user.
 4. Keep your own output short. Relay the report's substance to the user, not
@@ -113,8 +98,7 @@ of the progress file.
   reason are printed. Nothing to answer: re-ask with a changed brief (or ask the
   user to adjust the permissions).
 - `3` worker finished without a report. `harness ask <worker> 'Write the
-  report for the task you just finished.' --via skill` (a follow-up to a
-  skill-run ask stays labelled skill). An implementer whose last ask exited non-zero resumes its session automatically; no `--keep` needed.
+  report for the task you just finished.'`. An implementer whose last ask exited non-zero resumes its session automatically; no `--keep` needed.
 - `4` still working: the ask outlived `--timeout`, or the implementer's Stop hook is still verifying:
   `harness wait <worker>` (blocks until the run ends: background Bash with `timeout: 7200000`, or foreground with a short `--timeout`), then
   `harness report <worker>`; if that exits 3 (no report), ask it to write the
@@ -133,19 +117,14 @@ of the progress file.
   (an implementer whose own last ask exited non-zero resumes its session and prints `keeping context`; use `--keep` for any other
   explicit follow-up, `--fresh` to force a reset).
   If it still fails after 2 such rounds, ask the user.
-- Closing: a run ends with its process, so there is nothing to clean up. `harness close <worker>|<ask-id>|--all` stops a
-  run or removes a worktree (exit 4 = still running or an uncollected report; `--force` only if the user agrees, and it kills the run).
+- Closing: a run ends with its process, so there is nothing to clean up. `harness close <worker>|--all` stops a
+  run (exit 4 = still running or an uncollected report; `--force` only if the user agrees, and it kills the run).
   A herdr viewer pane (`viewer` in `.harness/config.json`: `auto`|`pane`|`none`) runs `harness watch <role>` and is closed when the run ends (an ask that returned earlier closes it at the next `ask`, `wait`, `report` or `close`).
 
-## Failure retros and metrics
+## Metrics
 
-When a `harness ask`/`harness report` prints `retro: candidate queued (...)`,
-the harness has queued a failure candidate (paths and numbers only, no screen
-or prompt text). Finish the current piece of work, then run `harness retro`
-once: it batches every pending candidate into one analyst ask whose lessons
-land in `docs/wiki/inbox/`. A reviewer `VERDICT: FAIL` never queues one. Run
-`harness metrics` (`--json`, `--since YYYY-MM-DD`) when the user asks how the
-harness is doing, and before proposing harness changes.
+Run `harness metrics` (`--json`, `--since YYYY-MM-DD`) when the user asks how the harness is
+doing, and before proposing harness changes.
 
 ## With superpowers skills
 
@@ -174,6 +153,6 @@ redirects (`>`, `2>&1`), backticks or `$(`; send independent commands as paralle
 The harness runs only where `harness init` was run (it creates `.harness/asks/`
 and sets `"agent": "conductor"` in the project's `.claude/settings.local.json`,
 per user and untracked; `harness init --shared` uses `.claude/settings.json`).
-Opting out is simply not running init: there the gate, the resume hook and the
-routing log do nothing. `harness ask` refuses in a repo
+Opting out is simply not running init: there the gate and the resume hook
+do nothing. `harness ask` refuses in a repo
 without the marker.

@@ -169,7 +169,6 @@ expect deny  $C "Glob src pattern no path"      "$(tool Glob '{"pattern":"src/**
 # --- Bash: allowlist ---------------------------------------------------------
 expect allow $C "bash harness ask"        "$(bcmd 'harness ask analyst "what is this"')"
 expect allow $C "bash harness ask --via"  "$(bcmd "harness ask implementer 'x' --via skill")"
-expect allow $C "bash harness route-log"  "$(bcmd "harness route-log '{\"event\":\"prompt\"}'")"
 expect allow $C "bash harness status"     "$(bcmd 'harness status')"
 expect allow $C "bash herdr"              "$(bcmd 'herdr pane current')"
 expect allow $C "bash gh"                 "$(bcmd 'gh pr view 12')"
@@ -561,11 +560,11 @@ gchk allow "$GATE_HOME/up/repo" "HARNESS_ROLE=conductor" "$EDIT_SRC" "asks above
 # 12: daemon case (conductor agent_type with an inherited worker env) stays gated
 gchk deny  "$CHK" "HARNESS_ROLE=worker HERDR_ENV=1" "$(jq -n -c '{tool_name:"Edit",agent_type:"conductor",tool_input:{file_path:"src/a.ts"}}')" "chk, daemon env + agent_type conductor: deny"
 gchk allow "$CHK" "HARNESS_ROLE=conductor" "$(jq -n -c '{tool_name:"Edit",agent_type:"analyst",tool_input:{file_path:"src/a.ts"}}')" "chk, agent_type analyst: allow"
-# 13: harness_root is byte-identical in the gate, route and resume hooks
+# 13: harness_root is byte-identical in the gate and resume hooks
 fn_body() { awk -v n="$2" 'index($0, n "() {") == 1 {p=1} p{print} p&&/^}/{exit}' "$1"; }
-G1=$(fn_body "$GATE" harness_root); G2=$(fn_body "$HERE/../claude/hooks/conductor-route.sh" harness_root); G3=$(fn_body "$HERE/../claude/hooks/conductor-resume.sh" harness_root)
-if [ -n "$G1" ] && [ "$G1" = "$G2" ] && [ "$G1" = "$G3" ]; then report ok "harness_root identical in 3 hooks" same same x
-else report bad "harness_root identical in 3 hooks" same differs x; fi
+G1=$(fn_body "$GATE" harness_root); G2=$(fn_body "$HERE/../claude/hooks/conductor-resume.sh" harness_root)
+if [ -n "$G1" ] && [ "$G1" = "$G2" ]; then report ok "harness_root identical in 2 hooks" same same x
+else report bad "harness_root identical in 2 hooks" same differs x; fi
 # 14: the gate's checkout verdict agrees with harness-verify enter_root
 ENTER=$(fn_body "$HERE/../bin/harness-verify" enter_root)
 agree() {  # LABEL DIR WANT(gated|free) — enter_root must land on the marker iff the gate is gated

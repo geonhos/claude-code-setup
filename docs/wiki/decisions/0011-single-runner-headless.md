@@ -23,3 +23,5 @@ verified_by: harness metrics + tests/headless*.test.sh
 **Consequences.** Fresh repos need no herdr. Typed intervention in a running worker is gone (user accepted 2026-11-01). The troubleshooting pages about pane sessions and 0002/0003/0005/0006 become superseded at step 3. Rule behind this effort (`AGENTS.md`): no new mode without removing one.
 
 Step 3 done 2026-11-02: pane runner, `harness spawn`, `close_after_ask`, idle-TTL reap, `/clear` scheduling, late-report archive and the `runner` config key are removed; 0002, 0003, 0006 and five pane troubleshooting pages are superseded.
+
+Step 4 done 2026-11-02: routing log and route hook, retro, `--worktree` (registry, locks, `max_parallel`) and doctor removed; `--via` is a no-op until step 5; 0004 and 0008 superseded.

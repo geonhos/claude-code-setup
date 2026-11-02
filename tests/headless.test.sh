@@ -176,27 +176,6 @@ check "live 2nd ask: viewer recorded as a pane" [ "${v#pane:}" != "$v" ]
 check "live 2nd ask: no pane close" [ "$(grep -c 'pane close' "$FAKE_LOG")" -eq 0 ]
 check "live 2nd ask: .run keeps the viewer" [ "$(run_viewer)" = "$v" ]
 hrun close analyst --force
-# wait <ask-id> (worktree ask) closes only that ask's pane, not the role's own run
-hsetup; export FAKE_CLAUDE_MODE=slow20
-git init -q . && git config user.email t@t && git config user.name t
-echo one > a.txt && git add a.txt && git commit -qm one
-mkdir -p .git/info && echo '.harness/' >> .git/info/exclude
-export HARNESS_WT_ROOT="$WORK.wt"; WORKS="$WORKS $WORK.wt"
-hrun ask analyst "plain" --timeout 500
-pv=$(run_viewer)
-hrun ask analyst "wt" --worktree --timeout 500
-wid=$(sed -n 's/^harness: ask \([^ ]*\) .*/\1/p' <<<"$OUT" | head -n 1)
-wdir=$(ls -d "$HARNESS_WT_ROOT"/*/analyst-* 2>/dev/null | head -n 1)
-check "wait ask-id: worktree ask started" [ -d "${wdir:-/nonexistent}" ]
-n=$(grep -c 'pane split' "$FAKE_LOG")
-wait_exit "$wdir/.harness/asks"
-hrun wait "$wid"
-check "wait ask-id: rc 0" [ "$RC" -eq 0 ]
-check "wait ask-id: both runs had a pane" [ "$n" -eq 2 ]
-check "wait ask-id: closes exactly its own pane" [ "$(grep -c 'pane close' "$FAKE_LOG")" -eq 1 ]
-check "wait ask-id: role .run untouched" [ "$(run_viewer)" = "$pv" ]
-hrun close analyst --force
-unset HARNESS_WT_ROOT
 export FAKE_CLAUDE_MODE=success
 
 # 9. watchdog
@@ -243,17 +222,7 @@ mkdir -p .harness; echo '{"runner":{"analyst":"pane"},"close_after_ask":{"analys
 export FAKE_CLAUDE_MODE=success FAKE_REPORT_CMD="mkdir -p $WORK/.harness/reports && printf '# analyst report\nstatus: done\n' > $WORK/.harness/reports/analyst.md"
 hrun ask analyst "q"
 check "removed keys: ask still runs headless (rc 0)" [ "$RC" -eq 0 ]
-check "removed keys: one stderr note" grep -q "are ignored" <<<"$OUT"
-hrun ask analyst "q2"
-check "removed keys: note only the first time" not_grep "are ignored" <(printf '%s' "$OUT")
 check "removed keys: config untouched" jqt 'has("runner")' .harness/config.json
-setup
-mkdir -p .harness; echo '{"runner":{"analyst":"headless"}}' > .harness/config.json
-export HARNESS_RUNNER_ANALYST=pane FAKE_CLAUDE_MODE=success FAKE_REPORT_CMD="mkdir -p $WORK/.harness/reports && printf '# analyst report\nstatus: done\n' > $WORK/.harness/reports/analyst.md"
-hrun ask analyst "q"
-check "HARNESS_RUNNER_* env ignored" not_logged "agent start"
-unset HARNESS_RUNNER_ANALYST
-
 # 14. permission mode other than auto: warning; ## Run line in the ask log
 hsetup; export FAKE_PERM=default
 hrun ask analyst "q"
@@ -322,21 +291,31 @@ check "keep close: no resume across a close" not_logged "--resume"
 check "keep close: says a close ended it" grep -q "closed" <<<"$OUT"
 check "keep close: runs fresh" grep -q "running fresh" <<<"$OUT"
 
-# 15b2. a worktree ask's run (ask_id set) is never the session a plain --keep resumes
+# 15b2. old rows: a row with an ask_id (removed --worktree asks) is never the session a plain --keep resumes
 hsetup
 hrun ask analyst "ok"
 rm -f .harness/asks/analyst.session
 printf '%s\n' '{"ts":"2026-10-28T00:00:00Z","agent":"analyst","runner":"headless","result":"success","session":"sess-wt","ask_id":"1-2-3","wt":"/x/wt","base":"b"}' >> .harness/progress.jsonl
 hrun ask analyst "keep" --keep
 check "keep leak: resumes the plain ask's session" logged "--resume sess-1"
-check "keep leak: never the worktree ask's session" not_logged "--resume sess-wt"
+check "keep leak: never the old ask_id row's session" not_logged "--resume sess-wt"
 
-# 15b3. a worktree ask's close event (ask_id set) is no boundary for the plain role session
+# 15b3. old rows: a close event with an ask_id is no boundary for the plain role session
 hsetup
 hrun ask analyst "ok"
+rm -f .harness/asks/analyst.session
 printf '%s\n' '{"ts":"2026-10-28T00:00:00Z","event":"close","role":"analyst","pane":"w1:p9","reason":"manual","runner":"headless","ask_id":"1-2-3"}' >> .harness/progress.jsonl
 hrun ask analyst "keep" --keep
-check "keep wt close: plain session not marked closed" logged "--resume sess-1"
+check "keep old close: plain session not marked closed" logged "--resume sess-1"
+
+# 15b4. old rows: a plain implementer failure is still the "last exit" when a newer old row carries an ask_id
+hsetup
+mkdir -p .harness
+printf '%s\n' '{"ts":"2026-10-28T00:00:00Z","agent":"implementer","runner":"headless","exit":5}' \
+  '{"ts":"2026-10-28T01:00:00Z","agent":"implementer","runner":"headless","exit":0,"ask_id":"1-2-3","wt":"/x/wt","base":"b"}' > .harness/progress.jsonl
+export FAKE_REPORT_CMD="mkdir -p $WORK/.harness/reports && printf '# implementer report\nstatus: done\n' > $WORK/.harness/reports/implementer.md"
+hrun ask implementer "next"
+check "old rows: last exit ignores the ask_id row" grep -q 'keeping context (last ask exit 5)' <<<"$OUT"
 
 # 15c. close ends the conversation: --keep after a close of a healthy idle worker runs fresh
 hsetup
@@ -345,7 +324,7 @@ check "keep healthy close: ask rc 0 (142 = the alarm killed a slow ask before it
 check "keep healthy close: session recorded" [ "$(cat .harness/asks/analyst.session)" = sess-1 ]
 hrun close analyst
 check "keep healthy close: session file removed by close" [ ! -e .harness/asks/analyst.session ]
-check "plain close event carries ask_id null" bash -c 'grep "\"event\":\"close\"" .harness/progress.jsonl | tail -n 1 | jq -e "has(\"ask_id\") and .ask_id == null" >/dev/null'
+check "close event carries no ask_id" bash -c 'grep "\"event\":\"close\"" .harness/progress.jsonl | tail -n 1 | jq -e "has(\"ask_id\") | not" >/dev/null'
 hrun ask analyst "after" --keep
 check "keep healthy close: no resume" not_logged "--resume"
 check "keep healthy close: note" grep -q "running fresh" <<<"$OUT"

@@ -25,7 +25,7 @@ change yourself (`harness ask` refuses to run in a worker session anyway).
 2. Run with the Bash tool's `run_in_background: true` **and** `timeout: 7200000` (the Bash tool's maximum; without it the call is killed at the tool's default timeout, long before the 60-90 min wait ends) (the task notification wakes you when the run ends):
 
    ```
-   harness ask implementer 'Read .harness/task-implementer.md and do it.' --via skill
+   harness ask implementer 'Read .harness/task-implementer.md and do it.'
    ```
 
    Why: harness waits for the run to end by default (5400000 ms, the implementer's run cap; analyst/reviewer 3600000), so no `--timeout` is needed and no polling loop. After a restart or compaction use `harness wait implementer` (background, `timeout: 7200000`), then `harness report implementer`.

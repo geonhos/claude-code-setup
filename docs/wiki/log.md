@@ -40,3 +40,4 @@
 - 2026-11-01 · implementer · prune step 2 · harness wait/watch; ask default wait = headless cap (background ask wakes the conductor); Stop hook requires a report (2 blocks); sleep-aware deadline; decision 0010 active
 - 2026-11-02 · implementer · prune step 3 · pane runner, spawn, close_after_ask, idle reap, /clear, late-report archive removed; viewer = pane running harness watch; 0002/0003/0006 + 5 pane pages superseded
 - 2026-11-02 · implementer · prune step 3 review fixes · whole-second-timing marked stale (its test was deleted); 0009 drops the idle-TTL clause
+- 2026-11-02 · implementer · prune step 4 · routing log, retro, --worktree (registry, locks) and doctor removed; 0004/0008 superseded; citations of removed suites fixed

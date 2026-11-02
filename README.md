@@ -26,16 +26,15 @@ cd ~/workspace/claude-code-setup
 - `claude/skills/*/`를 `~/.claude/skills/`에 디렉터리 심링크 (이미 있던 다른 스킬은 `~/.claude/skills.bak/`으로 옮긴다)
 - `bin/*`(`harness`, `harness-verify`, `harness-run`, `harness-view`)를 `~/.local/bin`에 링크 (`lib/`는 링크 없이 실제 경로로 찾음)
 - `~/.claude/settings.json`에 아래 항목을 병합 (백업을 남긴다)
-  - PreToolUse 훅 하나(게이트), SessionStart 훅 하나(`conductor-resume.sh`), UserPromptSubmit 훅 하나(`conductor-route.sh`)
+  - PreToolUse 훅 하나(게이트), SessionStart 훅 하나(`conductor-resume.sh`)
   - `env.BASH_DEFAULT_TIMEOUT_MS`/`BASH_MAX_TIMEOUT_MS`
   - `promptCacheTtl`/`subagentPromptCacheTtl: 1h`
   - 전역 `agent` 키는 더 이상 쓰지 않는다. 이전 설치가 남긴 `agent: conductor`는 한 번 제거한다(다른 키는 건드리지 않는다). conductor 역할은 저장소 단위로 `harness init`이 정한다.
 - 전역 gitignore에 `.harness/` 추가
 - herdr가 설치돼 있으면 `herdr integration install claude` 실행 (없으면 건너뜀)
 
-설치는 `./install.sh` 한 번, 그 뒤 harness를 쓰려는 저장소마다 `harness init`을 한 번 실행한다. herdr는 필요 없다. `.harness/asks/`(체크아웃 표시), 기본 설정, 그 저장소의 `.claude/settings.local.json`(사용자별, 추적 안 됨)에 `"agent": "conductor"`를 만든다(`--shared`는 커밋되는 `.claude/settings.json`에 쓴다. 이미 다른 `agent`가 있으면 그대로 두고 알린다. 기존 파일은 `.bak`을 한 번 남기고, 심링크는 유지한다. `--no-agent`는 settings를 건드리지 않는다). init하지 않은 저장소에서는 게이트·resume 훅·라우팅 로그가 모두 꺼지고 `harness ask`/`spawn`은 거부된다.
+설치는 `./install.sh` 한 번, 그 뒤 harness를 쓰려는 저장소마다 `harness init`을 한 번 실행한다. herdr는 필요 없다. `.harness/asks/`(체크아웃 표시), 기본 설정, 그 저장소의 `.claude/settings.local.json`(사용자별, 추적 안 됨)에 `"agent": "conductor"`를 만든다(`--shared`는 커밋되는 `.claude/settings.json`에 쓴다. 이미 다른 `agent`가 있으면 그대로 두고 알린다. 기존 파일은 `.bak`을 한 번 남기고, 심링크는 유지한다. `--no-agent`는 settings를 건드리지 않는다). init하지 않은 저장소에서는 게이트·resume 훅이 아무것도 하지 않고 `harness ask`는 거부된다.
 
-이전 버전이 남긴 오염(`asks/` 없는 `.harness/` 디렉터리, 전역 `agent: conductor`)은 `harness doctor`로 찾고 `harness doctor --fix`로 지운다. 아는 파일만 든 디렉터리만 지우고, 모르는 파일이 있으면 건너뛴다. 심링크 디렉터리와 심링크된 `.harness`는 따라가지 않고, 기본 범위가 `$HOME`이면 거부하며(DIR을 직접 지정), 워커(`HARNESS_ROLE=worker`)에서는 실행되지 않는다.
 
 테스트는 `./install.sh --test`로 돌린다. 스위트는 병렬로 실행되고, 디버깅용으로 `HARNESS_TEST_SERIAL=1`을 주면 하나씩 돌린다.
 
@@ -43,27 +42,20 @@ cd ~/workspace/claude-code-setup
 
 1. 프로젝트(`harness init`을 한 저장소)에서 평소처럼 `claude`를 시작한다. 터미널이면 충분하고 herdr는 필요 없다.
 2. 질문하거나 작업을 맡긴다. 일반 질문은 conductor가 바로 답한다. 소스를 읽거나 고치려 하면 게이트가 호출을 거부하고, conductor는 맞는 스킬(`/analyze` 조사 · `/implement` 변경 · `/review` 검토)을 호출한다. 직접 `/implement …`처럼 쳐도 된다.
-3. 스킬이 `harness ask <worker> '<instruction>' --via skill`을 실행한다. 워커는 detached headless Claude 세션(`claude -p`)으로 백그라운드에서 돈다. 워커가 끝나면 리포트(`.harness/reports/<worker>.md`, 40줄 이하)가 출력된다. 설치 스크립트는 Bash 도구 상한을 `BASH_MAX_TIMEOUT_MS=7200000`으로 올려 두지만, 호출마다 `timeout`을 직접 주지 않으면 기본값(`BASH_DEFAULT_TIMEOUT_MS=600000`, 10분)에서 끊긴다. 그래서 스킬은 `harness ask`와 `harness wait`를 항상 `run_in_background: true`와 `timeout: 7200000`으로 돌린다: 기본 대기 시간이 워커의 headless 상한(analyst·reviewer 60분, implementer 90분)과 같아 실행이 끝나는 순간 ask가 돌아오고 Bash 완료 알림이 conductor를 깨운다. 재시작·compaction 뒤에는 `harness wait <worker>`로 다시 붙는다. 워커가 리포트 없이 멈추려 하면 Stop hook이 (ask당 최대 2번) 막고 리포트를 쓰게 한다(지시문에 `[no-report]`가 있으면 제외). 노트북 절전으로 시계가 크게 건너뛰면 마감도 그만큼 늦춘다.
+3. 스킬이 `harness ask <worker> '<instruction>'`을 실행한다. 워커는 detached headless Claude 세션(`claude -p`)으로 백그라운드에서 돈다. 워커가 끝나면 리포트(`.harness/reports/<worker>.md`, 40줄 이하)가 출력된다. 설치 스크립트는 Bash 도구 상한을 `BASH_MAX_TIMEOUT_MS=7200000`으로 올려 두지만, 호출마다 `timeout`을 직접 주지 않으면 기본값(`BASH_DEFAULT_TIMEOUT_MS=600000`, 10분)에서 끊긴다. 그래서 스킬은 `harness ask`와 `harness wait`를 항상 `run_in_background: true`와 `timeout: 7200000`으로 돌린다: 기본 대기 시간이 워커의 headless 상한(analyst·reviewer 60분, implementer 90분)과 같아 실행이 끝나는 순간 ask가 돌아오고 Bash 완료 알림이 conductor를 깨운다. 재시작·compaction 뒤에는 `harness wait <worker>`로 다시 붙는다. 워커가 리포트 없이 멈추려 하면 Stop hook이 (ask당 최대 2번) 막고 리포트를 쓰게 한다(지시문에 `[no-report]`가 있으면 제외). 노트북 절전으로 시계가 크게 건너뛰면 마감도 그만큼 늦춘다.
 4. 워커의 진행은 `harness status`로 보고, herdr를 쓰면 viewer pane에서도 볼 수 있다(읽기 전용). conductor가 보는 것은 리포트뿐이다.
 
 ```
 harness init   [--no-agent] [--shared]                              # 이 저장소를 체크아웃으로 만든다 (asks/, 설정, .claude/settings.local.json agent)
-harness doctor [--fix] [DIR...]                                    # 과거 오염(asks/ 없는 .harness/, 전역 agent 키)을 찾고 --fix로 지운다
-harness ask    <agent> '<instruction>' [--timeout MS] [--fresh|--keep] [--via skill|conductor|retro]   # exit 2 tool call denied, no report · 3 no report · 4 still working · 5 verification failed
-harness wait   <agent>|<ask-id> [--timeout MS]                       # run이 끝날 때까지 block(수집은 안 함): 0 done · 3 ask 없음/러너 죽음 · 4 timeout; 끝나면 `harness report`
-harness watch  <agent>|<ask-id> [-n N]                              # 사람용 터미널 뷰어(tty 필요, conductor 게이트가 거부)
-harness report <agent>|<ask-id>                                   # print existing report (same exit codes as ask): 3 none, 4 still working
-harness ask    <analyst|reviewer> '<instruction>' --worktree [--base REF]   # headless 전용: ask마다 detached git worktree(~/.cache/harness/wt/<repo8>/<role>-<id8>), 병렬 ask 가능 (결정 0008)
+harness ask    <agent> '<instruction>' [--timeout MS] [--fresh|--keep]   # exit 2 tool call denied, no report · 3 no report · 4 still working · 5 verification failed
+harness wait   <agent> [--timeout MS]                       # run이 끝날 때까지 block(수집은 안 함): 0 done · 3 ask 없음/러너 죽음 · 4 timeout; 끝나면 `harness report`
+harness watch  <agent> [-n N]                              # 사람용 터미널 뷰어(tty 필요, conductor 게이트가 거부)
+harness report <agent>                                   # print existing report (same exit codes as ask): 3 none, 4 still working
 harness status
-harness retro  [--dry-run]                               # 실패한 ask의 후보(.harness/retro/)를 analyst 한 번에 묶어 회고하고 docs/wiki/inbox/에 남김
 harness metrics [--since YYYY-MM-DD] [--json]            # progress.jsonl·위키 기반 지표 (최근 28일 vs 직전 28일)
-harness close  <agent>|<ask-id>|--all [--force]          # run을 멈추거나 worktree를 지운다. exit 4: 실행 중이거나 리포트를 수집 안 함 (--force가 무시)
-harness route-log '<json>'                               # append one line to .harness/routing.jsonl (used by the hook and by ask)
+harness wiki-lint                                        # docs/wiki 형식·한도 검사 (0 = 통과)
+harness close  <agent>|--all [--force]          # run을 멈춘다. exit 4: 실행 중이거나 리포트를 수집 안 함 (--force가 무시)
 ```
-
-## 병렬 ask: `--worktree` (결정 0008)
-
-analyst·reviewer는 `--worktree [--base REF]`로 ask마다 자기 작업 트리(`git worktree add --detach`, 브랜치·머지 없음)를 받는다. 경로는 `~/.cache/harness/wt/<repo8>/<role>-<id8>`(`.harness/` 밖). ask-id는 시작할 때 stderr에 찍히고 `harness report <ask-id>`·`harness close <ask-id> [--force]`·`harness status`에 쓴다. 진행 로그·routing·retro는 메인 루트에 그대로 쌓인다(progress.jsonl에 `wt`/`base`/`ask_id`). 리포트를 정상 수집(exit 0/5)했고 작업 트리가 깨끗하면 자동 제거, 아니면 유지. 패치가 저장된 작업 트리는 자동으로 절대 지워지지 않고(30분 고정 reap·LOG_DAYS 포함) `harness status`에 `kept`+패치 경로로 남아 `harness close <ask-id>`를 기다린다(저장된 패치 외 변경이 더 있을 때만 `--force`). 패치 파일은 close 뒤에도 남고 HARNESS_LOG_DAYS 후 정리된다. 패치 없는 깨끗한 kept는 30분 고정 reap으로 정리될 수 있다. 작업 트리 안에서 워커가 만든 커밋도 base 기준으로 패치(바이너리 포함)에 저장되고 그 트리는 깨끗하지 않은 것으로 보아 유지한다; 저장된 패치는 새 패치가 쓰일 때만 교체된다. 락은 소유 pid가 살아 있고 명령줄에 `harness`가 있을 때만 살아 있는 것으로 보며, `HARNESS_LOCK_MAX_S`(기본 120초)가 지나면 stderr에 한 줄 경고를 찍고 넘겨받는다. 동시에 `max_parallel`(기본 3, `HARNESS_MAX_PARALLEL`)개까지, 넘으면 exit 4. implementer에 쓰면 exit 1. 작업 트리 안의 `.harness/*.md` 산출물은 끝날 때 메인 `.harness/`로 복사되고(예약 이름 `goal.md`·`progress.md`·`task-*.md`와 심볼릭 링크는 제외; 메인 쪽이 그사이 바뀌었으면 `<name>.<id8>.md`), 그 밖의 변경은 `.harness/wt/<ask-id>.patch`로 저장되며 작업 트리는 유지된다. `HARNESS_WT_ROOT`는 저장소 밖 절대경로여야 하고, `--base`는 `--worktree`와 함께만 쓴다.
 
 ## 러너와 viewer
 
@@ -80,9 +72,7 @@ analyst·reviewer는 `--worktree [--base REF]`로 ask마다 자기 작업 트리
 ask가 끝날 때마다 로그를 정리한다. 최신 200개만 남기고, 14일이 지난 로그는 지우고, 1 MB를 넘은 `progress.jsonl`은 `progress.jsonl.<ts>.gz`로 압축해 옮긴다.
 조절 변수: `HARNESS_LOG_KEEP`, `HARNESS_LOG_DAYS`, `HARNESS_JSONL_MAX`(바이트).
 
-`harness status`의 `ctx` 열은 끝난 run의 `exit.json`에서 읽은 토큰 수이고, 알 수 없으면 `-`다. 늦게 도착한 리포트를 보관하는 archive는 없다: 끝난 뒤 `report <ask-id>`는 retro 후보만 큐에 넣는다. 0이 아닌 exit 뒤에는 role 세션을 시간 제한 없이 이어 쓰며(implementer는 자동 `--resume`), `--fresh`나 exit 0이 나올 때까지 계속된다.
-
-프롬프트마다 UserPromptSubmit 훅이 `.harness/routing.jsonl`에 `prompt` 줄을, `harness ask`가 끝날 때마다 `delegate` 줄(`source`: 스킬 경유면 `skill`, 아니면 `conductor`)을 남긴다. 직접 답변은 "다음 프롬프트까지 delegate 줄 없음"으로 나중에 도출한다. 이 로그는 결정 모델을 학습시켜 라우팅 힌트를 주기 위한 데이터다, 배경은 [docs/research/2026-10-20-decision-models-kev-vs-laya.md](docs/research/2026-10-20-decision-models-kev-vs-laya.md). `HARNESS_ROUTE_LOG=0`으로 끈다.
+`harness status`의 `ctx` 열은 끝난 run의 `exit.json`에서 읽은 토큰 수이고, 알 수 없으면 `-`다. 늦게 도착한 리포트를 보관하는 archive는 없다:  0이 아닌 exit 뒤에는 role 세션을 시간 제한 없이 이어 쓰며(implementer는 자동 `--resume`), `--fresh`나 exit 0이 나올 때까지 계속된다.
 
 ## 검증 루프
 
@@ -137,16 +127,14 @@ bin/harness                      harness CLI (ask, report, status, init, ...; he
 bin/harness-verify               format/lint/test checks used by worker hooks
 lib/harness-defaults.sh         roles and default numbers (sourced by bin/harness, bin/harness-verify)
 lib/harness-metrics.sh          harness metrics + wiki-lint (sourced eagerly by bin/harness)
-lib/harness-worktree.sh         --worktree asks, the wt_* group (sourced eagerly by bin/harness)
 lib/harness-headless.sh         headless runner glue, the hl_* group (sourced eagerly by bin/harness)
 claude/hooks/conductor-gate.sh   PreToolUse gate
 claude/hooks/conductor-resume.sh SessionStart hook: injects .harness/progress.md
-claude/hooks/conductor-route.sh  UserPromptSubmit hook: logs each prompt to .harness/routing.jsonl
 claude/skills/<name>/SKILL.md    /analyze /implement /review (symlinked to ~/.claude/skills/<name>)
 claude/agents/{analyst,implementer,reviewer}.md  worker definitions (model, memory, cacheTtl, report contract)
 claude/agents/conductor.md       conductor system prompt (settings.agent)
 claude/agents/solo.md            escape-hatch agent (empty body = default prompt)
 install.sh                       installer (--test runs tests/)
-tests/                           gate, harness (against tests/fake-herdr), verify, progress, install, route
+tests/                           gate, harness (against tests/fake-herdr), verify, progress, install
 docs/superpowers/                spec and plan
 ```

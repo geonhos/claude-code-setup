@@ -4,21 +4,15 @@
 {
 # harness — conductor-side wrapper for detached headless Claude workers (decision 0011).
 #
-#   harness ask    <agent> '<instruction>' [--timeout MS] [--fresh|--keep] [--via skill|conductor]
+#   harness ask    <agent> '<instruction>' [--timeout MS] [--fresh|--keep]
 #     default --timeout = the role's headless run cap (a background ask returns when the run ends):
 #     implementer 5400000, analyst/reviewer 3600000
-#   harness ask    <analyst|reviewer> '<instruction>' --worktree [--base REF]
-#     the ask runs in its own detached git worktree under
-#     ~/.cache/harness/wt/<repo8>/<role>-<id8> (decision 0008); the ask-id is printed on stderr.
-#   harness report <agent>|<ask-id>
-#   harness wait   <agent>|<ask-id> [--timeout MS]   block until the run ends (0 done, 3 no ask/gone, 4 timeout); does not collect
-#   harness watch  <agent>|<ask-id> [-n N]   human terminal only: follow a live run, or the last N lines of a finished one
+#   harness report <agent>
+#   harness wait   <agent> [--timeout MS]   block until the run ends (0 done, 3 no ask/gone, 4 timeout); does not collect
+#   harness watch  <agent> [-n N]   human terminal only: follow a live run, or the last N lines of a finished one
 #   harness status
 #   harness init [--no-agent] [--shared]   make this repo a harness checkout (.harness/asks, config, agent=conductor in .claude/settings.local.json; --shared: settings.json)
-#   harness doctor [--fix] [DIR...]   clean pollution left by older versions (strays, global agent key)
-#   harness close  <agent>|<ask-id>|--all [--force]
-#   harness route-log '<json>'   append one line to .harness/routing.jsonl (never fails)
-#   harness retro [--dry-run]    one batched analyst ask over the queued failure candidates
+#   harness close  <agent>|--all [--force]
 #   harness metrics [--since YYYY-MM-DD] [--json]   health numbers from progress.jsonl + the wiki
 #
 # Exit codes for `ask`: 0 report printed · 1 usage/setup error
@@ -37,17 +31,9 @@
 # and, run from a subdir of the checkout, continues at the root.
 # Every ask is logged to .harness/log/ and .harness/progress.jsonl, and
 # .harness/progress.md is regenerated (log errors only warn on stderr).
-# Every ask also appends a `delegate` line to .harness/routing.jsonl (source =
-# --via, default conductor; the /analyze /implement /review skills pass skill).
 # Config: .harness/config.json (`viewer`: auto|pane|none; a viewer is a herdr pane running
 #   `harness watch <role>`, closed when the run ends). `harness close` refuses (exit 4) a
 #   running ask or an uncollected report unless --force. Closes are logged to progress.jsonl.
-# Failure retros: a failed/late/retried ask queues .harness/retro/<ask-id>.json (paths and
-#   numbers only, never screen or prompt text) and prints `retro: candidate queued (...)`.
-#   Triggers: ask exit other than 0 (a reviewer exit 5 = FAIL verdict is normal: never a
-#   trigger), implementer verify attempts >= 2, a late report collected by `harness report`.
-#   `harness retro` batches the pending ones into one analyst ask (--via retro, which
-#   itself never queues a candidate).
 # Output of `ask`: stdout = report on exit 0 and 5; diagnostics on stderr.
 set -u
 
@@ -63,7 +49,7 @@ done
 case $src in */*) d=${src%/*} ;; *) d=. ;; esac   # no dirname: PATH may be bare in hooks/tests
 HARNESS_LIB=${HARNESS_LIB:-$(CDPATH= cd -P "$d/../lib" 2>/dev/null && pwd)}
 # Explicit list, fixed order, no glob: a stray file in lib/ is never sourced. Definitions only.
-for m in defaults metrics worktree headless; do
+for m in defaults metrics headless; do
   . "$HARNESS_LIB/harness-$m.sh" 2>/dev/null || { echo "harness: cannot load lib/harness-$m.sh" >&2; exit 1; }
 done
 unset src d m
@@ -74,39 +60,23 @@ REPORT_DIR=".harness/reports"
 LOG_DIR=".harness/log"
 JSONL=".harness/progress.jsonl"
 PROGRESS_MD=".harness/progress.md"
-ROUTE_JSONL=".harness/routing.jsonl"
 DEFAULT_TIMEOUT=$HARNESS_DEFAULT_TIMEOUT_MS
 IMPLEMENTER_TIMEOUT=$HARNESS_IMPLEMENTER_TIMEOUT_MS
-TAB=$(printf '\t')
-# Per-ask state (decision 0008). A plain ask uses the main checkout's .harness/asks and reports; a
-# `--worktree` ask (headless analyst/reviewer, detached checkout) points ASK_DIR/REPORT_DIR into
-# its worktree, so same-role asks never share a slot. Everything shared (progress.jsonl, logs,
-# routing, retro, config) stays in the main root.
 ASK_DIR=".harness/asks"
-ASK_KEY=""        # key of a worktree ask: <role>@<id8> (empty = the role)
-ASK_WT=""         # worktree path of this ask (empty = plain ask)
-ASK_ID=""; ASK_ID8=""; ASK_BASE=""; ASK_WT_WANT=0
 # parsed once by ask_parse_args (cmd_ask); ask_inner only reads them
-ASK_VIA=conductor; ASK_TIMEOUT=$DEFAULT_TIMEOUT; ASK_TIMEOUT_SET=0; ASK_FRESH=0; ASK_KEEP=0; ASK_BAD=0
-ASK_HAS_BASE=0; ASK_BASE_REF=""; ASK_BASE_NOVAL=0
-WT_HOME=${HARNESS_WT_ROOT:-$HOME/.cache/harness/wt}
-WT_DIR=".harness/wt"
+ASK_TIMEOUT=$DEFAULT_TIMEOUT; ASK_TIMEOUT_SET=0; ASK_FRESH=0; ASK_KEEP=0; ASK_BAD=0
 
 usage() {
   cat >&2 <<EOF
 usage:
-  harness ask    <agent> '<instruction>' [--timeout MS (default: implementer $IMPLEMENTER_TIMEOUT, others $DEFAULT_TIMEOUT)] [--fresh|--keep] [--via skill|conductor|retro]
-  harness ask    <analyst|reviewer> '<instruction>' --worktree [--base REF] ...   (--base needs --worktree)
-  harness report <agent>|<ask-id>
-  harness wait   <agent>|<ask-id> [--timeout MS]
-  harness watch  <agent>|<ask-id> [-n N]   (human terminal only)
+  harness ask    <agent> '<instruction>' [--timeout MS (default: implementer $IMPLEMENTER_TIMEOUT, others $DEFAULT_TIMEOUT)] [--fresh|--keep]
+  harness report <agent>
+  harness wait   <agent> [--timeout MS]
+  harness watch  <agent> [-n N]   (human terminal only)
   harness status
   harness init   [--no-agent] [--shared]   (once per repo: makes it a harness checkout; ask refuses without it)
-  harness doctor [--fix] [DIR...]   (find/remove stray .harness/ dirs and the old global agent key)
-  harness close  <agent>|<ask-id>|--all [--force]
+  harness close  <agent>|--all [--force]
   harness wiki-lint [DIR]
-  harness route-log '<json>'
-  harness retro [--dry-run]
   harness metrics [--since YYYY-MM-DD] [--json]
 agents: $AGENTS
 EOF
@@ -128,74 +98,6 @@ valid_agent() {
   esac
   die "unknown agent '$1' (expected one of: $AGENTS)"
 }
-
-# --- repo identity -------------------------------------------------------------------------
-# repo8 = first 8 hex of a hash of the repo top-level (git rev-parse --show-toplevel, else
-# $PWD; symlinks resolved): scopes the worktree path.
-repo_top() {
-  local t
-  t=$(git rev-parse --show-toplevel 2>/dev/null) || t=""
-  [ -n "$t" ] || t=$PWD
-  ( cd "$t" 2>/dev/null && pwd -P ) || printf '%s\n' "$t"
-}
-repo_hash8() {
-  local h
-  if command -v sha1sum >/dev/null 2>&1; then h=$(printf %s "$1" | sha1sum)
-  elif command -v shasum >/dev/null 2>&1; then h=$(printf %s "$1" | shasum -a 1)
-  else h=$(printf %s "$1" | cksum | awk '{ printf "%08x", $1 }'); fi
-  printf %s "${h%% *}" | cut -c1-8
-}
-REPO_TOP=$(repo_top)
-REPO8=$(repo_hash8 "$REPO_TOP")
-
-# lock_stale <dir> — the lock's owner is gone: its pid is dead, or alive but not a harness process
-# (the pid was reused; `grep harness` is a deliberate loose match: a reused pid whose command line
-# merely contains "harness" is honoured until the ceiling, never wrongly stolen), or the owner file
-# never appeared and the dir is older than HARNESS_LOCK_STALE_S (default 10 s: an owner that died
-# between mkdir and writing its pid). A live owner is overridden, with a warning, only once the LOCK
-# is older than HARNESS_LOCK_MAX_S (default 120 s; age = owner file mtime, i.e. since it was taken):
-# how long this waiter has waited does not count, so a lock just acquired is never stolen.
-lock_stale() {
-  local d=$1 own mt age
-  own=$(cat "$d/owner" 2>/dev/null)
-  if digits_only "$own"; then
-    kill -0 "$own" 2>/dev/null || return 0
-    ps -p "$own" -o command= 2>/dev/null | grep -q 'harness' || return 0
-    mt=$(file_mtime "$d/owner") || return 1
-    age=$(( $(date +%s) - mt ))
-    [ "$age" -ge "${HARNESS_LOCK_MAX_S:-120}" ] || return 1
-    echo "harness: lock $d held by pid $own for over ${HARNESS_LOCK_MAX_S:-120}s; taking it over" >&2
-    return 0
-  fi
-  mt=$(file_mtime "$d") || return 1
-  [ $(( $(date +%s) - mt )) -gt "${HARNESS_LOCK_STALE_S:-10}" ]
-}
-
-# lock_take <dir> — mkdir lock (portable) with an owner pid file inside.
-# Takeover invariant: a lock dir is only ever removed by a waiter that holds the takeover mutex
-# "<dir>.take" and re-judged the lock stale while holding it. Nothing is renamed or put back, so a
-# fresh lock can never be moved away or nested; while the stale dir exists nobody can mkdir over it,
-# and the other waiters sit in the mutex or retry the mkdir. (Only a live-owner override after
-# HARNESS_LOCK_MAX_S can race the owner's own lock_drop; that is the last resort by design.)
-# A taker that died holding "<dir>.take" is cleared by age (HARNESS_LOCK_STALE_S).
-lock_take() {
-  local d=$1 i=0 mt
-  while ! mkdir "$d" 2>/dev/null; do
-    i=$((i + 1))
-    if [ $((i % 10)) -eq 0 ] && lock_stale "$d"; then
-      if mkdir "$d.take" 2>/dev/null; then
-        if lock_stale "$d"; then rm -rf "$d"; fi
-        rmdir "$d.take" 2>/dev/null
-      elif mt=$(file_mtime "$d.take") && [ $(( $(date +%s) - mt )) -gt "${HARNESS_LOCK_STALE_S:-10}" ]; then
-        rmdir "$d.take" 2>/dev/null
-      fi
-    fi
-    sleep 0.05
-  done
-  echo $$ > "$d/owner" 2>/dev/null
-  return 0
-}
-lock_drop() { rmdir "$1" 2>/dev/null || rm -rf "$1"; }
 
 # Terminal cells are roughly twice as tall as wide; a pane is "wide" when
 # width >= 2.2 * height. Wide -> split right, otherwise down.
@@ -222,13 +124,12 @@ fmt_ctx() {
 }
 
 # last_ask_record <agent> [--where JQ] [--field JQ]
-# The newest progress line of <agent> among the last 200 non-close lines that matches the
-# ask-id (default: $ASK_ID, "" = plain asks: a --worktree ask logs `agent: <role>` plus an
-# ask_id, and must never stand in for a plain ask) and the extra
-# jq condition --where. Prints --field (default: the compact line); nothing = unknown.
-# The ids are passed with --arg; --where/--field are jq source from the caller's own literals.
+# The newest progress line of <agent> among the last 200 non-close lines that has no ask_id
+# (old rows: the removed --worktree asks logged `agent: <role>` plus an ask_id and must never
+# stand in for a plain ask) and matches the extra jq condition --where. Prints --field (default: the compact line); nothing = unknown.
+# --where/--field are jq source from the caller's own literals.
 last_ask_record() {
-  local agent=$1 id=${ASK_ID:-} where=true field=. prog
+  local agent=$1 where=true field=. prog
   shift
   while [ $# -gt 0 ]; do
     case "$1" in
@@ -237,12 +138,12 @@ last_ask_record() {
       *) return 2 ;;
     esac
   done
-  prog="fromjson? | select(type == \"object\" and .agent == \$a and (.ask_id // \"\") == \$id) | select($where) | $field"
+  prog="fromjson? | select(type == \"object\" and .agent == \$a and (.ask_id // \"\") == \"\") | select($where) | $field"
   grep -v '"event":"close"' "$JSONL" 2>/dev/null | tail -n 200 \
-    | jq -R -r -c --arg a "$agent" --arg id "$id" "$prog" 2>/dev/null | tail -n 1
+    | jq -R -r -c --arg a "$agent" "$prog" 2>/dev/null | tail -n 1
 }
 
-# last_exit <agent> — exit code of the agent's last logged plain ask (worktree asks are not plain asks); nothing when unknown
+# last_exit <agent> — exit code of the agent's last logged ask (old rows with an ask_id are skipped); nothing when unknown
 last_exit() {
   last_ask_record "$1" --where '(.exit | type) == "number"' --field .exit
 }
@@ -272,9 +173,6 @@ record_progress() {
   ca=$(printf '%s' "$hl" | jq -r '.ctx_after // empty' 2>/dev/null)
   cb=$(sed -n 's/^ctx_before=//p' "$ASK_DIR/$agent.run" 2>/dev/null | head -n 1)
   hl=$(printf '%s' "$hl" | jq -c 'del(.session, .ctx_after)' 2>/dev/null) || hl='{}'
-  if [ -n "$ASK_WT" ]; then
-    hl=$(printf '%s' "$hl" | jq -c --arg wt "$ASK_WT" --arg base "$ASK_BASE" --arg id "$ASK_ID" '. + {ask_id: $id, wt: $wt, base: $base}' 2>/dev/null) || hl='{}'
-  fi
   if [ -f "$report" ]; then
     status=$(sed -n 's/^status: *//p' "$report" | head -n 1)
     summary=$(sed -n 's/^# *//p' "$report" | head -n 1)
@@ -287,8 +185,8 @@ record_progress() {
   fi
 
   mkdir -p "$LOG_DIR" || return 1
-  logf="$LOG_DIR/$stamp-$agent${ASK_WT:+-$ASK_ID8}.md"; n=1
-  while [ -e "$logf" ]; do n=$((n + 1)); logf="$LOG_DIR/$stamp-$agent${ASK_WT:+-$ASK_ID8}-$n.md"; done
+  logf="$LOG_DIR/$stamp-$agent.md"; n=1
+  while [ -e "$logf" ]; do n=$((n + 1)); logf="$LOG_DIR/$stamp-$agent-$n.md"; done
   brief=$(printf '%s' "$text" | grep -o '\.harness/task-[A-Za-z0-9_.-]*\.md' | head -n 1)
   {
     printf '# %s ask %s (exit %s, %ss)\n\n## Instruction\n\n%s\n' "$agent" "$ts" "$rc" "$((now - t0))" "$text"
@@ -328,137 +226,20 @@ record_progress() {
      verify: ($verify | nz), verify_attempts: $va, dur_s: $dur, head_before: ($hb | nz), head_after: ($ha | nz),
      ctx_before: $cb, ctx_after: $ca, status: ($status | nz), summary: ($summary | nz), report_sha: ($sha | nz)} + $hl' >> "$JSONL" || return 1
 
-  LAST_LOG=$logf LAST_BRIEF=$brief
   rotate_logs "$logf"
   write_progress_md
   return 0
 }
 
-# --- failure retro candidates ---------------------------------------------------------
-RETRO_DIR=".harness/retro"
-
-# retro_write <ask-id> <role> <reason> <exit> <attempts> <dur> <brief> <log> <report> [late]
-# One candidate file per ask-id: paths and numbers only (no screen or prompt text).
-# An existing candidate is updated in place (a late report adds itself to it).
-retro_write() {
-  local f="$RETRO_DIR/$1.json" late=${10:-}
-  mkdir -p "$RETRO_DIR" 2>/dev/null || return 1
-  [ ! -e "$RETRO_DIR/done/$1.json" ] || return 1
-  if [ -f "$f" ]; then
-    [ -z "$late" ] || [ "$(jq -r '.late // false' "$f" 2>/dev/null)" != true ] || return 1
-    jq -c --arg reason "$3" --arg report "$9" --argjson late "$([ -n "$late" ] && echo true || echo false)" '
-      (if $late then .late = true | .reason = $reason else . end)
-      | (if $report != "" and (.report // "") == "" then .report = $report else . end)' "$f" > "$f.tmp.$$" 2>/dev/null \
-      && mv -f "$f.tmp.$$" "$f" || { rm -f "$f.tmp.$$"; return 1; }
-    return 0
-  fi
-  jq -n -c --arg id "$1" --arg role "$2" --arg reason "$3" --argjson exit "$(num_or_null "$4")" \
-    --argjson va "$(num_or_null "$5")" --argjson dur "$(num_or_null "$6")" --arg brief "$7" --arg log "$8" \
-    --arg report "$9" --argjson late "$([ -n "$late" ] && echo true || echo false)" \
-    --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg stream "${RETRO_STREAM:-}" '
-    def nz: if . == "" then null else . end;
-    {ask_id: $id, role: $role, reason: $reason, exit: $exit, verify_attempts: $va, duration_s: $dur,
-     brief: ($brief | nz), log: ($log | nz), report: ($report | nz), late: $late, ts: $ts}
-    + (if $stream != "" then {stream_log: $stream} else {} end)' > "$f.tmp.$$" 2>/dev/null \
-    && mv -f "$f.tmp.$$" "$f" || { rm -f "$f.tmp.$$"; return 1; }
-}
-
-# retro_snapshot <ask-id> <report> — copy a report to .harness/retro/reports/<ask-id>.md
-# (the live report is deleted by the next ask) and print that path.
-retro_snapshot() {
-  local d="$RETRO_DIR/reports"
-  mkdir -p "$d" 2>/dev/null && cp -f "$2" "$d/$1.md" 2>/dev/null && { printf '%s' "$d/$1.md"; return 0; }
-  printf '%s' "$2"
-}
-
-# retro_to_done <candidate-file> — move a processed candidate to done/ and drop its report snapshot
-retro_to_done() {
-  local id
-  id=$(basename "$1" .json)
-  mv -f "$1" "$RETRO_DIR/done/" || return 1
-  rm -f "$RETRO_DIR/reports/$id.md"
-}
-
-# retro_pending_logs — log paths referenced by pending candidates (rotate_logs keeps them)
-retro_pending_logs() {
-  ls "$RETRO_DIR"/*.json >/dev/null 2>&1 || return 0
-  jq -r '.log // empty, .stream_log // empty' "$RETRO_DIR"/*.json 2>/dev/null
-}
-
-# retro_on_ask <agent> <rc> — after an ask is logged: queue a candidate when it is a
-# trigger, print the one-line notice. Never fails; the retro ask itself never queues.
-retro_on_ask() {
-  local agent=$1 rc=$2 reason="" va dur id cur ts rep="" bsnap mt
-  [ "${ASK_VIA:-}" != retro ] || return 0
-  dur=$(( $(date +%s) - ASK_T0 ))
-  va=$(jq -r '.attempts // empty' .harness/verify/implementer.json 2>/dev/null)
-  case "$rc" in
-    0) ;;
-    5) [ "$agent" = reviewer ] || reason="exit 5" ;;
-    1) # a usage error before pre-flight ran nothing; after it (launch, start wait) it is a failure
-       if [ -n "${ASK_PF:-}" ] && [ -e "$ASK_PF" ]; then reason="exit 1"; fi ;;
-    129|130|143) ;; # ask wrapper hung up, interrupted or terminated by the caller, not a harness failure
-    *) reason="exit $rc" ;;
-  esac
-  if [ -z "$reason" ] && [ "$agent" = implementer ] && digits_only "$va" && [ "$va" -ge 2 ]; then
-    reason="$va verify attempts"
-  fi
-  [ -n "$reason" ] || return 0
-  [ "$agent" = implementer ] || va=""
-  cur="$ASK_DIR/$agent.current"
-  id=$(awk 'NR == 1 { print $1 }' "$cur" 2>/dev/null); ts=$(awk 'NR == 1 { print $2 }' "$cur" 2>/dev/null)
-  if [ -z "$id" ] || ! digits_only "$ts" || [ "$ts" -lt "$ASK_T0" ]; then id="$ASK_T0-$$-noid"; fi
-  if [ -f "$REPORT_DIR/$agent.md" ] && mt=$(file_mtime "$REPORT_DIR/$agent.md") && [ "$mt" -ge "$ASK_T0" ]; then
-    rep=$(retro_snapshot "$id" "$REPORT_DIR/$agent.md")
-  fi
-  # the live .harness/task-<role>.md is overwritten by the next ask: point at the log's copy
-  bsnap=""; [ -z "${LAST_BRIEF:-}" ] || [ -z "${LAST_LOG:-}" ] || bsnap="$LAST_LOG#brief"
-  RETRO_STREAM=$(jq -r '.stream_log // empty' "$ASK_DIR/$agent.exit.json" 2>/dev/null)
-  retro_write "$id" "$agent" "$reason" "$rc" "$va" "$dur" "$bsnap" "${LAST_LOG:-}" "$rep" \
-    || { [ -f "$RETRO_DIR/$id.json" ] || rm -f "$RETRO_DIR/reports/$id.md"; return 0; }
-  echo "retro: candidate queued ($reason) — run 'harness retro' when the task is done"
-}
-
-# cmd_route_log <json> — append one routing event to .harness/routing.jsonl
-# (the UserPromptSubmit hook's `prompt` lines and `harness ask`'s `delegate`
-# lines). Same rotation as progress.jsonl. Never fails: bad input or a write
-# error only warns. HARNESS_ROUTE_LOG=0 disables it.
-cmd_route_log() {
-  local line=${1:-} stamp
-  [ "${HARNESS_ROUTE_LOG:-1}" != 0 ] || return 0
-  if [ -z "$line" ]; then
-    echo "harness: route-log: empty line (ignored)" >&2; return 0
-  fi
-  # exactly one JSON object (a stream like '{} {}' or '{} junk' is refused)
-  line=$(printf '%s' "$line" | jq -s -c 'if length == 1 and (.[0] | type) == "object" then .[0] else empty end' 2>/dev/null)
-  if [ -z "$line" ]; then
-    echo "harness: route-log: not a single JSON object (ignored)" >&2; return 0
-  fi
-  # workers never create .harness/ (a conductor's first prompt still may)
-  if [ ! -d .harness ] && [ "${HARNESS_ROLE:-}" = worker ]; then
-    echo "harness: route-log: no .harness/ in $PWD (ignored)" >&2; return 0
-  fi
-  mkdir -p .harness 2>/dev/null || { echo "harness: route-log: cannot create .harness/" >&2; return 0; }
-  stamp=$(date +%Y%m%d-%H%M%S)
-  if [ -f "$ROUTE_JSONL" ] && [ -r "$ROUTE_JSONL" ] && [ "$(wc -c < "$ROUTE_JSONL" | tr -d ' ')" -gt "${HARNESS_JSONL_MAX:-1048576}" ]; then
-    mv "$ROUTE_JSONL" "$ROUTE_JSONL.$stamp" && gzip -f "$ROUTE_JSONL.$stamp"
-  fi
-  printf '%s\n' "$line" 2>/dev/null >> "$ROUTE_JSONL" \
-    || echo "harness: route-log: could not write $ROUTE_JSONL" >&2
-  return 0
-}
-
 # ask_parse_args <agent> <text> [opts...] — the one walk over an ask's options (called by cmd_ask
-# after the agent and text checks). Sets ASK_VIA/TIMEOUT/FRESH/KEEP/WT_WANT/HAS_BASE/BASE_REF.
+# after the agent and text checks). Sets ASK_TIMEOUT/FRESH/KEEP.
 # The instruction text is positional, so a "--via" inside it is never an option. A bad option,
 # --timeout value or --fresh with --keep only sets ASK_BAD: ask_inner turns that into the usage
-# error inside the logged subshell (exit 1 is recorded in progress/routing). The errors that die
-# in cmd_ask before any log (--via, --base, --worktree) are raised by ask_via_check/ask_wt_check.
+# error inside the logged subshell (exit 1 is recorded in progress).
 ask_parse_args() {
   local agent=$1
   shift 2
-  ASK_VIA=conductor; ASK_FRESH=0; ASK_KEEP=0; ASK_BAD=0
-  ASK_WT_WANT=0; ASK_HAS_BASE=0; ASK_BASE_REF=""; ASK_BASE_NOVAL=0
+  ASK_FRESH=0; ASK_KEEP=0; ASK_BAD=0
   ASK_TIMEOUT=$DEFAULT_TIMEOUT; ASK_TIMEOUT_SET=0
   [ "$agent" != implementer ] || ASK_TIMEOUT=$IMPLEMENTER_TIMEOUT
   while [ $# -gt 0 ]; do
@@ -470,73 +251,29 @@ ask_parse_args() {
         esac ;;
       --fresh) ASK_FRESH=1; shift ;;
       --keep) ASK_KEEP=1; shift ;;
-      --worktree) ASK_WT_WANT=1; shift ;;
-      --base)
-        ASK_HAS_BASE=1
-        if [ $# -ge 2 ]; then ASK_BASE_REF=$2; shift 2; else ASK_BASE_NOVAL=1; shift; fi ;;
-      --via)
-        if [ $# -ge 2 ]; then ASK_VIA=$2; shift 2; else ASK_VIA=''; shift; fi ;;
+      --via) if [ $# -ge 2 ]; then shift 2; else shift; fi ;;   # no-op until step 5: a running conductor still sends --via skill
       *) ASK_BAD=1; shift ;;
     esac
   done
   [ "$ASK_FRESH$ASK_KEEP" != 11 ] || ASK_BAD=1
 }
 
-# ask_via_check — refuse a bad --via before any log
-ask_via_check() {
-  case "$ASK_VIA" in
-    skill|conductor|retro) ;;
-    '') die "--via needs a value: skill, conductor or retro" ;;
-    *) die "--via expects skill, conductor or retro (got '$ASK_VIA')" ;;
-  esac
-}
-
-# record_route_delegate <agent> <source> <rc> — one `delegate` line in
-# .harness/routing.jsonl; session from CLAUDE_CODE_SESSION_ID (null if unset)
-record_route_delegate() {
-  local line
-  line=$(jq -n -c --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg worker "$1" --arg source "$2" \
-    --argjson exit "$(num_or_null "$3")" --arg session "${CLAUDE_CODE_SESSION_ID:-}" '
-    def nz: if . == "" then null else . end;
-    {ts: $ts, event: "delegate", session: ($session | nz), worker: $worker, source: $source, exit: $exit}' 2>/dev/null) || return 0
-  cmd_route_log "$line"
-}
-
-# rotate_logs <current-log> — newest N logs kept, older than D days deleted
+# rotate_logs <current-log> — newest N logs kept, older than D days deleted; raw headless
+# streams are gzipped once a day old and dropped with the logs
 rotate_logs() {
   local f
-  local keep
-  keep=$(mktemp "${TMPDIR:-/tmp}/harness-keep.XXXXXX") || keep=""
-  { printf '%s\n' "$1"; retro_pending_logs; } > "${keep:-/dev/null}" 2>/dev/null
-  ls -1t "$LOG_DIR"/*.md 2>/dev/null | grep -vxFf "${keep:-/dev/null}" | tail -n +"${HARNESS_LOG_KEEP:-200}" \
+  ls -1t "$LOG_DIR"/*.md 2>/dev/null | grep -vxF -- "$1" | tail -n +"${HARNESS_LOG_KEEP:-200}" \
     | while IFS= read -r f; do rm -f "$f"; done
   find "$LOG_DIR" -name '*.md' -mtime "+${HARNESS_LOG_DAYS:-14}" 2>/dev/null \
-    | grep -vxFf "${keep:-/dev/null}" | while IFS= read -r f; do rm -f "$f"; done
-  # leftover report snapshots (no pending candidate points at them) past the log retention
-  find "$RETRO_DIR/reports" -name '*.md' -mtime "+${HARNESS_LOG_DAYS:-14}" 2>/dev/null | while IFS= read -r f; do
-    [ ! -f "$RETRO_DIR/$(basename "$f" .md).json" ] && rm -f "$f"
-  done
-  [ -z "$keep" ] || rm -f "$keep"
-  # raw headless streams: gzip once a day old (the run is long over), drop with the logs.
-  # A stream a pending retro candidate names is never gzipped or deleted (compared by base
-  # name without .gz: the candidate says X.jsonl, the file may already be X.jsonl.gz).
-  local stems
-  stems=$(mktemp "${TMPDIR:-/tmp}/harness-stems.XXXXXX") || stems=""
-  retro_pending_logs | sed 's/\.gz$//; s|.*/||' > "${stems:-/dev/null}" 2>/dev/null
-  find "$LOG_DIR" -name '*.jsonl' -mtime +0 2>/dev/null | while IFS= read -r f; do
-    grep -qxF -- "$(basename "$f")" "${stems:-/dev/null}" || gzip -f "$f" 2>/dev/null
-  done
+    | grep -vxF -- "$1" | while IFS= read -r f; do rm -f "$f"; done
+  find "$LOG_DIR" -name '*.jsonl' -mtime +0 2>/dev/null | while IFS= read -r f; do gzip -f "$f" 2>/dev/null; done
   find "$LOG_DIR" \( -name '*.jsonl' -o -name '*.jsonl.gz' \) -mtime "+${HARNESS_LOG_DAYS:-14}" 2>/dev/null \
-    | while IFS= read -r f; do
-        grep -qxF -- "$(basename "$f" .gz)" "${stems:-/dev/null}" || rm -f "$f"
-      done
-  [ -z "$stems" ] || rm -f "$stems"
+    | while IFS= read -r f; do rm -f "$f"; done
   return 0
 }
 
 # write_progress_md — regenerate .harness/progress.md (<= 60 lines)
 write_progress_md() {
-  local ASK_DIR=.harness/asks ASK_KEY="" ASK_WT=""   # the Workers line describes the main root, even from a worktree ask
   local tmp="$PROGRESS_MD.tmp.$$" branch goal a f q line=""
   branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "-")
   goal="(unset)"
@@ -695,14 +432,7 @@ ask_finish() {
   if [ -n "${ASK_ERR:-}" ] && [ -f "$ASK_ERR" ]; then cat "$ASK_ERR" >&2; fi
   record_progress "$ASK_AGENT" "$ASK_TEXT" "$rc" "$ASK_T0" "$ASK_HB" "$ASK_TMP" \
     || echo "harness: could not write the progress log (ask result unchanged)" >&2
-  record_route_delegate "$ASK_AGENT" "${ASK_VIA:-conductor}" "$rc"
-  retro_on_ask "$ASK_AGENT" "$rc" || true
-  rm -f "$ASK_TMP" "${ASK_ERR:-}" "${ASK_PF:-}"
-  if [ -n "$ASK_WT" ]; then
-    # a worktree ask has no role slot to stamp or close: collect, then remove the checkout when clean
-    ( wt_after_ask "$rc" ) || true
-    exit "$rc"
-  fi
+  rm -f "$ASK_TMP" "${ASK_ERR:-}"
   # a printed report (0, or 5 = failed verification/FAIL verdict) counts as collected
   case "$rc" in 0|5) stamp_finished "$ASK_AGENT" ;; esac
   exit "$rc"
@@ -717,19 +447,8 @@ cmd_ask() {
   case " $AGENTS " in *" $agent "*) ;; *) ask_inner "$@" ;; esac
   [ -n "$text" ] || ask_inner "$@"
   ask_parse_args "$@"
-  ask_via_check
-  ask_wt_check "$agent"
-  ASK_PF=".harness/asks/$agent.preflight"
-  if [ "$ASK_WT_WANT" = 1 ]; then
-    wt_capacity_check
-    ASK_ID="$(date +%s)-$$-$RANDOM"; ASK_ID8=$(repo_hash8 "$ASK_ID")
-    ASK_WT="$WT_HOME/$REPO8/$agent-$ASK_ID8"; ASK_KEY="$agent@$ASK_ID8"
-    ASK_DIR="$ASK_WT/.harness/asks"; REPORT_DIR="$ASK_WT/.harness/reports"
-    ASK_PF=".harness/asks/$agent@$ASK_ID8.preflight"
-  fi
   ASK_TMP=$(mktemp "${TMPDIR:-/tmp}/harness-ask.XXXXXX") || ask_inner "$@"
   ASK_AGENT=$agent ASK_TEXT=$text ASK_DONE=0 ASK_PID=""
-  rm -f "$ASK_PF"
   ASK_T0=$(date +%s); ASK_HB=$(git_head)
   trap 'ask_finish 143' TERM
   trap 'ask_finish 130' INT
@@ -748,16 +467,9 @@ ask_inner() {
   valid_agent "$agent"
   [ "$ASK_BAD" = 0 ] || usage      # a bad option found by ask_parse_args: usage error, logged
 
-  # pre-flight passed: an exit 1 from here on is an infrastructure failure, not a usage
-  # error, and queues a retro candidate (retro_on_ask looks for this marker file; the ask
-  # runs in a subshell, so a variable would not reach the wrapper)
-  if [ -n "${ASK_PF:-}" ]; then mkdir -p .harness/asks 2>/dev/null; : > "$ASK_PF" 2>/dev/null; fi
-
   if [ "$agent" = implementer ] && ! command -v harness-verify >/dev/null 2>&1; then
     die "harness-verify not found on PATH; run ./install.sh (the implementer's checks would silently not run)"
   fi
-
-  if [ -n "$ASK_WT" ]; then wt_create || exit 1; fi
 
   ask_headless "$agent" "$text" "$timeout" "$fresh" "$keep"
 }
@@ -780,7 +492,6 @@ file_mtime() {
 cmd_report() {
   local agent=${1:-}
   [ -n "$agent" ] || usage
-  case " $AGENTS " in *" $agent "*) ;; *) wt_lookup "$agent" >/dev/null && report_wt "$(wt_lookup "$agent")" ;; esac
   valid_agent "$agent"
   report_headless "$agent"
 }
@@ -788,7 +499,6 @@ cmd_report() {
 cmd_status() {
   local a
   for a in $AGENTS; do hl_status_line "$a" status; done
-  wt_status_lines
 }
 
 # --- config, close -----------------------------------------------------------------------
@@ -804,46 +514,20 @@ config_template() {
 EOC
 }
 
-# config_template_v1 — the template before prune step 3 (pane lifecycle keys); a file that is
-# byte-for-byte this is rewritten with the current template
-config_template_v1() {
-  cat <<'EOC'
-{
-  "_doc": "close_after_ask.<role>: never | on_success (close the worker after `harness ask` exits 0; reviewer: 0 or 5). idle_ttl_minutes: close this repo's workers idle longer than N minutes after their last collected report (0 = off). HARNESS_NO_AUTOCLOSE=1 disables both. Env overrides: HARNESS_CLOSE_AFTER_ASK_<ROLE>, HARNESS_IDLE_TTL_MINUTES.",
-  "close_after_ask": { "analyst": "never", "implementer": "never", "reviewer": "never" },
-  "idle_ttl_minutes": 30,
-  "runner": { "analyst": "headless", "implementer": "headless", "reviewer": "headless" },
-  "viewer": "auto"
-}
-EOC
-}
-
-# ensure_config — create the documented default config when absent (never fatal).
-# A file that is byte-for-byte the previous template is rewritten once; any edited file is
-# left alone. Keys of the removed pane runner (runner, close_after_ask, idle_ttl_minutes) in an
-# edited file are ignored, with one stderr note the first time.
+# ensure_config — create the documented default config when absent (never fatal); an existing
+# file is never touched.
 ensure_config() {
   # Never creates .harness/ (stray dirs break harness-verify's root lookup): `harness init`
   # does that. Workers and anything outside an initialised checkout (no .harness/asks) skip.
   [ "${HARNESS_ROLE:-}" != worker ] || return 0
   [ -d .harness/asks ] || return 0
-  if [ -e "$CONFIG_FILE" ]; then
-    if [ "$(cat "$CONFIG_FILE" 2>/dev/null)" = "$(config_template_v1)" ]; then
-      config_template > "$CONFIG_FILE" 2>/dev/null
-    elif [ ! -e .harness/asks/.config-noted ] && jq -e 'has("runner") or has("close_after_ask") or has("idle_ttl_minutes")' "$CONFIG_FILE" >/dev/null 2>&1; then
-      echo "harness: note: $CONFIG_FILE keys runner, close_after_ask and idle_ttl_minutes are ignored (the pane runner was removed; headless is the only runner)" >&2
-      : > .harness/asks/.config-noted 2>/dev/null
-    fi
-    return 0
-  fi
-  config_template > "$CONFIG_FILE" 2>/dev/null
+  [ -e "$CONFIG_FILE" ] || config_template > "$CONFIG_FILE" 2>/dev/null
   return 0
 }
 
 # stamp_finished <agent> — mark the agent's report as collected now;
 # .harness/asks/<agent>.finished mtime = idle-since
 stamp_finished() {
-  [ -z "$ASK_WT" ] || return 0
   mkdir -p .harness/asks 2>/dev/null && : > ".harness/asks/$1.finished" 2>/dev/null
   return 0
 }
@@ -861,15 +545,15 @@ has_uncollected() {
   return 1
 }
 
-# log_close <role> <pane> <reason> [runner] [ask-id] — event line in progress.jsonl (key `role`, not
+# log_close <role> <pane> <reason> [runner] — event line in progress.jsonl (key `role`, not
 # `agent`, so per-agent ask lookups never match it) + progress.md refresh
 log_close() {
   [ -n "$3" ] || return 0
   # no marker side effects: create .harness/ only at a checkout root (an existing one is used as is)
   [ -d .harness/asks ] || [ "$(harness_root "$PWD" 2>/dev/null)" = "$(pwd -P)" ] || return 0
   mkdir -p .harness 2>/dev/null || return 0
-  jq -n -c --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg role "$1" --arg pane "$2" --arg reason "$3" --arg runner "${4:-}" --arg aid "${5:-}" \
-    '{ts: $ts, event: "close", role: $role, pane: $pane, reason: $reason, ask_id: (if $aid == "" then null else $aid end)}
+  jq -n -c --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg role "$1" --arg pane "$2" --arg reason "$3" --arg runner "${4:-}" \
+    '{ts: $ts, event: "close", role: $role, pane: $pane, reason: $reason}
      + (if $runner != "" then {runner: $runner} else {} end)' >> "$JSONL" 2>/dev/null
   write_progress_md
   return 0
@@ -894,134 +578,19 @@ cmd_close() {
         # keep the most significant failure: 4 (refused) > 1
         case "$r" in 0) ;; 4) rc=4 ;; *) [ "$rc" != 0 ] || rc=$r ;; esac
       done
-      # worktree asks too (a live run is refused unless --force, like a plain worker)
-      for a in $WT_DIR/*.json; do
-        [ -f "$a" ] || continue
-        case "$(jq -r '.state // empty' "$a" 2>/dev/null)" in running|kept|creating) ;; *) continue ;; esac
-        ( close_wt "$a" "$force" ); r=$?
-        case "$r" in 0) ;; 4) rc=4 ;; *) [ "$rc" != 0 ] || rc=$r ;; esac
-      done
       exit "$rc" ;;
-  esac
-  case " $AGENTS " in
-    *" $target "*) ;;
-    *) if r=$(wt_lookup "$target"); then ( close_wt "$r" "$force" ); exit $?; fi ;;
   esac
   valid_agent "$target"
   close_headless "$target" "$force" 0
   exit $?
 }
 
-# retro_on_report <agent> <report> — `harness report` collecting the report of an ask that
-# ended with an exit other than 0/5 (a late report): queue/extend its candidate. Never fails.
-retro_on_report() {
-  local agent=$1 report=$2 last rc instr id
-  [ -f "$report" ] && [ -f "$JSONL" ] || return 0
-  last=$(last_ask_record "$agent" --where '.late != true' --field '"\(.exit)\t\(.instr // "")"')
-  rc=${last%%$TAB*}; instr=${last#*$TAB}
-  digits_only "$rc" || return 0
-  case "$rc" in 0|5) return 0 ;; esac
-  case "$instr" in *task-retro.md*) retro_done_from_brief "$report"; return 0 ;; esac
-  id=$(awk 'NR == 1 { print $1 }' "$ASK_DIR/$agent.current" 2>/dev/null)
-  [ -n "$id" ] || return 0
-  [ ! -e "$RETRO_DIR/done/$id.json" ] || return 0
-  retro_write "$id" "$agent" "late report" "$rc" "" "" "" "" "$(retro_snapshot "$id" "$report")" late \
-    || { [ -f "$RETRO_DIR/$id.json" ] || rm -f "$RETRO_DIR/reports/$id.md"; return 0; }
-  echo "retro: candidate queued (late report) — run 'harness retro' when the task is done"
-}
-
-# retro_done_from_brief <report> — a retro ask that timed out but whose report later says
-# `status: done`: move the candidates named in .harness/task-retro.md to done/ so the next
-# `harness retro` does not write the same inbox notes again.
-retro_done_from_brief() {
-  local id n=0
-  [ "$(sed -n 's/^status: *//p' "$1" | head -n 1)" = done ] || return 0
-  [ -f .harness/task-retro.md ] || return 0
-  mkdir -p "$RETRO_DIR/done" 2>/dev/null || return 0
-  for id in $(sed -n 's/^### \([^ ]*\) .*/\1/p' .harness/task-retro.md); do
-    [ -f "$RETRO_DIR/$id.json" ] || continue
-    retro_to_done "$RETRO_DIR/$id.json" && n=$((n + 1))
-  done
-  [ "$n" -eq 0 ] || echo "retro: $n candidate$([ "$n" -eq 1 ] || echo s) processed (late retro report)"
-}
-
-# retro_brief <n> <candidate-files> <toplevel> — the retro brief on stdout: ask-ids,
-# reasons, numbers and file paths only.
-retro_brief() {
-  local n=$1 files=$2 top=$3 f sl
-  printf '# Task: failure retro (%s candidate%s)\n\n' "$n" "$([ "$n" -eq 1 ] || echo s)"
-  printf 'Read-only analysis of failed asks. Evidence lives in the files listed per candidate; open only those.\n\n'
-  printf '## Candidates\n\n'
-  printf '%s' "$files" | while IFS= read -r f; do
-    [ -n "$f" ] || continue
-    sl=$(jq -r '.stream_log // empty' "$f" 2>/dev/null)
-    # rotate_logs gzips old streams: point at the .gz when only that exists
-    if [ -n "$sl" ] && [ ! -e "$sl" ] && [ -e "$sl.gz" ]; then sl="$sl.gz"; fi
-    jq -r --arg sl "$sl" '"### \(.ask_id) — \(.role), \(.reason)\n- exit: \(.exit // "?") · verify attempts: \(.verify_attempts // "-") · duration: \(.duration_s // "?")s · late: \(.late)\n- log: \(.log // "-")\(if $sl != "" then "\n- stream: \($sl) (raw claude -p stream-json\(if $sl | endswith(".gz") then ", gzip: use gzip -dc" else "" end); read only the lines you need)" else "" end)\n- brief: \(.brief // "-" | if endswith("#brief") then "\(.[:-6]) (its `## Brief` section; the live task file was overwritten since)" else . end)\n- report: \(.report // "-")\n"' "$f" 2>/dev/null
-  done
-  printf '## What to write\n\n'
-  printf 'For each candidate (or one note per group of candidates with the same cause) write at most 120 words as:\n\n'
-  printf -- '- **Symptom:** what failed, observable.\n- **Cause:** the verified cause, or "unknown" with what was ruled out.\n- **Next time:** one concrete action.\n- **Evidence:** ask-id plus file:line (code, test, commit). Log and report paths under `.harness/` rotate away, so never cite only those. Mandatory; a note without it is dropped.\n\n'
-  printf 'Before writing, read `docs/wiki/index.md`. If an existing troubleshooting page already covers the cause, write only a one-line note "recurrence of <page>" (with the Evidence line) instead of a new lesson; this feeds the 2+ recurrence promotion rule in AGENTS.md.\n\n'
-  printf '## Output\n\n'
-  if [ -d "$top/docs/wiki" ]; then
-    printf 'One file per note: `docs/wiki/inbox/<YYYY-MM-DD>-retro-<ask-id>.md` (the first ask-id of the group), starting with the header lines `role: retro`, `ask-id: <id>`, `date: <YYYY-MM-DD>` between `---` lines.\n'
-  else
-    printf 'This repo has no docs/wiki: one file per note in `.harness/retro/inbox/<YYYY-MM-DD>-retro-<ask-id>.md`. Do not create docs/wiki.\n'
-  fi
-  printf 'Skip any ask-id that already has a retro note in the inbox (a file named `*-retro-<ask-id>.md`; a previous retro may have finished after its ask timed out). Other inbox files, such as a role'"'"'s late Notes harvest, do not count.\n'
-  printf 'Do not edit wiki pages, index.md or log.md. No fluff, no success stories.\n'
-  printf 'Inbox files are committed to git: never copy prompt text, screen text, secrets, tokens, keys or URLs with credentials from the logs; paraphrase the observable symptom.\n'
-}
-
-# --- harness retro ---------------------------------------------------------------------------
-# cmd_retro [--dry-run] — one analyst ask over every pending candidate. The brief
-# (.harness/task-retro.md) holds ask-ids, reasons, numbers and file paths only.
-cmd_retro() {
-  local dry=0 f n=0 top brief=.harness/task-retro.md rc files=""
-  case "${1:-}" in '') ;; --dry-run) dry=1 ;; *) usage ;; esac
-  [ $# -le 1 ] || usage
-  for f in "$RETRO_DIR"/*.json; do
-    [ -f "$f" ] || continue
-    files="$files$f
-"
-    n=$((n + 1))
-  done
-  if [ "$n" -eq 0 ]; then echo "retro: nothing pending"; return 0; fi
-  top=$(git rev-parse --show-toplevel 2>/dev/null) || top=$PWD
-  if [ "$dry" = 1 ]; then
-    printf '%s' "$files" | while IFS= read -r f; do
-      [ -n "$f" ] || continue
-      jq -r '"\(.ask_id)\t\(.role)\t\(.reason)"' "$f" 2>/dev/null
-    done
-    echo "retro: $n candidate$([ "$n" -eq 1 ] || echo s) pending (dry run: no ask sent, nothing written); brief follows"
-    echo
-    retro_brief "$n" "$files" "$top"
-    return 0
-  fi
-  [ -d .harness/asks ] || [ "$(harness_root "$PWD" 2>/dev/null)" = "$(pwd -P)" ] || die "not a harness checkout (no .harness/asks); run 'harness init' here first"
-  mkdir -p .harness || die "cannot create .harness/"
-  retro_brief "$n" "$files" "$top" > "$brief" || die "cannot write $brief"
-  "$BASH" "$0" ask analyst 'Read .harness/task-retro.md and do it.' --via retro --fresh
-  rc=$?
-  if [ "$rc" -eq 0 ]; then
-    mkdir -p "$RETRO_DIR/done"
-    printf '%s' "$files" | while IFS= read -r f; do
-      [ -n "$f" ] && retro_to_done "$f"
-    done
-    echo "retro: $n candidate$([ "$n" -eq 1 ] || echo s) processed"
-  else
-    echo "retro: analyst ask exited $rc; $n candidate$([ "$n" -eq 1 ] || echo s) stay pending" >&2
-  fi
-  return "$rc"
-}
-
-# --- harness checkout: init, doctor (decision 0010) -----------------------------------------
+# --- harness checkout: init (decision 0010) -----------------------------------------
 # harness_root DIR -> prints the harness checkout root and returns 0, or returns 1.
 # DIR is resolved physically (pwd -P) first, like enter_root.
 # The root is the nearest dir at or above DIR with .harness/asks/, searched up to
 # the dir holding .git (file or dir) inclusive; outside git only DIR counts. Same
-# rule as enter_root in bin/harness-verify and the body in the three claude/hooks.
+# rule as enter_root in bin/harness-verify and the body in the two claude/hooks.
 harness_root() {
   local start d hit=""
   start=$(cd "${1:-/}" 2>/dev/null && pwd -P) || return 1
@@ -1116,108 +685,19 @@ cmd_init() {
   return 0
 }
 
-# doctor_stray_ok DIR — 0 when a stray .harness/ holds only files this harness wrote itself
-# (prints the first other file on stdout and returns 1 otherwise)
-doctor_stray_ok() {
-  local h=$1 f rel
-  while IFS= read -r f; do
-    rel=${f#"$h"/}
-    case "$rel" in
-      config.json|verify.local.json|panes|progress.md|progress.jsonl|routing.jsonl|.DS_Store) ;;
-      log/*|reports/*|done/*|retro/*)
-        case "$rel" in */*.md|*/*.jsonl|*/*.jsonl.*|*/*.json|*/*.log) ;; *) printf '%s' "$rel"; return 1 ;; esac ;;
-      *) printf '%s' "$rel"; return 1 ;;
-    esac
-  done <<EOF
-$(find "$h" -mindepth 1 ! -type d 2>/dev/null)
-EOF
-  return 0
-}
-
-# cmd_doctor [--fix] [DIR...] — find (and with --fix remove) pollution left by older versions:
-# stray .harness/ dirs without asks/ (DIR and its children, default: the parent of this repo
-# plus the cwd) and the global agent=conductor key in ~/.claude/settings.json. Exit 0.
-# Not for workers; symlinked children and symlinked .harness are never followed; the default
-# scope is refused when it would be $HOME (pass DIR explicitly).
-cmd_doctor() {
-  local fix=0 dirs="" d c h seen="" first sf tmp n=0 home
-  [ "${HARNESS_ROLE:-}" != worker ] || die "harness doctor is for the conductor; a worker (HARNESS_ROLE=worker) does not scan or clean"
-  for d in "$@"; do
-    case "$d" in
-      --fix) fix=1 ;;
-      -*) usage ;;
-      *) dirs="$dirs
-$d" ;;
-    esac
-  done
-  # the global key is checked first so it is reported/fixed even when the dir scan is refused
-  sf=${CLAUDE_SETTINGS:-$HOME/.claude/settings.json}
-  if [ -f "$sf" ] && [ "$(jq -r '.agent // empty' "$sf" 2>/dev/null)" = conductor ]; then
-    n=$((n + 1))
-    if [ "$fix" = 1 ]; then
-      tmp=$(mktemp "${TMPDIR:-/tmp}/harness-settings.XXXXXX") || return 0
-      if jq 'del(.agent)' "$sf" > "$tmp" && settings_commit "$tmp" "$sf"; then echo "removed: agent key from $sf (backup $sf.bak)"
-      else echo "harness doctor: could not update $sf" >&2; fi
-      rm -f "$tmp"
-    else
-      echo "global: $sf sets agent conductor (harness init sets it per repo; --fix removes it)"
-    fi
-  fi
-  if [ -z "$dirs" ]; then
-    home=$(cd "$HOME" 2>/dev/null && pwd -P)
-    for d in "${REPO_TOP%/*}" "$PWD"; do
-      d=$(cd "$d" 2>/dev/null && pwd -P) || continue
-      if [ -n "$home" ] && [ "$d" = "$home" ]; then
-        echo "harness doctor: refusing to scan $HOME; pass DIR explicitly" >&2
-        return 1
-      fi
-    done
-    dirs="${REPO_TOP%/*}
-$PWD"
-  fi
-  while IFS= read -r d; do
-    [ -n "$d" ] && [ -d "$d" ] || continue
-    d=$(cd "$d" && pwd -P) || continue
-    for c in "$d" "$d"/*/; do
-      c=${c%/}
-      [ -d "$c" ] && [ ! -L "$c" ] || continue
-      case "$seen" in *"|$c|"*) continue ;; esac
-      seen="$seen|$c|"
-      h=$c/.harness
-      [ -d "$h" ] && [ ! -L "$h" ] && [ ! -d "$h/asks" ] || continue
-      n=$((n + 1))
-      if first=$(doctor_stray_ok "$h"); then
-        if [ "$fix" = 1 ]; then rm -rf "$h" && echo "removed: $h (stray, no asks/)"
-        else echo "stray: $h (no asks/)"; fi
-      else
-        if [ "$fix" = 1 ]; then echo "skipped (unknown files): $h (e.g. $first)"
-        else echo "stray: $h (no asks/; has unknown files, e.g. $first; --fix would skip it)"; fi
-      fi
-    done
-  done <<EOF
-$dirs
-EOF
-  [ "$n" -gt 0 ] || echo "doctor: nothing to clean"
-  return 0
-}
-
 need jq
-# route-log is called by the UserPromptSubmit hook: no herdr needed
-if [ "${1:-}" = route-log ]; then shift; cmd_route_log "$@"; exit 0; fi
 # _mtime prints a file's epoch mtime (tests: fake GNU/BSD stat on PATH)
 if [ "${1:-}" = _mtime ]; then file_mtime "${2:-}"; exit $?; fi
 # _defaults prints the shared defaults as KEY=VALUE (tests: prose copies are checked against it)
 if [ "${1:-}" = _defaults ]; then
-  for k in $(compgen -v HARNESS_ | grep -E '^HARNESS_(ROLES|WT_ROLES|[A-Z_]+_(MS|DEFAULT))$' | sort); do eval "printf '%s=%s\n' \"$k\" \"\${$k}\""; done
+  for k in $(compgen -v HARNESS_ | grep -E '^HARNESS_(ROLES|[A-Z_]+_(MS|DEFAULT))$' | sort); do eval "printf '%s=%s\n' \"$k\" \"\${$k}\""; done
   exit 0
 fi
-# init and doctor are file work: no herdr, no checkout needed
+# init is file work: no herdr, no checkout needed
 if [ "${1:-}" = init ]; then shift; cmd_init "$@"; exit $?; fi
-if [ "${1:-}" = doctor ]; then shift; cmd_doctor "$@"; exit $?; fi
 # wiki-lint is pure file checking: no herdr needed
 if [ "${1:-}" = wiki-lint ]; then shift; cmd_wiki_lint "$@"; exit $?; fi
-# retro and metrics read files only; retro's ask is a separate `harness ask` process
-if [ "${1:-}" = retro ]; then shift; cmd_retro "$@"; exit $?; fi
+# metrics reads files only
 if [ "${1:-}" = metrics ]; then shift; cmd_metrics "$@"; exit $?; fi
 
 # ask acts only in an initialised checkout (decision 0010); status/report/close work anywhere
@@ -1225,7 +705,7 @@ case "${1:-}" in
   ask) [ "${HARNESS_ROLE:-}" = worker ] || require_checkout ;;
 esac
 case "${1:-}" in
-  ask|status) ensure_config "$1"; [ "${HARNESS_ROLE:-}" = worker ] || wt_reap 30 "$(date +%s)" ;;
+  ask|status) ensure_config "$1" ;;
 esac
 case "${1:-}" in
   ask)    shift; cmd_ask "$@" ;;

@@ -154,27 +154,6 @@ tty_run() {
   OUT=$(tr -d '\r' <"$WORK/tty.out")
 }
 
-# 10. a --worktree ask runs in the background without herdr
-bsetup
-git init -q . && git config user.email t@t && git config user.name t
-echo one > a.txt && git add a.txt && git commit -qm one
-mkdir -p .git/info && echo '.harness/' >> .git/info/exclude
-WTROOT="$WORK.wt"; WORKS="$WORKS $WTROOT"
-export HARNESS_WT_ROOT="$WTROOT"
-export FAKE_REPORT_CMD="mkdir -p .harness/reports && printf '# analyst report\nstatus: done\n' > .harness/reports/analyst.md"
-nrun ask analyst "q10" --worktree
-check "worktree bg: rc 0" [ "$RC" -eq 0 ]
-check "worktree bg: report printed" grep -q "analyst report" <<<"$OUT"
-check "worktree bg: herdr never called" no_herdr_calls
-check "worktree bg: checkout removed" [ "$(git worktree list | wc -l | tr -d ' ')" = 1 ]
-check "worktree bg: registry pane empty" bash -c 'for f in .harness/wt/*.json; do [ -e "$f" ] || exit 1; jq -e "(.pane // \"\") == \"\"" "$f" >/dev/null || exit 1; done'
-WTID=$(jq -r .id .harness/wt/*.json | head -n 1)
-nrun wait "$WTID"
-check "worktree wait <ask-id>: rc 0 after the checkout is gone" bash -c '[ "$1" = 0 ] && grep -q "^done; collect" <<<"$2"' _ "$RC" "$OUT"
-tty_run watch "$WTID"
-check "worktree watch <ask-id> after removal: still renders the stream" bash -c '[ "$1" = 0 ] && grep -q "■ success" <<<"$2"' _ "$RC" "$OUT"
-unset HARNESS_WT_ROOT
-
 # no-perl fallback launcher still runs the ask
 bsetup
 HARNESS_HL_NO_PERL=1 nrun ask analyst "q12"
