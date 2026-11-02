@@ -33,7 +33,7 @@ cd ~/workspace/claude-code-setup
 - 전역 gitignore에 `.harness/` 추가
 - herdr가 설치돼 있으면 `herdr integration install claude` 실행 (없으면 건너뜀)
 
-설치는 `./install.sh` 한 번, 그 뒤 harness를 쓰려는 저장소마다 `harness init`을 한 번 실행한다. herdr는 필요 없다. `.harness/asks/`(체크아웃 표시), 기본 설정, 그 저장소의 `.claude/settings.local.json`(사용자별, 추적 안 됨)에 `"agent": "conductor"`를 만든다(`--shared`는 커밋되는 `.claude/settings.json`에 쓴다. 이미 다른 `agent`가 있으면 그대로 두고 알린다. 기존 파일은 `.bak`을 한 번 남기고, 심링크는 유지한다. `--no-agent`는 settings를 건드리지 않는다). init하지 않은 저장소에서는 게이트·resume 훅·라우팅 로그가 모두 꺼지고 `harness ask`/`spawn`은 거부된다.
+설치는 `./install.sh` 한 번, 그 뒤 harness를 쓰려는 저장소마다 `harness init`을 한 번 실행한다. herdr는 필요 없다. `.harness/asks/`(체크아웃 표시), 기본 설정, 그 저장소의 `.claude/settings.local.json`(사용자별, 추적 안 됨)에 `"agent": "conductor"`를 만든다(`--shared`는 커밋되는 `.claude/settings.json`에 쓴다. 이미 다른 `agent`가 있으면 그대로 두고 알린다. 기존 파일은 `.bak`을 한 번 남기고, 심링크는 유지한다. `--no-agent`는 settings를 건드리지 않는다). init하지 않은 저장소에서는 게이트·resume 훅이 아무것도 하지 않고 `harness ask`는 거부된다.
 
 
 테스트는 `./install.sh --test`로 돌린다. 스위트는 병렬로 실행되고, 디버깅용으로 `HARNESS_TEST_SERIAL=1`을 주면 하나씩 돌린다.
@@ -42,7 +42,7 @@ cd ~/workspace/claude-code-setup
 
 1. 프로젝트(`harness init`을 한 저장소)에서 평소처럼 `claude`를 시작한다. 터미널이면 충분하고 herdr는 필요 없다.
 2. 질문하거나 작업을 맡긴다. 일반 질문은 conductor가 바로 답한다. 소스를 읽거나 고치려 하면 게이트가 호출을 거부하고, conductor는 맞는 스킬(`/analyze` 조사 · `/implement` 변경 · `/review` 검토)을 호출한다. 직접 `/implement …`처럼 쳐도 된다.
-3. 스킬이 `harness ask <worker> '<instruction>' --via skill`을 실행한다. 워커는 detached headless Claude 세션(`claude -p`)으로 백그라운드에서 돈다. 워커가 끝나면 리포트(`.harness/reports/<worker>.md`, 40줄 이하)가 출력된다. 설치 스크립트는 Bash 도구 상한을 `BASH_MAX_TIMEOUT_MS=7200000`으로 올려 두지만, 호출마다 `timeout`을 직접 주지 않으면 기본값(`BASH_DEFAULT_TIMEOUT_MS=600000`, 10분)에서 끊긴다. 그래서 스킬은 `harness ask`와 `harness wait`를 항상 `run_in_background: true`와 `timeout: 7200000`으로 돌린다: 기본 대기 시간이 워커의 headless 상한(analyst·reviewer 60분, implementer 90분)과 같아 실행이 끝나는 순간 ask가 돌아오고 Bash 완료 알림이 conductor를 깨운다. 재시작·compaction 뒤에는 `harness wait <worker>`로 다시 붙는다. 워커가 리포트 없이 멈추려 하면 Stop hook이 (ask당 최대 2번) 막고 리포트를 쓰게 한다(지시문에 `[no-report]`가 있으면 제외). 노트북 절전으로 시계가 크게 건너뛰면 마감도 그만큼 늦춘다.
+3. 스킬이 `harness ask <worker> '<instruction>'`을 실행한다. 워커는 detached headless Claude 세션(`claude -p`)으로 백그라운드에서 돈다. 워커가 끝나면 리포트(`.harness/reports/<worker>.md`, 40줄 이하)가 출력된다. 설치 스크립트는 Bash 도구 상한을 `BASH_MAX_TIMEOUT_MS=7200000`으로 올려 두지만, 호출마다 `timeout`을 직접 주지 않으면 기본값(`BASH_DEFAULT_TIMEOUT_MS=600000`, 10분)에서 끊긴다. 그래서 스킬은 `harness ask`와 `harness wait`를 항상 `run_in_background: true`와 `timeout: 7200000`으로 돌린다: 기본 대기 시간이 워커의 headless 상한(analyst·reviewer 60분, implementer 90분)과 같아 실행이 끝나는 순간 ask가 돌아오고 Bash 완료 알림이 conductor를 깨운다. 재시작·compaction 뒤에는 `harness wait <worker>`로 다시 붙는다. 워커가 리포트 없이 멈추려 하면 Stop hook이 (ask당 최대 2번) 막고 리포트를 쓰게 한다(지시문에 `[no-report]`가 있으면 제외). 노트북 절전으로 시계가 크게 건너뛰면 마감도 그만큼 늦춘다.
 4. 워커의 진행은 `harness status`로 보고, herdr를 쓰면 viewer pane에서도 볼 수 있다(읽기 전용). conductor가 보는 것은 리포트뿐이다.
 
 ```
@@ -53,6 +53,7 @@ harness watch  <agent> [-n N]                              # 사람용 터미널
 harness report <agent>                                   # print existing report (same exit codes as ask): 3 none, 4 still working
 harness status
 harness metrics [--since YYYY-MM-DD] [--json]            # progress.jsonl·위키 기반 지표 (최근 28일 vs 직전 28일)
+harness wiki-lint                                        # docs/wiki 형식·한도 검사 (0 = 통과)
 harness close  <agent>|--all [--force]          # run을 멈춘다. exit 4: 실행 중이거나 리포트를 수집 안 함 (--force가 무시)
 ```
 

@@ -303,6 +303,7 @@ check "keep leak: never the old ask_id row's session" not_logged "--resume sess-
 # 15b3. old rows: a close event with an ask_id is no boundary for the plain role session
 hsetup
 hrun ask analyst "ok"
+rm -f .harness/asks/analyst.session
 printf '%s\n' '{"ts":"2026-10-28T00:00:00Z","event":"close","role":"analyst","pane":"w1:p9","reason":"manual","runner":"headless","ask_id":"1-2-3"}' >> .harness/progress.jsonl
 hrun ask analyst "keep" --keep
 check "keep old close: plain session not marked closed" logged "--resume sess-1"

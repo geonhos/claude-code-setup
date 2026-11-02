@@ -74,6 +74,15 @@ hook_report analyst '# analyst report — x\nstatus: done\n'
 run ask analyst "look" --via skill
 check "via no-op: rc 0" [ "$RC" -eq 0 ]
 check "via no-op: instr is just the text" [ "$(jl .instr)" = look ]
+setup
+hook_report analyst '# analyst report — x\nstatus: done\n'
+run ask analyst "look" --via
+check "via bare: rc 0" [ "$RC" -eq 0 ]
+setup
+hook_report analyst '# analyst report — x\nstatus: done\n'
+run ask analyst "look" --via nope
+check "via nope: rc 0" [ "$RC" -eq 0 ]
+check "via nope: instr is just the text" [ "$(jl .instr)" = look ]
 
 
 # --- exit 3 (no report), exit 4 (still running) ----------------------------------------------
