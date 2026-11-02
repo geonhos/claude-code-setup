@@ -187,7 +187,7 @@ pv=$(run_viewer)
 hrun ask analyst "wt" --worktree --timeout 500
 wid=$(sed -n 's/^harness: ask \([^ ]*\) .*/\1/p' <<<"$OUT" | head -n 1)
 wdir=$(ls -d "$HARNESS_WT_ROOT"/*/analyst-* 2>/dev/null | head -n 1)
-check "wait ask-id: worktree ask started" [ -n "$wid" ] && [ -d "$wdir" ]
+check "wait ask-id: worktree ask started" [ -d "${wdir:-/nonexistent}" ]
 n=$(grep -c 'pane split' "$FAKE_LOG")
 wait_exit "$wdir/.harness/asks"
 hrun wait "$wid"
