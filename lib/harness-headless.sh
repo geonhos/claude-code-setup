@@ -32,15 +32,15 @@ hl_alive() {
   ps -p "$pid" -o command= 2>/dev/null | grep -q 'harness-run'
 }
 # hl_last_session <role> — session id of the role's latest *successful* headless run (progress
-# line with result "success" and a session). A close event of the role with the same ask-id rule as
-# last_ask_record is a boundary: when one came after the last such run, print "closed" instead (no session id looks like that).
+# line with result "success" and a session). Old rows with an ask_id (the removed --worktree asks)
+# are ignored, as in last_ask_record. A close event of the role is a boundary: when one came after the last such run, print "closed" instead (no session id looks like that).
 hl_last_session() {
   [ -f "$JSONL" ] || return 1
   tail -n 200 "$JSONL" 2>/dev/null \
-    | jq -R -n -r --arg r "$1" --arg id "${ASK_ID:-}" '
+    | jq -R -n -r --arg r "$1" '
         reduce (inputs | fromjson? | select(type == "object")) as $e ({sid: "", closed: false};
-          if $e.event == "close" then (if $e.role == $r and ($e.ask_id // "") == $id then {sid: "", closed: true} else . end)
-          elif ($e.ask_id // "") != $id then .
+          if $e.event == "close" then (if $e.role == $r and ($e.ask_id // "") == "" then {sid: "", closed: true} else . end)
+          elif ($e.ask_id // "") != "" then .
           elif $e.agent == $r and $e.runner == "headless" and $e.result == "success" and (($e.session // "") != "") then {sid: $e.session, closed: false}
           else . end)
         | if .sid != "" then .sid elif .closed then "closed" else empty end' 2>/dev/null \
@@ -62,7 +62,7 @@ hl_run_viewer() {
 # hl_open_viewer <role> — show the (already started) run in a herdr pane running `harness watch`:
 # viewer none = nothing; auto = a pane when herdr is usable, else a note; pane = a pane (ask_headless
 # refused the ask before launching when herdr is unusable). The run is a background run either way,
-# so a failed split only warns. Records viewer=pane:<id> in .run (and the worktree registry).
+# so a failed split only warns. Records viewer=pane:<id> in .run.
 hl_open_viewer() {
   local role=$1 a="$ASK_DIR/$1" mode out pane dir
   mode=$(viewer_mode)
@@ -78,13 +78,12 @@ hl_open_viewer() {
   if [ -z "$pane" ]; then
     echo "harness: pane split returned no pane id: $out" >&2; hl_bg_note "$role"; return 0
   fi
-  if ! herdr pane run "$pane" "harness watch $(ask_ref "$role")" >/dev/null 2>&1; then
+  if ! herdr pane run "$pane" "harness watch $role" >/dev/null 2>&1; then
     echo "harness: pane run failed for $pane" >&2
     herdr pane close "$pane" >/dev/null 2>&1 || echo "harness: could not close pane $pane" >&2
     hl_bg_note "$role"; return 0
   fi
   sed "s/^viewer=.*/viewer=pane:$pane/" "$a.run" > "$a.run.tmp.$$" && mv "$a.run.tmp.$$" "$a.run"
-  [ -z "$ASK_WT" ] || wt_update pane "$pane"
   return 0
 }
 
@@ -97,7 +96,6 @@ hl_close_viewer() {
   if herdr_env_ok; then herdr pane close "$pane" >/dev/null 2>&1 || true
   elif [ -z "${2:-}" ]; then return 0; fi
   sed 's/^viewer=.*/viewer=bg/' "$a.run" > "$a.run.tmp.$$" && mv "$a.run.tmp.$$" "$a.run"
-  [ -z "$ASK_WT" ] || wt_update pane ""
   return 0
 }
 
@@ -145,16 +143,10 @@ hl_status_line() {
 hl_collect() {
   local role=$1 ej="$ASK_DIR/$1.exit.json" report="$REPORT_DIR/$1.md" cur="$ASK_DIR/$1.current"
   local rc res iserr killed sid tinit perm ejc denied
-  ejc=$(cat "$ej" 2>/dev/null)   # one read: a racing close removes the checkout under us
+  ejc=$(cat "$ej" 2>/dev/null)   # one read
   rc=$(jq -r '.rc // empty' <<<"$ejc" 2>/dev/null); res=$(jq -r '.result // empty' <<<"$ejc" 2>/dev/null)
   iserr=$(jq -r '.is_error // false' <<<"$ejc" 2>/dev/null); killed=$(jq -r '.killed // empty' <<<"$ejc" 2>/dev/null)
   sid=$(jq -r '(.session_id // "") | .[0:8]' <<<"$ejc" 2>/dev/null); tinit=$(jq -r '.t_init // empty' <<<"$ejc" 2>/dev/null)
-  # a worktree ask whose result vanished was closed under it (`harness close --force` kills the
-  # run and removes the checkout while this process is still collecting): that is a kill, not a failure
-  if [ -n "$ASK_WT" ] && [ -z "$ejc" ]; then
-    echo "harness: $role's run was killed (closed); its checkout was removed"
-    exit 3
-  fi
   perm=$(jq -r '.perm // empty' <<<"$ejc" 2>/dev/null)
   if [ -n "$perm" ] && [ "$perm" != auto ]; then
     echo "harness: warning: $role ran with permission mode '$perm', not auto; tools may have been denied (see harness watch)" >&2
@@ -192,7 +184,7 @@ hl_collect() {
       "$role" "$(grep -c . <<<"$denied")" "$denied"
     hl_view_tail "$role" 30; exit 2
   fi
-  echo "harness: $role finished without a report at $report; collect: harness report $(ask_ref "$role")"
+  echo "harness: $role finished without a report at $report; collect: harness report $role"
   hl_view_tail "$role" 30; exit 3
 }
 # hl_view_tail <role> <n> — the last n lines the run showed: the rendered stream
@@ -231,12 +223,10 @@ hl_spawn_bg() {
 # A second launch of the same ask (resume retry) keeps the viewer recorded in .run.
 hl_launch() {
   local role=$1 id=$2 resume=$3 max_s=$4 ctxb=$5 start_s=$6 poll=$7 a="$ASK_DIR/$1" s0 root viewer
-  root=${ASK_WT:-$(pwd -P)}
+  root=$(pwd -P)
   viewer=$(sed -n 's/^viewer=//p' "$a.run" 2>/dev/null | head -n 1)
   rm -f "$a.finished" "$a.exit.json" "$a.pid"
   printf 'resume=%s\nmax_s=%s\nctx_before=%s\nviewer=%s\n' "$resume" "$max_s" "$ctxb" "${viewer:-bg}" > "$a.run"
-  # a worktree ask streams into the main checkout's log dir, tagged with its id8
-  [ -z "$ASK_WT" ] || printf 'log_dir=%s\nlog_tag=%s\n' "$(pwd -P)/.harness/log" "$ASK_ID8" >> "$a.run"
   hl_spawn_bg "$role" "$id" "$root"
   # the run announces itself with its pid file
   s0=$(date +%s)
@@ -336,7 +326,7 @@ ask_headless() {
   # a session file left by an earlier run must never be mistaken for this run's
   rm -f "$a.session"
   rm -f "$report"
-  id=${ASK_ID:-"$(date +%s)-$$-$RANDOM"}; start=$(date +%s)
+  id="$(date +%s)-$$-$RANDOM"; start=$(date +%s)
   printf '%s %s\n' "$id" "$start" > "$a.current"
   rm -f "$a.finished" "$a.exit.json" "$a.pid"
   if [ "$role" = implementer ]; then verify_tool baseline implementer 2>/dev/null || rm -f .harness/verify/implementer.json; fi
@@ -381,10 +371,10 @@ ask_headless() {
     if [ "$now" -ge "$deadline" ]; then
       if [ "$role" = implementer ] && [ -f "$report.pending" ]; then
         # the Stop hook has hidden the report while it verifies; the run is never killed at the deadline
-        echo "harness: $role is still verifying (Stop hook running, $(cat .harness/verify/implementer.attempts 2>/dev/null || echo 0) failed attempt(s) so far, $((now - start))s); collect: harness report $(ask_ref "$role"); stop: harness close $(ask_ref "$role") --force" >&2
+        echo "harness: $role is still verifying (Stop hook running, $(cat .harness/verify/implementer.attempts 2>/dev/null || echo 0) failed attempt(s) so far, $((now - start))s); collect: harness report $role; stop: harness close $role --force" >&2
         exit 4
       fi
-      echo "harness: $role is still running (pid $(hl_pid "$role"), $((now - start))s); collect: harness report $(ask_ref "$role"); stop: harness close $(ask_ref "$role") --force" >&2
+      echo "harness: $role is still running (pid $(hl_pid "$role"), $((now - start))s); collect: harness report $role; stop: harness close $role --force" >&2
       exit 4
     fi
     sleep "$poll"
@@ -395,7 +385,7 @@ ask_headless() {
 report_headless() {
   local role=$1 report="$REPORT_DIR/$1.md"
   if hl_alive "$role"; then
-    echo "harness: still running ($(( $(date +%s) - $(awk 'NR == 1 { print $2 }' "$ASK_DIR/$role.current" 2>/dev/null || echo 0) ))s); harness wait $(ask_ref "$role") blocks until done" >&2
+    echo "harness: still running ($(( $(date +%s) - $(awk 'NR == 1 { print $2 }' "$ASK_DIR/$role.current" 2>/dev/null || echo 0) ))s); harness wait $role blocks until done" >&2
     exit 4
   fi
   if [ ! -f "$ASK_DIR/$role.exit.json" ]; then
@@ -457,13 +447,11 @@ close_headless() {
   hl_finish_close "$role" "$pane" "$reason"
 }
 
-# hl_target <cmd> <target> — resolve a role or a worktree ask-id for wait/watch: sets ASK_AGENT (and, for a
-# worktree ask, ASK_WT/ASK_DIR/... through wt_load); dies for an unknown target
+# hl_target <cmd> <target> — validate the role for wait/watch: sets ASK_AGENT; dies for an unknown one
 hl_target() {
-  local cmd=$1 t=$2 f
   case " $AGENTS " in
-    *" $t "*) ASK_AGENT=$t ;;
-    *) f=$(wt_lookup "$t") || die "$cmd: unknown agent or ask-id '$t'"; wt_load "$f" ;;
+    *" $2 "*) ASK_AGENT=$2 ;;
+    *) die "$1: unknown agent '$2' (expected one of: $AGENTS)" ;;
   esac
 }
 # hl_starting <role> <id> — the run was just launched and has not written its pid file yet
@@ -474,7 +462,7 @@ hl_starting() {
   digits_only "${st:-}" && [ $(( $(date +%s) - st )) -lt "${HARNESS_HL_START_S:-15}" ]
 }
 
-# cmd_wait <role|ask-id> [--timeout ms] — block until the target's run ends; never collects.
+# cmd_wait <role> [--timeout ms] — block until the target's run ends; never collects.
 # 0 done (exit.json carries the ask), 3 no ask / run gone without a result, 4 timeout.
 cmd_wait() {
   local t=${1:-} timeout="" role id a start deadline dl0 max_s prev now g poll=${HARNESS_POLL_SEC:-2}
@@ -488,27 +476,23 @@ cmd_wait() {
   done
   hl_target wait "$t"
   role=$ASK_AGENT; a="$ASK_DIR/$role"
-  if [ -n "$ASK_WT" ] && [ ! -d "$ASK_WT" ]; then
-    [ -f "$WT_DIR/$ASK_ID.report.md" ] && { echo "done; collect: harness report $ASK_ID"; exit 0; }
-    echo "harness: worktree of $ASK_ID is gone and no report was saved" >&2; exit 3
-  fi
   id=$(awk 'NR == 1 { print $1 }' "$a.current" 2>/dev/null)
   [ -n "$id" ] || { echo "harness: no ask for $role" >&2; exit 3; }
   [ -n "$timeout" ] || timeout=$(( $(hl_max_s "$role") * 1000 ))
   start=$(date +%s); deadline=$((start + (timeout + 999) / 1000)); prev=$start; dl0=$deadline; max_s=$(hl_max_s "$role")
   while :; do
-    if hl_done "$role" "$id"; then hl_close_viewer "$role"; echo "done; collect: harness report $(ask_ref "$role")"; exit 0; fi
+    if hl_done "$role" "$id"; then hl_close_viewer "$role"; echo "done; collect: harness report $role"; exit 0; fi
     if ! hl_alive "$role" && ! hl_starting "$role" "$id"; then
       # the runner may still be writing exit.json as its pid disappears: the same ~3 s grace as ask
       g=0; while [ "$g" -lt 30 ] && ! hl_done "$role" "$id"; do sleep 0.1; g=$((g + 1)); done
       if hl_done "$role" "$id"; then continue; fi
-      echo "harness: $role's run is gone without a result (killed?); harness report $(ask_ref "$role") explains" >&2
+      echo "harness: $role's run is gone without a result (killed?); harness report $role explains" >&2
       exit 3
     fi
     now=$(date +%s)
     deadline=$(hl_deadline_bump "$prev" "$now" "$poll" "$deadline" "$max_s" "$dl0"); prev=$now
     if [ "$now" -ge "$deadline" ]; then
-      echo "harness: $role is still running ($((now - start))s waited); harness wait $(ask_ref "$role") again, or harness close $(ask_ref "$role") --force" >&2
+      echo "harness: $role is still running ($((now - start))s waited); harness wait $role again, or harness close $role --force" >&2
       exit 4
     fi
     sleep "$poll"
@@ -528,7 +512,7 @@ hl_stream_of() {
 
 hl_stream_id() { awk 'NR == 1 { print $1 }' "$ASK_DIR/$1.stream" 2>/dev/null; }
 
-# cmd_watch <role|ask-id> [-n N] — human only: follow a live run's rendered stream, or print the last N
+# cmd_watch <role> [-n N] — human only: follow a live run's rendered stream, or print the last N
 # (default 40) rendered lines of a finished one. 0 ok, 1 refused (not a tty), 3 no stream known.
 cmd_watch() {
   local t=${1:-} n=40 role raw tp vp i fifo id
@@ -549,8 +533,6 @@ cmd_watch() {
   while [ "$(hl_stream_id "$role")" != "$id" ] && [ "$i" -lt 100 ] && { hl_alive "$role" || hl_starting "$role" "$id"; }; do
     sleep 0.2; i=$((i + 1)); raw=$(hl_stream_of "$role")
   done
-  # a worktree ask whose checkout is gone: the registry kept the absolute stream path
-  [ -n "$raw" ] || [ -z "$ASK_WT" ] || raw=$(jq -r '.stream // empty' "$WT_DIR/$ASK_ID.json" 2>/dev/null)
   if [ -z "$raw" ]; then echo "harness: no stream known for $t" >&2; exit 3; fi
   if ! hl_alive "$role"; then
     if [ -f "$raw" ]; then harness-view < "$raw" | tail -n "$n"

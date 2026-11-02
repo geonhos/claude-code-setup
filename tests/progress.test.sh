@@ -162,22 +162,14 @@ check "rotate: jsonl gz exists" [ "$(ls .harness/progress.jsonl.*.gz 2>/dev/null
 check "rotate: gz has old lines" [ "$(gzip -dc .harness/progress.jsonl.*.gz | wc -l | tr -d ' ')" -eq 10 ]
 check "rotate: new jsonl has only new line" [ "$(nlines .harness/progress.jsonl)" -eq 1 ]
 
-# --- usage errors inside the ask are logged (exit 1); option errors that die first are not ---------------------------------------
-for bad in "--fresh --keep" "--timeout abc" "--timeout 0" "--bogus"; do
+# --- usage errors inside the ask are logged (exit 1) ---------------------------------------
+for bad in "--fresh --keep" "--timeout abc" "--timeout 0" "--bogus" "--worktree" "--base x"; do
   setup
   runerr ask analyst "q" $bad
   check "usage ($bad): rc 1" [ "$RC" -eq 1 ]
   check "usage ($bad): progress line exit 1" [ "$(jl .exit)" = 1 ]
   check "usage ($bad): nothing sent" not_logged "claude: "
 done
-for bad in "--base x" "--worktree --base"; do
-  setup
-  runerr ask analyst "q" $bad
-  check "early refusal ($bad): rc 1" [ "$RC" -eq 1 ]
-  ok=0; [ ! -e .harness/progress.jsonl ] && ok=1
-  check "early refusal ($bad): nothing logged" [ "$ok" = 1 ]
-done
-
 # --- signals: the ask wrapper ends with the real signal exit, logs it; the detached run survives (lib/harness-headless.sh hl_spawn_bg) -------------------------
 sigtest() { # sigtest SIGNAL — start a slow ask, signal the wrapper while it waits
   setup

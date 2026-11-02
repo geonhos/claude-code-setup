@@ -7,15 +7,12 @@
 #   harness ask    <agent> '<instruction>' [--timeout MS] [--fresh|--keep]
 #     default --timeout = the role's headless run cap (a background ask returns when the run ends):
 #     implementer 5400000, analyst/reviewer 3600000
-#   harness ask    <analyst|reviewer> '<instruction>' --worktree [--base REF]
-#     the ask runs in its own detached git worktree under
-#     ~/.cache/harness/wt/<repo8>/<role>-<id8> (decision 0008); the ask-id is printed on stderr.
-#   harness report <agent>|<ask-id>
-#   harness wait   <agent>|<ask-id> [--timeout MS]   block until the run ends (0 done, 3 no ask/gone, 4 timeout); does not collect
-#   harness watch  <agent>|<ask-id> [-n N]   human terminal only: follow a live run, or the last N lines of a finished one
+#   harness report <agent>
+#   harness wait   <agent> [--timeout MS]   block until the run ends (0 done, 3 no ask/gone, 4 timeout); does not collect
+#   harness watch  <agent> [-n N]   human terminal only: follow a live run, or the last N lines of a finished one
 #   harness status
 #   harness init [--no-agent] [--shared]   make this repo a harness checkout (.harness/asks, config, agent=conductor in .claude/settings.local.json; --shared: settings.json)
-#   harness close  <agent>|<ask-id>|--all [--force]
+#   harness close  <agent>|--all [--force]
 #   harness metrics [--since YYYY-MM-DD] [--json]   health numbers from progress.jsonl + the wiki
 #
 # Exit codes for `ask`: 0 report printed · 1 usage/setup error
@@ -52,7 +49,7 @@ done
 case $src in */*) d=${src%/*} ;; *) d=. ;; esac   # no dirname: PATH may be bare in hooks/tests
 HARNESS_LIB=${HARNESS_LIB:-$(CDPATH= cd -P "$d/../lib" 2>/dev/null && pwd)}
 # Explicit list, fixed order, no glob: a stray file in lib/ is never sourced. Definitions only.
-for m in defaults metrics worktree headless; do
+for m in defaults metrics headless; do
   . "$HARNESS_LIB/harness-$m.sh" 2>/dev/null || { echo "harness: cannot load lib/harness-$m.sh" >&2; exit 1; }
 done
 unset src d m
@@ -65,31 +62,20 @@ JSONL=".harness/progress.jsonl"
 PROGRESS_MD=".harness/progress.md"
 DEFAULT_TIMEOUT=$HARNESS_DEFAULT_TIMEOUT_MS
 IMPLEMENTER_TIMEOUT=$HARNESS_IMPLEMENTER_TIMEOUT_MS
-# Per-ask state (decision 0008). A plain ask uses the main checkout's .harness/asks and reports; a
-# `--worktree` ask (headless analyst/reviewer, detached checkout) points ASK_DIR/REPORT_DIR into
-# its worktree, so same-role asks never share a slot. Everything shared (progress.jsonl, logs,
-# config) stays in the main root.
 ASK_DIR=".harness/asks"
-ASK_KEY=""        # key of a worktree ask: <role>@<id8> (empty = the role)
-ASK_WT=""         # worktree path of this ask (empty = plain ask)
-ASK_ID=""; ASK_ID8=""; ASK_BASE=""; ASK_WT_WANT=0
 # parsed once by ask_parse_args (cmd_ask); ask_inner only reads them
 ASK_TIMEOUT=$DEFAULT_TIMEOUT; ASK_TIMEOUT_SET=0; ASK_FRESH=0; ASK_KEEP=0; ASK_BAD=0
-ASK_HAS_BASE=0; ASK_BASE_REF=""; ASK_BASE_NOVAL=0
-WT_HOME=${HARNESS_WT_ROOT:-$HOME/.cache/harness/wt}
-WT_DIR=".harness/wt"
 
 usage() {
   cat >&2 <<EOF
 usage:
   harness ask    <agent> '<instruction>' [--timeout MS (default: implementer $IMPLEMENTER_TIMEOUT, others $DEFAULT_TIMEOUT)] [--fresh|--keep]
-  harness ask    <analyst|reviewer> '<instruction>' --worktree [--base REF] ...   (--base needs --worktree)
-  harness report <agent>|<ask-id>
-  harness wait   <agent>|<ask-id> [--timeout MS]
-  harness watch  <agent>|<ask-id> [-n N]   (human terminal only)
+  harness report <agent>
+  harness wait   <agent> [--timeout MS]
+  harness watch  <agent> [-n N]   (human terminal only)
   harness status
   harness init   [--no-agent] [--shared]   (once per repo: makes it a harness checkout; ask refuses without it)
-  harness close  <agent>|<ask-id>|--all [--force]
+  harness close  <agent>|--all [--force]
   harness wiki-lint [DIR]
   harness metrics [--since YYYY-MM-DD] [--json]
 agents: $AGENTS
@@ -112,74 +98,6 @@ valid_agent() {
   esac
   die "unknown agent '$1' (expected one of: $AGENTS)"
 }
-
-# --- repo identity -------------------------------------------------------------------------
-# repo8 = first 8 hex of a hash of the repo top-level (git rev-parse --show-toplevel, else
-# $PWD; symlinks resolved): scopes the worktree path.
-repo_top() {
-  local t
-  t=$(git rev-parse --show-toplevel 2>/dev/null) || t=""
-  [ -n "$t" ] || t=$PWD
-  ( cd "$t" 2>/dev/null && pwd -P ) || printf '%s\n' "$t"
-}
-repo_hash8() {
-  local h
-  if command -v sha1sum >/dev/null 2>&1; then h=$(printf %s "$1" | sha1sum)
-  elif command -v shasum >/dev/null 2>&1; then h=$(printf %s "$1" | shasum -a 1)
-  else h=$(printf %s "$1" | cksum | awk '{ printf "%08x", $1 }'); fi
-  printf %s "${h%% *}" | cut -c1-8
-}
-REPO_TOP=$(repo_top)
-REPO8=$(repo_hash8 "$REPO_TOP")
-
-# lock_stale <dir> — the lock's owner is gone: its pid is dead, or alive but not a harness process
-# (the pid was reused; `grep harness` is a deliberate loose match: a reused pid whose command line
-# merely contains "harness" is honoured until the ceiling, never wrongly stolen), or the owner file
-# never appeared and the dir is older than HARNESS_LOCK_STALE_S (default 10 s: an owner that died
-# between mkdir and writing its pid). A live owner is overridden, with a warning, only once the LOCK
-# is older than HARNESS_LOCK_MAX_S (default 120 s; age = owner file mtime, i.e. since it was taken):
-# how long this waiter has waited does not count, so a lock just acquired is never stolen.
-lock_stale() {
-  local d=$1 own mt age
-  own=$(cat "$d/owner" 2>/dev/null)
-  if digits_only "$own"; then
-    kill -0 "$own" 2>/dev/null || return 0
-    ps -p "$own" -o command= 2>/dev/null | grep -q 'harness' || return 0
-    mt=$(file_mtime "$d/owner") || return 1
-    age=$(( $(date +%s) - mt ))
-    [ "$age" -ge "${HARNESS_LOCK_MAX_S:-120}" ] || return 1
-    echo "harness: lock $d held by pid $own for over ${HARNESS_LOCK_MAX_S:-120}s; taking it over" >&2
-    return 0
-  fi
-  mt=$(file_mtime "$d") || return 1
-  [ $(( $(date +%s) - mt )) -gt "${HARNESS_LOCK_STALE_S:-10}" ]
-}
-
-# lock_take <dir> — mkdir lock (portable) with an owner pid file inside.
-# Takeover invariant: a lock dir is only ever removed by a waiter that holds the takeover mutex
-# "<dir>.take" and re-judged the lock stale while holding it. Nothing is renamed or put back, so a
-# fresh lock can never be moved away or nested; while the stale dir exists nobody can mkdir over it,
-# and the other waiters sit in the mutex or retry the mkdir. (Only a live-owner override after
-# HARNESS_LOCK_MAX_S can race the owner's own lock_drop; that is the last resort by design.)
-# A taker that died holding "<dir>.take" is cleared by age (HARNESS_LOCK_STALE_S).
-lock_take() {
-  local d=$1 i=0 mt
-  while ! mkdir "$d" 2>/dev/null; do
-    i=$((i + 1))
-    if [ $((i % 10)) -eq 0 ] && lock_stale "$d"; then
-      if mkdir "$d.take" 2>/dev/null; then
-        if lock_stale "$d"; then rm -rf "$d"; fi
-        rmdir "$d.take" 2>/dev/null
-      elif mt=$(file_mtime "$d.take") && [ $(( $(date +%s) - mt )) -gt "${HARNESS_LOCK_STALE_S:-10}" ]; then
-        rmdir "$d.take" 2>/dev/null
-      fi
-    fi
-    sleep 0.05
-  done
-  echo $$ > "$d/owner" 2>/dev/null
-  return 0
-}
-lock_drop() { rmdir "$1" 2>/dev/null || rm -rf "$1"; }
 
 # Terminal cells are roughly twice as tall as wide; a pane is "wide" when
 # width >= 2.2 * height. Wide -> split right, otherwise down.
@@ -206,13 +124,12 @@ fmt_ctx() {
 }
 
 # last_ask_record <agent> [--where JQ] [--field JQ]
-# The newest progress line of <agent> among the last 200 non-close lines that matches the
-# ask-id (default: $ASK_ID, "" = plain asks: a --worktree ask logs `agent: <role>` plus an
-# ask_id, and must never stand in for a plain ask) and the extra
-# jq condition --where. Prints --field (default: the compact line); nothing = unknown.
-# The ids are passed with --arg; --where/--field are jq source from the caller's own literals.
+# The newest progress line of <agent> among the last 200 non-close lines that has no ask_id
+# (old rows: the removed --worktree asks logged `agent: <role>` plus an ask_id and must never
+# stand in for a plain ask) and matches the extra jq condition --where. Prints --field (default: the compact line); nothing = unknown.
+# --where/--field are jq source from the caller's own literals.
 last_ask_record() {
-  local agent=$1 id=${ASK_ID:-} where=true field=. prog
+  local agent=$1 where=true field=. prog
   shift
   while [ $# -gt 0 ]; do
     case "$1" in
@@ -221,12 +138,12 @@ last_ask_record() {
       *) return 2 ;;
     esac
   done
-  prog="fromjson? | select(type == \"object\" and .agent == \$a and (.ask_id // \"\") == \$id) | select($where) | $field"
+  prog="fromjson? | select(type == \"object\" and .agent == \$a and (.ask_id // \"\") == \"\") | select($where) | $field"
   grep -v '"event":"close"' "$JSONL" 2>/dev/null | tail -n 200 \
-    | jq -R -r -c --arg a "$agent" --arg id "$id" "$prog" 2>/dev/null | tail -n 1
+    | jq -R -r -c --arg a "$agent" "$prog" 2>/dev/null | tail -n 1
 }
 
-# last_exit <agent> — exit code of the agent's last logged plain ask (worktree asks are not plain asks); nothing when unknown
+# last_exit <agent> — exit code of the agent's last logged ask (old rows with an ask_id are skipped); nothing when unknown
 last_exit() {
   last_ask_record "$1" --where '(.exit | type) == "number"' --field .exit
 }
@@ -256,9 +173,6 @@ record_progress() {
   ca=$(printf '%s' "$hl" | jq -r '.ctx_after // empty' 2>/dev/null)
   cb=$(sed -n 's/^ctx_before=//p' "$ASK_DIR/$agent.run" 2>/dev/null | head -n 1)
   hl=$(printf '%s' "$hl" | jq -c 'del(.session, .ctx_after)' 2>/dev/null) || hl='{}'
-  if [ -n "$ASK_WT" ]; then
-    hl=$(printf '%s' "$hl" | jq -c --arg wt "$ASK_WT" --arg base "$ASK_BASE" --arg id "$ASK_ID" '. + {ask_id: $id, wt: $wt, base: $base}' 2>/dev/null) || hl='{}'
-  fi
   if [ -f "$report" ]; then
     status=$(sed -n 's/^status: *//p' "$report" | head -n 1)
     summary=$(sed -n 's/^# *//p' "$report" | head -n 1)
@@ -271,8 +185,8 @@ record_progress() {
   fi
 
   mkdir -p "$LOG_DIR" || return 1
-  logf="$LOG_DIR/$stamp-$agent${ASK_WT:+-$ASK_ID8}.md"; n=1
-  while [ -e "$logf" ]; do n=$((n + 1)); logf="$LOG_DIR/$stamp-$agent${ASK_WT:+-$ASK_ID8}-$n.md"; done
+  logf="$LOG_DIR/$stamp-$agent.md"; n=1
+  while [ -e "$logf" ]; do n=$((n + 1)); logf="$LOG_DIR/$stamp-$agent-$n.md"; done
   brief=$(printf '%s' "$text" | grep -o '\.harness/task-[A-Za-z0-9_.-]*\.md' | head -n 1)
   {
     printf '# %s ask %s (exit %s, %ss)\n\n## Instruction\n\n%s\n' "$agent" "$ts" "$rc" "$((now - t0))" "$text"
@@ -318,16 +232,14 @@ record_progress() {
 }
 
 # ask_parse_args <agent> <text> [opts...] — the one walk over an ask's options (called by cmd_ask
-# after the agent and text checks). Sets ASK_TIMEOUT/FRESH/KEEP/WT_WANT/HAS_BASE/BASE_REF.
+# after the agent and text checks). Sets ASK_TIMEOUT/FRESH/KEEP.
 # The instruction text is positional, so a "--via" inside it is never an option. A bad option,
 # --timeout value or --fresh with --keep only sets ASK_BAD: ask_inner turns that into the usage
-# error inside the logged subshell (exit 1 is recorded in progress). The errors that die
-# in cmd_ask before any log (--base, --worktree) are raised by ask_wt_check.
+# error inside the logged subshell (exit 1 is recorded in progress).
 ask_parse_args() {
   local agent=$1
   shift 2
   ASK_FRESH=0; ASK_KEEP=0; ASK_BAD=0
-  ASK_WT_WANT=0; ASK_HAS_BASE=0; ASK_BASE_REF=""; ASK_BASE_NOVAL=0
   ASK_TIMEOUT=$DEFAULT_TIMEOUT; ASK_TIMEOUT_SET=0
   [ "$agent" != implementer ] || ASK_TIMEOUT=$IMPLEMENTER_TIMEOUT
   while [ $# -gt 0 ]; do
@@ -339,10 +251,6 @@ ask_parse_args() {
         esac ;;
       --fresh) ASK_FRESH=1; shift ;;
       --keep) ASK_KEEP=1; shift ;;
-      --worktree) ASK_WT_WANT=1; shift ;;
-      --base)
-        ASK_HAS_BASE=1
-        if [ $# -ge 2 ]; then ASK_BASE_REF=$2; shift 2; else ASK_BASE_NOVAL=1; shift; fi ;;
       --via) if [ $# -ge 2 ]; then shift 2; else shift; fi ;;   # no-op until step 5: a running conductor still sends --via skill
       *) ASK_BAD=1; shift ;;
     esac
@@ -366,7 +274,6 @@ rotate_logs() {
 
 # write_progress_md — regenerate .harness/progress.md (<= 60 lines)
 write_progress_md() {
-  local ASK_DIR=.harness/asks ASK_KEY="" ASK_WT=""   # the Workers line describes the main root, even from a worktree ask
   local tmp="$PROGRESS_MD.tmp.$$" branch goal a f q line=""
   branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "-")
   goal="(unset)"
@@ -526,11 +433,6 @@ ask_finish() {
   record_progress "$ASK_AGENT" "$ASK_TEXT" "$rc" "$ASK_T0" "$ASK_HB" "$ASK_TMP" \
     || echo "harness: could not write the progress log (ask result unchanged)" >&2
   rm -f "$ASK_TMP" "${ASK_ERR:-}"
-  if [ -n "$ASK_WT" ]; then
-    # a worktree ask has no role slot to stamp or close: collect, then remove the checkout when clean
-    ( wt_after_ask "$rc" ) || true
-    exit "$rc"
-  fi
   # a printed report (0, or 5 = failed verification/FAIL verdict) counts as collected
   case "$rc" in 0|5) stamp_finished "$ASK_AGENT" ;; esac
   exit "$rc"
@@ -545,13 +447,6 @@ cmd_ask() {
   case " $AGENTS " in *" $agent "*) ;; *) ask_inner "$@" ;; esac
   [ -n "$text" ] || ask_inner "$@"
   ask_parse_args "$@"
-  ask_wt_check "$agent"
-  if [ "$ASK_WT_WANT" = 1 ]; then
-    wt_capacity_check
-    ASK_ID="$(date +%s)-$$-$RANDOM"; ASK_ID8=$(repo_hash8 "$ASK_ID")
-    ASK_WT="$WT_HOME/$REPO8/$agent-$ASK_ID8"; ASK_KEY="$agent@$ASK_ID8"
-    ASK_DIR="$ASK_WT/.harness/asks"; REPORT_DIR="$ASK_WT/.harness/reports"
-  fi
   ASK_TMP=$(mktemp "${TMPDIR:-/tmp}/harness-ask.XXXXXX") || ask_inner "$@"
   ASK_AGENT=$agent ASK_TEXT=$text ASK_DONE=0 ASK_PID=""
   ASK_T0=$(date +%s); ASK_HB=$(git_head)
@@ -576,8 +471,6 @@ ask_inner() {
     die "harness-verify not found on PATH; run ./install.sh (the implementer's checks would silently not run)"
   fi
 
-  if [ -n "$ASK_WT" ]; then wt_create || exit 1; fi
-
   ask_headless "$agent" "$text" "$timeout" "$fresh" "$keep"
 }
 
@@ -599,7 +492,6 @@ file_mtime() {
 cmd_report() {
   local agent=${1:-}
   [ -n "$agent" ] || usage
-  case " $AGENTS " in *" $agent "*) ;; *) wt_lookup "$agent" >/dev/null && report_wt "$(wt_lookup "$agent")" ;; esac
   valid_agent "$agent"
   report_headless "$agent"
 }
@@ -607,7 +499,6 @@ cmd_report() {
 cmd_status() {
   local a
   for a in $AGENTS; do hl_status_line "$a" status; done
-  wt_status_lines
 }
 
 # --- config, close -----------------------------------------------------------------------
@@ -637,7 +528,6 @@ ensure_config() {
 # stamp_finished <agent> — mark the agent's report as collected now;
 # .harness/asks/<agent>.finished mtime = idle-since
 stamp_finished() {
-  [ -z "$ASK_WT" ] || return 0
   mkdir -p .harness/asks 2>/dev/null && : > ".harness/asks/$1.finished" 2>/dev/null
   return 0
 }
@@ -655,15 +545,15 @@ has_uncollected() {
   return 1
 }
 
-# log_close <role> <pane> <reason> [runner] [ask-id] — event line in progress.jsonl (key `role`, not
+# log_close <role> <pane> <reason> [runner] — event line in progress.jsonl (key `role`, not
 # `agent`, so per-agent ask lookups never match it) + progress.md refresh
 log_close() {
   [ -n "$3" ] || return 0
   # no marker side effects: create .harness/ only at a checkout root (an existing one is used as is)
   [ -d .harness/asks ] || [ "$(harness_root "$PWD" 2>/dev/null)" = "$(pwd -P)" ] || return 0
   mkdir -p .harness 2>/dev/null || return 0
-  jq -n -c --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg role "$1" --arg pane "$2" --arg reason "$3" --arg runner "${4:-}" --arg aid "${5:-}" \
-    '{ts: $ts, event: "close", role: $role, pane: $pane, reason: $reason, ask_id: (if $aid == "" then null else $aid end)}
+  jq -n -c --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg role "$1" --arg pane "$2" --arg reason "$3" --arg runner "${4:-}" \
+    '{ts: $ts, event: "close", role: $role, pane: $pane, reason: $reason}
      + (if $runner != "" then {runner: $runner} else {} end)' >> "$JSONL" 2>/dev/null
   write_progress_md
   return 0
@@ -688,18 +578,7 @@ cmd_close() {
         # keep the most significant failure: 4 (refused) > 1
         case "$r" in 0) ;; 4) rc=4 ;; *) [ "$rc" != 0 ] || rc=$r ;; esac
       done
-      # worktree asks too (a live run is refused unless --force, like a plain worker)
-      for a in $WT_DIR/*.json; do
-        [ -f "$a" ] || continue
-        case "$(jq -r '.state // empty' "$a" 2>/dev/null)" in running|kept|creating) ;; *) continue ;; esac
-        ( close_wt "$a" "$force" ); r=$?
-        case "$r" in 0) ;; 4) rc=4 ;; *) [ "$rc" != 0 ] || rc=$r ;; esac
-      done
       exit "$rc" ;;
-  esac
-  case " $AGENTS " in
-    *" $target "*) ;;
-    *) if r=$(wt_lookup "$target"); then ( close_wt "$r" "$force" ); exit $?; fi ;;
   esac
   valid_agent "$target"
   close_headless "$target" "$force" 0
@@ -811,7 +690,7 @@ need jq
 if [ "${1:-}" = _mtime ]; then file_mtime "${2:-}"; exit $?; fi
 # _defaults prints the shared defaults as KEY=VALUE (tests: prose copies are checked against it)
 if [ "${1:-}" = _defaults ]; then
-  for k in $(compgen -v HARNESS_ | grep -E '^HARNESS_(ROLES|WT_ROLES|[A-Z_]+_(MS|DEFAULT))$' | sort); do eval "printf '%s=%s\n' \"$k\" \"\${$k}\""; done
+  for k in $(compgen -v HARNESS_ | grep -E '^HARNESS_(ROLES|[A-Z_]+_(MS|DEFAULT))$' | sort); do eval "printf '%s=%s\n' \"$k\" \"\${$k}\""; done
   exit 0
 fi
 # init is file work: no herdr, no checkout needed
@@ -826,7 +705,7 @@ case "${1:-}" in
   ask) [ "${HARNESS_ROLE:-}" = worker ] || require_checkout ;;
 esac
 case "${1:-}" in
-  ask|status) ensure_config "$1"; [ "${HARNESS_ROLE:-}" = worker ] || wt_reap 30 "$(date +%s)" ;;
+  ask|status) ensure_config "$1" ;;
 esac
 case "${1:-}" in
   ask)    shift; cmd_ask "$@" ;;
