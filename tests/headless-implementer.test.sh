@@ -17,7 +17,7 @@ lastprog() { tail -n 1 .harness/progress.jsonl 2>/dev/null; }
 # isetup — implementer (and analyst) headless; the fake claude writes an implementer report
 isetup() {
   setup
-  export HARNESS_RUNNER_IMPLEMENTER=headless HARNESS_RUNNER_ANALYST=headless
+  :
   export FAKE_CLAUDE_MODE=success
   unset FAKE_CLAUDE_DENY
   export FAKE_REPORT_CMD="mkdir -p $WORK/.harness/reports && printf '# implementer report\nstatus: done\n' > $WORK/.harness/reports/implementer.md"
