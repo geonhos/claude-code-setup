@@ -3,13 +3,11 @@
 HERE=$(cd "$(dirname "$0")" && pwd)
 HARNESS="$HERE/../bin/harness"
 FAKE_BIN="$HERE/fake-herdr"
-# WN <role> — scoped herdr name for the current directory (the repo under test)
-WN() { env -u HARNESS_ROLE /bin/bash "$HARNESS" _wname "$1"; }
 pass=0
 fail=0
 
 # hinit — make the current dir a harness checkout (what `harness init` does, minus the agent
-# settings); ask/spawn refuse without it. Leaves OUT/RC alone.
+# settings); ask refuses without it. Leaves OUT/RC alone.
 hinit() { env -u HARNESS_ROLE /bin/bash "$HARNESS" init --no-agent >/dev/null 2>&1; }
 
 # fresh WORK FAKE_DIR per case; every case starts as an initialised checkout (hinit); all of them removed on exit
@@ -23,9 +21,7 @@ setup() {
   mkdir -p "$FAKE_DIR"
   : > "$FAKE_LOG"
   unset FAKE_PROMPT_HOOK
-  # headless is the default runner (decision 0011); these suites test pane behaviour, so opt in
-  export HARNESS_RUNNER_ANALYST=pane HARNESS_RUNNER_IMPLEMENTER=pane HARNESS_RUNNER_REVIEWER=pane
-  export HARNESS_IDLE_GRACE=1 HARNESS_POLL_SEC=0.2 HARNESS_CLEAR_INTERVAL=0
+  export HARNESS_POLL_SEC=0.2
   cd "$WORK" || exit 1
   hinit
 }
@@ -33,7 +29,7 @@ setup() {
 # run ARGS... -> sets OUT, RC  (killed by SIGALRM after 10s so a hang fails fast)
 GUARD="perl -e alarm(10);exec(@ARGV)"
 run() {
-  OUT=$(HERDR_ENV=1 HERDR_PANE_ID=w1:p1 HARNESS_IDLE_GRACE=1 HARNESS_POLL_SEC=0.2 PATH="$FAKE_BIN:$HERE/../bin:$PATH" $GUARD env -u HARNESS_ROLE /bin/bash "$HARNESS" "$@" 2>&1)
+  OUT=$(HERDR_ENV=1 HERDR_PANE_ID=w1:p1 HARNESS_POLL_SEC=0.2 PATH="$FAKE_BIN:$HERE/../bin:$PATH" $GUARD env -u HARNESS_ROLE /bin/bash "$HARNESS" "$@" 2>&1)
   RC=$?
 }
 

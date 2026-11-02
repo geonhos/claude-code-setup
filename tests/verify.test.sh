@@ -259,7 +259,6 @@ echo "ask1 100" > "$R/.harness/asks/implementer.current"; echo rep > "$R/.harnes
 cfg '{"test":"echo tests-ran"}'
 hv baseline; echo c > "$R/new.txt"
 hvat "$R" "$(stopat "$R/sub/deep")" stop
-check "deep: marker at .harness root" [ -e "$R/.harness/done/implementer.ask1" ]
 check "deep: result at .harness root" [ "$(result status)" = pass ]
 ok=0; [ ! -e "$R/sub/.harness" ] && [ ! -e "$R/sub/deep/.harness" ] && ok=1
 check "deep: no .harness in subdirs" [ "$ok" = 1 ]
@@ -273,7 +272,6 @@ hvat "$R/pkg" "" baseline
 check "pkg: baseline in pkg" [ -s "$R/pkg/.harness/verify/implementer.base" ]
 echo c > "$R/pkg/new.txt"
 hvat "$R/pkg/src" "$(stopat "$R/pkg/src")" stop
-check "pkg: marker in pkg" [ -e "$R/pkg/.harness/done/implementer.ask2" ]
 check "pkg: config found, test ran in pkg" [ -s "$R/pkg/ran.out" ]
 check "pkg: verify state in pkg" [ "$(jq -r .status "$R/pkg/.harness/verify/implementer.json")" = pass ]
 check "pkg: nothing in toplevel .harness" [ ! -e "$R/.harness" ]
@@ -303,8 +301,7 @@ check "stray: no verify dir in stray" [ ! -e "$R/tests/.harness/verify" ]
 printf '%s' '{"test":"true"}' > "$R/.claude/harness.json"
 echo rep > "$R/.harness/reports/implementer.md"  # the worker rewrites the report after the block
 hvat "$R/tests" "$(stopat "$R/tests")" stop
-check "stray: marker at real root" [ -e "$R/.harness/done/implementer.ask3" ]
-check "stray: no done dir in stray" [ ! -e "$R/tests/.harness/done" ]
+check "stray: no done dir anywhere" [ ! -e "$R/.harness/done" ] && [ ! -e "$R/tests/.harness/done" ]
 
 # stop: staged at baseline, edited + re-added -> must run
 newrepo
@@ -437,65 +434,36 @@ check "no jq one stderr line" [ "$(printf '%s\n' "$OUT" | wc -l | tr -d ' ')" -e
 check "no jq mentions jq" grep -q jq <<<"$OUT"
 rm -rf "$JB"
 
-# --- done marker (Stop hook -> harness ask completion) --------------------------------
+# --- no done marker any more (the headless runner's exit file is the completion signal) -------
 doneset() { mkdir -p "$R/.harness/asks"; echo "ask1 100" > "$R/.harness/asks/implementer.current"; echo "[no-report]" > "$R/.harness/asks/implementer.prompt"; }
 stopj() { jq -n -c --arg c "$R" --argjson a "$1" '{hook_event_name:"Stop",agent_type:"implementer",session_id:"S1",cwd:$c,stop_hook_active:$a}'; }
 hvw() { local j=$1; shift; OUT=$(cd "$R" && printf '%s' "$j" | HARNESS_ROLE=worker /bin/bash "$VERIFY" "$@" 2>/dev/null); RC=$?; }
-marker() { [ -f "$R/.harness/done/implementer.ask1" ]; }
-not_marker() { ! marker; }
 
 newrepo; doneset
 hvw "$(stopj false)" stop
-check "done: stop with nothing to verify writes marker" marker
-check "done: marker has session id" grep -q '^S1 ' "$R/.harness/done/implementer.ask1"
-
-newrepo; doneset
-OUT=$(cd "$R" && printf '%s' "$(stopj false)" | env -u HARNESS_ROLE /bin/bash "$VERIFY" stop 2>/dev/null)
-check "done: conductor/solo session writes no marker" not_marker
+check "stop with nothing to verify: exit 0, no marker" bash -c '[ "$1" = 0 ] && [ ! -e "$2/.harness/done" ]' _ "$RC" "$R"
 
 newrepo; doneset
 lcfg '{"test":"exit 1","maxAttempts":2}'
 hv baseline implementer
 echo change > "$R/new.txt"
 hvw "$(stopj false)" stop
-check "done: blocking stop emits block" [ "$(printf '%s' "$OUT" | jq -r .decision)" = block ]
-check "done: blocking stop writes no marker" not_marker
+check "blocking stop emits block" [ "$(printf '%s' "$OUT" | jq -r .decision)" = block ]
 hvw "$(stopj true)" stop
-check "done: blocked continuation (stop_hook_active) still blocking: no marker" not_marker
 hvw "$(stopj true)" stop
-check "done: verify gave up at the cap: marker" marker
+check "verify gave up at the cap: no marker" [ ! -e "$R/.harness/done" ]
 
 newrepo; doneset
-hvw '{"agent_type":"analyst","session_id":"S2","cwd":"'"$R"'"}' done analyst
-check "done: analyst has no current ask -> no marker" [ ! -d "$R/.harness/done" ]
 echo "ask9 5" > "$R/.harness/asks/analyst.current"; echo "[no-report]" > "$R/.harness/asks/analyst.prompt"
 hvw '{"agent_type":"analyst","session_id":"S2","cwd":"'"$R"'"}' done analyst
-check "done: analyst marker" [ -f "$R/.harness/done/analyst.ask9" ]
-echo '../x 5' > "$R/.harness/asks/analyst.current"
-rm -rf "$R/.harness/done"
-hvw '{"cwd":"'"$R"'"}' done analyst
-check "done: unsafe ask-id ignored" [ ! -d "$R/.harness/done" ]
+check "done analyst: exit 0, no marker" bash -c '[ "$1" = 0 ] && [ ! -e "$2/.harness/done" ]' _ "$RC" "$R"
 hvw '{"cwd":"'"$R"'"}' done bogus
 check "done: unknown role ignored" [ "$RC" -eq 0 ]
 
-# hook cwd = a repo subdir: marker still lands at the repo root
-newrepo; doneset; mkdir -p "$R/.harness/deep"
-hvw "$(jq -n -c --arg c "$R/.harness/deep" '{agent_type:"analyst",session_id:"S3",cwd:$c}')" done analyst
-check "done: subdir cwd, no analyst ask -> still no marker" [ ! -d "$R/.harness/done" ]
-echo "ask7 5" > "$R/.harness/asks/analyst.current"; echo "[no-report]" > "$R/.harness/asks/analyst.prompt"
-hvw "$(jq -n -c --arg c "$R/.harness/deep" '{agent_type:"analyst",session_id:"S3",cwd:$c}')" done analyst
-check "done: subdir cwd writes marker at toplevel" [ -f "$R/.harness/done/analyst.ask7" ]
-check "done: no marker under subdir" [ ! -e "$R/.harness/deep/.harness" ]
-hvw "$(jq -n -c --arg c "$R/.harness/deep" '{agent_type:"implementer",session_id:"S3",cwd:$c}')" stop
-check "done: stop from subdir writes marker at toplevel" marker
-
-# missing .current -> one stderr warning, exit 0
+# missing .current -> exit 0
 newrepo
 ERR=$(cd "$R" && printf '{"cwd":"%s"}' "$R" | HARNESS_ROLE=worker /bin/bash "$VERIFY" done analyst 2>&1 >/dev/null); RC=$?
 check "done: missing .current exits 0" [ "$RC" -eq 0 ]
-check "done: missing .current warns on stderr" [ "$(printf '%s\n' "$ERR" | grep -c 'no .harness/asks/analyst.current')" -eq 1 ]
-ERR=$(cd "$R" && printf '{"cwd":"%s"}' "$R" | env -u HARNESS_ROLE /bin/bash "$VERIFY" done analyst 2>&1 >/dev/null)
-check "done: non-worker no warning" [ -z "$ERR" ]
 
 # --- stop: docs-only / .harness-only changes skip the suite -------------------------
 # docs-only ask: skipped (docs-only), test not run

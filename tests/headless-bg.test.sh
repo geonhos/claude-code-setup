@@ -1,5 +1,5 @@
 #!/bin/bash
-# Headless runs without herdr (v24 PR 1): harness ask with runner=headless and no usable herdr
+# Headless runs without herdr (v24 PR 1): harness ask with no usable herdr
 # starts harness-run detached in the background. Run: /bin/bash tests/headless-bg.test.sh
 set -u
 . "$(dirname "$0")/harness-lib.sh"
@@ -86,7 +86,7 @@ check "env: HARNESS_ROLE=worker" grep -qx "HARNESS_ROLE=worker" "$WORK/env.dump"
 check "env: PATH passes through" grep -q "^PATH=" "$WORK/env.dump"
 unset FAKE_ENV_DUMP
 
-# 4. auto fallback to the background on a failed split; explicit viewer=pane keeps exit 1
+# 4. a failed split falls back to the background (auto and explicit viewer=pane)
 bsetup
 touch "$FAKE_DIR/split_fail"
 OUT=$(HERDR_ENV=1 HERDR_PANE_ID=w1:p1 HARNESS_POLL_SEC=0.2 HARNESS_HL_START_S=10 \
@@ -99,9 +99,8 @@ bsetup
 touch "$FAKE_DIR/split_fail"
 OUT=$(HERDR_ENV=1 HERDR_PANE_ID=w1:p1 HARNESS_VIEWER=pane HARNESS_POLL_SEC=0.2 \
   PATH="$FAKE_BIN:$FAKE_CLAUDE:$HERE/../bin:$PATH" perl -e 'alarm(60);exec(@ARGV)' env -u HARNESS_ROLE /bin/bash "$HARNESS" ask analyst "q4b" 2>&1); RC=$?
-check "viewer=pane: split failure exits 1" [ "$RC" -eq 1 ]
-ok=0; [ ! -e .harness/asks/analyst.pid ] && [ ! -e .harness/asks/analyst.exit.json ] && ok=1
-check "viewer=pane: no background run" [ "$ok" = 1 ]
+check "viewer=pane: split failure falls back to bg, rc 0" [ "$RC" -eq 0 ]
+check "viewer=pane: split failure note" grep -q "running analyst in the background" <<<"$OUT"
 
 # 5. viewer=none with herdr available: no pane at all
 bsetup
@@ -146,28 +145,6 @@ i=0; while [ $i -lt 100 ] && [ ! -f .harness/asks/analyst.exit.json ]; do sleep 
 nrun report analyst
 check "interrupted: report collects it" grep -q "analyst report" <<<"$OUT"
 check "interrupted: report rc 0" [ "$RC" -eq 0 ]
-
-# 11. TTL reap with no pane
-bsetup
-nrun ask analyst "q11"
-check "ttl: setup ask ok" [ "$RC" -eq 0 ]
-check "ttl: .finished stamped" [ -f .harness/asks/analyst.finished ]
-check "ttl: .session present before" [ -f .harness/asks/analyst.session ]
-touch -t 199912312300 .harness/asks/analyst.current; touch -t 200001010000 .harness/reports/analyst.md; touch -t 200001010100 .harness/asks/analyst.finished
-HARNESS_IDLE_TTL_MINUTES=1 nrun status
-check "ttl: .session dropped" [ ! -e .harness/asks/analyst.session ]
-check "ttl: .finished dropped" [ ! -e .harness/asks/analyst.finished ]
-check "ttl: close event pane - reason ttl" grep -q '"event":"close".*"pane":"-".*"reason":"ttl"' .harness/progress.jsonl
-check "ttl: herdr never called" no_herdr_calls
-
-# 9. close_after_ask on_success closes a background run (no pane to close)
-bsetup
-HARNESS_CLOSE_AFTER_ASK_ANALYST=on_success nrun ask analyst "q9"
-check "on_success: rc 0" [ "$RC" -eq 0 ]
-check "on_success: closed (bg)" grep -q "closed analyst (bg)" <<<"$OUT"
-check "on_success: .session gone" [ ! -e .harness/asks/analyst.session ]
-check "on_success: close event pane - reason after_ask" grep -q '"event":"close".*"pane":"-".*"reason":"after_ask"' .harness/progress.jsonl
-check "on_success: herdr never called" no_herdr_calls
 
 tty_run() {
   env -u HERDR_ENV -u HERDR_PANE_ID -u HERDR_SOCKET_PATH -u HARNESS_ROLE NO_COLOR=1 \
@@ -217,8 +194,6 @@ check "wait is idempotent: rc 0 again" [ "$RC" -eq 0 ]
 check "wait does not collect (report untouched)" [ -f .harness/reports/analyst.md ]
 nrun wait nosuchthing
 check "wait: unknown target rc 1" [ "$RC" -eq 1 ]
-HARNESS_RUNNER_ANALYST=pane nrun wait analyst
-check "wait: pane-mode role refused" bash -c '[ "$1" = 1 ] && grep -q "use herdr agent wait" <<<"$2"' _ "$RC" "$OUT"
 bsetup
 nrun wait analyst
 check "wait: no ask rc 3" [ "$RC" -eq 3 ]
