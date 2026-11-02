@@ -307,7 +307,7 @@ check "kept+patch: more than the patch -> refused (4)" [ "$RC" -eq 4 ]
 check "kept+patch: refused -> checkout stays" [ -d "$path" ]
 hrun close "$id" --force
 check "kept+patch: --force removes it" [ ! -d "$path" ]
-# a clean kept entry without a patch is still reaped by the idle TTL
+# a clean kept entry without a patch is still reaped by the fixed 30 min reap
 wsetup
 git worktree add -q --detach "$WTROOT/r19/analyst-clean001" HEAD
 mkdir -p .harness/wt

@@ -133,12 +133,17 @@ OUT=$(env -u HERDR_ENV HARNESS_VIEWER=pane HARNESS_POLL_SEC=0.2 PATH="$FAKE_BIN:
 check "viewer=pane without herdr: refused" [ "$RC" -eq 1 ]
 unset HARNESS_VIEWER
 
+# wait_exit [ask-dir] — bounded (15 s) wait until the run's exit.json exists
+wait_exit() { local i=0; while [ $i -lt 150 ] && [ ! -f "${1:-.harness/asks}/analyst.exit.json" ]; do sleep 0.1; i=$((i + 1)); done; }
+# run_viewer [ask-dir] — the pane id recorded in .run
+run_viewer() { sed -n 's/^viewer=//p' "${1:-.harness/asks}/analyst.run" | head -n 1; }
+
 # 8b. an ask that returns before the run ends (exit 4) must not leak the viewer pane: the next ask,
 # `report`, `wait` or `close --force` closes it once (split == close per run)
 hsetup; export FAKE_CLAUDE_MODE=slow20
 hrun ask analyst "q" --timeout 500
 check "viewer leak: early return rc 4" [ "$RC" -eq 4 ]
-sleep 4
+wait_exit
 export FAKE_CLAUDE_MODE=success
 hrun ask analyst "q2"
 check "viewer leak: next ask rc 0" [ "$RC" -eq 0 ]
@@ -146,7 +151,7 @@ check "viewer leak: 2 splits for 2 runs" [ "$(grep -c 'pane split' "$FAKE_LOG")"
 check "viewer leak: 2 closes for 2 runs" [ "$(grep -c 'pane close' "$FAKE_LOG")" -eq 2 ]
 hsetup; export FAKE_CLAUDE_MODE=slow20
 hrun ask analyst "q" --timeout 500
-sleep 4
+wait_exit
 hrun report analyst
 check "viewer leak: report closes the pane once" [ "$(grep -c 'pane close' "$FAKE_LOG")" -eq 1 ]
 hrun close analyst --force
@@ -161,6 +166,37 @@ hsetup; export FAKE_CLAUDE_MODE=slow20
 hrun ask analyst "q" --timeout 500
 hrun close analyst --force
 check "viewer leak: close --force closes the pane once" [ "$(grep -c 'pane close' "$FAKE_LOG")" -eq 1 ]
+# a second ask while the run is live is refused before anything closes the viewer
+hsetup; export FAKE_CLAUDE_MODE=slow20
+hrun ask analyst "q" --timeout 500
+v=$(run_viewer)
+hrun ask analyst "q2" --timeout 500
+check "live 2nd ask: refused rc 4" [ "$RC" -eq 4 ]
+check "live 2nd ask: viewer recorded as a pane" [ "${v#pane:}" != "$v" ]
+check "live 2nd ask: no pane close" [ "$(grep -c 'pane close' "$FAKE_LOG")" -eq 0 ]
+check "live 2nd ask: .run keeps the viewer" [ "$(run_viewer)" = "$v" ]
+hrun close analyst --force
+# wait <ask-id> (worktree ask) closes only that ask's pane, not the role's own run
+hsetup; export FAKE_CLAUDE_MODE=slow20
+git init -q . && git config user.email t@t && git config user.name t
+echo one > a.txt && git add a.txt && git commit -qm one
+mkdir -p .git/info && echo '.harness/' >> .git/info/exclude
+export HARNESS_WT_ROOT="$WORK.wt"; WORKS="$WORKS $WORK.wt"
+hrun ask analyst "plain" --timeout 500
+pv=$(run_viewer)
+hrun ask analyst "wt" --worktree --timeout 500
+wid=$(sed -n 's/^harness: ask \([^ ]*\) .*/\1/p' <<<"$OUT" | head -n 1)
+wdir=$(ls -d "$HARNESS_WT_ROOT"/*/analyst-* 2>/dev/null | head -n 1)
+check "wait ask-id: worktree ask started" [ -n "$wid" ] && [ -d "$wdir" ]
+n=$(grep -c 'pane split' "$FAKE_LOG")
+wait_exit "$wdir/.harness/asks"
+hrun wait "$wid"
+check "wait ask-id: rc 0" [ "$RC" -eq 0 ]
+check "wait ask-id: both runs had a pane" [ "$n" -eq 2 ]
+check "wait ask-id: closes exactly its own pane" [ "$(grep -c 'pane close' "$FAKE_LOG")" -eq 1 ]
+check "wait ask-id: role .run untouched" [ "$(run_viewer)" = "$pv" ]
+hrun close analyst --force
+unset HARNESS_WT_ROOT
 export FAKE_CLAUDE_MODE=success
 
 # 9. watchdog
