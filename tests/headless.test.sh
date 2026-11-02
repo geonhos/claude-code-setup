@@ -338,6 +338,15 @@ printf '%s\n' '{"ts":"2026-10-28T00:00:00Z","event":"close","role":"analyst","pa
 hrun ask analyst "keep" --keep
 check "keep wt close: plain session not marked closed" logged "--resume sess-1"
 
+# 15b4. old rows: a plain implementer failure is still the "last exit" when a newer old row carries an ask_id
+hsetup
+mkdir -p .harness
+printf '%s\n' '{"ts":"2026-10-28T00:00:00Z","agent":"implementer","runner":"headless","exit":5}' \
+  '{"ts":"2026-10-28T01:00:00Z","agent":"implementer","runner":"headless","exit":0,"ask_id":"1-2-3","wt":"/x/wt","base":"b"}' > .harness/progress.jsonl
+export FAKE_REPORT_CMD="mkdir -p $WORK/.harness/reports && printf '# implementer report\nstatus: done\n' > $WORK/.harness/reports/implementer.md"
+hrun ask implementer "next"
+check "old rows: last exit ignores the ask_id row" grep -q 'keeping context (last ask exit 5)' <<<"$OUT"
+
 # 15c. close ends the conversation: --keep after a close of a healthy idle worker runs fresh
 hsetup
 hrun ask analyst "ok"
