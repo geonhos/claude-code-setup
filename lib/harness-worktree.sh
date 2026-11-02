@@ -17,7 +17,6 @@ ask_wt_check() {
   [ "$ASK_HAS_BASE" = 0 ] || [ "$ASK_WT_WANT" = 1 ] || die "--base is only with --worktree (usage: harness ask <analyst|reviewer> '<instruction>' --worktree [--base REF])"
   [ "$ASK_WT_WANT" = 1 ] || return 0
   role_in "$agent" "$HARNESS_WT_ROLES" || die "--worktree is for the headless analyst and reviewer only (not $agent)"
-  is_headless "$agent" || die "--worktree needs the headless runner for $agent (config runner.$agent=headless or HARNESS_RUNNER_$(printf %s "$agent" | tr 'a-z' 'A-Z')=headless)"
   [ "$ASK_KEEP" = 0 ] || die "--keep cannot be combined with --worktree (every worktree ask is a fresh session)"
   wt_root_check
   ASK_BASE=$(git rev-parse --verify --quiet "${base:-HEAD}^{commit}") || die "--base: '${base:-HEAD}' is not a commit"
@@ -282,7 +281,7 @@ wt_clean() {
   ! git -C "$1" status --porcelain --untracked-files=all 2>/dev/null | grep -vE '^\?\? (\.claude/agent-memory|\.harness/.*)$' | grep -q .
 }
 
-# wt_remove <force> <state> — remove this ask's checkout (agent-memory link first), prune, close its pane
+# wt_remove <force> <state> — remove this ask's checkout (agent-memory link first), prune, close its viewer pane
 wt_remove() {
   local force=$1 state=$2 link="$ASK_WT/.claude/agent-memory" target="" pane out reg="$WT_DIR/$ASK_ID.json"
   if [ -d "$ASK_WT" ]; then
@@ -297,7 +296,6 @@ wt_remove() {
   pane=$(jq -r '.pane // empty' "$reg" 2>/dev/null)
   if [ -n "$pane" ]; then
     if herdr_env_ok; then herdr pane close "$pane" >/dev/null 2>&1 || true; fi
-    unregister "$ASK_KEY" "$pane" 2>/dev/null || true
   fi
   wt_update state "$state"
   return 0
