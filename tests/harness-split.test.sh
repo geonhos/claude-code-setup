@@ -97,6 +97,22 @@ awk '/^# end loader$/ { print "lazy() { :; }" } { print }' "$ROOT/bin/harness" >
 OUT="mutant: function defined before the marker"
 check "mutation: function before marker is caught" not eager_ok "$M/fnbefore"
 
+# test lint: `check LABEL [ a ] && [ b ]` runs the second test outside check (its failure is not
+# counted), and `not_grep -q` passes a pattern slot to the wrong grep. Both are forbidden outside
+# a `bash -c '...'` string. lint_tests FILE... prints offending lines; fails if any.
+lint_tests() {
+  OUT=$(grep -nE '^[[:space:]]*check .*\] (&&|\|\|) \[|not_grep -q' "$@" | grep -v 'bash -c' | head -5)
+  [ -z "$OUT" ]
+}
+check "test lint: no 'check ... ] && [' and no 'not_grep -q' in tests/*.sh" lint_tests $(ls "$ROOT"/tests/*.test.sh | grep -v harness-split) "$ROOT"/tests/harness-lib.sh
+# bites: a planted offending line is caught
+printf 'check "x" [ 1 = 1 ] && [ 2 = 2 ]\n' > "$M/lint1"
+printf 'check "x" not_grep -q foo bar\n' > "$M/lint2"
+printf 'check "x" bash -c '"'"'[ 1 = 1 ] && [ 2 = 2 ]'"'"'\n' > "$M/lint3"
+check "test lint bites: '] && [' is caught" not lint_tests "$M/lint1"
+check "test lint bites: 'not_grep -q' is caught" not lint_tests "$M/lint2"
+check "test lint: ] && [ inside bash -c is allowed" lint_tests "$M/lint3"
+
 # in-place protection: overwrite bin/harness and every lib file while a run is in flight (a slow
 # jq stands in for a long ask); the run was read whole at start and must still finish normally
 W=$(mktemp -d); WORKS="$WORKS $W"

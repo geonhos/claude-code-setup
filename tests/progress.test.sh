@@ -162,7 +162,7 @@ check "md: title" head -1 .harness/progress.md | grep -q "^# Progress — $(base
 check "md: goal unset" grep -qx 'Goal: (unset)' .harness/progress.md
 check "md: ask line" grep -q "analyst exit 0 .* — analyst report — first thing" .harness/progress.md
 check "md: open questions" grep -q -- "- should we X?" .harness/progress.md
-check "md: open questions skip none" not_grep -qx -- "- none" .harness/progress.md
+check "md: open questions skip none" not_grep -x -- "- none" .harness/progress.md
 check "md: workers line" grep -q "analyst idle" .harness/progress.md
 printf 'Ship the thing.\nSecond line.\n' > .harness/goal.md
 hook_report analyst '# analyst report — second thing\nstatus: done\n'

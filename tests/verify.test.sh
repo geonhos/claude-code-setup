@@ -117,7 +117,7 @@ hv run lint
 check "files: rc" [ "$RC" -eq 0 ]
 check "files: name with space is one argument" grep -qx 'a b.txt' "$R/files.out"
 check "files: other file" grep -qx 'c.txt' "$R/files.out"
-check "files: .harness excluded" not_grep -q '^.harness' "$R/files.out"
+check "files: .harness excluded" not_grep '^.harness' "$R/files.out"
 
 # --- baseline ------------------------------------------------------------------------
 newrepo
@@ -301,7 +301,7 @@ check "stray: no verify dir in stray" [ ! -e "$R/tests/.harness/verify" ]
 printf '%s' '{"test":"true"}' > "$R/.claude/harness.json"
 echo rep > "$R/.harness/reports/implementer.md"  # the worker rewrites the report after the block
 hvat "$R/tests" "$(stopat "$R/tests")" stop
-check "stray: no done dir anywhere" [ ! -e "$R/.harness/done" ] && [ ! -e "$R/tests/.harness/done" ]
+check "stray: no done dir anywhere" bash -c '[ ! -e "$1/.harness/done" ] && [ ! -e "$1/tests/.harness/done" ]' _ "$R"
 
 # stop: staged at baseline, edited + re-added -> must run
 newrepo
@@ -339,10 +339,10 @@ echo d > "$R/dirty.txt"
 hv run all
 check "run all: committed file linted" grep -qx committed.txt "$R/files.out"
 check "run all: dirty file linted" grep -qx dirty.txt "$R/files.out"
-check "run all: seed not linted" not_grep -q seed "$R/files.out"
+check "run all: seed not linted" not_grep seed "$R/files.out"
 ( cd "$R" && git checkout -q -b other main~0 ) 
 hv run all --base feat
-check "run --base: committed on base not linted" not_grep -q committed "$R/files.out"
+check "run --base: committed on base not linted" not_grep committed "$R/files.out"
 ( cd "$R" && git checkout -q feat && rm dirty.txt )
 rm -f "$R/files.out"
 hv run all --base feat
@@ -407,7 +407,7 @@ check "format MultiEdit handled" [ "$(printf '%s' "$OUT" | jq -r .decision)" = b
 cfg '{"format":"echo SHOULD-NOT-RUN >> {files}"}'
 hvin "$(postjson Read "$R/x.txt")" format
 check "format ignores other tools" [ -z "$OUT" ] 
-check "format ignored tool leaves file" not_grep -q SHOULD-NOT-RUN "$R/x.txt"
+check "format ignored tool leaves file" not_grep SHOULD-NOT-RUN "$R/x.txt"
 cfg '{"lint":"echo ran-full-lint; exit 1"}'
 hvin "$(postjson Write "$R/x.txt")" format
 check "format skips lint without {files}" [ -z "$OUT" ]
