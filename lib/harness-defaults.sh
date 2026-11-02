@@ -7,11 +7,7 @@ HARNESS_ROLES="analyst implementer reviewer"
 HARNESS_WT_ROLES="analyst reviewer"          # roles that may run `--worktree` asks
 HARNESS_DEFAULT_TIMEOUT_MS=3600000           # ask --timeout default: analyst, reviewer = their headless cap below (60 min)
 HARNESS_IMPLEMENTER_TIMEOUT_MS=5400000       # same for the implementer = its cap (90 min); a background ask returns when the run ends
-HARNESS_CTX_RESET_DEFAULT=120000             # tokens: analyst/reviewer are cleared above this
-HARNESS_IDLE_TTL_DEFAULT=30                  # idle_ttl_minutes (0 = off)
-HARNESS_CLOSE_AFTER_DEFAULT=never            # close_after_ask.<role>
-HARNESS_RUNNER_DEFAULT=headless              # runner.<role>: headless | pane (pane is legacy, removed in prune step 3)
-HARNESS_VIEWER_DEFAULT=auto                  # viewer (top-level key): auto | pane | none; where a headless run is shown
+HARNESS_VIEWER_DEFAULT=auto                  # viewer (top-level key): auto | pane | none; a herdr pane running `harness watch`
 HARNESS_HL_MAX_S_DEFAULT=3600                # headless run wall-clock cap, seconds (analyst, reviewer)
 HARNESS_HL_MAX_S_IMPLEMENTER_DEFAULT=5400    # same cap for the implementer: a 3x600 s verify loop plus work (90 min)
 

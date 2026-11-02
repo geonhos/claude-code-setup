@@ -27,10 +27,10 @@ investigation yourself (`harness ask` refuses to run in a worker session anyway)
    harness ask analyst 'Read .harness/task-analyst.md and do it.' --via skill
    ```
 
-   Add `--fresh` for a new topic, `--keep` for a follow-up that needs the
+   Every ask starts a fresh session; add `--keep` for a follow-up that needs the
    analyst's previous conversation. Keep the instruction in single quotes.
 3. Handle the exit code as conductor.md's "Exit codes from `harness ask`"
-   section says: 2 blocked: show the user the screen and ask; 3 no report:
+   section says: 2 a tool call was denied, no report: re-ask with a changed brief; 3 no report:
    ask it to write the report; 4 still working: `harness wait analyst` (background, `timeout: 7200000`),
    then `harness report analyst`.
 4. Relay the substance of the report, not the report verbatim. Read any

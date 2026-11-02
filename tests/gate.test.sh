@@ -171,15 +171,16 @@ expect allow $C "bash harness ask"        "$(bcmd 'harness ask analyst "what is 
 expect allow $C "bash harness ask --via"  "$(bcmd "harness ask implementer 'x' --via skill")"
 expect allow $C "bash harness route-log"  "$(bcmd "harness route-log '{\"event\":\"prompt\"}'")"
 expect allow $C "bash harness status"     "$(bcmd 'harness status')"
-expect allow $C "bash herdr"              "$(bcmd 'herdr agent list')"
+expect allow $C "bash herdr"              "$(bcmd 'herdr pane current')"
 expect allow $C "bash gh"                 "$(bcmd 'gh pr view 12')"
 expect deny  $C "bash npm test"           "$(bcmd 'npm test')"
 expect deny  $C "bash sed -i"             "$(bcmd 'sed -i s/a/b/ src/a.ts')"
 expect deny  $C "bash cd"                 "$(bcmd 'cd src && ls')"
 expect deny  $C "bash empty"              "$(tool Bash '{}')"   # missing command field: bcmd cannot build this
 expect deny  $C "bash only separator"     "$(bcmd ';')"
-expect allow $C "bash herdr agent get"    "$(bcmd 'herdr agent get analyst')"
-expect allow $C "bash herdr agent wait"   "$(bcmd 'herdr agent wait analyst --timeout 600')"
+expect deny  $C "bash herdr agent get"    "$(bcmd 'herdr agent get analyst')"
+expect deny  $C "bash herdr agent wait"   "$(bcmd 'herdr agent wait analyst --timeout 600')"
+expect deny  $C "bash herdr agent list"   "$(bcmd 'herdr agent list')"
 expect allow $C "bash herdr pane current" "$(bcmd 'herdr pane current')"
 expect allow $C "bash herdr pane get"     "$(bcmd 'herdr pane get w1:p2')"
 expect allow $C "bash git branch -a"      "$(bcmd 'git branch -a')"
@@ -231,13 +232,13 @@ expect deny  $C "bash dq escaped \$("    "$(bcmd 'harness ask analyst "cost \$(x
 # --- Bash: redirects ---------------------------------------------------------
 expect deny  $C "bash redirect"           "$(bcmd 'git status > out.txt')"
 expect deny  $C "bash here-string"        "$(bcmd 'jq . <<< x')"
-expect deny  $C "bash 2>&1 end denied"           "$(bcmd 'herdr agent get analyst 2>&1')"
-expect deny  $C "bash 2>&1 pipe denied"          "$(bcmd 'herdr agent get analyst 2>&1 | jq .result')"
+expect deny  $C "bash 2>&1 end denied"           "$(bcmd 'herdr pane get w1:p2 2>&1')"
+expect deny  $C "bash 2>&1 pipe denied"          "$(bcmd 'herdr pane get w1:p2 2>&1 | jq .result')"
 expect deny  $C "bash 2>&1 glued file"    "$(bcmd 'cat .harness/x2>&1src')"
 expect deny  $C "bash 2>&1 glued tail"    "$(bcmd 'harness status 2>&1x')"
 
 # --- Bash: jq is not on the allowlist (pipes are denied outright) ----------------------------------------------------------------
-expect deny  $C "bash jq pipe denied"           "$(bcmd 'herdr agent list | jq .result')"
+expect deny  $C "bash jq pipe denied"           "$(bcmd 'herdr pane get w1:p2 | jq .result')"
 expect deny  $C "bash jq quoted pipe denied"   "$(bcmd "herdr agent list | jq -r '.result.agents[].pane_id'")"
 expect deny  $C "bash jq first"           "$(bcmd 'jq . src/secret.json')"
 

@@ -38,3 +38,5 @@
 - 2026-10-30 · implementer · v24 PR 2 · gate/route/resume act only in a harness checkout (.harness/asks); harness init/doctor; global agent key dropped; decision 0010 draft, 0005 marked
 - 2026-11-01 · implementer · prune step 1 · headless is the default runner; herdr optional in docs/install.sh; decision 0011 (0001 superseded)
 - 2026-11-01 · implementer · prune step 2 · harness wait/watch; ask default wait = headless cap (background ask wakes the conductor); Stop hook requires a report (2 blocks); sleep-aware deadline; decision 0010 active
+- 2026-11-02 · implementer · prune step 3 · pane runner, spawn, close_after_ask, idle reap, /clear, late-report archive removed; viewer = pane running harness watch; 0002/0003/0006 + 5 pane pages superseded
+- 2026-11-02 · implementer · prune step 3 review fixes · whole-second-timing marked stale (its test was deleted); 0009 drops the idle-TTL clause

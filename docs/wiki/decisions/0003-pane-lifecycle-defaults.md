@@ -1,11 +1,13 @@
 ---
 type: decision
-status: active
-updated: 2026-10-23
+status: superseded
+updated: 2026-11-02
 sources: [docs/superpowers/plans/2026-10-21-harness-hardening.md Task 4, commits e32e59c 0fec869 1481946]
 verified_by: tests/harness.test.sh; live `harness close --legacy` and implementer auto-close (2026-10-21)
 ---
 # 0003: Pane lifecycle defaults
+
+> Superseded 2026-11-02 by [0011](0011-single-runner-headless.md): prune step 3 removed the pane lifecycle (`close_after_ask`, idle TTL, `harness close --legacy`). A headless run ends with its process; `harness close` only stops a run or removes a worktree.
 
 > Note: [0006](0006-keep-implementer-pane.md) changes the implementer default to `never`; the rest of this decision is in force.
 

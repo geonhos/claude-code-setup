@@ -17,7 +17,7 @@ lastprog() { tail -n 1 .harness/progress.jsonl 2>/dev/null; }
 # isetup — implementer (and analyst) headless; the fake claude writes an implementer report
 isetup() {
   setup
-  export HARNESS_RUNNER_IMPLEMENTER=headless HARNESS_RUNNER_ANALYST=headless
+  :
   export FAKE_CLAUDE_MODE=success
   unset FAKE_CLAUDE_DENY
   export FAKE_REPORT_CMD="mkdir -p $WORK/.harness/reports && printf '# implementer report\nstatus: done\n' > $WORK/.harness/reports/implementer.md"
@@ -171,23 +171,11 @@ check "view: single-line failure unchanged" grep -qx '✗ single' <<<"$OUT"
 OUT=$(vw 'not json' '{"type":"system","subtype":"hook_response","hook_event":"Stop","exit_code":0,"stdout":"not json"}' '{"type":"system","subtype":"hook_response","hook_event":"Stop","exit_code":2,"stderr":"boom"}')
 check "view: odd hook stdout still never fails" grep -q 'hook .* exit 2: boom' <<<"$OUT"
 
-# 5. lifecycle: the viewer pane stays (close_after_ask never), .pending blocks the TTL reap
+# 5. lifecycle: the viewer pane is closed with the run, the session stays for --keep
 isetup
 hrun ask implementer "q"
-check "lifecycle: default close_after_ask never keeps the viewer pane" grep -q '^implementer ' .harness/panes
-check "lifecycle: ... and the session for --keep" test -s .harness/asks/implementer.session
-touch -t 202001010000 .harness/asks/implementer.finished
-printf '# implementer report\nstatus: done\n' > .harness/reports/implementer.md.pending
-rm -f .harness/reports/implementer.md
-HARNESS_IDLE_TTL_MINUTES=1 hrun status
-check "lifecycle: TTL does not reap while .pending exists" grep -q '^implementer ' .harness/panes
-rm -f .harness/reports/implementer.md.pending
-HARNESS_IDLE_TTL_MINUTES=1 hrun status
-check "lifecycle: TTL reaps the idle viewer once nothing is pending" not_grep '^implementer ' .harness/panes
-
-isetup
-HARNESS_CLOSE_AFTER_ASK_IMPLEMENTER=on_success hrun ask implementer "q"
-check "lifecycle: on_success still closes the viewer after exit 0" not_grep '^implementer ' .harness/panes
+check "lifecycle: viewer pane closed with the run" logged "pane close"
+check "lifecycle: ... and the session kept for --keep" test -s .harness/asks/implementer.session
 
 # 6. per-role headless cap: implementer 90 min, analyst 60, config headless_max_minutes wins
 isetup

@@ -14,7 +14,7 @@ hrun() {
 }
 hsetup() {
   setup
-  export HARNESS_RUNNER_ANALYST=headless HARNESS_RUNNER_REVIEWER=headless
+  :
   export FAKE_CLAUDE_MODE=success
   export FAKE_REPORT_CMD="mkdir -p $WORK/.harness/reports && printf '# analyst report\nstatus: done\n' > $WORK/.harness/reports/analyst.md"
 }
@@ -36,11 +36,10 @@ check "success: rc 0" [ "$RC" -eq 0 ]
 check "success: report printed" grep -q "analyst report" <<<"$OUT"
 check "success: no agent start" not_logged "agent start"
 check "success: pane split once, plain" logged "pane split"
-check "success: pane run harness-run" logged "harness-run"
+check "success: viewer pane runs harness watch" logged "harness\\ watch\\ analyst"
 check "success: claude -p stream-json" logged "--output-format stream-json"
 check "success: instruction on stdin" logged "claude stdin: q1"
 check "success: progress runner" jqt '.runner == "headless" and .exit == 0 and .turns == 3 and (.cost_usd > 0.01)' <<<"$(lastprog)"
-check "success: progress clear none" jqt '.clear == "none"' <<<"$(lastprog)"
 sl=$(lastprog | jq -r '.stream_log // empty')
 check "success: stream_log exists" test -f "${sl:-/nonexistent}"
 check "success: exit.json for the ask" grep -q "\"ask_id\":\"$(cut -d' ' -f1 .harness/asks/analyst.current)\"" .harness/asks/analyst.exit.json
@@ -76,14 +75,12 @@ bg=$!
 i=0; while [ $i -lt 50 ] && [ ! -f .harness/asks/analyst.pid ]; do sleep 0.2; i=$((i + 1)); done
 hrun close analyst
 check "close live run: rc 4" [ "$RC" -eq 4 ]
-check "close live run: still registered" grep -q '^analyst ' .harness/panes
 hrun close analyst --force
 check "close --force: rc 0" [ "$RC" -eq 0 ]
 wait "$bg"
 check "close --force: running ask returned 3" [ "$(cat "$WORK/ask.rc")" -eq 3 ]
 check "close --force: killed signal" jqt '.killed == "signal"' .harness/asks/analyst.exit.json
 check "close --force: pane closed" logged "pane close"
-check "close --force: registry empty" not_grep '^analyst ' .harness/panes
 sleep 0.3
 check "close --force: no leftover fake claude" not kill -0 "$(cat "$FAKE_DIR/claude.pid")"
 check "close --force: logged force_kill" grep -q force_kill .harness/progress.jsonl
@@ -99,7 +96,6 @@ i=0; while [ $i -lt 50 ] && [ ! -f .harness/asks/analyst.exit.json ]; do sleep 0
 hrun report analyst
 check "report after finish: rc 0" [ "$RC" -eq 0 ]
 check "report after finish: report printed" grep -q "analyst report" <<<"$OUT"
-check "late line has runner" grep -q '"late":true' .harness/progress.jsonl
 
 # 6. second ask while running -> 4, no second run
 hsetup; export FAKE_CLAUDE_MODE=slow30
@@ -123,13 +119,85 @@ hrun ask analyst "a" --keep
 check "keep w/o session: note" grep -q "no previous session" <<<"$OUT"
 check "keep w/o session: fresh" not_logged "--resume"
 
-# 8. pane reuse
+# 8. viewer pane: one per run, closed when the run ends
 hsetup
 hrun ask analyst "a"; hrun ask analyst "b"
-check "reuse: one split" [ "$(grep -c 'pane split' "$FAKE_LOG")" -eq 1 ]
-touch "$FAKE_DIR/closed.w1:p2"
-hrun ask analyst "c"
-check "closed pane: re-split" [ "$(grep -c 'pane split' "$FAKE_LOG")" -eq 2 ]
+check "viewer: one split per run" [ "$(grep -c 'pane split' "$FAKE_LOG")" -eq 2 ]
+check "viewer: closed after each run" [ "$(grep -c 'pane close' "$FAKE_LOG")" -eq 2 ]
+hsetup; export HARNESS_VIEWER=none
+hrun ask analyst "a"
+check "viewer none: no pane" not_logged "pane split"
+check "viewer none: rc 0" [ "$RC" -eq 0 ]
+hsetup; export HARNESS_VIEWER=pane
+OUT=$(env -u HERDR_ENV HARNESS_VIEWER=pane HARNESS_POLL_SEC=0.2 PATH="$FAKE_BIN:$FAKE_CLAUDE:$HERE/../bin:$PATH" perl -e 'alarm(30);exec(@ARGV)' env -u HARNESS_ROLE /bin/bash "$HARNESS" ask analyst "a" 2>&1); RC=$?
+check "viewer=pane without herdr: refused" [ "$RC" -eq 1 ]
+unset HARNESS_VIEWER
+
+# wait_exit [ask-dir] — bounded (15 s) wait until the run's exit.json exists
+wait_exit() { local i=0; while [ $i -lt 150 ] && [ ! -f "${1:-.harness/asks}/analyst.exit.json" ]; do sleep 0.1; i=$((i + 1)); done; }
+# run_viewer [ask-dir] — the pane id recorded in .run
+run_viewer() { sed -n 's/^viewer=//p' "${1:-.harness/asks}/analyst.run" | head -n 1; }
+
+# 8b. an ask that returns before the run ends (exit 4) must not leak the viewer pane: the next ask,
+# `report`, `wait` or `close --force` closes it once (split == close per run)
+hsetup; export FAKE_CLAUDE_MODE=slow20
+hrun ask analyst "q" --timeout 500
+check "viewer leak: early return rc 4" [ "$RC" -eq 4 ]
+wait_exit
+export FAKE_CLAUDE_MODE=success
+hrun ask analyst "q2"
+check "viewer leak: next ask rc 0" [ "$RC" -eq 0 ]
+check "viewer leak: 2 splits for 2 runs" [ "$(grep -c 'pane split' "$FAKE_LOG")" -eq 2 ]
+check "viewer leak: 2 closes for 2 runs" [ "$(grep -c 'pane close' "$FAKE_LOG")" -eq 2 ]
+hsetup; export FAKE_CLAUDE_MODE=slow20
+hrun ask analyst "q" --timeout 500
+wait_exit
+hrun report analyst
+check "viewer leak: report closes the pane once" [ "$(grep -c 'pane close' "$FAKE_LOG")" -eq 1 ]
+hrun close analyst --force
+check "viewer leak: close after report closes no second time" [ "$(grep -c 'pane close' "$FAKE_LOG")" -eq 1 ]
+hsetup; export FAKE_CLAUDE_MODE=slow20
+hrun ask analyst "q" --timeout 500
+hrun wait analyst
+check "viewer leak: wait closes the pane once" [ "$(grep -c 'pane close' "$FAKE_LOG")" -eq 1 ]
+hrun report analyst
+check "viewer leak: report after wait closes no second time" [ "$(grep -c 'pane close' "$FAKE_LOG")" -eq 1 ]
+hsetup; export FAKE_CLAUDE_MODE=slow20
+hrun ask analyst "q" --timeout 500
+hrun close analyst --force
+check "viewer leak: close --force closes the pane once" [ "$(grep -c 'pane close' "$FAKE_LOG")" -eq 1 ]
+# a second ask while the run is live is refused before anything closes the viewer
+hsetup; export FAKE_CLAUDE_MODE=slow20
+hrun ask analyst "q" --timeout 500
+v=$(run_viewer)
+hrun ask analyst "q2" --timeout 500
+check "live 2nd ask: refused rc 4" [ "$RC" -eq 4 ]
+check "live 2nd ask: viewer recorded as a pane" [ "${v#pane:}" != "$v" ]
+check "live 2nd ask: no pane close" [ "$(grep -c 'pane close' "$FAKE_LOG")" -eq 0 ]
+check "live 2nd ask: .run keeps the viewer" [ "$(run_viewer)" = "$v" ]
+hrun close analyst --force
+# wait <ask-id> (worktree ask) closes only that ask's pane, not the role's own run
+hsetup; export FAKE_CLAUDE_MODE=slow20
+git init -q . && git config user.email t@t && git config user.name t
+echo one > a.txt && git add a.txt && git commit -qm one
+mkdir -p .git/info && echo '.harness/' >> .git/info/exclude
+export HARNESS_WT_ROOT="$WORK.wt"; WORKS="$WORKS $WORK.wt"
+hrun ask analyst "plain" --timeout 500
+pv=$(run_viewer)
+hrun ask analyst "wt" --worktree --timeout 500
+wid=$(sed -n 's/^harness: ask \([^ ]*\) .*/\1/p' <<<"$OUT" | head -n 1)
+wdir=$(ls -d "$HARNESS_WT_ROOT"/*/analyst-* 2>/dev/null | head -n 1)
+check "wait ask-id: worktree ask started" [ -d "${wdir:-/nonexistent}" ]
+n=$(grep -c 'pane split' "$FAKE_LOG")
+wait_exit "$wdir/.harness/asks"
+hrun wait "$wid"
+check "wait ask-id: rc 0" [ "$RC" -eq 0 ]
+check "wait ask-id: both runs had a pane" [ "$n" -eq 2 ]
+check "wait ask-id: closes exactly its own pane" [ "$(grep -c 'pane close' "$FAKE_LOG")" -eq 1 ]
+check "wait ask-id: role .run untouched" [ "$(run_viewer)" = "$pv" ]
+hrun close analyst --force
+unset HARNESS_WT_ROOT
+export FAKE_CLAUDE_MODE=success
 
 # 9. watchdog
 hsetup; export FAKE_CLAUDE_MODE=hang HARNESS_HL_MAX_S=1
@@ -162,38 +230,29 @@ hsetup; export FAKE_CLAUDE_MODE=nostart
 hrun ask analyst "q"
 check "nostart: rc 1" [ "$RC" -eq 1 ]
 
-# 13. config + env
+# 13. config: the removed pane keys are ignored with one note; env runner vars do nothing
 setup
 export FAKE_CLAUDE_MODE=success
-unset HARNESS_RUNNER_ANALYST HARNESS_RUNNER_REVIEWER
 export FAKE_REPORT_CMD="mkdir -p $WORK/.harness/reports && printf '# analyst report\nstatus: done\n' > $WORK/.harness/reports/analyst.md"
 hrun ask analyst "q"
-check "default runner: headless (rc 0)" [ "$RC" -eq 0 ]
-check "default runner: headless (no agent start)" not_logged "agent start"
-# a hand-written config with no runner key: the built-in default decides (not init's template)
+check "default: headless rc 0" [ "$RC" -eq 0 ]
+check "default: no agent start" not_logged "agent start"
+check "default: config has only _doc and viewer" jqt 'keys == ["_doc","viewer"]' .harness/config.json
 setup
-unset HARNESS_RUNNER_ANALYST HARNESS_RUNNER_IMPLEMENTER HARNESS_RUNNER_REVIEWER
-mkdir -p .harness; echo '{"idle_ttl_minutes":30}' > .harness/config.json
+mkdir -p .harness; echo '{"runner":{"analyst":"pane"},"close_after_ask":{"analyst":"never"},"idle_ttl_minutes":30}' > .harness/config.json
 export FAKE_CLAUDE_MODE=success FAKE_REPORT_CMD="mkdir -p $WORK/.harness/reports && printf '# analyst report\nstatus: done\n' > $WORK/.harness/reports/analyst.md"
 hrun ask analyst "q"
-check "no runner key: headless rc 0" [ "$RC" -eq 0 ]
-check "no runner key: no agent start" not_logged "agent start"
-check "no runner key: ran harness-run" logged "harness-run"
-hrun status
-check "no runner key: status shows hl" grep -Eq '^analyst .* hl' <<<"$OUT"
+check "removed keys: ask still runs headless (rc 0)" [ "$RC" -eq 0 ]
+check "removed keys: one stderr note" grep -q "are ignored" <<<"$OUT"
+hrun ask analyst "q2"
+check "removed keys: note only the first time" not_grep "are ignored" <(printf '%s' "$OUT")
+check "removed keys: config untouched" jqt 'has("runner")' .harness/config.json
 setup
 mkdir -p .harness; echo '{"runner":{"analyst":"headless"}}' > .harness/config.json
-export FAKE_CLAUDE_MODE=success FAKE_REPORT_CMD="mkdir -p $WORK/.harness/reports && printf '# analyst report\nstatus: done\n' > $WORK/.harness/reports/analyst.md"
+export HARNESS_RUNNER_ANALYST=pane FAKE_CLAUDE_MODE=success FAKE_REPORT_CMD="mkdir -p $WORK/.harness/reports && printf '# analyst report\nstatus: done\n' > $WORK/.harness/reports/analyst.md"
+hrun ask analyst "q"
+check "HARNESS_RUNNER_* env ignored" not_logged "agent start"
 unset HARNESS_RUNNER_ANALYST
-hrun ask analyst "q"
-check "config headless: rc 0" [ "$RC" -eq 0 ]
-check "config headless: no agent start" not_logged "agent start"
-setup
-mkdir -p .harness; echo '{"runner":{"analyst":"headless"}}' > .harness/config.json
-export HARNESS_RUNNER_ANALYST=pane FAKE_PROMPT_HOOK="$(REPORT_HOOK analyst)"
-hrun ask analyst "q"
-check "env overrides config: pane" logged "agent start"
-unset HARNESS_RUNNER_ANALYST FAKE_PROMPT_HOOK
 
 # 14. permission mode other than auto: warning; ## Run line in the ask log
 hsetup; export FAKE_PERM=default
@@ -417,32 +476,11 @@ i=0; while [ $i -lt 60 ] && [ ! -f .harness/asks/analyst.exit.json ]; do sleep 0
 check "in-place rewrite: the running harness-run still writes exit.json" jqt '.rc == 0' .harness/asks/analyst.exit.json
 unset HR_BIN
 
-# 17. use_hl: only a live headless run (or config) selects the headless code
-hsetup; export FAKE_CLAUDE_MODE=hang
-( hrun ask analyst "q" --timeout 60000 ) &
-bg=$!
-i=0; while [ $i -lt 50 ] && ! grep -q . .harness/asks/analyst.pid 2>/dev/null; do sleep 0.2; i=$((i + 1)); done
-export HARNESS_RUNNER_ANALYST=pane
-hrun status
-check "use_hl: live headless run under runner=pane still shown as hl" grep -Eq 'analyst +running .* hl' <<<"$OUT"
-hrun close analyst --force
-check "use_hl: live run closed headless (force_kill)" grep -q force_kill .harness/progress.jsonl
-wait "$bg"
-export HARNESS_RUNNER_ANALYST=headless FAKE_CLAUDE_MODE=success
-hrun ask analyst "again"
-export HARNESS_RUNNER_ANALYST=pane
-hrun status
-check "use_hl: leftover .run, dead pid, runner=pane: not an hl line" not_grep " hl" <(printf '%s' "$OUT")
-hrun close analyst
-check "use_hl: leftover .run under runner=pane: close is pane behaviour (no viewer pane closed)" not_grep "closed analyst" <(printf '%s' "$OUT")
-check "use_hl: leftover .run under runner=pane: viewer pane left registered" grep -q '^analyst ' .harness/panes
-export HARNESS_RUNNER_ANALYST=headless
-
 # status
 hsetup
 hrun ask analyst "q"
 hrun status
-check "status: headless idle line" grep -Eq 'analyst +idle +w1:p2 +hl' <<<"$OUT"
+check "status: headless idle line" grep -Eq 'analyst +idle +bg' <<<"$OUT"
 
 # metrics: runner split (old lines without runner count as pane)
 setup

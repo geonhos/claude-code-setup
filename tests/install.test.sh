@@ -110,7 +110,7 @@ check "gitignore line once" [ "$(grep -cx '.harness/' "$GIT_IGNORE")" -eq 1 ]
 check "route hook still once after rerun" [ "$(jq --arg r "$REPO/claude/hooks/conductor-route.sh" '[.hooks.UserPromptSubmit[]? | select(any(.hooks[]?; .command==$r))] | length' "$S")" -eq 1 ]
 check "other UserPromptSubmit still once" [ "$(jq '[.hooks.UserPromptSubmit[]? | select(any(.hooks[]?; .command=="/opt/prompt.sh"))] | length' "$S")" -eq 1 ]
 check "skill symlink survives rerun" [ "$(readlink "$CLAUDE_DIR/skills/implement")" = "$REPO/claude/skills/implement" ]
-check "no skill backup warning on rerun" not_grep -q 'skills/.*backed up' "$T/out.txt"
+check "no skill backup warning on rerun" not_grep 'skills/.*backed up' "$T/out.txt"
 # fresh HOME with no settings.json at all
 T2=$(newdir fresh)
 mkdir -p "$T2/claude/skills"; ln -s /tmp/elsewhere "$T2/claude/skills/review"
@@ -197,7 +197,7 @@ for s in analyze implement review; do
   check "skill $s name matches dir" [ "$(sed -n 's/^name: *//p' "$SK" | head -1)" = "$s" ]
   check "skill $s says conductor only" grep -qi 'conductor only' "$SK"
   check "skill $s uses --via skill" grep -q -- '--via skill' "$SK"
-  check "skill $s no context fork" not_grep -q '^context: *fork' "$SK"
+  check "skill $s no context fork" not_grep '^context: *fork' "$SK"
   check "skill $s has worker opt-out" grep -q 'HARNESS_ROLE=worker' "$SK"
 done
 check "skill analyze targets analyst" grep -q 'harness ask analyst' "$REPO/claude/skills/analyze/SKILL.md"
@@ -309,7 +309,7 @@ for mode in parallel serial; do
   guard run_runner "$D" HARNESS_TEST_SERIAL=$ser; RRC=$(cat "$D.rc" 2>/dev/null || echo 137)
   check "runner $mode: all pass exits 0" [ "$RRC" -eq 0 ]
   check "runner $mode: all blocks printed" sh -c 'grep -q ok-a "$1" && grep -q ok-b "$1" && grep -q ok-c "$1"' _ "$D.out"
-  check "runner $mode: no FAILED line when green" not_grep -q FAILED "$D.out"
+  check "runner $mode: no FAILED line when green" not_grep FAILED "$D.out"
 
   D=$ROOT/rn-fail-$mode; mk_suites "$D" failing
   start=$(date +%s)
@@ -422,7 +422,7 @@ printf '#!/bin/sh\necho "$*" >> "%s"\n' "$T6/herdr.log" > "$T6/fb/herdr"; chmod 
 ( unset SKIP_HERDR_INTEGRATION; PATH="$T6/fb:$CLEAN_PATH"; install_in "$T6"; echo "$RC" > "$T6/rc" )
 check "fake herdr: rc 0" [ "$(cat "$T6/rc")" = 0 ]
 check "fake herdr: integration install claude called" grep -qx "integration install claude" "$T6/herdr.log"
-check "fake herdr: no skip note" not_grep -q "herdr not found" "$T6/out.txt"
+check "fake herdr: no skip note" not_grep "herdr not found" "$T6/out.txt"
 
 echo "PASS $pass / FAIL $fail"
 [ "$fail" -eq 0 ]

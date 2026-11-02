@@ -1,9 +1,9 @@
 ---
 type: troubleshooting
-status: active
-updated: 2026-10-27
-sources: [ask 1792562994-34957-9151, ask 1792565478-50561-31913, commit 174e159, tests/harness-ask.test.sh:44]
-verified_by: tests/harness-ask.test.sh (late marker within grace)
+status: stale
+updated: 2026-11-02
+sources: [ask 1792562994-34957-9151, ask 1792565478-50561-31913, commit 174e159]
+verified_by: human (tests/harness-ask.test.sh deleted in prune step 3; no suite covers the grace now)
 ---
 # Whole-second `date +%s` makes a 1 s grace (0,1] s
 

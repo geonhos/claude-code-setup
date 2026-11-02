@@ -136,7 +136,7 @@ fi
 need jq
 # herdr is optional (decision 0011): without it the integration step is skipped
 if [ "${SKIP_HERDR_INTEGRATION:-0}" != 1 ] && ! command -v herdr >/dev/null 2>&1; then
-  echo "herdr not found: skipping its Claude integration (optional; only the pane runner/viewer need it)"
+  echo "herdr not found: skipping its Claude integration (optional; only the viewer pane needs it)"
   SKIP_HERDR_INTEGRATION=1
 fi
 

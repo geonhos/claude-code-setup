@@ -1,15 +1,15 @@
 #!/bin/bash
 # Worktree asks (decision 0008, S1): bin/harness ask --worktree for headless analyst/reviewer against
-# tests/fake-herdr + tests/fake-claude. Run: /bin/bash tests/worktree.test.sh
+# tests/fake-claude. Run: /bin/bash tests/worktree.test.sh
 set -u
 . "$(dirname "$0")/harness-lib.sh"
 FAKE_CLAUDE="$HERE/fake-claude"
 GATE="$HERE/../claude/hooks/conductor-gate.sh"
 
 hrun() {
-  OUT=$(HERDR_ENV=1 HERDR_PANE_ID=w1:p1 HARNESS_POLL_SEC=0.2 HARNESS_HL_START_S=5 \
-    PATH="$FAKE_BIN:$FAKE_CLAUDE:$HERE/../bin:$PATH" perl -e 'alarm(25);exec(@ARGV)' \
-    env -u HARNESS_ROLE /bin/bash "$HARNESS" "$@" 2>&1)
+  OUT=$(HARNESS_POLL_SEC=0.2 HARNESS_HL_START_S=5 \
+    PATH="$FAKE_CLAUDE:$HERE/../bin:$PATH" perl -e 'alarm(25);exec(@ARGV)' \
+    env -u HERDR_ENV -u HARNESS_ROLE /bin/bash "$HARNESS" "$@" 2>&1)
   RC=$?
 }
 # wsetup — a git repo with one commit, headless roles, worktrees under $WORK/wtroot
@@ -17,11 +17,10 @@ wsetup() {
   setup
   git init -q . && git config user.email t@t && git config user.name t
   echo one > a.txt && git add a.txt && git commit -qm one
-  export HARNESS_RUNNER_ANALYST=headless HARNESS_RUNNER_REVIEWER=headless
   # the worktree home must be outside the repo (harness refuses otherwise); .harness/ is never committed
   WTROOT="$WORK.wt"; WORKS="$WORKS $WTROOT"
   mkdir -p .git/info && echo '.harness/' >> .git/info/exclude
-  export HARNESS_WT_ROOT="$WTROOT" HARNESS_NO_AUTOCLOSE=1 MAINROOT="$WORK"
+  export HARNESS_WT_ROOT="$WTROOT" MAINROOT="$WORK"
   unset HARNESS_MAX_PARALLEL
   export FAKE_CLAUDE_MODE=success
   # the fake claude runs with cwd = the worktree: relative paths
@@ -32,14 +31,6 @@ jqt() { jq -e "$@" >/dev/null; }
 wt_dirs() { ls -d "$WTROOT"/*/* 2>/dev/null | wc -l | tr -d ' '; }
 wait_reg() { # N — until N registry entries exist
   local i=0; while [ $i -lt 60 ] && [ "$(ls .harness/wt/*.json 2>/dev/null | wc -l | tr -d ' ')" -lt "$1" ]; do sleep 0.2; i=$((i + 1)); done
-}
-wait_panes() { # N — until N worktree asks registered their viewer pane (the barrier for registry assertions)
-  local i=0 n=0
-  while [ $i -lt 150 ]; do
-    n=$(grep -c '^analyst@' .harness/panes 2>/dev/null)   # empty while the registry file does not exist yet
-    [ "${n:-0}" -lt "$1" ] || break
-    sleep 0.2; i=$((i + 1))
-  done
 }
 wait_pid() { # until the nth run announced itself (30 s cap: a loaded machine starts them slowly)
   local i=0; while [ $i -lt 150 ] && [ "$(ls "$WTROOT"/*/*/.harness/asks/analyst.pid 2>/dev/null | wc -l | tr -d ' ')" -lt "$1" ]; do sleep 0.2; i=$((i + 1)); done
@@ -59,7 +50,6 @@ check "ok: report saved" grep -q "analyst report" ".harness/wt/$id.report.md"
 check "ok: progress has wt/base" jqt --arg id "$id" '.exit == 0 and .ask_id == $id and (.wt | test("analyst-")) and (.base | length) == 40' <<<"$(tail -n 1 .harness/progress.jsonl)"
 check "ok: log name has id8" bash -c "ls .harness/log | grep -q -- -analyst-$(jq -r .id8 ".harness/wt/$id.json")"
 check "ok: nothing in main asks dir" not_grep . .harness/asks/analyst.current
-check "ok: pane unregistered" not_grep "analyst@" .harness/panes
 hrun report "$id"
 check "ok: report by ask-id after removal" grep -q "analyst report" <<<"$OUT"
 
@@ -99,11 +89,6 @@ wsetup
 hrun ask implementer "q" --worktree
 check "impl: rc 1" [ "$RC" -eq 1 ]
 check "impl: clear message" grep -q "analyst and reviewer only" <<<"$OUT"
-export HARNESS_RUNNER_ANALYST=pane
-hrun ask analyst "q" --worktree
-check "pane runner: rc 1" [ "$RC" -eq 1 ]
-check "pane runner: says headless" grep -q "headless" <<<"$OUT"
-export HARNESS_RUNNER_ANALYST=headless
 hrun ask analyst "q" --worktree --keep
 check "keep: rc 1" [ "$RC" -eq 1 ]
 hrun ask analyst "q" --worktree --base nosuchref
@@ -145,7 +130,6 @@ wait_pid 1
 wait_pid 2
 check "parallel: two checkouts" [ "$(wt_dirs)" = 2 ]
 check "parallel: distinct dirs" [ "$(ls -d "$WTROOT"/*/* | sort -u | wc -l | tr -d ' ')" = 2 ]
-check "parallel: two registry keys" [ "$(grep -c '^analyst@' .harness/panes)" = 2 ]
 check "parallel: both running" [ "$(cat .harness/wt/*.json | jq -s '[.[] | select(.state == "running")] | length')" = 2 ]
 hrun ask analyst "qc" --worktree
 check "max_parallel: third refused (4)" [ "$RC" -eq 4 ]
@@ -220,7 +204,7 @@ echo '{"id":"old1","id8":"aaaaaaaa","role":"analyst","path":"/nonexistent","stat
 echo r > .harness/wt/old1.report.md
 echo '{"id":"new1","id8":"bbbbbbbb","role":"analyst","path":"/nonexistent","state":"closed"}' > .harness/wt/new1.json
 touch -t 202001010000 .harness/wt/old1.json .harness/wt/old1.report.md
-HARNESS_NO_AUTOCLOSE=0 hrun status
+hrun status
 check "reap: old closed registry entry deleted" [ ! -e .harness/wt/old1.json ]
 check "reap: its saved report deleted" [ ! -e .harness/wt/old1.report.md ]
 check "reap: recent closed entry kept" [ -e .harness/wt/new1.json ]
@@ -228,7 +212,7 @@ check "reap: recent closed entry kept" [ -e .harness/wt/new1.json ]
 git worktree add -q --detach "$WTROOT/r8/analyst-dead0001" HEAD
 printf '{"id":"dead1","id8":"dead0001","role":"analyst","path":"%s","pid":999999,"state":"running","created_s":1}\n' "$WTROOT/r8/analyst-dead0001" > .harness/wt/dead1.json
 touch -t 202001010000 .harness/wt/dead1.json
-HARNESS_NO_AUTOCLOSE=0 hrun status
+hrun status
 check "stale running: checkout removed" [ ! -d "$WTROOT/r8/analyst-dead0001" ]
 check "stale running: state reaped" jqt '.state == "reaped"' .harness/wt/dead1.json
 
@@ -272,21 +256,20 @@ FAKE_CLAUDE_MODE=success hrun ask analyst "plain16"
 check "mixed: plain ask rc 0" [ "$RC" -eq 0 ]
 check "mixed: plain report in the main root" [ -f .harness/reports/analyst.md ]
 check "mixed: worktree ask still running" [ "$(wt_dirs)" = 1 ]
-check "mixed: panes hold both keys" bash -c "grep -q '^analyst@' .harness/panes"
 for f in .harness/wt/*.json; do hrun close "$(basename "$f" .json)" --force; done
 check "mixed: worktree ask closed" [ "$(wt_dirs)" = 0 ]
 wait
 
-# 17. five asks started at once register five panes (locked registry)
+# 17. five asks started at once register five entries (locked registry)
 wsetup; export FAKE_CLAUDE_MODE=hang HARNESS_MAX_PARALLEL=6
 for i in 1 2 3 4 5; do ( hrun ask analyst "q17-$i" --worktree --timeout 60000 >/dev/null ) & done
-wait_panes 5
 wait_pid 5
-check "panes: five registered" [ "$(grep -c '^analyst@' .harness/panes)" = 5 ]
+wait_reg 5
+check "registry: five entries" [ "$(ls .harness/wt/*.json | wc -l | tr -d ' ')" = 5 ]
 for f in .harness/wt/*.json; do hrun close "$(basename "$f" .json)" --force; done
 wait
 
-# 18. a late report of a worktree ask is archived under its own key and log name
+# 18. a worktree ask that ended without a report: `harness report <ask-id>` collects the report found later
 wsetup
 hrun ask analyst "plain18"
 export FAKE_CLAUDE_MODE=noreport
@@ -295,8 +278,7 @@ id=$(ask_id); id8=$(jq -r .id8 ".harness/wt/$id.json")
 mkdir -p "$(jq -r .path ".harness/wt/$id.json")/.harness/reports"
 cp .harness/reports/analyst.md "$(jq -r .path ".harness/wt/$id.json")/.harness/reports/analyst.md"
 hrun report "$id"
-check "late: log named with the id8" bash -c "ls .harness/log | grep -q -- -analyst-$id8-late"
-check "late: jsonl line carries the ask id" bash -c "grep '\"late\":true' .harness/progress.jsonl | grep -q '$id'"
+check "late: report collected by ask-id" grep -q "analyst report" <<<"$OUT"
 hrun close "$id" --force
 
 # 19. kept worktree with a saved patch is never auto-reaped; close removes it, the patch survives
@@ -306,8 +288,8 @@ hrun ask analyst "q19" --worktree
 id=$(ask_id); path=$(jq -r .path ".harness/wt/$id.json")
 check "kept+patch: patch saved" [ -s ".harness/wt/$id.patch" ]
 touch -t 202001010000 ".harness/wt/$id.json" ".harness/wt/$id.patch"
-HARNESS_NO_AUTOCLOSE=0 HARNESS_IDLE_TTL_MIN=1 HARNESS_LOG_DAYS=1 hrun status
-HARNESS_NO_AUTOCLOSE=0 HARNESS_IDLE_TTL_MIN=1 HARNESS_LOG_DAYS=1 hrun status
+HARNESS_LOG_DAYS=1 hrun status
+HARNESS_LOG_DAYS=1 hrun status
 check "kept+patch: survives reap passes (checkout)" [ -d "$path" ]
 check "kept+patch: survives reap passes (state)" jqt '.state == "kept"' ".harness/wt/$id.json"
 check "kept+patch: survives LOG_DAYS (patch)" [ -s ".harness/wt/$id.patch" ]
@@ -325,13 +307,13 @@ check "kept+patch: more than the patch -> refused (4)" [ "$RC" -eq 4 ]
 check "kept+patch: refused -> checkout stays" [ -d "$path" ]
 hrun close "$id" --force
 check "kept+patch: --force removes it" [ ! -d "$path" ]
-# a clean kept entry without a patch is still reaped by the idle TTL
+# a clean kept entry without a patch is still reaped by the fixed 30 min reap
 wsetup
 git worktree add -q --detach "$WTROOT/r19/analyst-clean001" HEAD
 mkdir -p .harness/wt
 printf '{"id":"clean1","id8":"clean001","role":"analyst","path":"%s","pid":999999,"state":"kept","created_s":1}\n' "$WTROOT/r19/analyst-clean001" > .harness/wt/clean1.json
 touch -t 202001010000 .harness/wt/clean1.json
-HARNESS_NO_AUTOCLOSE=0 HARNESS_IDLE_TTL_MIN=1 hrun status
+hrun status
 check "kept clean: reaped by TTL" [ ! -d "$WTROOT/r19/analyst-clean001" ]
 
 # 20. copy-back allowlist: reserved names and symlinks stay in the worktree
@@ -349,13 +331,13 @@ check "allowlist: plain .md still copied" grep -q '^ok$' .harness/notes20.md
 
 # 21. lock takeover: a dead owner, or an old ownerless lock, is taken over; no hang
 wsetup
-mkdir -p .harness/panes.lock && echo 999999 > .harness/panes.lock/owner
+mkdir -p .harness/wt/.git.lock && echo 999999 > .harness/wt/.git.lock/owner
 hrun ask analyst "q21a" --worktree
 check "lock: dead owner taken over (rc 0)" [ "$RC" -eq 0 ]
-mkdir -p .harness/panes.lock && touch -t 202001010000 .harness/panes.lock
+mkdir -p .harness/wt/.git.lock && touch -t 202001010000 .harness/wt/.git.lock
 hrun ask analyst "q21b" --worktree
 check "lock: old ownerless lock taken over (rc 0)" [ "$RC" -eq 0 ]
-check "lock: no stale dir left" bash -c "! ls .harness | grep -q 'panes.lock'"
+check "lock: no stale dir left" bash -c "[ ! -e .harness/wt/.git.lock ]"
 
 # 22. HARNESS_WT_ROOT with a '..' component is rejected
 wsetup
@@ -396,7 +378,7 @@ check "commit: patch survives close" grep -q "c24.txt" ".harness/wt/$id.patch"
 # 25. lock owner pid reused by an unrelated live process: taken over, no hang
 wsetup
 sleep 300 & spid=$!
-mkdir -p .harness/panes.lock && echo "$spid" > .harness/panes.lock/owner
+mkdir -p .harness/wt/.git.lock && echo "$spid" > .harness/wt/.git.lock/owner
 hrun ask analyst "q25" --worktree
 kill "$spid" 2>/dev/null; wait "$spid" 2>/dev/null
 check "lock reuse: rc 0" [ "$RC" -eq 0 ]
@@ -407,11 +389,11 @@ while :; do sleep 1; done
 EOS
 /bin/bash "$WORK/harness-owner.sh" & opid=$!
 sleep 0.3
-mkdir -p .harness/panes.lock && echo "$opid" > .harness/panes.lock/owner
+mkdir -p .harness/wt/.git.lock && echo "$opid" > .harness/wt/.git.lock/owner && touch -t 202001010000 .harness/wt/.git.lock/owner
 HARNESS_LOCK_MAX_S=2 hrun ask analyst "q25b" --worktree
 kill "$opid" 2>/dev/null; wait "$opid" 2>/dev/null
 check "lock ceiling: rc 0" [ "$RC" -eq 0 ]
-check "lock ceiling: warned" grep -q "taking it over" <<<"$OUT"
+check "lock ceiling: lock released afterwards" [ ! -e .harness/wt/.git.lock ]   # the takeover warning goes into git's captured output
 
 # 26. takeover with several contenders: mutual exclusion holds, nothing nests, nothing is left.
 # Deterministic: mv and rm are shadowed by functions that sleep (rank-staggered), widening the gap
@@ -536,7 +518,7 @@ hrun close "$id" --force
 check "close-then-watch: closed, checkout gone" bash -c '[ "$1" = 0 ] && [ "$2" = 0 ]' _ "$RC" "$(wt_dirs)"
 check "close-then-watch: registry has an absolute stream path" jqt '(.stream // "") | startswith("/")' ".harness/wt/$id.json"
 wait
-OUT=$(env -u HERDR_ENV -u HERDR_PANE_ID -u HARNESS_ROLE NO_COLOR=1 PATH="$FAKE_BIN:$FAKE_CLAUDE:$HERE/../bin:$PATH" perl -e 'alarm(25);exec(@ARGV)' script -q /dev/null /bin/bash "$HARNESS" watch "$id" 2>&1 </dev/null | tr -d '\r')
+OUT=$(env -u HERDR_ENV -u HERDR_PANE_ID -u HARNESS_ROLE NO_COLOR=1 PATH="$FAKE_CLAUDE:$HERE/../bin:$PATH" perl -e 'alarm(25);exec(@ARGV)' script -q /dev/null /bin/bash "$HARNESS" watch "$id" 2>&1 </dev/null | tr -d '\r')
 check "close-then-watch: watch <ask-id> renders the stream" bash -c '! grep -q "no stream known" <<<"$1" && grep -q . <<<"$1"' _ "$OUT"
 
 echo "PASS $pass / FAIL $fail"

@@ -2,15 +2,15 @@
 # The body is one brace group: bash parses the whole file before running any of it, so a
 # tool that rewrites this file in place cannot corrupt a run in progress (wiki: troubleshooting).
 {
-# harness-run <role> <ask-id> <root> — run ONE headless worker ask (in a viewer pane, or detached).
-# Started by `harness ask` (through `herdr pane run` when a viewer pane is used); not for the conductor (the gate
-# only matches `harness`, and this refuses to run without HARNESS_ROLE=worker).
+# harness-run <role> <ask-id> <root> — run ONE headless worker ask, detached.
+# Started by `harness ask`; not for the conductor (the gate only matches `harness`, and this
+# refuses to run without HARNESS_ROLE=worker). A viewer pane runs `harness watch`, not this.
 # Reads  .harness/asks/<role>.prompt  and  .run (resume=, max_s=).
 # Writes .harness/asks/<role>.pid / .session / .err / .exit.json (atomic) and the raw
 # stream .harness/log/<stamp>-<role>.jsonl. Completion = exit.json for this ask-id.
 role=${1:-}; id=${2:-}; root=${3:-}
 if [ "${HARNESS_ROLE:-}" != worker ]; then
-  echo "harness-run: refusing to run without HARNESS_ROLE=worker (this is for panes started by 'harness ask')" >&2
+  echo "harness-run: refusing to run without HARNESS_ROLE=worker (this is started by 'harness ask')" >&2
   exit 1
 fi
 if [ -z "$role" ] || [ -z "$id" ] || [ -z "$root" ]; then
@@ -56,7 +56,7 @@ kill_tree() {
 
 rm -f "$rcf" "$tinit" "$wdflag" "$sigflag" "$exitf" "$sessf" "$pidf"
 : > "$raw"
-# where this run's raw stream is: `harness` reads it for a background run (no viewer pane to read)
+# where this run's raw stream is: `harness watch` and `harness report` read it
 printf '%s %s\n' "$id" "$raw" > "$A/$role.stream.tmp.$$" && mv "$A/$role.stream.tmp.$$" "$A/$role.stream"
 printf '=== %s ask %s %s ===\n' "$role" "$id" "$(date '+%H:%M:%S')"
 
@@ -67,9 +67,9 @@ on_signal() {
 }
 trap on_signal TERM INT HUP
 
-# pipeline in its own subshell: kill_tree on $pipe reaches claude, awk and the viewer.
-# set -m made it a background process group: on a tty with `stty tostop` the viewer's output (or
-# a tty read) would stop the whole run with SIGTTOU/SIGTTIN until the watchdog killed it
+# pipeline in its own subshell: kill_tree on $pipe reaches claude and awk.
+# set -m made it a background process group: on a tty with `stty tostop` a write (or a tty read)
+# would stop the whole run with SIGTTOU/SIGTTIN until the watchdog killed it
 # (reproduced under script(1)); ignored here, the writes simply succeed. Children inherit it.
 (
   trap '' TTOU TTIN
@@ -84,7 +84,7 @@ trap on_signal TERM INT HUP
         if (match($0, /"session_id":"[^"]*"/)) { print substr($0, RSTART + 14, RLENGTH - 15) > sf; close(sf) }
       }
       { print; fflush() }' \
-  | { if [ "${HARNESS_RUN_VIEW:-1}" = 0 ]; then cat >/dev/null; else harness-view || cat >/dev/null; fi; }
+  | cat >/dev/null
 ) &
 pipe=$!
 # the pipeline's process group, recorded at start (3rd field; readers only use the first two).

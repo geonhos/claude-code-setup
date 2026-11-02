@@ -13,8 +13,7 @@ Shared project rules live in `AGENTS.md` (imported above). Claude-only notes:
   (and its leading skill token) to `.harness/routing.jsonl`; it does not steer.
 - **Completion.** A headless worker is done when its process exits
   (`.harness/asks/<role>.exit.json`); the implementer's Stop hook first runs
-  `harness-verify` lint/tests. On the legacy pane runner the Stop hook's done
-  marker is the signal and herdr idle is only a fallback.
+  `harness-verify` lint/tests.
 - **Wiki injection.** The SessionStart hook `conductor-resume` injects
   `.harness/progress.md` and the `(active,` lines of `docs/wiki/index.md` into
   the conductor. Workers and non-Claude agents get no injection: they must

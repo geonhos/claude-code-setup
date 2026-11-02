@@ -1,11 +1,13 @@
 ---
 type: troubleshooting
-status: active
-updated: 2026-10-23
+status: superseded
+updated: 2026-11-02
 sources: [commit 5ea7475, .harness/progress.jsonl reviewer asks 2026-10-21 exit 3 ×4]
 verified_by: human (conductor session 2026-10-21)
 ---
 # Workers keep the prompt and hooks they were started with
+
+> Superseded 2026-11-02 by [0011](../decisions/0011-single-runner-headless.md): there are no long-lived worker panes; every ask starts a new `claude -p` that reads the current prompt and hooks.
 
 **Symptom.** After the prompt or hooks in `claude/agents/*.md` change (the implementer pane is now kept up to 30 min, decision 0006, so it may predate the edit), a worker keeps the old ones. After hooks change in agent frontmatter, every ask to an existing worker exits 3: "Stop hook never signalled completion; a report exists".
 

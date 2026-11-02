@@ -1,11 +1,13 @@
 ---
 type: decision
 status: active
-updated: 2026-10-28
+updated: 2026-11-02
 sources: [.harness/implementer-headless-design.md, branch feat/v23-headless-implementer, tests/headless-implementer.test.sh]
 verified_by: tests/headless-implementer.test.sh
 ---
 # 0009: Headless implementer (0007 stage C)
+
+> Updated 2026-11-02 (prune step 3, [0011](0011-single-runner-headless.md)): `runner.implementer` is gone and the `pane` rollback no longer exists; the implementer is always headless.
 
 **Context.** [0007](0007-headless-runner-pilot.md) piloted `claude -p` for analyst and reviewer: 18 headless asks, 3 abnormal, against 70 pane asks with 29 abnormal. The implementer is still a pane (98 asks, 25 abnormal, p95 1706 s); its failures are the same completion races. It differs in that its Stop hook runs lint and tests (`harness-verify`) and can block the stop.
 
@@ -21,7 +23,7 @@ verified_by: tests/headless-implementer.test.sh
 
 **Consequences.**
 - No deadline-restore race: `claude -p` waits for the Stop hook, so a report is never hidden when the run ends normally.
-- `.pending` means verification is in flight or was killed: it blocks the idle TTL reap and makes `harness report` say "still verifying".
+- `.pending` means verification is in flight or was killed: it makes `harness report` say "still verifying".
 - `harness close implementer --force` kills the tree, tests included; the next report is INTERRUPTED (5) and the following ask resumes the session.
 - The viewer tail applies to any failed multi-line tool result (the stateless jq stream cannot tell Bash apart); "verify done" carries no seconds.
 - Rollback: `runner.implementer` back to `pane`, `harness close implementer --force`.

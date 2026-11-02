@@ -1,33 +1,15 @@
-# harness-headless.sh — headless runner glue (decisions 0007, 0011): runner_of, use_hl, hl_*, ask/report/close_headless.
+# harness-headless.sh — the headless runner glue (decisions 0007, 0011): hl_*, ask/report/close_headless.
 # Sourced eagerly by bin/harness (see the loader there): definitions only, no side effects.
 # Shared helpers (die, has_uncollected, ...) stay in bin/harness and resolve at call time.
 
 # --- headless runner (decision 0007) --------------------------------------------------------------
-# runner.<role> = headless: `harness ask` writes the instruction to a file and runs
-# `harness-run` (claude -p, stream-json), shown in a viewer pane when herdr is usable. Completion = the run's
-# .harness/asks/<role>.exit.json carrying this ask-id; no herdr agent, no Stop-hook marker.
+# `harness ask` writes the instruction to a file and starts `harness-run` (claude -p, stream-json)
+# detached in the background. Completion = the run's .harness/asks/<role>.exit.json carrying this
+# ask-id. A viewer is an optional herdr pane running `harness watch <role>`; it is closed when the
+# run is collected or closed.
 
-# runner_of <role> — headless|pane (env HARNESS_RUNNER_<ROLE>, then config runner.<role>, then headless)
-runner_of() {
-  local up v
-  up=$(printf %s "$1" | tr 'a-z' 'A-Z')
-  eval "v=\${HARNESS_RUNNER_$up:-}"
-  [ -n "$v" ] || v=$(jq -r --arg r "$1" '.runner[$r] // empty' "$CONFIG_FILE" 2>/dev/null)
-  case "$v" in headless|pane) echo "$v" ;; *) echo "$HARNESS_RUNNER_DEFAULT" ;; esac
-}
-
-# use_hl <role> — this role is handled by the headless code: configured so, or (runner flipped
-# back to pane) a headless run is still alive. A leftover .run / exit.json is not enough, and
-# herdr answers never decide it.
-use_hl() {
-  [ -z "$ASK_WT" ] || return 0    # a worktree ask is always headless
-  [ "$(runner_of "$1")" != headless ] || return 0
-  hl_alive "$1"
-}
-is_headless() { [ "$(runner_of "$1")" = headless ]; }
-
-# viewer_mode — auto|pane|none: where a headless run is shown (env HARNESS_VIEWER, then config
-# `viewer`, then the default). auto = a herdr pane when herdr is usable, else the background.
+# viewer_mode — auto|pane|none: where a run is shown (env HARNESS_VIEWER, then config
+# `viewer`, then the default). auto = a herdr pane when herdr is usable, else none.
 viewer_mode() {
   local v=${HARNESS_VIEWER:-}
   [ -n "$v" ] || v=$(jq -r '.viewer // empty' "$CONFIG_FILE" 2>/dev/null)
@@ -40,9 +22,6 @@ hl_bg_note() { echo "harness: no herdr pane; running $1 in the background (statu
 HL_ENV_STRIP="-u HERDR_ENV -u HERDR_PANE_ID -u HERDR_TAB_ID -u HERDR_WORKSPACE_ID -u HERDR_SOCKET_PATH -u HERDR_BIN_PATH"
 HL_ENV_STRIP="$HL_ENV_STRIP -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT -u CLAUDE_CODE_AGENT -u CLAUDE_CODE_SESSION_ID -u CLAUDE_CODE_CHILD_SESSION"
 HL_ENV_STRIP="$HL_ENV_STRIP -u CLAUDE_CODE_SESSION_ATTENDED -u CLAUDE_CODE_MESSAGING_SOCKET -u CLAUDE_CODE_MESSAGING_TOKEN -u CLAUDE_PID -u CLAUDE_EFFORT -u CLAUDE_CODE_EXECPATH"
-
-# hl_registered_pane <role> — the viewer pane in .harness/panes (last line for the role)
-hl_registered_pane() { awk -v r="${ASK_KEY:-$1}" '$1 == r { p = $2 } END { if (p != "") print p }' "$PANES_FILE" 2>/dev/null; }
 
 # hl_alive <role> — a harness-run for the role is running (pid file, live harness-run process)
 hl_alive() {
@@ -71,52 +50,55 @@ hl_pid() { awk 'NR == 1 { print $2 }' "$ASK_DIR/$1.pid" 2>/dev/null; }
 # hl_done <role> <ask-id> — exit.json exists for that ask
 hl_done() { grep -q "\"ask_id\":\"$2\"" "$ASK_DIR/$1.exit.json" 2>/dev/null; }
 
-# hl_run_viewer <role> — the viewer pane of the role's current run: from .run (viewer=pane:<id> or
-# viewer=bg), else (an older .run, or no run yet) the registered pane
+# hl_run_viewer <role> — the viewer pane of the role's current run, from .run (viewer=pane:<id>);
+# empty for a run without one (viewer=bg)
 hl_run_viewer() {
   local v
   v=$(sed -n 's/^viewer=//p' "$ASK_DIR/$1.run" 2>/dev/null | head -n 1)
-  case "$v" in
-    bg) ;;
-    pane:*) printf '%s\n' "${v#pane:}" ;;
-    *) hl_registered_pane "$1" ;;
-  esac
+  case "$v" in pane:*) printf '%s\n' "${v#pane:}" ;; esac
+  return 0
 }
 
-# hl_pane <role> — print the role's viewer pane (empty = run in the background): reuse the
-# registered one while it exists in this repo, else split a plain shell pane (no herdr agent) and
-# register it. viewer auto falls back to the background when herdr is unusable or a split fails.
-hl_pane() {
-  local role=$1 pane out c dir mode
+# hl_open_viewer <role> — show the (already started) run in a herdr pane running `harness watch`:
+# viewer none = nothing; auto = a pane when herdr is usable, else a note; pane = a pane (ask_headless
+# refused the ask before launching when herdr is unusable). The run is a background run either way,
+# so a failed split only warns. Records viewer=pane:<id> in .run (and the worktree registry).
+hl_open_viewer() {
+  local role=$1 a="$ASK_DIR/$1" mode out pane dir
   mode=$(viewer_mode)
   case "$mode" in
     none) return 0 ;;
     auto) herdr_usable || { hl_bg_note "$role"; return 0; } ;;
-    *) need_herdr ;;
   esac
-  if [ -z "$ASK_WT" ] && herdr agent get "$(wname "$role")" >/dev/null 2>&1; then
-    die "a pane-mode $role worker is live; close it first: harness close $role"
-  fi
-  pane=$(hl_registered_pane "$role")
-  if [ -n "$pane" ]; then
-    if out=$(herdr pane get "$pane" 2>/dev/null); then
-      c=$(printf '%s' "$out" | jq -r '.result.pane.cwd // empty' 2>/dev/null)
-      if [ -z "$c" ] || cwd_in_repo "$c"; then printf '%s\n' "$pane"; return 0; fi
-    fi
-    unregister "${ASK_KEY:-$role}" "$pane"
-  fi
   dir=$(pick_direction)
-  if ! out=$(herdr pane split --current --direction "$dir" --cwd "$PWD" --env HARNESS_ROLE=worker --env CLAUDE_CODE_AUTO_COMPACT_WINDOW=160000 --no-focus 2>&1); then
-    [ "$mode" = auto ] || die "pane split failed: $out"
+  if ! out=$(herdr pane split --current --direction "$dir" --cwd "$PWD" --no-focus 2>&1); then
     echo "harness: pane split failed: $out" >&2; hl_bg_note "$role"; return 0
   fi
   pane=$(printf '%s' "$out" | jq -r '.result.pane.pane_id // empty' 2>/dev/null)
   if [ -z "$pane" ]; then
-    [ "$mode" = auto ] || die "pane split returned no pane id: $out"
     echo "harness: pane split returned no pane id: $out" >&2; hl_bg_note "$role"; return 0
   fi
-  register "${ASK_KEY:-$role}" "$pane"
-  printf '%s\n' "$pane"
+  if ! herdr pane run "$pane" "harness watch $(ask_ref "$role")" >/dev/null 2>&1; then
+    echo "harness: pane run failed for $pane" >&2
+    herdr pane close "$pane" >/dev/null 2>&1 || echo "harness: could not close pane $pane" >&2
+    hl_bg_note "$role"; return 0
+  fi
+  sed "s/^viewer=.*/viewer=pane:$pane/" "$a.run" > "$a.run.tmp.$$" && mv "$a.run.tmp.$$" "$a.run"
+  [ -z "$ASK_WT" ] || wt_update pane "$pane"
+  return 0
+}
+
+# hl_close_viewer <role> [forget] — close the run's viewer pane (when herdr can be reached; with
+# <forget> also when it cannot) and record viewer=bg. Never fails.
+hl_close_viewer() {
+  local role=$1 a="$ASK_DIR/$1" pane
+  pane=$(hl_run_viewer "$role")
+  [ -n "$pane" ] || return 0
+  if herdr_env_ok; then herdr pane close "$pane" >/dev/null 2>&1 || true
+  elif [ -z "${2:-}" ]; then return 0; fi
+  sed 's/^viewer=.*/viewer=bg/' "$a.run" > "$a.run.tmp.$$" && mv "$a.run.tmp.$$" "$a.run"
+  [ -z "$ASK_WT" ] || wt_update pane ""
+  return 0
 }
 
 # hl_progress_obj <role> <t0> — extra progress.jsonl fields of the role's last run, as one
@@ -162,7 +144,7 @@ hl_status_line() {
 # First match wins (spec §3). Never returns.
 hl_collect() {
   local role=$1 ej="$ASK_DIR/$1.exit.json" report="$REPORT_DIR/$1.md" cur="$ASK_DIR/$1.current"
-  local rc res iserr killed sid tinit pane perm ejc denied
+  local rc res iserr killed sid tinit perm ejc denied
   ejc=$(cat "$ej" 2>/dev/null)   # one read: a racing close removes the checkout under us
   rc=$(jq -r '.rc // empty' <<<"$ejc" 2>/dev/null); res=$(jq -r '.result // empty' <<<"$ejc" 2>/dev/null)
   iserr=$(jq -r '.is_error // false' <<<"$ejc" 2>/dev/null); killed=$(jq -r '.killed // empty' <<<"$ejc" 2>/dev/null)
@@ -173,10 +155,9 @@ hl_collect() {
     echo "harness: $role's run was killed (closed); its checkout was removed"
     exit 3
   fi
-  pane=$(hl_run_viewer "$role")
   perm=$(jq -r '.perm // empty' <<<"$ejc" 2>/dev/null)
   if [ -n "$perm" ] && [ "$perm" != auto ]; then
-    echo "harness: warning: $role ran with permission mode '$perm', not auto; tools may have been denied (see the viewer pane)" >&2
+    echo "harness: warning: $role ran with permission mode '$perm', not auto; tools may have been denied (see harness watch)" >&2
   fi
   denied=$(jq -r '(.denied // [])[] | "  - \(.tool): \(.input)\(if (.reason // "") != "" then " (" + .reason + ")" else "" end)"' <<<"$ejc" 2>/dev/null)
   restore_interrupted "$role" "$report"
@@ -185,7 +166,7 @@ hl_collect() {
     if { [ -n "$rc" ] && [ "$rc" != 0 ]; } || [ "$iserr" = true ]; then
       echo "harness: note: $role's run ended with ${res:-no result} (rc ${rc:-?}) but wrote a report" >&2
     fi
-    finish_report "$role" "$report" "${pane:--}"
+    finish_report "$role" "$report"
   fi
   if [ "$res" = error_max_turns ]; then
     echo "harness: $role stopped at the max-turns limit without a report; continue with: harness ask $role '...' --keep"
@@ -214,15 +195,9 @@ hl_collect() {
   echo "harness: $role finished without a report at $report; collect: harness report $(ask_ref "$role")"
   hl_view_tail "$role" 30; exit 3
 }
-# hl_view_tail <role> <n> — the last n lines the run showed: the viewer pane's screen, or for a
-# background run the rendered stream (no pane to read)
+# hl_view_tail <role> <n> — the last n lines the run showed: the rendered stream
 hl_view_tail() {
-  local role=$1 n=${2:-30} pane raw
-  pane=$(hl_run_viewer "$role")
-  if [ -n "$pane" ]; then
-    if herdr_env_ok; then herdr pane read "$pane" 2>/dev/null | tail -n "$n"; fi
-    return 0
-  fi
+  local role=$1 n=${2:-30} raw
   raw=$(jq -r '.stream_log // empty' "$ASK_DIR/$role.exit.json" 2>/dev/null)
   [ -n "$raw" ] || raw=$(awk 'NR == 1 { print $2 }' "$ASK_DIR/$role.stream" 2>/dev/null)
   if [ -n "$raw" ] && [ -f "$raw" ]; then harness-view < "$raw" 2>/dev/null | tail -n "$n"; fi
@@ -240,54 +215,35 @@ hl_spawn_bg() {
   case "$ASK_DIR" in /*) log=$ASK_DIR ;; *) log=$root/$ASK_DIR ;; esac
   log=$log/$role.runner.log
   if [ "${HARNESS_HL_NO_PERL:-}" != 1 ] && command -v perl >/dev/null 2>&1; then
-    ( cd "$root" && exec env $HL_ENV_STRIP HARNESS_ROLE=worker CLAUDE_CODE_AUTO_COMPACT_WINDOW=160000 HARNESS_RUN_VIEW=0 \
+    ( cd "$root" && exec env $HL_ENV_STRIP HARNESS_ROLE=worker CLAUDE_CODE_AUTO_COMPACT_WINDOW=160000 \
         nohup perl -MPOSIX -e 'POSIX::setsid() or die "setsid: $!"; exec @ARGV or die "exec: $!"' \
         harness-run "$role" "$id" "$root" </dev/null >>"$log" 2>&1 & )
   else
     # no perl: its own process group through job control (the session stays shared)
     ( cd "$root" || exit 1; set -m
-      env $HL_ENV_STRIP HARNESS_ROLE=worker CLAUDE_CODE_AUTO_COMPACT_WINDOW=160000 HARNESS_RUN_VIEW=0 \
+      env $HL_ENV_STRIP HARNESS_ROLE=worker CLAUDE_CODE_AUTO_COMPACT_WINDOW=160000 \
         nohup harness-run "$role" "$id" "$root" </dev/null >>"$log" 2>&1 & )
   fi
 }
 
-# hl_launch <role> <id> <pane> <resume> <max_s> <ctxb> <start_s> <poll> — write the run file, start
-# harness-run (in the viewer pane, or detached in the background when <pane> is empty) and wait for
-# its pid file; exits 1 when it never starts. Sets HL_PANE to the pane actually used ("" = background).
+# hl_launch <role> <id> <resume> <max_s> <ctxb> <start_s> <poll> — write the run file, start
+# harness-run detached in the background and wait for its pid file; exits 1 when it never starts.
+# A second launch of the same ask (resume retry) keeps the viewer recorded in .run.
 hl_launch() {
-  local role=$1 id=$2 pane=$3 resume=$4 max_s=$5 ctxb=$6 start_s=$7 poll=$8 a="$ASK_DIR/$1" s0 root
+  local role=$1 id=$2 resume=$3 max_s=$4 ctxb=$5 start_s=$6 poll=$7 a="$ASK_DIR/$1" s0 root viewer
   root=${ASK_WT:-$(pwd -P)}
+  viewer=$(sed -n 's/^viewer=//p' "$a.run" 2>/dev/null | head -n 1)
   rm -f "$a.finished" "$a.exit.json" "$a.pid"
-  printf 'resume=%s\nmax_s=%s\nctx_before=%s\nviewer=%s\n' "$resume" "$max_s" "$ctxb" "${pane:+pane:}${pane:-bg}" > "$a.run"
+  printf 'resume=%s\nmax_s=%s\nctx_before=%s\nviewer=%s\n' "$resume" "$max_s" "$ctxb" "${viewer:-bg}" > "$a.run"
   # a worktree ask streams into the main checkout's log dir, tagged with its id8
   [ -z "$ASK_WT" ] || printf 'log_dir=%s\nlog_tag=%s\n' "$(pwd -P)/.harness/log" "$ASK_ID8" >> "$a.run"
-  if [ -n "$pane" ]; then
-    if ! herdr pane run "$pane" "$(printf 'harness-run %q %q %q' "$role" "$id" "$root")" >/dev/null 2>&1; then
-      echo "harness: pane run failed for $pane" >&2
-      [ "$(viewer_mode)" = auto ] || exit 1
-      # nothing was started: close the pane (freshly split, or a reused registered viewer) and run in the background instead
-      herdr pane close "$pane" >/dev/null 2>&1 || echo "harness: could not close pane $pane" >&2
-      unregister "${ASK_KEY:-$role}" "$pane"
-      [ -z "$ASK_WT" ] || wt_update pane ""
-      hl_bg_note "$role"
-      pane=""
-      sed 's/^viewer=.*/viewer=bg/' "$a.run" > "$a.run.tmp.$$" && mv "$a.run.tmp.$$" "$a.run"
-    fi
-  fi
-  HL_PANE=$pane
-  [ -n "$pane" ] || hl_spawn_bg "$role" "$id" "$root"
-  # the run announces itself with its pid file; a pane whose shell is busy never does. No fallback
-  # to the background from here: the pane may still start harness-run later (two runs of one ask)
+  hl_spawn_bg "$role" "$id" "$root"
+  # the run announces itself with its pid file
   s0=$(date +%s)
   until grep -q "^$id " "$a.pid" 2>/dev/null || hl_done "$role" "$id"; do
     if [ $(( $(date +%s) - s0 )) -ge "$start_s" ]; then
-      if [ -n "$pane" ]; then
-        echo "harness: $role's run did not start in $start_s s (is the pane $pane at a shell prompt?)" >&2
-        show_pane_screen "$pane"
-      else
-        echo "harness: $role's background run did not start in $start_s s; runner log:" >&2
-        tail -n 20 "$a.runner.log" >&2 2>/dev/null
-      fi
+      echo "harness: $role's background run did not start in $start_s s; runner log:" >&2
+      tail -n 20 "$a.runner.log" >&2 2>/dev/null
       exit 1
     fi
     sleep "$poll"
@@ -342,17 +298,18 @@ hl_deadline_bump() {
 
 # ask_headless <role> <text> <timeout-ms> <fresh> <keep> — the whole headless ask; always exits
 ask_headless() {
-  local role=$1 text=$2 timeout=$3 fresh=$4 keep=$5 pane id start retried resume="" sid max_s ctxb="" report="$REPORT_DIR/$1.md" last
+  local role=$1 text=$2 timeout=$3 fresh=$4 keep=$5 id start retried resume="" sid max_s ctxb="" report="$REPORT_DIR/$1.md" last
   local a="$ASK_DIR/$role" now prev deadline dl0 poll=${HARNESS_POLL_SEC:-2} start_s=${HARNESS_HL_START_S:-15} s0 g
-  mkdir -p "$ASK_DIR" .harness/done "$REPORT_DIR" "$LOG_DIR"
+  mkdir -p "$ASK_DIR" "$REPORT_DIR" "$LOG_DIR"
   if hl_alive "$role"; then
     echo "harness: $role is still running (pid $(hl_pid "$role")); nothing sent. Collect with: harness report $role; stop: harness close $role --force" >&2
     exit 4
   fi
-  pane=$(hl_pane "$role") || exit $?
-  [ -z "$ASK_WT" ] || wt_update pane "$pane"   # "" for a background run
+  if [ "$(viewer_mode)" = pane ] && ! herdr_usable; then die "viewer is 'pane' but herdr is not usable here (HERDR_ENV=1 and herdr on PATH); set viewer to auto or none"; fi
+  hl_close_viewer "$role"   # the previous run is over: close its viewer before the record goes
+  rm -f "$a.run"   # a stale viewer record must not carry over
   # implementer only (decision 0009, amends D6): after an ask that did not end cleanly the next one
-  # continues the session, like the pane's maybe_reset; --fresh overrides, --keep needs no help
+  # continues the session; --fresh overrides, --keep needs no help
   rm -f "$a.autoresume"
   if [ "$role" = implementer ] && [ "$keep" = 0 ] && [ "$fresh" = 0 ]; then
     last=$(last_exit "$role")
@@ -378,12 +335,6 @@ ask_headless() {
   fi
   # a session file left by an earlier run must never be mistaken for this run's
   rm -f "$a.session"
-  if [ -f "$report" ]; then
-    archive_late "$role" "$report" || {
-      echo "harness: could not archive the leftover report; kept as $report.unlogged" >&2
-      mv -f "$report" "$report.unlogged"
-    }
-  fi
   rm -f "$report"
   id=${ASK_ID:-"$(date +%s)-$$-$RANDOM"}; start=$(date +%s)
   printf '%s %s\n' "$id" "$start" > "$a.current"
@@ -391,8 +342,8 @@ ask_headless() {
   if [ "$role" = implementer ]; then verify_tool baseline implementer 2>/dev/null || rm -f .harness/verify/implementer.json; fi
   max_s=$(hl_max_s "$role")
   printf '%s\n' "$text" > "$a.prompt"
-  hl_launch "$role" "$id" "$pane" "$resume" "$max_s" "$ctxb" "$start_s" "$poll"
-  pane=$HL_PANE   # a failed `pane run` under viewer auto fell back to the background
+  hl_launch "$role" "$id" "$resume" "$max_s" "$ctxb" "$start_s" "$poll"
+  hl_open_viewer "$role"
   deadline=$((start + (timeout + 999) / 1000))
   # no --timeout: wait for the run to end (its cap plus a margin for the watchdog kill and exit.json), so a
   # background `harness ask` returns exactly when the run does and the conductor's task notification fires
@@ -406,15 +357,17 @@ ask_headless() {
         retried=1
         echo "harness: resume of ${resume:0:8} failed, running fresh" >&2
         resume=""; ctxb=""
-        hl_launch "$role" "$id" "$pane" "" "$max_s" "" "$start_s" "$poll"
+        hl_launch "$role" "$id" "" "$max_s" "" "$start_s" "$poll"
         continue
       fi
+      hl_close_viewer "$role"
       hl_collect "$role"
     fi
     if ! hl_alive "$role"; then
       # the runner may still be writing exit.json (jq, mv) as its pid disappears: give it ~3 s
       g=0; while [ "$g" -lt 30 ] && ! hl_done "$role" "$id"; do sleep 0.1; g=$((g + 1)); done
       if hl_done "$role" "$id"; then continue; fi
+      hl_close_viewer "$role"
       sid=$(sed -n 1p "$a.session" 2>/dev/null | cut -c1-8)
       if [ -n "$sid" ]; then
         echo "harness: $role's run is gone without a result (killed?); --keep resumes session $sid"
@@ -449,11 +402,9 @@ report_headless() {
     echo "harness: no finished run for $role" >&2
     exit 3
   fi
-  if [ -f "$report" ]; then
-    retro_on_report "$role" "$report" || true
-    archive_late "$role" "$report" || true
-  fi
+  [ ! -f "$report" ] || retro_on_report "$role" "$report" || true
   stamp_finished "$role"
+  hl_close_viewer "$role"
   hl_collect "$role"
 }
 
@@ -473,33 +424,21 @@ hl_kill() {
 }
 
 # hl_finish_close <role> <pane> <reason> — close the viewer pane (when there is one), drop the
-# registry line and the conversation (--keep must not resume a session across a close), log
+# conversation (--keep must not resume a session across a close), log
 hl_finish_close() {
   local a="$ASK_DIR/$1"
-  if [ -n "$2" ]; then
-    herdr pane close "$2" >/dev/null || die "pane close failed for $2"
-    pane_gone "$2" || die "pane $2 is still present after close; registry entry kept"
-    unregister "$1" "$2"
-  fi
+  hl_close_viewer "$1" forget
   # .current ends the run slot: status shows "-" again (exit.json stays for the post-mortem)
   rm -f "$a.finished" "$a.session" "$a.current"
   log_close "$1" "${2:--}" "$3" headless
   echo "closed $1 (${2:-bg})"
 }
 
-# hl_pane_worker_live <role> — the role's live worker is a legacy pane worker: no headless run is
-# alive, a pane is registered and herdr has an agent behind it (a headless viewer pane is plain)
-hl_pane_worker_live() {
-  [ -z "$ASK_WT" ] || return 1
-  hl_alive "$1" && return 1
-  [ -n "$(hl_registered_pane "$1")" ] && herdr_env_ok && agent_fields "$1" >/dev/null 2>&1
-}
-
-# close_headless <role> <force> <skip-missing> — close_one for a headless role
+# close_headless <role> <force> <skip-missing> — close the role's run slot: kill a live run (--force), close its viewer
 close_headless() {
-  local role=$1 force=$2 skip=$3 pane reason=${CLOSE_REASON:-manual}
-  pane=$(hl_registered_pane "$role")
-  # a registered pane cannot be closed while herdr is unusable: close the run state only
+  local role=$1 force=$2 skip=$3 pane reason=manual
+  pane=$(hl_run_viewer "$role")
+  # a viewer pane cannot be closed while herdr is unusable: close the run state only
   if [ -n "$pane" ] && ! herdr_env_ok; then pane=""; fi
   if [ -z "$pane" ] && ! hl_alive "$role" && [ ! -f "$ASK_DIR/$role.current" ]; then
     [ "$skip" = 1 ] && return 0
@@ -520,14 +459,13 @@ close_headless() {
 }
 
 # hl_target <cmd> <target> — resolve a role or a worktree ask-id for wait/watch: sets ASK_AGENT (and, for a
-# worktree ask, ASK_WT/ASK_DIR/... through wt_load); dies for an unknown target or a pane-mode role
+# worktree ask, ASK_WT/ASK_DIR/... through wt_load); dies for an unknown target
 hl_target() {
   local cmd=$1 t=$2 f
   case " $AGENTS " in
     *" $t "*) ASK_AGENT=$t ;;
     *) f=$(wt_lookup "$t") || die "$cmd: unknown agent or ask-id '$t'"; wt_load "$f" ;;
   esac
-  use_hl "$ASK_AGENT" || die "pane-mode role: use herdr agent wait"
 }
 # hl_starting <role> <id> — the run was just launched and has not written its pid file yet
 hl_starting() {
@@ -560,7 +498,7 @@ cmd_wait() {
   [ -n "$timeout" ] || timeout=$(( $(hl_max_s "$role") * 1000 ))
   start=$(date +%s); deadline=$((start + (timeout + 999) / 1000)); prev=$start; dl0=$deadline; max_s=$(hl_max_s "$role")
   while :; do
-    if hl_done "$role" "$id"; then echo "done; collect: harness report $(ask_ref "$role")"; exit 0; fi
+    if hl_done "$role" "$id"; then hl_close_viewer "$role"; echo "done; collect: harness report $(ask_ref "$role")"; exit 0; fi
     if ! hl_alive "$role" && ! hl_starting "$role" "$id"; then
       # the runner may still be writing exit.json as its pid disappears: the same ~3 s grace as ask
       g=0; while [ "$g" -lt 30 ] && ! hl_done "$role" "$id"; do sleep 0.1; g=$((g + 1)); done

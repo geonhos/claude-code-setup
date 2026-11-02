@@ -1,37 +1,18 @@
 #!/bin/bash
-# Fake `herdr` for tests/harness.test.sh. Not a real client.
-# State:  $FAKE_DIR/live.<agent>   exists => agent is live; content = agent_status
-#         $FAKE_DIR/split_fail      exists => `pane split` fails
-#         $FAKE_DIR/start_fail      exists => `agent start` fails
-#         $FAKE_DIR/start_busy      N>0 => `agent start` fails with agent_pane_busy and decrements N
-#         $FAKE_DIR/prompt_fail     exists => `agent prompt` is rejected (socket_unavailable)
-#         $FAKE_DIR/layout          optional "WIDTH HEIGHT" for `pane layout` (default 162 45)
-#         $FAKE_DIR/pane.<agent>    pane id recorded by `agent start --pane` (default w1:p2)
-#         $FAKE_DIR/session.<agent> Claude session id reported by `agent get` (default sess-<agent>-0)
-#         $FAKE_DIR/cwd.<agent>     cwd reported by `agent get` (default: the caller's $PWD)
-#         $FAKE_CLEAR               ok (default): `agent prompt <a> /clear` assigns a new session id
-#                                   stuck: /clear is accepted but the session id never changes
-#                                   stuckbusy: like stuck, and the status becomes working (the pane is busy)
-#                                   late<N>: the new session id appears at the N-th `agent get` after /clear
-#                                   sidonly: the session id changes but the status becomes working for the next 3 `agent get`s
-#                                   second: the first /clear is ignored, the second one works
-#         $FAKE_DIR/no_stop_hook    exists => the worker's Stop hook does not fire after a prompt
-#         (otherwise, when the agent ends the prompt idle/done, `harness-verify done <role>` runs
-#          from the caller's cwd with HARNESS_ROLE=worker, like the real Stop hook)
-#         $FAKE_DIR/no_run          exists => `pane run` does nothing (shell not at a prompt)
-#         $FAKE_PROMPT_HOOK         shell snippet run when `agent prompt` is called (not for /clear)
+# Fake `herdr` for the viewer-pane tests (headless*.test.sh) and gate/worktree tests. Not a real client.
+# Every call is logged to $FAKE_LOG with %q-escaped argv. It answers only the pane commands the viewer uses.
+# State:  $FAKE_DIR/split_fail   exists => `pane split` fails
+#         $FAKE_DIR/no_run       exists => `pane run` does nothing (shell not at a prompt)
+#         $FAKE_DIR/closed.<id>  written by `pane close`; `pane get <id>` then reports pane_not_found
 set -u
 : "${FAKE_DIR:?FAKE_DIR must be set}"
 : "${FAKE_LOG:?FAKE_LOG must be set}"
 # %q keeps argument boundaries visible: "a b" is logged as a\ b
 { printf '%q ' "$@"; printf '\n'; } >> "$FAKE_LOG"
 
-sub="${1:-} ${2:-}"
-case "$sub" in
+case "${1:-} ${2:-}" in
   "pane layout")
-    w=162; h=45
-    if [ -f "$FAKE_DIR/layout" ]; then read -r w h < "$FAKE_DIR/layout"; fi
-    printf '{"id":"cli:pane:layout","result":{"layout":{"panes":[{"pane_id":"w1:p1","rect":{"width":%s,"height":%s}}]},"type":"pane_layout"}}\n' "$w" "$h"
+    echo '{"id":"cli:pane:layout","result":{"layout":{"panes":[{"pane_id":"w1:p1","rect":{"width":162,"height":45}}]},"type":"pane_layout"}}'
     ;;
   "pane split")
     if [ -f "$FAKE_DIR/split_fail" ]; then
@@ -40,122 +21,12 @@ case "$sub" in
     echo '{"id":"cli:pane:split","result":{"pane":{"pane_id":"w1:p2"}},"type":"pane_split"}'
     ;;
   "pane get")
-    # a pane is gone once closed (marker) ; never-closed panes exist
-    if [ -f "$FAKE_DIR/get_error" ]; then echo '{"error":{"code":"socket_unavailable"}}'; exit 1; fi
     if [ -f "$FAKE_DIR/closed.${3:-}" ]; then echo '{"error":{"code":"pane_not_found","message":"pane not found"},"id":"cli:pane:get"}'; exit 1; fi
-    echo '{"id":"cli:pane:get","result":{"pane":{"pane_id":"'"${3:-}"'","cwd":"'"${FAKE_CWD:-$PWD}"'"}},"type":"pane_info"}'
+    echo '{"id":"cli:pane:get","result":{"pane":{"pane_id":"'"${3:-}"'","cwd":"'"$PWD"'"}},"type":"pane_info"}'
     ;;
   "pane close")
-    # $FAKE_DIR/close_noop => the pane survives `pane close`
-    [ -f "$FAKE_DIR/close_noop" ] || touch "$FAKE_DIR/closed.${3:-}"
-    # closing a pane ends the agent living in it
-    for f in "$FAKE_DIR"/pane.*; do
-      [ -f "$f" ] || continue
-      [ ! -f "$FAKE_DIR/close_noop" ] || continue
-      if [ "$(cat "$f")" = "${3:-}" ]; then
-        n=${f##*/pane.}
-        rm -f "$FAKE_DIR/live.$n" "$f" "$FAKE_DIR/session.$n"
-      fi
-    done
+    touch "$FAKE_DIR/closed.${3:-}"
     echo '{"id":"cli:pane:close","result":{},"type":"pane_close"}'
-    ;;
-  "agent get")
-    name=$3
-    if [ -f "$FAKE_DIR/clear.pending.$name" ]; then   # FAKE_CLEAR=late<N>: count down, then apply
-      left=$(( $(cat "$FAKE_DIR/clear.pending.$name") - 1 ))
-      if [ "$left" -le 0 ]; then
-        rm -f "$FAKE_DIR/clear.pending.$name"
-        echo "sess-$name-c$$-$RANDOM" > "$FAKE_DIR/session.$name"
-        echo idle > "$FAKE_DIR/live.$name"
-      else
-        echo "$left" > "$FAKE_DIR/clear.pending.$name"
-      fi
-    fi
-    if [ -f "$FAKE_DIR/idle.pending.$name" ]; then   # FAKE_CLEAR=sidonly: working, then idle again
-      left=$(( $(cat "$FAKE_DIR/idle.pending.$name") - 1 ))
-      if [ "$left" -le 0 ]; then rm -f "$FAKE_DIR/idle.pending.$name"; echo idle > "$FAKE_DIR/live.$name"
-      else echo "$left" > "$FAKE_DIR/idle.pending.$name"; fi
-    fi
-    if [ -f "$FAKE_DIR/live.$name" ]; then
-      status=$(cat "$FAKE_DIR/live.$name")
-      pane=w1:p2
-      if [ -f "$FAKE_DIR/pane.$name" ]; then pane=$(cat "$FAKE_DIR/pane.$name"); fi
-      sess="sess-${name%-*}-0"   # role part of <role>-<repo8>
-      if [ -f "$FAKE_DIR/session.$name" ]; then sess=$(cat "$FAKE_DIR/session.$name"); fi
-      wcwd=$PWD
-      if [ -f "$FAKE_DIR/cwd.$name" ]; then wcwd=$(cat "$FAKE_DIR/cwd.$name"); fi
-      printf '{"id":"cli:agent:get","result":{"agent":{"agent":"claude","agent_session":{"kind":"id","value":"%s"},"agent_status":"%s","cwd":"%s","pane_id":"%s"}},"type":"agent_info"}\n' "$sess" "$status" "$wcwd" "$pane"
-    else
-      echo '{"error":{"code":"agent_not_found"}}' >&2; exit 1
-    fi
-    ;;
-  "agent start")
-    name=$3
-    if [ -f "$FAKE_DIR/start_fail" ]; then
-      echo '{"error":{"code":"agent_not_ready"}}' >&2; exit 1
-    fi
-    if [ -f "$FAKE_DIR/start_busy" ] && [ "$(cat "$FAKE_DIR/start_busy")" -gt 0 ]; then
-      echo $(( $(cat "$FAKE_DIR/start_busy") - 1 )) > "$FAKE_DIR/start_busy"
-      echo '{"error":{"code":"agent_pane_busy","message":"agent target pane is not an available shell"}}' >&2; exit 1
-    fi
-    echo idle > "$FAKE_DIR/live.$name"
-    rm -f "$FAKE_DIR"/closed.*
-    echo "sess-$name-s$$" > "$FAKE_DIR/session.$name"
-    prev=""
-    for a in "$@"; do
-      if [ "$prev" = --pane ]; then echo "$a" > "$FAKE_DIR/pane.$name"; break; fi
-      prev=$a
-    done
-    echo '{"id":"cli:agent:start","result":{},"type":"agent_start"}'
-    ;;
-  "agent prompt")
-    name=$3
-    if [ -f "$FAKE_DIR/prompt_fail" ]; then
-      echo '{"error":{"code":"socket_unavailable"}}' >&2; exit 1
-    fi
-    if [ "$(cat "$FAKE_DIR/live.$name" 2>/dev/null)" = blocked ]; then
-      echo '{"error":{"code":"agent_blocked"}}' >&2; exit 1
-    fi
-    if [ "${4:-}" = /clear ]; then
-      nclear=$(( $(cat "$FAKE_DIR/clear.n.$name" 2>/dev/null || echo 0) + 1 ))
-      echo "$nclear" > "$FAKE_DIR/clear.n.$name"
-      case "${FAKE_CLEAR:-ok}" in
-        stuck) ;;
-        stuckbusy) echo working > "$FAKE_DIR/live.$name" ;;
-        sidonly) echo "sess-$name-c$$-$RANDOM" > "$FAKE_DIR/session.$name"
-                 echo working > "$FAKE_DIR/live.$name"; echo 3 > "$FAKE_DIR/idle.pending.$name" ;;
-        late*) echo "${FAKE_CLEAR#late}" > "$FAKE_DIR/clear.pending.$name" ;;
-        second) if [ "$nclear" -ge 2 ]; then
-                  echo "sess-$name-c$$-$RANDOM" > "$FAKE_DIR/session.$name"
-                  echo idle > "$FAKE_DIR/live.$name"
-                fi ;;
-        *) echo "sess-$name-c$$-$RANDOM" > "$FAKE_DIR/session.$name"
-           echo idle > "$FAKE_DIR/live.$name" ;;
-      esac
-      echo '{"id":"cli:agent:prompt","result":{},"type":"agent_prompt"}'
-      exit 0
-    fi
-    if [ -n "${FAKE_PROMPT_HOOK:-}" ]; then
-      /bin/bash -c "$FAKE_PROMPT_HOOK"
-    fi
-    case "$(cat "$FAKE_DIR/live.$name" 2>/dev/null)" in
-      idle|done)
-        if [ ! -f "$FAKE_DIR/no_stop_hook" ]; then
-          role=${name%-*}
-          # pane asks write no .prompt; the fake worker ends without a report on purpose, so opt out of the report gate
-          if [ -f .harness/asks/$role.current ] && [ ! -f .harness/asks/$role.prompt ]; then echo "[no-report]" > .harness/asks/$role.prompt; fi
-          printf '{"hook_event_name":"Stop","session_id":"sess-%s","agent_type":"%s","cwd":"%s","stop_hook_active":false}' "$role" "$role" "$PWD" \
-            | HARNESS_ROLE=worker /bin/bash "$(dirname "$0")/../../bin/harness-verify" done "$role"
-        fi ;;
-    esac
-    echo '{"id":"cli:agent:prompt","result":{},"type":"agent_prompt"}'
-    ;;
-  "agent read")
-    if [ ! -f "$FAKE_DIR/live.$3" ]; then
-      echo '{"error":{"code":"agent_not_found"}}' >&2; exit 1
-    fi
-    echo "fake screen line 1"
-    echo "fake screen line 2"
     ;;
   "pane read")
     if [ -f "$FAKE_DIR/run.out" ]; then cat "$FAKE_DIR/run.out"; else
@@ -164,7 +35,7 @@ case "$sub" in
     fi
     ;;
   "pane run")
-    # headless viewer pane: run the command detached, like a real pane shell ($FAKE_NO_RUN => nothing happens)
+    # run the command detached, like a real pane shell
     [ -f "$FAKE_DIR/no_run" ] || { ( cd "$PWD" && HARNESS_ROLE=worker bash -c "${*:4}" ) >"$FAKE_DIR/run.out" 2>&1 & }
     echo '{"id":"cli:pane:run","result":{},"type":"pane_run"}'
     ;;

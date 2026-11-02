@@ -1,7 +1,7 @@
 ---
 type: decision
 status: active
-updated: 2026-11-01
+updated: 2026-11-02
 sources: [.harness/setup-review.md, .harness/progress.jsonl, 0001, 0007, 0009, 0010]
 verified_by: harness metrics + tests/headless*.test.sh
 ---
@@ -21,3 +21,5 @@ verified_by: harness metrics + tests/headless*.test.sh
 7. Consolidate docs (README rewrite, wiki pages superseded in step 3).
 
 **Consequences.** Fresh repos need no herdr. Typed intervention in a running worker is gone (user accepted 2026-11-01). The troubleshooting pages about pane sessions and 0002/0003/0005/0006 become superseded at step 3. Rule behind this effort (`AGENTS.md`): no new mode without removing one.
+
+Step 3 done 2026-11-02: pane runner, `harness spawn`, `close_after_ask`, idle-TTL reap, `/clear` scheduling, late-report archive and the `runner` config key are removed; 0002, 0003, 0006 and five pane troubleshooting pages are superseded.

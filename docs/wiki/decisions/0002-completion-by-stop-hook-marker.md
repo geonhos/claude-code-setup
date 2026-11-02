@@ -1,11 +1,13 @@
 ---
 type: decision
-status: active
-updated: 2026-10-21
+status: superseded
+updated: 2026-11-02
 sources: [docs/superpowers/plans/2026-10-21-harness-hardening.md Task 3, commits 5ea7475 2e1764a aaba018 79a1964]
 verified_by: tests/harness-ask.test.sh; live reviewer ask exit 0 (2026-10-21)
 ---
 # 0002: Ask completion = Stop-hook marker, not herdr idle
+
+> Superseded 2026-11-02 by [0011](0011-single-runner-headless.md): prune step 3 removed the pane runner and its done marker; headless completion is `.harness/asks/<role>.exit.json` ([0007](0007-headless-runner-pilot.md)). The implementer Stop hook still blocks until a report exists.
 
 **Context.** Screen-regex idle produced false exit 3/4 on ~38% of asks.
 
