@@ -281,12 +281,12 @@ check "symlinked cwd: ask finds the checkout" bash -c '! grep -q "not a harness 
 
 # --- marker side effects: nothing creates .harness/ outside a checkout ---
 setup; rm -rf .harness
-run retro
-check "retro outside a checkout: nothing pending, no .harness" bash -c '[ ! -e .harness ] && grep -q "nothing pending" <<<"$1"' _ "$OUT"
+run status
+check "status outside a checkout: no .harness created" [ ! -e .harness ]
 # a stray .harness/ (no asks/) in an un-init dir is never written to
-setup; rm -rf .harness; mkdir -p .harness/retro; echo '{"ask_id":"a1","role":"analyst","reason":"x"}' > .harness/retro/a1.json
+setup; rm -rf .harness; mkdir -p .harness/log; echo x > .harness/log/a1.md
 STRAY_BEFORE=$(find .harness | sort | tr '\n' ' ')
-run retro
-check "retro: stray .harness/ (no asks/) refused and unchanged" bash -c '[ "$(find .harness | sort | tr "\n" " ")" = "$1" ] && grep -q "not a harness checkout" <<<"$2"' _ "$STRAY_BEFORE" "$OUT"
+run status
+check "status: stray .harness/ (no asks/) left unchanged" [ "$(find .harness | sort | tr '\n' ' ')" = "$STRAY_BEFORE" ]
 echo "PASS $pass / FAIL $fail"
 [ "$fail" -eq 0 ]

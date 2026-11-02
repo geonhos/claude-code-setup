@@ -402,7 +402,6 @@ report_headless() {
     echo "harness: no finished run for $role" >&2
     exit 3
   fi
-  [ ! -f "$report" ] || retro_on_report "$role" "$report" || true
   stamp_finished "$role"
   hl_close_viewer "$role"
   hl_collect "$role"

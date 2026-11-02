@@ -46,7 +46,6 @@ this is not json
 {"ts":"2026-08-01T10:00:00Z","agent":"analyst","exit":0,"dur_s":1}
 {"agent":"analyst","exit":0,"dur_s":1}
 EOF
-mkdir -p .harness/retro/done; echo '{}' > .harness/retro/a.json; echo '{}' > .harness/retro/done/b.json; echo '{}' > .harness/retro/done/c.json
 export HARNESS_NOW=$NOW
 run metrics --json
 check "metrics json: rc 0" [ "$RC" -eq 0 ]
@@ -77,7 +76,7 @@ check "json: clear rates null without data" [ "$(jv .prev.clear.retry_rate)" = n
 check "json: previous asks" [ "$(jv .prev.total.asks)" -eq 3 ]
 check "json: previous reviewer FAIL rate (2/2)" [ "$(jv .prev.roles.reviewer.fail_rate)" = 100 ]
 check "json: previous empty role is null" [ "$(jv .prev.roles.implementer.verify_failure_rate)" = null ]
-check "json: retro counts" [ "$(jv '"\(.retro.pending)/\(.retro.processed)"')" = "1/2" ]
+check "json: no retro key" [ "$(jv 'has("retro")')" = false ]
 check "json: no wiki -> null" [ "$(jv .wiki)" = null ]
 
 run metrics
@@ -88,7 +87,7 @@ check "text: abnormal row" grep -Eq 'abnormal rate .* +30% +' <<<"$OUT"
 check "text: clear retry row" grep -Eq '/clear retry rate +33.3% +-' <<<"$OUT"
 check "text: clear respawn row" grep -Eq '/clear respawn rate +33.3% +-' <<<"$OUT"
 check "text: exits line" grep -q 'exits current:  0:5 3:1 4:1 5:2 late:1' <<<"$OUT"
-check "text: retro line" grep -q '^retro: 1 pending · 2 processed' <<<"$OUT"
+check "text: no retro line" bash -c '! grep -q "^retro:" <<<"$1"' _ "$OUT"
 check "text: no wiki" grep -q '^wiki: none' <<<"$OUT"
 
 run metrics --since 2026-10-05
@@ -132,7 +131,6 @@ check "wiki: inbox items" [ "$(jv .wiki.inbox_items)" -eq 2 ]
 check "wiki: oldest inbox days" [ "$(jv .wiki.inbox_oldest_days)" -eq 10 ]
 check "wiki: index lines" [ "$(jv .wiki.index_lines)" -eq 5 ]
 check "wiki: SessionStart bytes = active lines only" [ "$(jv .wiki.session_start_bytes)" -eq "$(grep -F '(active,' docs/wiki/index.md | LC_ALL=C wc -c | tr -d ' ')" ]
-check "wiki: recurrence notes" [ "$(jv .retro.recurrences_noted)" -eq 1 ]
 run metrics
 check "text: wiki pages line" grep -q '^wiki: pages active 2 · stale 1 · draft 1' <<<"$OUT"
 check "text: wiki inbox line" grep -q '^wiki: inbox 2 item(s), oldest 10d · index 5 lines' <<<"$OUT"

@@ -67,11 +67,11 @@ EOF_OLD
 
 # --- harness metrics -------------------------------------------------------------------------
 # cmd_metrics [--since YYYY-MM-DD] [--json] — numbers from .harness/progress.jsonl (the
-# current window and the equal one before it) plus a snapshot of retro and wiki state.
+# current window and the equal one before it) plus a snapshot of the wiki state.
 # Windows: [start, now] and [start - len, start). Default start = now - 28 days.
 # Abnormal = a late-report row or an ask whose exit is not 0/5; rate = abnormal / rows.
 cmd_metrics() {
-  local since="" json=0 now top pend=0 done_n=0 recur=0 wiki="null" pages inbox_n=0 oldest="" f st mt idxl=0 inj=0
+  local since="" json=0 now top wiki="null" pages inbox_n=0 oldest="" f st mt idxl=0 inj=0
   local act=0 stale=0 draft=0 sup=0 oth=0
   while [ $# -gt 0 ]; do
     case "$1" in
@@ -90,8 +90,6 @@ cmd_metrics() {
     [ ! "$since" \> "$(jq -n -r --argjson n "$now" '$n | strftime("%Y-%m-%d")')" ] || die "--since $since is in the future"
   fi
   top=$(git rev-parse --show-toplevel 2>/dev/null) || top=$PWD
-  pend=$(ls "$RETRO_DIR"/*.json 2>/dev/null | wc -l | tr -d ' ')
-  done_n=$(ls "$RETRO_DIR"/done/*.json 2>/dev/null | wc -l | tr -d ' ')
   if [ -d "$top/docs/wiki" ]; then
     for f in $(find "$top/docs/wiki" -name '*.md' ! -path "$top/docs/wiki/inbox/*" ! -name index.md ! -name log.md 2>/dev/null); do
       st=$(sed -n 's/^status: *//p' "$f" | head -n 1)
@@ -104,7 +102,6 @@ cmd_metrics() {
       inbox_n=$((inbox_n + 1))
       mt=$(file_mtime "$f") || continue
       if [ -z "$oldest" ] || [ "$mt" -lt "$oldest" ]; then oldest=$mt; fi
-      recur=$((recur + $(grep -ci 'recurrence of' "$f" 2>/dev/null)))
     done
     [ ! -f "$top/docs/wiki/index.md" ] || idxl=$(wc -l < "$top/docs/wiki/index.md" | tr -d ' ')
     [ ! -f "$top/docs/wiki/index.md" ] || inj=$(LC_ALL=C grep -F '(active,' "$top/docs/wiki/index.md" | wc -c | tr -d ' ')
@@ -115,7 +112,7 @@ cmd_metrics() {
        index_lines: $il, session_start_bytes: $ib}')
   fi
   { [ -f "$JSONL" ] && cat "$JSONL"; true; } | jq -R -s -r --argjson now "$now" --arg since "$since" --argjson json "$json" \
-    --argjson roles "$(printf '%s\n' $HARNESS_ROLES | jq -R . | jq -s -c .)" --argjson pend "$pend" --argjson done "$done_n" --argjson recur "$recur" --argjson wiki "$wiki" '
+    --argjson roles "$(printf '%s\n' $HARNESS_ROLES | jq -R . | jq -s -c .)" --argjson wiki "$wiki" '
     def pct($n; $d): if $d == 0 then null else (($n * 1000 / $d) | round) / 10 end;
     def median: sort | if length == 0 then null elif length % 2 == 1 then .[(length / 2 | floor)]
       else (((.[length / 2 - 1] + .[length / 2]) / 2) | round) end;
@@ -160,7 +157,6 @@ cmd_metrics() {
         previous: {start: ($start - $len | day), end: ($start | day)},
         current: stat($all | map(select(.t >= $start and .t <= $now))),
         prev: stat($all | map(select(.t >= $start - $len and .t < $start))),
-        retro: {pending: $pend, processed: $done, recurrences_noted: $recur},
         wiki: $wiki }
     | if $json == 1 then tojson else
       def pad($n): tostring | . + ([range(0; $n - length) | " "] | join(""));
@@ -193,7 +189,6 @@ cmd_metrics() {
           "  exits current:  \(.current.total.exit | dist)",
           "  exits previous: \(.prev.total.exit | dist)",
           "",
-          "retro: \(.retro.pending) pending · \(.retro.processed) processed · \(.retro.recurrences_noted) recurrence note(s) in the inbox",
           (if .wiki == null then "wiki: none (no docs/wiki)" else
             "wiki: pages active \(.wiki.pages.active) · stale \(.wiki.pages.stale) · draft \(.wiki.pages.draft) · superseded \(.wiki.pages.superseded) · other \(.wiki.pages.other)",
             "wiki: inbox \(.wiki.inbox_items) item(s), oldest \(.wiki.inbox_oldest_days | if . == null then "-" else "\(.)d" end) · index \(.wiki.index_lines) lines · SessionStart wiki \(.wiki.session_start_bytes) bytes" end) ]

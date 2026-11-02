@@ -137,15 +137,10 @@ of the progress file.
   run or removes a worktree (exit 4 = still running or an uncollected report; `--force` only if the user agrees, and it kills the run).
   A herdr viewer pane (`viewer` in `.harness/config.json`: `auto`|`pane`|`none`) runs `harness watch <role>` and is closed when the run ends (an ask that returned earlier closes it at the next `ask`, `wait`, `report` or `close`).
 
-## Failure retros and metrics
+## Metrics
 
-When a `harness ask`/`harness report` prints `retro: candidate queued (...)`,
-the harness has queued a failure candidate (paths and numbers only, no screen
-or prompt text). Finish the current piece of work, then run `harness retro`
-once: it batches every pending candidate into one analyst ask whose lessons
-land in `docs/wiki/inbox/`. A reviewer `VERDICT: FAIL` never queues one. Run
-`harness metrics` (`--json`, `--since YYYY-MM-DD`) when the user asks how the
-harness is doing, and before proposing harness changes.
+Run `harness metrics` (`--json`, `--since YYYY-MM-DD`) when the user asks how the harness is
+doing, and before proposing harness changes.
 
 ## With superpowers skills
 
