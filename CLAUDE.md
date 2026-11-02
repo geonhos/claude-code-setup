@@ -8,9 +8,7 @@ Shared project rules live in `AGENTS.md` (imported above). Claude-only notes:
   analyst / implementer / reviewer workers (detached headless Claude sessions,
   `claude -p`; a herdr pane is an optional viewer), reading only their
   reports. Workers run with `HARNESS_ROLE=worker` and full tools.
-- **Gate.** `conductor-gate` restricts the conductor's shell and file edits;
-  `conductor-route` is a UserPromptSubmit hook that only logs each prompt
-  (and its leading skill token) to `.harness/routing.jsonl`; it does not steer.
+- **Gate.** `conductor-gate` restricts the conductor's shell and file edits.
 - **Completion.** A headless worker is done when its process exits
   (`.harness/asks/<role>.exit.json`); the implementer's Stop hook first runs
   `harness-verify` lint/tests.

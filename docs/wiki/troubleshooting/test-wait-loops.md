@@ -2,7 +2,7 @@
 type: troubleshooting
 status: active
 updated: 2026-10-28
-sources: [ask 1792736624-54926-6076, ask 1792742736-43975-21167, ask 1793088095-7126-31139, tests/worktree.test.sh:36-38, tests/worktree.test.sh:475]
+sources: [ask 1792736624-54926-6076, ask 1792742736-43975-21167, ask 1793088095-7126-31139, tests/worktree.test.sh:36-38 (suite removed), tests/worktree.test.sh:475 (suite removed)]
 verified_by: /bin/bash -c 'n=$(grep -c x /nonexistent 2>/dev/null); [ "$n" -lt 1 ]' gave "integer expression expected", rc 2
 ---
 # A test wait loop that exits at once

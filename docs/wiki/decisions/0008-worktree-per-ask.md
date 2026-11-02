@@ -1,10 +1,11 @@
 ---
 type: decision
-status: active
-updated: 2026-10-27
+status: superseded
+updated: 2026-11-02
 sources: [.harness/worktree-design.md, branch feature/v18-worktree-s1]
 verified_by: tests/worktree.test.sh
 ---
+> Superseded by [0011](0011-single-runner-headless.md) (prune step 4): `--worktree`, the registry, locks and `max_parallel` removed; one run per role.
 # 0008: Worktree per ask (S1: headless analyst/reviewer)
 
 **Context.** Per-role slots (`.harness/asks/<role>.*`, `reports/<role>.md`) allow one run per role, so same-role asks cannot run in parallel. Headless runs ([0007](0007-headless-runner-pilot.md)) are plain `claude -p` processes and can run in any directory.

@@ -2,8 +2,8 @@
 type: troubleshooting
 status: active
 updated: 2026-10-27
-sources: [ask 1792676397-36997-12668, commit 7bfe1ed, tests/harness-lib.sh:7, tests/route.test.sh:5]
-verified_by: tests/route.test.sh
+sources: [ask 1792676397-36997-12668, commit 7bfe1ed, tests/harness-lib.sh:7]
+verified_by: tests/harness-lib.sh
 ---
 # Test suites inherit `HARNESS_ROLE=worker`
 
