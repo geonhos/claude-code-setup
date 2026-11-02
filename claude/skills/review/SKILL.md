@@ -27,7 +27,7 @@ diff yourself (`harness ask` refuses to run in a worker session anyway).
 2. Run with the Bash tool's `run_in_background: true` **and** `timeout: 7200000` (the Bash tool's maximum; without it the call is killed at the tool's default timeout, long before the 60-90 min wait ends) (the task notification wakes you when the run ends):
 
    ```
-   harness ask reviewer 'Read .harness/task-reviewer.md and do it.' --via skill
+   harness ask reviewer 'Read .harness/task-reviewer.md and do it.'
    ```
 
 3. Exit codes: `0` = PASS. `5` = `VERDICT: FAIL`: hand the findings to

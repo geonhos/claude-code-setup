@@ -32,7 +32,6 @@ OUT=$(HERDR_ENV=1 HERDR_PANE_ID=w1:p1 PATH="$FAKE_BIN:$PATH" HARNESS_ROLE=worker
 check "worker ask rc 1" [ "$RC" -eq 1 ]
 check "worker ask message" grep -q conductor <<<"$OUT"
 check "worker ask: no progress.jsonl" [ ! -e "$WORK/.harness/progress.jsonl" ]
-check "worker ask: no routing.jsonl" [ ! -e "$WORK/.harness/routing.jsonl" ]
 check "worker ask: no viewer pane" not_logged "pane split"
 OUT=$(HERDR_ENV=1 HERDR_PANE_ID=w1:p1 PATH="$FAKE_BIN:$PATH" HARNESS_ROLE=worker $GUARD /bin/bash "$HARNESS" status 2>&1); RC=$?
 check "worker status still works" [ "$RC" -eq 0 ]

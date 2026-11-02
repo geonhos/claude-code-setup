@@ -37,7 +37,11 @@ cat > "$CLAUDE_DIR/settings.json" <<'EOF'
     ],
     "Stop": [ { "matcher": "", "hooks": [ { "type": "command", "command": "/opt/stop.sh" } ] } ],
     "SessionStart": [ { "matcher": "startup", "hooks": [ { "type": "command", "command": "/opt/session.sh" } ] } ],
-    "UserPromptSubmit": [ { "hooks": [ { "type": "command", "command": "/opt/prompt.sh" } ] } ]
+    "UserPromptSubmit": [
+      { "hooks": [ { "type": "command", "command": "/old/repo/claude/hooks/conductor-route.sh" } ] },
+      { "hooks": [ { "type": "command", "command": "/opt/prompt.sh" } ] },
+      { "hooks": [ { "type": "command", "command": "/elsewhere/claude/hooks/conductor-route.sh" }, { "type": "command", "command": "/opt/shared.sh" } ] }
+    ]
   }
 }
 EOF
@@ -77,13 +81,11 @@ done
 check "foreign skill dir backed up" ls -d "$CLAUDE_DIR"/skills.bak/analyze.* >/dev/null 2>&1
 check "no backup left inside skills/" [ -z "$(ls -d "$CLAUDE_DIR"/skills/*.bak.* 2>/dev/null)" ]
 check "foreign skill dir warning" grep -q 'skills/analyze existed and was backed up' "$T/out.txt"
-ROUTE="$REPO/claude/hooks/conductor-route.sh"
-check "route hook executable" [ -x "$ROUTE" ]
-check "route hook added once" [ "$(jq --arg r "$ROUTE" '[.hooks.UserPromptSubmit[]? | select(any(.hooks[]?; .command==$r))] | length' "$S")" -eq 1 ]
-check "route hook has no matcher" jq -e --arg r "$ROUTE" '.hooks.UserPromptSubmit[] | select(any(.hooks[]?; .command==$r)) | has("matcher") | not' "$S" >/dev/null
-check "route hook type command" jq -e --arg r "$ROUTE" '.hooks.UserPromptSubmit[] | select(any(.hooks[]?; .command==$r)) | .hooks[0].type=="command"' "$S" >/dev/null
+check "no route hook entry left (stale entries removed by path suffix)" [ "$(jq '[.hooks.UserPromptSubmit[]?.hooks[]? | select(.command | endswith("/conductor-route.sh"))] | length' "$S")" -eq 0 ]
+check "stale-only entry dropped, two entries remain" [ "$(jq '.hooks.UserPromptSubmit | length' "$S")" -eq 2 ]
+check "shared entry keeps its other hook" [ "$(jq '[.hooks.UserPromptSubmit[] | select(any(.hooks[]?; .command=="/opt/shared.sh")) | .hooks | length] | .[0]' "$S")" -eq 1 ]
 check "other UserPromptSubmit hook preserved" [ "$(jq '[.hooks.UserPromptSubmit[]? | select(any(.hooks[]?; .command=="/opt/prompt.sh"))] | length' "$S")" -eq 1 ]
-check "installed output lists route hook" grep -q 'route hook' "$T/out.txt"
+check "installed output has no route hook line" not_grep 'route hook' "$T/out.txt"
 check "installed output lists skills" grep -q '^  skills  ' "$T/out.txt"
 check "harness symlink" [ "$(readlink "$BIN_DIR/harness")" = "$REPO/bin/harness" ]
 check "harness-verify symlink" [ "$(readlink "$BIN_DIR/harness-verify")" = "$REPO/bin/harness-verify" ]
@@ -99,6 +101,7 @@ check "global gitignore has .harness/" grep -qx '.harness/' "$GIT_IGNORE"
 check "global gitignore keeps old lines" grep -qx 'node_modules/' "$GIT_IGNORE"
 
 # second run: idempotent
+UPS1=$(jq -c .hooks.UserPromptSubmit "$S")
 run_install
 check "second run rc" [ "$RC" -eq 0 ]
 check "env still preserved after rerun" [ "$(jq -c '.env' "$S")" = '{"FOO":"bar","BASH_DEFAULT_TIMEOUT_MS":"600000","BASH_MAX_TIMEOUT_MS":"7200000"}' ]
@@ -107,7 +110,7 @@ check "other hook still once" [ "$(jq '[.hooks.PreToolUse[] | select(.hooks[] | 
 check "other agent still kept after rerun" [ "$(jq -r .agent "$S")" = something ]
 check "CLAUDE.md still absent after rerun" [ ! -e "$CLAUDE_DIR/CLAUDE.md" ]
 check "gitignore line once" [ "$(grep -cx '.harness/' "$GIT_IGNORE")" -eq 1 ]
-check "route hook still once after rerun" [ "$(jq --arg r "$REPO/claude/hooks/conductor-route.sh" '[.hooks.UserPromptSubmit[]? | select(any(.hooks[]?; .command==$r))] | length' "$S")" -eq 1 ]
+check "rerun is idempotent for UserPromptSubmit" [ "$(jq -c .hooks.UserPromptSubmit "$S")" = "$UPS1" ]
 check "other UserPromptSubmit still once" [ "$(jq '[.hooks.UserPromptSubmit[]? | select(any(.hooks[]?; .command=="/opt/prompt.sh"))] | length' "$S")" -eq 1 ]
 check "skill symlink survives rerun" [ "$(readlink "$CLAUDE_DIR/skills/implement")" = "$REPO/claude/skills/implement" ]
 check "no skill backup warning on rerun" not_grep 'skills/.*backed up' "$T/out.txt"
@@ -118,7 +121,7 @@ install_in "$T2"
 check "fresh install rc" [ "$RC" -eq 0 ]
 check "fresh settings created" jq -e '.hooks.PreToolUse | length == 1' "$T2/claude/settings.json" >/dev/null
 
-check "fresh install has route hook" jq -e '.hooks.UserPromptSubmit | length == 1' "$T2/claude/settings.json" >/dev/null
+check "fresh install has no UserPromptSubmit key" jq -e '.hooks | has("UserPromptSubmit") | not' "$T2/claude/settings.json" >/dev/null
 check "fresh install has skills" [ -L "$T2/claude/skills/review" ]
 check "misdirected skill symlink replaced" [ "$(readlink "$T2/claude/skills/review")" = "$REPO/claude/skills/review" ]
 check "misdirected skill symlink backed up" ls -d "$T2"/claude/skills.bak/review.* >/dev/null 2>&1
@@ -196,7 +199,6 @@ for s in analyze implement review; do
   check "skill $s exists" [ -f "$SK" ]
   check "skill $s name matches dir" [ "$(sed -n 's/^name: *//p' "$SK" | head -1)" = "$s" ]
   check "skill $s says conductor only" grep -qi 'conductor only' "$SK"
-  check "skill $s uses --via skill" grep -q -- '--via skill' "$SK"
   check "skill $s no context fork" not_grep '^context: *fork' "$SK"
   check "skill $s has worker opt-out" grep -q 'HARNESS_ROLE=worker' "$SK"
 done
