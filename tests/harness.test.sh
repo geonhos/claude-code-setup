@@ -206,6 +206,20 @@ check "init (default) leaves the tracked settings.json alone" [ ! -e .claude/set
 check "init names the target file" grep -q "settings.local.json" <<<"$OUT"
 run init
 check "init is idempotent" bash -c '[ "$1" = 0 ] && [ "$(jq -r .agent .claude/settings.local.json)" = conductor ]' _ "$RC"
+# config migration: the exact pre-step-3 template is rewritten; an edited file with pane keys is
+# kept, ignored, and noted once on stderr (never an error)
+V1=$(sed -n "/^config_template_v1() {/,/^EOC/p" "$HARNESS" | sed '1,2d;$d')
+printf '%s\n' "$V1" > .harness/config.json
+run status
+check "config v1 template: status ok" [ "$RC" = 0 ]
+check "config v1 template: rewritten to _doc + viewer" [ "$(jq -r 'keys | join(" ")' .harness/config.json)" = "_doc viewer" ]
+printf '{"runner":{"analyst":"pane"},"close_after_ask":{"analyst":"on_success"},"viewer":"none"}\n' > .harness/config.json
+run status
+check "config with pane keys: no error" [ "$RC" = 0 ]
+check "config with pane keys: one-time note" grep -q "keys runner, close_after_ask and idle_ttl_minutes are ignored" <<<"$OUT"
+check "config with pane keys: file untouched" [ "$(jq -r .viewer .harness/config.json)" = none ]
+run status
+check "config with pane keys: note only once" [ -z "$(grep 'are ignored' <<<"$OUT")" ]
 run init --bogus
 check "init rejects unknown flag" [ "$RC" != 0 ]
 
