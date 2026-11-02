@@ -1,11 +1,13 @@
 ---
 type: troubleshooting
-status: active
-updated: 2026-10-28
+status: superseded
+updated: 2026-11-02
 sources: [ask 1793060964-82426-noid, ask 1793087152-37562-noid, ask 1793088095-7126-31139, commit f6f8f99, bin/harness:338-345, bin/harness:500]
 verified_by: tests/harness.test.sh (busy retry, stale report)
 ---
 # First ask after a reap exits 1 at once, with the previous report in the log
+
+> Superseded 2026-11-02 by [0011](../decisions/0011-single-runner-headless.md): `harness spawn` and pane reaping were removed; a headless run needs no shell prompt.
 
 **Symptom.** `harness ask <role>` returns 1 after about a second, the ask id ends in `-noid`, and the ask log's Report section shows the previous ask's report. A retry works.
 

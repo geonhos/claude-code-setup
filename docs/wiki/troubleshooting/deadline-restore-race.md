@@ -1,11 +1,13 @@
 ---
 type: troubleshooting
-status: active
-updated: 2026-10-27
+status: superseded
+updated: 2026-11-02
 sources: [commit 79a1964, .harness/progress.jsonl implementer ask dur_s 602 (2026-10-21 11:16:46), reviewer report round 2]
 verified_by: tests/harness.test.sh (pending+working at deadline gives rc 4)
 ---
 # `verify: INTERRUPTED` while the verify was still running
+
+> Superseded 2026-11-02 by [0011](../decisions/0011-single-runner-headless.md): the pane-mode deadline restore is gone; a headless ask never kills the run at the deadline (exit 4, `harness wait`/`report`).
 
 **Symptom.** `harness ask implementer` prints the report with `verify: INTERRUPTED` (exit 5), and 30s later the Stop hook's verify passes and the commit is clean.
 

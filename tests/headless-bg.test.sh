@@ -27,7 +27,7 @@ nrun() {
 bsetup() {
   setup
   : > "$WORK/herdr.calls"
-  export HARNESS_RUNNER_ANALYST=headless HARNESS_RUNNER_REVIEWER=headless FAKE_CLAUDE_MODE=success
+  export FAKE_CLAUDE_MODE=success
   export FAKE_REPORT_CMD="mkdir -p $WORK/.harness/reports && printf '# analyst report\nstatus: done\n' > $WORK/.harness/reports/analyst.md"
 }
 jqt() { jq -e "$@" >/dev/null; }
@@ -161,7 +161,7 @@ git init -q . && git config user.email t@t && git config user.name t
 echo one > a.txt && git add a.txt && git commit -qm one
 mkdir -p .git/info && echo '.harness/' >> .git/info/exclude
 WTROOT="$WORK.wt"; WORKS="$WORKS $WTROOT"
-export HARNESS_WT_ROOT="$WTROOT" HARNESS_NO_AUTOCLOSE=1
+export HARNESS_WT_ROOT="$WTROOT"
 export FAKE_REPORT_CMD="mkdir -p .harness/reports && printf '# analyst report\nstatus: done\n' > .harness/reports/analyst.md"
 nrun ask analyst "q10" --worktree
 check "worktree bg: rc 0" [ "$RC" -eq 0 ]
@@ -174,7 +174,7 @@ nrun wait "$WTID"
 check "worktree wait <ask-id>: rc 0 after the checkout is gone" bash -c '[ "$1" = 0 ] && grep -q "^done; collect" <<<"$2"' _ "$RC" "$OUT"
 tty_run watch "$WTID"
 check "worktree watch <ask-id> after removal: still renders the stream" bash -c '[ "$1" = 0 ] && grep -q "■ success" <<<"$2"' _ "$RC" "$OUT"
-unset HARNESS_WT_ROOT HARNESS_NO_AUTOCLOSE
+unset HARNESS_WT_ROOT
 
 # no-perl fallback launcher still runs the ask
 bsetup

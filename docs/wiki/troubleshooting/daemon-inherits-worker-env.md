@@ -1,11 +1,13 @@
 ---
 type: troubleshooting
 status: active
-updated: 2026-10-28
+updated: 2026-11-02
 sources: [session 7ad04a14 (ps eww of claude daemon pid 90516), claude/hooks/conductor-gate.sh:5-9, .harness/gate-shrink-detail.md §5, ask 1793151066-8797-18476]
 verified_by: tests/gate.test.sh (agent_type keying)
 ---
 # Claude daemon inherits a worker's env
+
+> Still active after prune step 3 (2026-11-02): headless workers still run with `HARNESS_ROLE=worker`, and a Claude daemon started from a worker shell still inherits it. The gate keys on `agent_type`, not the env var, which is what this page documents.
 
 **Symptom.** A session named `conductor` behaves as a worker. The gate never
 denies, and `harness ask` exits 1 with "harness ask/spawn is for the conductor;

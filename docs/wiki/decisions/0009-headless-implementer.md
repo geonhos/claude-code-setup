@@ -1,11 +1,13 @@
 ---
 type: decision
 status: active
-updated: 2026-10-28
+updated: 2026-11-02
 sources: [.harness/implementer-headless-design.md, branch feat/v23-headless-implementer, tests/headless-implementer.test.sh]
 verified_by: tests/headless-implementer.test.sh
 ---
 # 0009: Headless implementer (0007 stage C)
+
+> Updated 2026-11-02 (prune step 3, [0011](0011-single-runner-headless.md)): `runner.implementer` is gone and the `pane` rollback no longer exists; the implementer is always headless.
 
 **Context.** [0007](0007-headless-runner-pilot.md) piloted `claude -p` for analyst and reviewer: 18 headless asks, 3 abnormal, against 70 pane asks with 29 abnormal. The implementer is still a pane (98 asks, 25 abnormal, p95 1706 s); its failures are the same completion races. It differs in that its Stop hook runs lint and tests (`harness-verify`) and can block the stop.
 
