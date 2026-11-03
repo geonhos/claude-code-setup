@@ -1,5 +1,0 @@
-# Native subagents die with the parent TUI; harness runner stays
-
-- Lesson: a native `Agent`-tool subagent survives `/clear` (same process; work continued 13:40:49→13:47:55, report delivered after the clear) but **not** session exit. The `/exit` dialog says "The following will stop when you exit", and "Move to background and exit" moves only the conductor session to the daemon: `1 local agent couldn't be moved and was stopped.` So B′ (replace `harness ask` with native subagents) was rejected by decision rule (iii)b; the detached `claude -p` runner is what gives workers a lifetime independent of the conductor.
-- Also observed: `/clear` SIGKILLs the subagent's in-flight Bash child (exit 137); the subagent report reaches the conductor via `SubagentHandback` ~60 s **before** the frontmatter Stop hook (verify) finishes; a worker agent without explicit `tools:` inherits the conductor's allowlist.
-- Evidence: `.harness/spike-bprime/RESULTS.md`, `.harness/spike-bprime/evidence/hooks-*.log` (CC 2.1.316, 2026-11-03, /tmp/bp-interactive).
