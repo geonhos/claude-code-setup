@@ -17,32 +17,20 @@
 # Output: nothing (allow) or a PreToolUse deny JSON on stdout. Always exit 0.
 set -u
 
-# harness_root DIR -> prints the harness checkout root and returns 0, or returns 1.
-# DIR is resolved physically (pwd -P) first, like enter_root.
-# The root is the nearest dir at or above DIR with .harness/asks/, searched up to
-# the dir holding .git (file or dir) inclusive; outside git only DIR counts. Same
-# rule as enter_root in bin/harness-verify. This body is copied byte-for-byte into
-# conductor-gate and -resume (tests/gate.test.sh checks it).
-harness_root() {
-  local start d hit=""
-  start=$(cd "${1:-/}" 2>/dev/null && pwd -P) || return 1
-  d=$start
-  while :; do
-    if [ -z "$hit" ] && [ -d "$d/.harness/asks" ]; then hit=$d; fi
-    if [ -e "$d/.git" ]; then
-      [ -n "$hit" ] || return 1
-      printf '%s' "$hit"
-      return 0
-    fi
-    [ "$d" = / ] && break
-    d=${d%/*}
-    [ -n "$d" ] || d=/
-  done
-  [ -d "$start/.harness/asks" ] || return 1
-  printf '%s' "$start"
-}
+# lib/harness-root.sh holds the one harness_root. Hooks are not symlinked (install.sh writes
+# the repo paths into settings.json), so the lib sits at a fixed place next to this file.
+. "$(CDPATH= cd -P "${BASH_SOURCE[0]%/*}/../../lib" 2>/dev/null && pwd)/harness-root.sh" 2>/dev/null || LIB_MISSING=1
+# end loader
 
 INPUT=$(cat)
+
+if [ -n "${LIB_MISSING:-}" ]; then
+  # no lookup possible: deny only the conductor (it exists only in harness checkouts), allow the rest
+  command -v jq >/dev/null 2>&1 || exit 0
+  [ "$(printf '%s' "$INPUT" | jq -r 'if type == "object" then (.agent_type // empty) else empty end' 2>/dev/null)" = conductor ] || exit 0
+  printf '%s\n' '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"conductor-gate: lib/harness-root.sh missing; rerun ./install.sh"}}'
+  exit 0
+fi
 
 DIR=$PWD
 if command -v jq >/dev/null 2>&1; then

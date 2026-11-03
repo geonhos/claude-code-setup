@@ -18,30 +18,11 @@ if [ ! -t 0 ]; then
   c=$(cat 2>/dev/null | jq -r '.cwd // empty' 2>/dev/null)
   [ -z "$c" ] || [ ! -d "$c" ] || dir=$c
 fi
-# harness_root DIR -> prints the harness checkout root and returns 0, or returns 1.
-# DIR is resolved physically (pwd -P) first, like enter_root.
-# The root is the nearest dir at or above DIR with .harness/asks/, searched up to
-# the dir holding .git (file or dir) inclusive; outside git only DIR counts. Same
-# rule as enter_root in bin/harness-verify. This body is copied byte-for-byte into
-# conductor-gate and -resume (tests/gate.test.sh checks it).
-harness_root() {
-  local start d hit=""
-  start=$(cd "${1:-/}" 2>/dev/null && pwd -P) || return 1
-  d=$start
-  while :; do
-    if [ -z "$hit" ] && [ -d "$d/.harness/asks" ]; then hit=$d; fi
-    if [ -e "$d/.git" ]; then
-      [ -n "$hit" ] || return 1
-      printf '%s' "$hit"
-      return 0
-    fi
-    [ "$d" = / ] && break
-    d=${d%/*}
-    [ -n "$d" ] || d=/
-  done
-  [ -d "$start/.harness/asks" ] || return 1
-  printf '%s' "$start"
-}
+# lib/harness-root.sh holds the one harness_root. Hooks are not symlinked (install.sh writes
+# the repo paths into settings.json), so the lib sits at a fixed place next to this file.
+. "$(CDPATH= cd -P "${BASH_SOURCE[0]%/*}/../../lib" 2>/dev/null && pwd)/harness-root.sh" 2>/dev/null || LIB_MISSING=1
+# end loader
+[ -z "${LIB_MISSING:-}" ] || exit 0
 root=$(harness_root "$dir") || exit 0
 f="$root/.harness/progress.md"
 ctx=""

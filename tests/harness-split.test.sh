@@ -71,9 +71,9 @@ OUT=$(sed -n "${loadn},$((loadn+3))p" "$ROOT/bin/harness")
 check "loader lists files, not a glob" no_glob "$OUT"
 
 # eager loading, structurally: every source of a harness-*.sh sits above `# end loader`, nowhere else
-for s in harness harness-verify; do
+for s in bin/harness bin/harness-verify claude/hooks/conductor-gate.sh claude/hooks/conductor-resume.sh; do
   OUT=""
-  check "bin/$s: libs sourced only inside the loader block" eager_ok "$ROOT/bin/$s"
+  check "$s: libs sourced only inside the loader block" eager_ok "$ROOT/$s"
 done
 check "bin/harness loads every lib/harness-*.sh" all_listed "$ROOT/bin/harness" "$ROOT/lib"
 # test the test: a dropped list entry and a lazy source must both be caught
