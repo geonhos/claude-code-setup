@@ -49,6 +49,7 @@ verified_by: <test name | command | human>
 ```
 Every page needs one index line: `- [title](path): hook (status, updated)`.
 Limits: index ≤80 lines, pages ≤150. `harness wiki-lint` checks this in the tests.
+Retention: decisions are kept forever (superseded ones keep a banner); troubleshooting pages are deleted when the trap's code is gone, and `log.md` records the deletion.
 
 **Do not record what can be derived from code** (structure, signatures, git
 history). Record traps, reasons and decisions that the code does not show.
