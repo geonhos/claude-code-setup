@@ -42,3 +42,4 @@
 - 2026-11-02 · implementer · prune step 3 review fixes · whole-second-timing marked stale (its test was deleted); 0009 drops the idle-TTL clause
 - 2026-11-02 · implementer · prune step 4 · routing log, retro, --worktree (registry, locks) and doctor removed; 0004/0008 superseded; citations of removed suites fixed
 - 2026-11-03 · implementer · prune step 5 · `--via` no-op removed; ADR 0012 gate shrink; 0011 step 5 done
+- 2026-11-03 · implementer · prune step 6 · one harness_root in lib/harness-root.sh (hooks, bin/harness, harness-verify source it); 0011 step 6 done

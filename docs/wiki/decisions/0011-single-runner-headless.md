@@ -17,7 +17,7 @@ verified_by: harness metrics + tests/headless*.test.sh
 3. Remove the pane runner, close_after_ask, TTL reap, `/clear` scheduling, late-report archive.
 4. Remove routing, retro, `--worktree` and `doctor` outright.
 5. Shrink the conductor gate.
-6. One `.harness` root lookup.
+6. One `.harness` root lookup: done; `harness_root` lives only in `lib/harness-root.sh`, sourced by both hooks, `bin/harness` and `bin/harness-verify`.
 7. Consolidate docs (README rewrite, wiki pages superseded in step 3).
 
 **Consequences.** Fresh repos need no herdr. Typed intervention in a running worker is gone (user accepted 2026-11-01). The troubleshooting pages about pane sessions and 0002/0003/0005/0006 become superseded at step 3. Rule behind this effort (`AGENTS.md`): no new mode without removing one.
@@ -27,3 +27,5 @@ Step 3 done 2026-11-02: pane runner, `harness spawn`, `close_after_ask`, idle-TT
 Step 4 done 2026-11-02: routing log and route hook, retro, `--worktree` (registry, locks, `max_parallel`) and doctor removed; `--via` is a no-op until step 5; 0004 and 0008 superseded.
 
 Step 5 done 2026-11-03: `--via` removed; the gate trims had already landed (3556e27, 0be020e, 4d9b627, 3bd6c55: 552 → 513 lines), see [ADR 0012](0012-gate-shrink.md).
+
+Step 6 done 2026-11-03: `harness_root` is defined once in `lib/harness-root.sh`; the gate, the resume hook, `bin/harness` and `bin/harness-verify` source it. A hook without the lib: the gate denies only the conductor, resume exits silently.
