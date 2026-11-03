@@ -29,3 +29,5 @@ Step 4 done 2026-11-02: routing log and route hook, retro, `--worktree` (registr
 Step 5 done 2026-11-03: `--via` removed; the gate trims had already landed (3556e27, 0be020e, 4d9b627, 3bd6c55: 552 → 513 lines), see [ADR 0012](0012-gate-shrink.md).
 
 Step 6 done 2026-11-03: `harness_root` is defined once in `lib/harness-root.sh`; the gate, the resume hook, `bin/harness` and `bin/harness-verify` source it. A hook without the lib: the gate denies only the conductor, resume exits silently.
+
+Step 7 done 2026-11-03: README rewritten for a fresh clone; architecture.md rewritten with inline mermaid and `docs/diagrams/` removed; six superseded or stale troubleshooting pages deleted (ADRs kept); uncited plans/specs/research deleted. The prune plan is complete.
