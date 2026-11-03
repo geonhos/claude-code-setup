@@ -3,7 +3,6 @@
 # tool that rewrites this file in place cannot corrupt a run in progress (wiki: troubleshooting).
 {
 # harness-verify — computational checks (format, lint, test) for harness workers.
-# Spec: docs/superpowers/specs/2026-10-18-verification-loop-design.md
 #
 #   harness-verify detect                 print resolved commands as JSON
 #   harness-verify format [file]          PostToolUse hook (reads hook JSON on stdin if no file)

@@ -1,6 +1,5 @@
 #!/bin/bash
 # conductor-gate.sh — PreToolUse hook for the Fable conductor.
-# Spec: docs/superpowers/specs/2026-10-12-herdr-conductor-setup-design.md
 #
 # Role:   hook input agent_type -> conductor: gate; any other agent: allow
 #         (only when agent_id is absent; a subagent, agent_id set, uses the env rule)
