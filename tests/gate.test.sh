@@ -168,7 +168,6 @@ expect deny  $C "Glob src pattern no path"      "$(tool Glob '{"pattern":"src/**
 
 # --- Bash: allowlist ---------------------------------------------------------
 expect allow $C "bash harness ask"        "$(bcmd 'harness ask analyst "what is this"')"
-expect allow $C "bash harness ask --via"  "$(bcmd "harness ask implementer 'x' --via skill")"
 expect allow $C "bash harness status"     "$(bcmd 'harness status')"
 expect allow $C "bash herdr"              "$(bcmd 'herdr pane current')"
 expect allow $C "bash gh"                 "$(bcmd 'gh pr view 12')"

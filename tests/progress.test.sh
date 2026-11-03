@@ -68,22 +68,6 @@ check "jsonl: verify null for analyst" [ "$(jl '.verify')" = null ]
 long=$(printf 'x%.0s' $(seq 1 300))
 run ask analyst "$long"
 check "jsonl: instr 160 chars" [ "$(jl '.instr|length')" -eq 160 ]
-# --via is a no-op until step 5 (a running conductor still sends --via skill): accepted, not sent as text
-setup
-hook_report analyst '# analyst report — x\nstatus: done\n'
-run ask analyst "look" --via skill
-check "via no-op: rc 0" [ "$RC" -eq 0 ]
-check "via no-op: instr is just the text" [ "$(jl .instr)" = look ]
-setup
-hook_report analyst '# analyst report — x\nstatus: done\n'
-run ask analyst "look" --via
-check "via bare: rc 0" [ "$RC" -eq 0 ]
-setup
-hook_report analyst '# analyst report — x\nstatus: done\n'
-run ask analyst "look" --via nope
-check "via nope: rc 0" [ "$RC" -eq 0 ]
-check "via nope: instr is just the text" [ "$(jl .instr)" = look ]
-
 
 # --- exit 3 (no report), exit 4 (still running) ----------------------------------------------
 setup
@@ -172,7 +156,7 @@ check "rotate: gz has old lines" [ "$(gzip -dc .harness/progress.jsonl.*.gz | wc
 check "rotate: new jsonl has only new line" [ "$(nlines .harness/progress.jsonl)" -eq 1 ]
 
 # --- usage errors inside the ask are logged (exit 1) ---------------------------------------
-for bad in "--fresh --keep" "--timeout abc" "--timeout 0" "--bogus" "--worktree" "--base x"; do
+for bad in "--fresh --keep" "--timeout abc" "--timeout 0" "--bogus" "--worktree" "--base x" "--via x"; do
   setup
   runerr ask analyst "q" $bad
   check "usage ($bad): rc 1" [ "$RC" -eq 1 ]
