@@ -49,7 +49,7 @@ done
 case $src in */*) d=${src%/*} ;; *) d=. ;; esac   # no dirname: PATH may be bare in hooks/tests
 HARNESS_LIB=${HARNESS_LIB:-$(CDPATH= cd -P "$d/../lib" 2>/dev/null && pwd)}
 # Explicit list, fixed order, no glob: a stray file in lib/ is never sourced. Definitions only.
-for m in defaults metrics headless; do
+for m in defaults root metrics headless; do
   . "$HARNESS_LIB/harness-$m.sh" 2>/dev/null || { echo "harness: cannot load lib/harness-$m.sh" >&2; exit 1; }
 done
 unset src d m
@@ -585,30 +585,6 @@ cmd_close() {
 }
 
 # --- harness checkout: init (decision 0010) -----------------------------------------
-# harness_root DIR -> prints the harness checkout root and returns 0, or returns 1.
-# DIR is resolved physically (pwd -P) first, like enter_root.
-# The root is the nearest dir at or above DIR with .harness/asks/, searched up to
-# the dir holding .git (file or dir) inclusive; outside git only DIR counts. Same
-# rule as enter_root in bin/harness-verify and the body in the two claude/hooks.
-harness_root() {
-  local start d hit=""
-  start=$(cd "${1:-/}" 2>/dev/null && pwd -P) || return 1
-  d=$start
-  while :; do
-    if [ -z "$hit" ] && [ -d "$d/.harness/asks" ]; then hit=$d; fi
-    if [ -e "$d/.git" ]; then
-      [ -n "$hit" ] || return 1
-      printf '%s' "$hit"
-      return 0
-    fi
-    [ "$d" = / ] && break
-    d=${d%/*}
-    [ -n "$d" ] || d=/
-  done
-  [ -d "$start/.harness/asks" ] || return 1
-  printf '%s' "$start"
-}
-
 # require_checkout — ask acts only in an initialised checkout; run from a subdir,
 # they continue at the checkout root (the conductor cannot cd), so .harness/ stays in one place
 require_checkout() {
