@@ -43,3 +43,5 @@
 - 2026-11-02 · implementer · prune step 4 · routing log, retro, --worktree (registry, locks) and doctor removed; 0004/0008 superseded; citations of removed suites fixed
 - 2026-11-03 · implementer · prune step 5 · `--via` no-op removed; ADR 0012 gate shrink; 0011 step 5 done
 - 2026-11-03 · implementer · prune step 6 · one harness_root in lib/harness-root.sh (hooks, bin/harness, harness-verify source it); 0011 step 6 done
+- 2026-11-03 · implementer · prune step 7 (C3) · deleted troubleshooting pages herdr-idle-is-not-done, deadline-restore-race, respawn-after-hook-change, spawn-on-cold-shell, herdr-names-are-global, whole-second-timing (traps gone with the pane runner; git keeps them); 0001/0006 links replaced by plain text; superseded ADR index hooks shortened
+- 2026-11-03 · implementer · prune step 7 · deleted plans/specs: herdr-conductor-setup, skill-routing, gate-hardening, progress-and-context-reset, verification-loop, wiki-phase1; research kev-vs-laya; docs/diagrams/; six troubleshooting pages (see C3 line); architecture.md and README rewritten; 0011 step 7 done

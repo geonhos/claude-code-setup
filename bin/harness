@@ -14,6 +14,7 @@
 #   harness init [--no-agent] [--shared]   make this repo a harness checkout (.harness/asks, config, agent=conductor in .claude/settings.local.json; --shared: settings.json)
 #   harness close  <agent>|--all [--force]
 #   harness metrics [--since YYYY-MM-DD] [--json]   health numbers from progress.jsonl + the wiki
+#   harness wiki-lint [DIR]   check docs/wiki format and limits (0 = pass)
 #
 # Exit codes for `ask`: 0 report printed · 1 usage/setup error
 #                       2 the run was denied a tool call and wrote no report (re-ask with a changed brief)

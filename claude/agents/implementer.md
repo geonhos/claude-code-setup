@@ -48,7 +48,7 @@ you have full tool access.
   uncommitted changes you did not make; stage specific files, not `-A`.
 - Use your agent memory: record build/test/lint commands and conventions you
   discover so later tasks start faster.
-- Time budget: `harness ask` waits 29 min for the implementer by default (source of truth in this repo: `lib/harness-defaults.sh`). Write the report before any long or repeated
+- Time budget: `harness ask` waits 90 min for the implementer by default (source of truth in this repo: `lib/harness-defaults.sh`). Write the report before any long or repeated
   run (flake loops, full-suite repeats); cap repeats to a fixed count stated in the report.
 
 ## Automatic verification

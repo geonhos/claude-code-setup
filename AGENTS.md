@@ -5,15 +5,15 @@ edit source; it delegates through `harness ask` to analyst / implementer /
 reviewer workers that run as detached headless Claude sessions (`claude -p`; a
 herdr pane is an optional viewer), and reads only their reports. Hooks
 gate the conductor's shell, verify worker output and resume from progress logs.
-`install.sh` symlinks everything into `~/.claude` and `~/bin`.
+`install.sh` symlinks everything into `~/.claude` and `~/.local/bin`.
 
 ## Layout
-- `bin/`: `harness` (CLI: ask, wait, report, watch, close, status, metrics, wiki-lint) and `harness-verify`
-- `lib/`: `harness-defaults.sh` (roles, default timeouts, viewer default; sourced by `harness` and `harness-verify`), `harness-metrics.sh` (metrics + wiki-lint), `harness-headless.sh` (headless runner glue); `bin/harness` sources its lib files eagerly from an explicit list
+- `bin/`: `harness` (CLI: init, ask, wait, report, watch, close, status, metrics, wiki-lint), `harness-verify` (format/lint/test checks), `harness-run` (detached `claude -p` runner), `harness-view` (viewer-pane follower)
+- `lib/`: `harness-defaults.sh` (roles, default timeouts, viewer default; sourced by `harness` and `harness-verify`), `harness-metrics.sh` (metrics + wiki-lint), `harness-headless.sh` (headless runner glue), `harness-root.sh` (`harness_root`, sourced by both hooks and both bins); `bin/harness` sources its lib files eagerly from an explicit list
 - `claude/agents/`: conductor, analyst, implementer, reviewer, solo prompts
 - `claude/hooks/`: conductor-gate, conductor-resume (SessionStart)
 - `claude/skills/`: /analyze, /implement, /review (conductor-only)
-- `tests/`: `*.test.sh` suites plus `fake-herdr`
+- `tests/`: `*.test.sh` suites plus `fake-herdr` and `fake-claude`
 - `docs/`: `wiki/` (durable knowledge), `superpowers/plans/`, `research/`
 
 ## Harness rules
@@ -49,6 +49,7 @@ verified_by: <test name | command | human>
 ```
 Every page needs one index line: `- [title](path): hook (status, updated)`.
 Limits: index ≤80 lines, pages ≤150. `harness wiki-lint` checks this in the tests.
+Retention: decisions are kept forever (superseded ones keep a banner); troubleshooting pages are deleted when the trap's code is gone, and `log.md` records the deletion.
 
 **Do not record what can be derived from code** (structure, signatures, git
 history). Record traps, reasons and decisions that the code does not show.
