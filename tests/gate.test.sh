@@ -570,7 +570,7 @@ agree() {  # LABEL DIR WANT(gated|free) — enter_root must land on the marker i
   local d=$2 gate ver
   gate=$(gate_at "$d" "HARNESS_ROLE=conductor" "$EDIT_SRC")
   [ "$gate" = deny ] && gate=gated || gate=free
-  ver=$(cd "$d" && /bin/bash -c "$ENTER"'; IS_GIT=0; ROOT=$PWD; enter_root; [ -d "$ROOT/.harness/asks" ] && echo gated || echo free' 2>/dev/null)
+  ver=$(cd "$d" && /bin/bash -c ". \"$HERE/../lib/harness-root.sh\"; $ENTER"'; IS_GIT=0; ROOT=$PWD; enter_root; [ -d "$ROOT/.harness/asks" ] && echo gated || echo free' 2>/dev/null)
   if [ "$gate" = "$3" ] && [ "$ver" = "$3" ]; then report ok "agree: $1" "$3" "$gate/$ver" x
   else report bad "agree: $1" "$3" "gate=$gate verify=$ver" x; fi
 }
