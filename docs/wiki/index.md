@@ -22,6 +22,9 @@ Read this first. Open a page only when it is relevant. Schema and promotion rule
 - [bash signals and job control](troubleshooting/bash-signals-job-control.md): bg jobs ignore INT; `set -m` hands tty signals to children (active, 2026-10-27)
 - [Tests inherit worker env](troubleshooting/tests-inherit-worker-env.md): suites run by a worker see `HARNESS_ROLE=worker`; unset it (active, 2026-10-27)
 - [Test wait loops](troubleshooting/test-wait-loops.md): barrier on the asserted state; `grep -c` on a missing file breaks `-lt` (active, 2026-10-28)
+- [Half-assertion tests](troubleshooting/half-assertion-tests.md): `check [ a ] && [ b ]` asserts only a; prove fixes with a mutant; remove the primary source before a fallback test (active, 2026-11-03)
+- [wiki-lint dangling sources](troubleshooting/wiki-lint-dangling-sources.md): lint checks only non-empty `sources`; grep the slug before deleting a suite or page (active, 2026-11-03)
+- [No-edits brief skips report](troubleshooting/no-edits-brief-skips-report.md): say "no source edits (report still required)" or the implementer exits 3 (active, 2026-11-03)
 
 ## How-to
 - [Transcript forensics](how-to/transcript-forensics.md): real Stop-hook time, did /clear run, known model noise (active, 2026-10-27)
