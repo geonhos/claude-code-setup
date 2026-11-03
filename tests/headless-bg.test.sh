@@ -216,7 +216,9 @@ note_run
 tty_run watch analyst
 check "watch live: follows the run to its result, rc 0" bash -c '[ "$1" = 0 ] && grep -q "■ success" <<<"$2"' _ "$RC" "$OUT"
 wait_no_runs "$RID"
-check "watch live: no tail left behind" bash -c '! pgrep -f "tail -n \+1 -F .*analyst" >/dev/null'
+# scoped to this run's own stream file: a live ask in the repo has its own tail (other path)
+STREAMP=$(sed 's/^[^ ]* //' .harness/asks/analyst.stream 2>/dev/null)
+check "watch live: no tail left behind" bash -c '[ -n "$1" ] && ! pgrep -f "tail -n \+1 -F $1" >/dev/null' _ "$STREAMP"
 
 # 15. sleep-aware deadline: pure helper, injected timestamps
 HL_SRC=$(sed -n '/^hl_clock_gap() {/,/^}/p;/^hl_deadline_bump() {/,/^}/p' "$HERE/../lib/harness-headless.sh")

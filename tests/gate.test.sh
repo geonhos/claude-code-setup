@@ -559,18 +559,35 @@ gchk allow "$GATE_HOME/up/repo" "HARNESS_ROLE=conductor" "$EDIT_SRC" "asks above
 # 12: daemon case (conductor agent_type with an inherited worker env) stays gated
 gchk deny  "$CHK" "HARNESS_ROLE=worker HERDR_ENV=1" "$(jq -n -c '{tool_name:"Edit",agent_type:"conductor",tool_input:{file_path:"src/a.ts"}}')" "chk, daemon env + agent_type conductor: deny"
 gchk allow "$CHK" "HARNESS_ROLE=conductor" "$(jq -n -c '{tool_name:"Edit",agent_type:"analyst",tool_input:{file_path:"src/a.ts"}}')" "chk, agent_type analyst: allow"
-# 13: harness_root is byte-identical in the gate and resume hooks
+# 13: harness_root is defined once (column 0), in lib/harness-root.sh; the verify stub is indented
 fn_body() { awk -v n="$2" 'index($0, n "() {") == 1 {p=1} p{print} p&&/^}/{exit}' "$1"; }
-G1=$(fn_body "$GATE" harness_root); G2=$(fn_body "$HERE/../claude/hooks/conductor-resume.sh" harness_root)
-if [ -n "$G1" ] && [ "$G1" = "$G2" ]; then report ok "harness_root identical in 2 hooks" same same x
-else report bad "harness_root identical in 2 hooks" same differs x; fi
+DEFS=$(grep -rln '^harness_root()' "$HERE/../bin" "$HERE/../claude/hooks" "$HERE/../lib" 2>/dev/null)
+if [ "$DEFS" = "$(cd "$HERE/.." && pwd)/lib/harness-root.sh" ] || [ "$DEFS" = "$HERE/../lib/harness-root.sh" ]; then report ok "harness_root defined once, in lib/harness-root.sh" one one x
+else report bad "harness_root defined once, in lib/harness-root.sh" one "$DEFS" x; fi
+# 13b: lib missing: the gate (a tmp copy with no lib beside it) denies only the conductor
+ML=$(mktemp -d); mkdir -p "$ML/claude/hooks"; cp "$GATE" "$ML/claude/hooks/conductor-gate.sh"
+ml() {  # WANT JSON LABEL
+  local out got
+  out=$(printf '%s' "$2" | (cd "$GATE_HOME/chk" && /bin/bash "$ML/claude/hooks/conductor-gate.sh" 2>/dev/null))
+  case $out in *"lib/harness-root.sh missing; rerun ./install.sh"*) got=deny ;; '') got=allow ;; *) got="other: $out" ;; esac
+  if [ "$got" = "$1" ]; then report ok "$3" "$1" "$got" x; else report bad "$3" "$1" "$got" x; fi
+}
+ml deny  "$(jq -n -c '{tool_name:"Edit",agent_type:"conductor",tool_input:{file_path:"src/a.ts"}}')" "lib missing, conductor: deny with message"
+ml allow "$(jq -n -c '{tool_name:"Edit",agent_type:"analyst",tool_input:{file_path:"src/a.ts"}}')"  "lib missing, analyst: allow"
+ml allow "$EDIT_SRC" "lib missing, no agent_type: allow"
+rm -rf "$ML"
+# 13c: run as `bash name` from inside its own dir (no slash in $0): the lib is still found
+CH=$(mktemp -d); mkdir -p "$CH/claude/hooks" "$CH/lib"; cp "$GATE" "$CH/claude/hooks/"; cp "$HERE/../lib/harness-root.sh" "$CH/lib/"
+out=$(printf '%s' "$(jq -n -c '{tool_name:"Edit",agent_type:"conductor",tool_input:{file_path:"src/a.ts"}}')" | (cd "$CH/claude/hooks" && /bin/bash conductor-gate.sh 2>/dev/null))
+case $out in *"lib/harness-root.sh missing"*) report bad "bare-name invocation finds the lib" found missing x ;; *) report ok "bare-name invocation finds the lib" found found x ;; esac
+rm -rf "$CH"
 # 14: the gate's checkout verdict agrees with harness-verify enter_root
 ENTER=$(fn_body "$HERE/../bin/harness-verify" enter_root)
 agree() {  # LABEL DIR WANT(gated|free) — enter_root must land on the marker iff the gate is gated
   local d=$2 gate ver
   gate=$(gate_at "$d" "HARNESS_ROLE=conductor" "$EDIT_SRC")
   [ "$gate" = deny ] && gate=gated || gate=free
-  ver=$(cd "$d" && /bin/bash -c "$ENTER"'; IS_GIT=0; ROOT=$PWD; enter_root; [ -d "$ROOT/.harness/asks" ] && echo gated || echo free' 2>/dev/null)
+  ver=$(cd "$d" && /bin/bash -c ". \"$HERE/../lib/harness-root.sh\"; $ENTER"'; IS_GIT=0; ROOT=$PWD; enter_root; [ -d "$ROOT/.harness/asks" ] && echo gated || echo free' 2>/dev/null)
   if [ "$gate" = "$3" ] && [ "$ver" = "$3" ]; then report ok "agree: $1" "$3" "$gate/$ver" x
   else report bad "agree: $1" "$3" "gate=$gate verify=$ver" x; fi
 }
