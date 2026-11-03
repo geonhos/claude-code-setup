@@ -57,13 +57,13 @@ harness close  <agent>|--all [--force]                       # 실행 중이거�
 
 ## 워커, 모델, 상한
 
-워커는 항상 headless다: `harness-run`이 `claude -p`를 detached로 돌리고, 완료는 `.harness/asks/<role>.exit.json`(프로세스 종료)이다. 마감 시간에 run을 죽이지 않고 exit 4로 돌려준다. 한 번의 실행 상한은 `headless_max_minutes`(기본 60, implementer 90)이고, `--keep`이 아니면 매번 새 세션이다. 원본 스트림 `.harness/log/*.jsonl`은 게이트가 conductor의 읽기를 막는다.
+워커는 항상 headless다: `harness-run`이 `claude -p`를 detached로 돌리고, 완료는 `.harness/asks/<role>.exit.json`(프로세스 종료)이다. 마감 시간에 run을 죽이지 않고 exit 4로 돌려준다. 한 번의 실행 상한은 `headless_max_minutes`(기본 60, implementer 90)이고, 이 키는 `.harness/config.json`에 두며 설정하면 implementer를 포함한 모든 역할에 적용되고 환경변수 `HARNESS_HL_MAX_S`(초)가 이를 덮어쓴다. `--keep`이 아니면 매번 새 세션이다. 원본 스트림 `.harness/log/*.jsonl`은 게이트가 conductor의 읽기를 막는다.
 
 implementer(결정 0009)는 `--permission-mode auto --permission-prompts none`으로 고정된다. 거부된 도구 호출은 `exit.json`의 `denied[]`에 남고, 리포트 없이 거부만 있으면 exit 2다. 직전 ask가 0이 아니었으면 다음 ask가 같은 세션을 자동으로 `--resume`한다(`--fresh`로 끔). 워커 세션(`HARNESS_ROLE=worker`)에서는 `harness ask`가 exit 1로 거부된다(중첩 위임 방지).
 
 ## 설정
 
-- `.harness/config.json`의 최상위 키 `viewer`(`HARNESS_VIEWER`가 우선): `auto`(기본) = herdr를 쓸 수 있으면 `harness watch <role>`을 돌리는 viewer pane(run이 끝나면 닫는다), 아니면 pane 없이 백그라운드(로그 `.harness/asks/<role>.runner.log`) · `pane` = 항상 pane(herdr 필요) · `none` = 항상 백그라운드.
+- `.harness/config.json`의 최상위 키 `headless_max_minutes`(분; 모든 역할의 실행 상한, `HARNESS_HL_MAX_S` 초 단위 환경변수가 우선)와 `viewer`(`HARNESS_VIEWER`가 우선): `auto`(기본) = herdr를 쓸 수 있으면 `harness watch <role>`을 돌리는 viewer pane(run이 끝나면 닫는다), 아니면 pane 없이 백그라운드(로그 `.harness/asks/<role>.runner.log`) · `pane` = 항상 pane(herdr 필요) · `none` = 항상 백그라운드.
 - 로그 정리(ask가 끝날 때마다): `HARNESS_LOG_KEEP`(기본 200개), `HARNESS_LOG_DAYS`(14일), `HARNESS_JSONL_MAX`(`progress.jsonl` 압축 기준, 바이트, 기본 1 MB).
 - 검증 명령은 명시적인 설정에서만 가져오고, 키마다 먼저 찾은 쪽이 이긴다: `.harness/verify.local.json` > `.claude/harness.json`. 언어는 감지하지 않는다. 없는 키(또는 `null`)는 그 단계를 건너뛴다. 이 저장소는 `{"test": "./install.sh --test"}`를 쓴다. `harness-verify detect`가 해석된 설정을 출력한다.
 
@@ -74,7 +74,7 @@ implementer(결정 0009)는 `--permission-mode auto --permission-prompts none`�
 
 ## 검증 루프
 
-implementer는 자기 작업을 스스로 판정하지 않는다. `claude/agents/implementer.md`의 훅이 `harness-verify`를 루프 안에서 돌린다. `PostToolUse`가 수정한 파일마다 포맷과 파일 단위 lint를, `Stop`이 변경분 전체에 lint와 테스트를 돌려 실패하면 출력과 함께 워커를 되돌려 보낸다. 최대 `maxAttempts`회(기본 3)이고, 그동안 리포트는 숨겨진다. 횟수를 다 쓰면 리포트를 그대로 두고 `harness ask`가 exit **5**(`verify: FAIL (<step>, <n> attempts)` 줄)로 끝난다. Stop hook 검증 중에 마감되면 exit 4 "still verifying"이다. `harness ask implementer`는 설치된 `harness-verify`가 필요하고(없으면 exit 1) 먼저 baseline을 기록한다.
+implementer는 자기 작업을 스스로 판정하지 않는다. `claude/agents/implementer.md`의 훅이 `harness-verify`를 루프 안에서 돌린다. `PostToolUse`가 수정한 파일마다 포맷과 파일 단위 lint를, `Stop`이 변경분 전체에 lint와 테스트를 돌려 실패하면 출력과 함께 워커를 되돌려 보낸다. 최대 `maxAttempts`회(기본 3)이고, 그동안 리포트는 숨겨진다. 리포트가 없으면 검증 전에 먼저 막아 쓰게 하고(ask당 최대 2번), 변경이 `docs/`나 `.harness/`뿐이면 lint·테스트를 건너뛴다(`docs/wiki`가 바뀌면 `wiki-lint`만). 횟수를 다 쓰면 리포트를 그대로 두고 `harness ask`가 exit **5**(`verify: FAIL (<step>, <n> attempts)` 줄)로 끝난다. Stop hook 검증 중에 마감되면 exit 4 "still verifying"이다. `harness ask implementer`는 설치된 `harness-verify`가 필요하고(없으면 exit 1) 먼저 baseline을 기록한다.
 reviewer는 `harness-verify run all [--base <ref>]`를 돌리고 리포트 마지막에 `VERDICT: PASS|FAIL`을 적는다(FAIL이면 exit 5, 없으면 exit 3). jq, git, 설정 중 무엇이 없어도 워커를 막지 않는다.
 
 ## conductor가 직접 할 수 있는 일, 한계

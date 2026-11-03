@@ -8,7 +8,7 @@ gate the conductor's shell, verify worker output and resume from progress logs.
 `install.sh` symlinks everything into `~/.claude` and `~/.local/bin`.
 
 ## Layout
-- `bin/`: `harness` (CLI: init, ask, wait, report, watch, close, status, metrics, wiki-lint) and `harness-verify`
+- `bin/`: `harness` (CLI: init, ask, wait, report, watch, close, status, metrics, wiki-lint), `harness-verify` (format/lint/test checks), `harness-run` (detached `claude -p` runner), `harness-view` (viewer-pane follower)
 - `lib/`: `harness-defaults.sh` (roles, default timeouts, viewer default; sourced by `harness` and `harness-verify`), `harness-metrics.sh` (metrics + wiki-lint), `harness-headless.sh` (headless runner glue), `harness-root.sh` (`harness_root`, sourced by both hooks and both bins); `bin/harness` sources its lib files eagerly from an explicit list
 - `claude/agents/`: conductor, analyst, implementer, reviewer, solo prompts
 - `claude/hooks/`: conductor-gate, conductor-resume (SessionStart)

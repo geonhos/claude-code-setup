@@ -8,7 +8,7 @@ Read this first. Open a page only when it is relevant. Schema and promotion rule
 - [.harness root lookup](troubleshooting/harness-root-lookup.md): hook finds root by nearest `.harness/asks/`; one definition in lib/harness-root.sh (active, 2026-11-03)
 - [Docs-only skip scope](troubleshooting/docs-only-asks-skip-the-suite.md): Stop hook skips the suite only for `docs/`/`.harness/`; wiki runs wiki-lint only (active, 2026-10-27)
 
-## Troubleshooting: workers, panes and env
+## Troubleshooting: workers and env
 - [Daemon inherits worker env](troubleshooting/daemon-inherits-worker-env.md): a Claude daemon started in a worker shell makes every hosted session a worker; gate keys on agent_type, still true for headless workers (active, 2026-11-02)
 - [AGENTS.md needs a CLAUDE.md import](troubleshooting/agents-md-ignored-when-claude-md-exists.md): CLAUDE.md must start with `@AGENTS.md`; no symlink (active, 2026-10-21)
 - [Live gate edit](troubleshooting/live-gate-edit.md): a broken gate script denies everything; bash -n + suite before each save (active, 2026-10-28)

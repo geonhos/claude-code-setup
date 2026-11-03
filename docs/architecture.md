@@ -37,8 +37,8 @@ sequenceDiagram
   R->>W: claude -p --output-format stream-json
   W->>W: 작업, .harness/reports/role.md 쓰기
   W-->>R: 종료 (또는 상한 headless_max_minutes 도달)
-  R->>R: asks/role.exit.json, .finished 쓰기
-  H->>H: exit.json 대기, 리포트·검증 상태 수집
+  R->>R: asks/role.exit.json 쓰기
+  H->>H: exit.json 대기, .finished 찍기, 리포트·검증 상태 수집
   H->>H: log/*.md, progress.jsonl 갱신
   H-->>C: stdout = 리포트, exit code 0-5
 ```
@@ -84,11 +84,15 @@ flowchart TD
     PT -- "lint 실패" --> FB["decision: block + lint 출력<br/>(피드백, 편집은 이미 끝남)"]
     PT -- ok --> E
     FB --> E
-    ST["Stop: harness-verify stop"] --> NG{"git 저장소?"}
+    ST["Stop: harness-verify stop"] --> RG{"리포트 없음?<br/>(ask당 block 2번까지)"}
+    RG -- 예 --> RB(["block: 리포트를 쓰게 함"])
+    RG -- 아니오 --> NG{"git 저장소?"}
     NG -- 아니오 --> PASS0([stop 허용])
     NG -- 예 --> SAME{"state id = baseline?"}
     SAME -- 예 --> SK(["result skipped, 허용"])
-    SAME -- 아니오 --> HIDE["리포트 숨김 → .pending"] --> LT{"바뀐 파일에 대해<br/>lint 후 test"}
+    SAME -- 아니오 --> DO{"변경이 docs/ 또는<br/>.harness/ 뿐?"}
+    DO -- "예 (docs/wiki면 wiki-lint만)" --> SK
+    DO -- 아니오 --> HIDE["리포트 숨김 → .pending"] --> LT{"바뀐 파일에 대해<br/>lint 후 test"}
     LT -- 통과 --> OKR(["리포트 복원<br/>result pass 또는 skipped"])
     LT -- 실패 --> CAP{"attempts &lt; max?"}
     CAP -- 예 --> BLK["attempts+1, .pending 삭제<br/>result fail, decision: block + 끝 40줄"]
