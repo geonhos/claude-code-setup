@@ -20,7 +20,8 @@ if [ ! -t 0 ]; then
 fi
 # lib/harness-root.sh holds the one harness_root. Hooks are not symlinked (install.sh writes
 # the repo paths into settings.json), so the lib sits at a fixed place next to this file.
-. "$(CDPATH= cd -P "${BASH_SOURCE[0]%/*}/../../lib" 2>/dev/null && pwd)/harness-root.sh" 2>/dev/null || LIB_MISSING=1
+case ${BASH_SOURCE[0]} in */*) hd=${BASH_SOURCE[0]%/*} ;; *) hd=. ;; esac   # run as `bash name` from its dir
+. "$(CDPATH= cd -P "$hd/../../lib" 2>/dev/null && pwd)/harness-root.sh" 2>/dev/null || LIB_MISSING=1
 # end loader
 [ -z "${LIB_MISSING:-}" ] || exit 0
 root=$(harness_root "$dir") || exit 0

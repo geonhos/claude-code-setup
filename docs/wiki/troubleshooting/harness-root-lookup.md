@@ -2,7 +2,7 @@
 type: troubleshooting
 status: active
 updated: 2026-11-03
-sources: [ask 1792643421-12588-9450, ask 1792644961-69735-4647, ask 1792672554-53823-31362, ask 1792674241-84663-18593, bin/harness-verify:34-49, bin/harness:1316-1319, lib/harness-root.sh, commit 7a5f750..07d94b5]
+sources: [ask 1792643421-12588-9450, ask 1792644961-69735-4647, ask 1792672554-53823-31362, ask 1792674241-84663-18593, lib/harness-root.sh:9-26, bin/harness-verify:60-67 (enter_root), claude/hooks/conductor-gate.sh:22-24, claude/hooks/conductor-resume.sh:23-25, commits 7a5f750 c29c735 07d94b5]
 verified_by: tests/gate.test.sh (agree, defined-once), tests/verify.test.sh (subdir)
 ---
 # Where `.harness/` lives is decided in more than one place

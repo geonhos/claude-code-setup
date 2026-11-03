@@ -576,6 +576,11 @@ ml deny  "$(jq -n -c '{tool_name:"Edit",agent_type:"conductor",tool_input:{file_
 ml allow "$(jq -n -c '{tool_name:"Edit",agent_type:"analyst",tool_input:{file_path:"src/a.ts"}}')"  "lib missing, analyst: allow"
 ml allow "$EDIT_SRC" "lib missing, no agent_type: allow"
 rm -rf "$ML"
+# 13c: run as `bash name` from inside its own dir (no slash in $0): the lib is still found
+CH=$(mktemp -d); mkdir -p "$CH/claude/hooks" "$CH/lib"; cp "$GATE" "$CH/claude/hooks/"; cp "$HERE/../lib/harness-root.sh" "$CH/lib/"
+out=$(printf '%s' "$(jq -n -c '{tool_name:"Edit",agent_type:"conductor",tool_input:{file_path:"src/a.ts"}}')" | (cd "$CH/claude/hooks" && /bin/bash conductor-gate.sh 2>/dev/null))
+case $out in *"lib/harness-root.sh missing"*) report bad "bare-name invocation finds the lib" found missing x ;; *) report ok "bare-name invocation finds the lib" found found x ;; esac
+rm -rf "$CH"
 # 14: the gate's checkout verdict agrees with harness-verify enter_root
 ENTER=$(fn_body "$HERE/../bin/harness-verify" enter_root)
 agree() {  # LABEL DIR WANT(gated|free) — enter_root must land on the marker iff the gate is gated
