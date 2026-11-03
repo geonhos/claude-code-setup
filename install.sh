@@ -152,7 +152,7 @@ if [ "${SKIP_HERDR_INTEGRATION:-0}" != 1 ]; then
   if herdr_out=$(herdr integration install claude 2>&1); then
     echo "herdr: claude integration installed"
   else
-    echo "warning: 'herdr integration install claude' failed; agent state detection falls back to heuristics" >&2
+    echo "warning: 'herdr integration install claude' failed; the viewer pane may be unavailable" >&2
     echo "$herdr_out" >&2
   fi
 fi
