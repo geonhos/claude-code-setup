@@ -2,7 +2,7 @@
 type: decision
 status: active
 updated: 2026-11-03
-sources: [.harness/gate-shrink-detail.md, .harness/spike-bprime/RESULTS.md, 3556e27, 0be020e, 4d9b627, 3bd6c55, 0011]
+sources: [ask 1793616342-63489-25941, .harness/gate-shrink-detail.md, .harness/spike-bprime/RESULTS.md, 3556e27, 0be020e, 4d9b627, 3bd6c55, 0011]
 verified_by: tests/gate.test.sh (incl. tests/gate-denied.list)
 ---
 # 0012: Gate shrink (prune step 5): keep a small gate, drop what was never used
@@ -14,7 +14,7 @@ verified_by: tests/gate.test.sh (incl. tests/gate-denied.list)
 - Step 5 itself changed only `--via`: the no-op arm of `ask_parse_args` is gone (unknown option, exit 1). The gate was not touched; the trims are the four earlier commits above. The policy tables already sit together near the top.
 - Kept on purpose: the path helpers (`rel`, `physrel`, `physical`, `readable`, `writable`, `raw_stream_rel`) and the Bash character allowlist. They stop `Read bin/harness`, `..`, a symlink under `docs/` pointing at source, and the raw `.harness/log/*.jsonl` streams, which hold source (0007); a name-level rule cannot express any of that.
 - Rejected, option f ("permissions rules" instead of the hook): `permissions.deny/allow` live in user-scope settings, so they bind workers too. Workers need exactly the tools the conductor lacks, and a per-agent rule scope does not exist.
-- Rejected, B' (native subagents instead of the headless runner; `.harness/spike-bprime/RESULTS.md`, 2026-11-03): subagents die when the conductor exits ("1 local agent couldn't be moved and was stopped"). The runner stays, so the gate stays.
+- Rejected, B' (native subagents instead of the headless runner; `.harness/spike-bprime/RESULTS.md`, 2026-11-03): subagents die when the conductor exits ("1 local agent couldn't be moved and was stopped"). The runner stays, so the gate stays. Related finding: `tools`/`disallowedTools` limits on the main agent do not reach its subagents, hence the gate's `agent_id` fallback (`claude/hooks/conductor-gate.sh:56-64`). The spike also showed three costs of B′: `/clear` SIGKILLs the subagent's in-flight Bash (exit 137); the subagent's report arrives via `SubagentHandback` ~60 s before the Stop-hook verify finishes; an agent without `tools:` inherits the conductor's allowlist.
 
 **Status.** Active. Gate 552 → 513 lines (path helpers ~110, scanner and text checks ~110, gh/git ~110). `bin/harness` 720 → 719.
 
