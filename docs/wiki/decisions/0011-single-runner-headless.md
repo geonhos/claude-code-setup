@@ -26,4 +26,4 @@ Step 3 done 2026-11-02: pane runner, `harness spawn`, `close_after_ask`, idle-TT
 
 Step 4 done 2026-11-02: routing log and route hook, retro, `--worktree` (registry, locks, `max_parallel`) and doctor removed; `--via` is a no-op until step 5; 0004 and 0008 superseded.
 
-Step 5 done 2026-11-03: `--via` removed; gate trimmed (552 → 515 lines), [ADR 0012](0012-gate-shrink.md).
+Step 5 done 2026-11-03: `--via` removed; the gate trims had already landed (3556e27, 0be020e, 4d9b627, 3bd6c55: 552 → 513 lines), see [ADR 0012](0012-gate-shrink.md).
