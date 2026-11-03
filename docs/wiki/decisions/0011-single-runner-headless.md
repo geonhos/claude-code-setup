@@ -1,7 +1,7 @@
 ---
 type: decision
 status: active
-updated: 2026-11-02
+updated: 2026-11-03
 sources: [.harness/setup-review.md, .harness/progress.jsonl, 0001, 0007, 0009, 0010]
 verified_by: harness metrics + tests/headless*.test.sh
 ---
@@ -25,3 +25,5 @@ verified_by: harness metrics + tests/headless*.test.sh
 Step 3 done 2026-11-02: pane runner, `harness spawn`, `close_after_ask`, idle-TTL reap, `/clear` scheduling, late-report archive and the `runner` config key are removed; 0002, 0003, 0006 and five pane troubleshooting pages are superseded.
 
 Step 4 done 2026-11-02: routing log and route hook, retro, `--worktree` (registry, locks, `max_parallel`) and doctor removed; `--via` is a no-op until step 5; 0004 and 0008 superseded.
+
+Step 5 done 2026-11-03: `--via` removed; the gate trims had already landed (3556e27, 0be020e, 4d9b627, 3bd6c55: 552 → 513 lines), see [ADR 0012](0012-gate-shrink.md).

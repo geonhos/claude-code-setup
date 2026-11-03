@@ -233,7 +233,7 @@ record_progress() {
 
 # ask_parse_args <agent> <text> [opts...] — the one walk over an ask's options (called by cmd_ask
 # after the agent and text checks). Sets ASK_TIMEOUT/FRESH/KEEP.
-# The instruction text is positional, so a "--via" inside it is never an option. A bad option,
+# The instruction text is positional, so an option-looking word inside it is never an option. A bad option,
 # --timeout value or --fresh with --keep only sets ASK_BAD: ask_inner turns that into the usage
 # error inside the logged subshell (exit 1 is recorded in progress).
 ask_parse_args() {
@@ -251,7 +251,6 @@ ask_parse_args() {
         esac ;;
       --fresh) ASK_FRESH=1; shift ;;
       --keep) ASK_KEEP=1; shift ;;
-      --via) if [ $# -ge 2 ]; then shift 2; else shift; fi ;;   # no-op until step 5: a running conductor still sends --via skill
       *) ASK_BAD=1; shift ;;
     esac
   done

@@ -1,7 +1,7 @@
 ---
 type: decision
 status: active
-updated: 2026-10-30
+updated: 2026-11-03
 sources: [docs/superpowers/plans/2026-10-21-gate-opt-in.md, .harness/review-critique-detail.md §1.4-1.5, claude/hooks/conductor-gate.sh:10-30, ask 1793150496-56689-6967, commit d2e4bcb]
 verified_by: tests/gate.test.sh
 ---
@@ -25,7 +25,7 @@ read the local tree, and the gate is a routing nudge, not a security boundary.
 and (§1.5) that the global conductor made every session outside herdr useless.
 
 **Status.** Active. Shrinking the 529-line parser toward `permissions` rules
-(Top 10 #4b) is a separate design.
+(Top 10 #4b) is a separate design. Superseded for 4b by [0012](0012-gate-shrink.md).
 
 **Consequences.**
 - **Superseded by 0010.** A session started outside herdr is ungated even though it runs the conductor
