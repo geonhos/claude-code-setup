@@ -1,0 +1,133 @@
+diff --git a/AGENTS.md b/AGENTS.md
+index 56e1510..788034b 100644
+--- a/AGENTS.md
++++ b/AGENTS.md
+@@ -15,7 +15,10 @@ gate the conductor's shell, verify worker output and resume from progress logs.
+ - `docs/` — `wiki/` (durable knowledge), `superpowers/plans/`, `research/`
+ 
+ ## Test
+-`./install.sh --test` runs every suite. All must pass before a commit.
++`./install.sh --test` runs every suite in parallel (output buffered per suite);
++`HARNESS_TEST_SERIAL=1` runs them one by one for debugging. All must pass before
++a commit; implementers run only the affected `bash tests/<x>.test.sh` while
++working and the Stop hook's full run is the gate (a block is fixed in a new commit).
+ 
+ ## Shell rule
+ Scripts must run on macOS default bash 3.2: no `declare -A`, no `mapfile`, no
+diff --git a/README.md b/README.md
+index 03cc169..21a14ac 100644
+--- a/README.md
++++ b/README.md
+@@ -32,7 +32,7 @@ cd ~/workspace/claude-code-setup
+ - 전역 gitignore에 `.harness/` 추가
+ - `herdr integration install claude` 실행
+ 
+-테스트는 `./install.sh --test`로 돌린다.
++테스트는 `./install.sh --test`로 돌린다. 스위트는 병렬로 실행되고 출력은 스위트별로 모아서 끝나는 순서대로 나온다. 디버깅용 직렬 실행은 `HARNESS_TEST_SERIAL=1 ./install.sh --test`.
+ 
+ ## 사용법
+ 
+diff --git a/claude/agents/implementer.md b/claude/agents/implementer.md
+index 7c065e0..0caf15c 100644
+--- a/claude/agents/implementer.md
++++ b/claude/agents/implementer.md
+@@ -34,6 +34,10 @@ you have full tool access.
+   reading and say so under Open questions.
+ - Run the relevant tests and lint before reporting. Add or update tests for
+   behaviour you change.
++- While iterating, run only the suites your change affects, one
++  `bash tests/<x>.test.sh` at a time, and pass those before you commit. Do not
++  run the full `./install.sh --test` yourself: the Stop hook runs it as the
++  gate. If it blocks, fix the cause in a new commit and stop again.
+ - Commit only when the instruction says to commit, with the message it gives.
+ - Git safety: never force-push, rewrite history, `reset --hard`, or discard
+   uncommitted changes you did not make; stage specific files, not `-A`.
+diff --git a/docs/wiki/log.md b/docs/wiki/log.md
+index f2b8eb1..81d86e6 100644
+--- a/docs/wiki/log.md
++++ b/docs/wiki/log.md
+@@ -7,3 +7,4 @@
+ - 2026-10-21 · conductor · plan gate-opt-in · decision 0005 gate only inside herdr, fail closed on bad input; gotcha daemon-inherits-worker-env
+ - 2026-10-21 · implementer · retro review fixes · decision 0004: exit 1 after pre-flight queues a candidate; report snapshots pruned with their candidate
+ - 2026-10-21 · implementer · implementer asks wait 29 min · /implement passes --timeout 1740000 with Bash timeout 1800000 (p95 1706s); analyst/reviewer unchanged
++- 2026-11-06 · implementer · verify speed · install.sh --test runs suites in parallel (HARNESS_TEST_SERIAL=1 for serial), harness/retro tests set HARNESS_CLEAR_INTERVAL=0, implementer runs only affected suites
+diff --git a/install.sh b/install.sh
+index f32afa1..c8ecb81 100755
+--- a/install.sh
++++ b/install.sh
+@@ -25,17 +25,39 @@ die() { echo "install: $*" >&2; exit 1; }
+ need() { command -v "$1" >/dev/null 2>&1 || die "$1 is required but not on PATH"; }
+ 
+ if [ "${1:-}" = "--test" ]; then
+-  rc=0
+-  /bin/bash "$REPO/tests/gate.test.sh"    || rc=1
+-  /bin/bash "$REPO/tests/harness.test.sh" || rc=1
+-  /bin/bash "$REPO/tests/verify.test.sh"  || rc=1
+-  /bin/bash "$REPO/tests/progress.test.sh" || rc=1
+-  /bin/bash "$REPO/tests/route.test.sh"   || rc=1
+-  /bin/bash "$REPO/tests/install.test.sh" || rc=1
+-  /bin/bash "$REPO/tests/wiki.test.sh"    || rc=1
+-  /bin/bash "$REPO/tests/retro.test.sh"   || rc=1
++  rc=0; failed=""
++  # Suites run in parallel (each has its own mktemp dirs); output is buffered per
++  # suite and printed as one block when the suite finishes. HARNESS_TEST_SERIAL=1
++  # runs them one after another, streaming output, for debugging.
++  SUITES="gate harness verify progress route install wiki retro"
++  if [ "${HARNESS_TEST_SERIAL:-0}" = 1 ]; then
++    for s in $SUITES; do
++      /bin/bash "$REPO/tests/$s.test.sh" || { rc=1; failed="$failed $s"; }
++    done
++  else
++    TD=$(mktemp -d); trap 'rm -rf "$TD"' EXIT
++    for s in $SUITES; do
++      ( /bin/bash "$REPO/tests/$s.test.sh" >"$TD/$s.out" 2>&1; echo $? >"$TD/$s.rc"; : >"$TD/$s.done" ) &
++    done
++    left="$SUITES"
++    while [ -n "$left" ]; do
++      rest=""
++      for s in $left; do
++        if [ -e "$TD/$s.done" ]; then
++          echo "=== tests/$s.test.sh ==="; cat "$TD/$s.out"
++          [ "$(cat "$TD/$s.rc")" = 0 ] || { rc=1; failed="$failed $s"; }
++        else
++          rest="$rest $s"
++        fi
++      done
++      left="$rest"
++      [ -n "$left" ] && sleep 0.2
++    done
++    wait
++  fi
+   # lint the real wiki so a bad page fails CI
+-  /bin/bash "$REPO/bin/harness" wiki-lint "$REPO/docs/wiki" || { echo "wiki-lint FAILED"; rc=1; }
++  /bin/bash "$REPO/bin/harness" wiki-lint "$REPO/docs/wiki" || { echo "wiki-lint FAILED"; rc=1; failed="$failed wiki-lint"; }
++  [ -z "$failed" ] || echo "FAILED suites:$failed"
+   exit $rc
+ fi
+ 
+diff --git a/tests/harness.test.sh b/tests/harness.test.sh
+index d5f541c..d9a9aaf 100644
+--- a/tests/harness.test.sh
++++ b/tests/harness.test.sh
+@@ -20,7 +20,7 @@ setup() {
+   mkdir -p "$FAKE_DIR"
+   : > "$FAKE_LOG"
+   unset FAKE_PROMPT_HOOK
+-  export HARNESS_IDLE_GRACE=1 HARNESS_POLL_SEC=0.2
++  export HARNESS_IDLE_GRACE=1 HARNESS_POLL_SEC=0.2 HARNESS_CLEAR_INTERVAL=0
+   cd "$WORK" || exit 1
+ }
+ 
+diff --git a/tests/retro.test.sh b/tests/retro.test.sh
+index a6bd914..5e98c26 100644
+--- a/tests/retro.test.sh
++++ b/tests/retro.test.sh
+@@ -14,7 +14,7 @@ setup() {
+   WORK=$(mktemp -d)
+   WORKS="$WORKS $WORK"
+   export FAKE_DIR="$WORK/fake" FAKE_LOG="$WORK/herdr.log"
+-  export HARNESS_IDLE_GRACE=1 HARNESS_POLL_SEC=0.2
++  export HARNESS_IDLE_GRACE=1 HARNESS_POLL_SEC=0.2 HARNESS_CLEAR_INTERVAL=0
+   mkdir -p "$FAKE_DIR"
+   : > "$FAKE_LOG"
+   unset FAKE_PROMPT_HOOK HARNESS_LOG_KEEP HARNESS_LOG_DAYS HARNESS_NOW
