@@ -1,0 +1,196 @@
+diff --git a/bin/harness b/bin/harness
+index 8e766c8..bc94a2f 100755
+--- a/bin/harness
++++ b/bin/harness
+@@ -233,7 +233,7 @@ record_progress() {
+ 
+ # ask_parse_args <agent> <text> [opts...] — the one walk over an ask's options (called by cmd_ask
+ # after the agent and text checks). Sets ASK_TIMEOUT/FRESH/KEEP.
+-# The instruction text is positional, so a "--via" inside it is never an option. A bad option,
++# The instruction text is positional, so an option-looking word inside it is never an option. A bad option,
+ # --timeout value or --fresh with --keep only sets ASK_BAD: ask_inner turns that into the usage
+ # error inside the logged subshell (exit 1 is recorded in progress).
+ ask_parse_args() {
+@@ -251,7 +251,6 @@ ask_parse_args() {
+         esac ;;
+       --fresh) ASK_FRESH=1; shift ;;
+       --keep) ASK_KEEP=1; shift ;;
+-      --via) if [ $# -ge 2 ]; then shift 2; else shift; fi ;;   # no-op until step 5: a running conductor still sends --via skill
+       *) ASK_BAD=1; shift ;;
+     esac
+   done
+diff --git a/claude/hooks/conductor-gate.sh b/claude/hooks/conductor-gate.sh
+index ea5a9e8..956232d 100755
+--- a/claude/hooks/conductor-gate.sh
++++ b/claude/hooks/conductor-gate.sh
+@@ -81,6 +81,10 @@ CWD=$(printf '%s' "$INPUT" | jq -r '.cwd // empty' 2>/dev/null)
+ [ -n "$CWD" ] || CWD=$PWD
+ CWD=${CWD%/}
+ 
++# ============================ POLICY TABLES ============================
++# Everything the gate allows or denies by name lives in this block (deny
++# messages, BASH_ALLOW, GH_ALLOW, GIT_DENY*). The code below only applies it.
++
+ # Fixed strings: never interpolate per-call data (keeps the prompt cache stable).
+ MSG_WRITE="Conductor cannot edit source. Delegate with the /implement skill (implementer worker). Direct writes are allowed only under docs/**/*.md and .harness/."
+ MSG_READ="Conductor does not read source. Delegate with the /analyze skill (analyst worker) and read its report. Direct reads are allowed only under .harness/, docs/, and *.md files."
+@@ -119,6 +123,7 @@ GIT_DENY_LONG="$GIT_DENY_LONG|patch|unified|cc|binary|remerge-diff|dd|diff-merge
+ GIT_DENY_SHORT='odDmMcCpuUGS'
+ 
+ GIT_DENY="--($GIT_DENY_LONG)| -[$GIT_DENY_SHORT][A-Za-z0-9]* "
++# ========================== END POLICY TABLES ==========================
+ 
+ deny() {
+   jq -n --arg r "$1" \
+diff --git a/docs/wiki/decisions/0005-gate-only-inside-herdr.md b/docs/wiki/decisions/0005-gate-only-inside-herdr.md
+index 62d2c93..aa12309 100644
+--- a/docs/wiki/decisions/0005-gate-only-inside-herdr.md
++++ b/docs/wiki/decisions/0005-gate-only-inside-herdr.md
+@@ -1,7 +1,7 @@
+ ---
+ type: decision
+ status: active
+-updated: 2026-10-30
++updated: 2026-11-05
+ sources: [docs/superpowers/plans/2026-10-21-gate-opt-in.md, .harness/review-critique-detail.md §1.4-1.5, claude/hooks/conductor-gate.sh:10-30, ask 1793150496-56689-6967, commit d2e4bcb]
+ verified_by: tests/gate.test.sh
+ ---
+@@ -24,7 +24,7 @@ read the local tree, and the gate is a routing nudge, not a security boundary.
+ **Why.** The critique (§1.4) found the gate allowed what it could not parse,
+ and (§1.5) that the global conductor made every session outside herdr useless.
+ 
+-**Status.** Active. Shrinking the 529-line parser toward `permissions` rules
++**Status.** Active. Superseded by [0012](0012-gate-shrink.md): the gate is kept and trimmed, `permissions` rules rejected. Was: shrinking the 529-line parser toward `permissions` rules
+ (Top 10 #4b) is a separate design.
+ 
+ **Consequences.**
+diff --git a/docs/wiki/decisions/0011-single-runner-headless.md b/docs/wiki/decisions/0011-single-runner-headless.md
+index 3ae92fd..c45c8ce 100644
+--- a/docs/wiki/decisions/0011-single-runner-headless.md
++++ b/docs/wiki/decisions/0011-single-runner-headless.md
+@@ -1,7 +1,7 @@
+ ---
+ type: decision
+ status: active
+-updated: 2026-11-02
++updated: 2026-11-05
+ sources: [.harness/setup-review.md, .harness/progress.jsonl, 0001, 0007, 0009, 0010]
+ verified_by: harness metrics + tests/headless*.test.sh
+ ---
+@@ -24,4 +24,6 @@ verified_by: harness metrics + tests/headless*.test.sh
+ 
+ Step 3 done 2026-11-02: pane runner, `harness spawn`, `close_after_ask`, idle-TTL reap, `/clear` scheduling, late-report archive and the `runner` config key are removed; 0002, 0003, 0006 and five pane troubleshooting pages are superseded.
+ 
+-Step 4 done 2026-11-02: routing log and route hook, retro, `--worktree` (registry, locks, `max_parallel`) and doctor removed; `--via` is a no-op until step 5; 0004 and 0008 superseded.
++Step 4 done 2026-11-02: routing log and route hook, retro, `--worktree` (registry, locks, `max_parallel`) and doctor removed; 0004 and 0008 superseded.
++
++Step 5 done 2026-11-05: `--via` removed; gate trimmed (552 → 513 lines at v21, 518 with the policy block), ADR [0012](0012-gate-shrink.md).
+diff --git a/docs/wiki/decisions/0012-gate-shrink.md b/docs/wiki/decisions/0012-gate-shrink.md
+new file mode 100644
+index 0000000..6f99205
+--- /dev/null
++++ b/docs/wiki/decisions/0012-gate-shrink.md
+@@ -0,0 +1,25 @@
++---
++type: decision
++status: active
++updated: 2026-11-05
++sources: [.harness/gate-shrink-detail.md, .harness/spike-bprime/RESULTS.md, commits 5cd1d80 a99a1bf, tests/gate-denied.list, 0005, 0011]
++verified_by: tests/gate.test.sh
++---
++# 0012: Gate shrink: keep the gate, trim what is never used
++
++**Context.** The Top 10 critique item 4b ("replace the 529-line gate with `permissions` rules and a ~50-line gate") was split off in 0005 as a separate design. The analyst's inventory ([gate-shrink-detail](../../../.harness/gate-shrink-detail.md), 552 lines then) found the path helpers (`rel`/`physrel`/`physical`, readable/writable, raw-stream, 109 lines) are the core protection. Usage replay over 881 conductor Bash calls (2026-10-18..10-28) gave 754 allowed: `harness`, `cat`/`ls`, `git log|status|diff --stat|branch`, `gh pr *`, `herdr pane current|get`. Never used: `git show --stat`, `herdr status|pane list|layout|workspace|tab`, `gh issue|run|repo|auth|browse|pr status`, jq as a pipe consumer. Chaining (`;`, `&`) was 44 of 754 calls, pipes 0. No filesystem MCP server is configured.
++
++A last way out was B′: native subagents instead of the harness runner, which would have made the gate unnecessary. The interactive spike (`.harness/spike-bprime/RESULTS.md`, rejected 2026-11-03) showed subagents die with the conductor ("1 local agent couldn't be moved and was stopped") and report delivery is decoupled from the Stop-hook verify. The harness runner stays, so the gate stays.
++
++**Decision.** Keep the gate and trim it, as the plan's options, now all in place:
++- (g) keyed on hook `agent_type` (v21); (a) one command per call via the quote-aware `scan_command` (0 allowed pipes, 5.8% chained calls become parallel calls; wiki page conductor-shell-one-command); regression list `tests/gate-denied.list` runs in the suite.
++- (e) the deny messages and the Bash policy tables (`BASH_ALLOW`, `GH_ALLOW`, `GIT_DENY*`) sit in one labelled block near the top (a99a1bf).
++- (c) gh is `pr create|view|list|checks|comment|edit|merge` only; (d) `git branch` list-only by regex, no `git show`, herdr `pane get|current` only.
++- (b) no explicit Agent/Workflow/Monitor/NotebookEdit or `mcp__filesystem__*` cases; `claude/agents/conductor.md` `disallowedTools` covers the first four and the hook MATCHER is `Edit|Write|Read|Grep|Glob|Bash`.
++- Also removed in step 5: the `--via` no-op in `harness ask` (5cd1d80); it is now an unknown option (exit 1).
++- Kept: the path helpers and the Bash allowlist. They are what stops `Read bin/harness`, `..`, symlink escapes and raw-stream reads; a gate under 50 lines would have to drop symlink resolution, Glob/Grep scoping and the allowlist.
++- Rejected (f): replacing the gate with `permissions` rules. User-scope rules also bind workers (same settings file), deny beats allow so "deny Read except .harness/docs" cannot be written, and Bash patterns are fragile. Only tool-name denies fit, and (b) already uses them.
++
++**Status.** Active. Supersedes the 4b consequence in [0005](0005-gate-only-inside-herdr.md).
++
++**Consequences.** Gate 552 lines (analyst baseline) → 513 (v21) → 518 with the policy-block banner; most of the trim landed with v21, step 5 only formalised and tested it. A new conductor shell form must be added to `BASH_ALLOW` and `conductor.md` "You may run directly" together. A filesystem MCP server added later would be ungated unless `mcp__filesystem` is added to `disallowedTools`.
+diff --git a/docs/wiki/index.md b/docs/wiki/index.md
+index 197278e..31c1486 100644
+--- a/docs/wiki/index.md
++++ b/docs/wiki/index.md
+@@ -37,10 +37,11 @@ Read this first. Open a page only when it is relevant. Schema and promotion rule
+ - [0002 Stop-hook completion](decisions/0002-completion-by-stop-hook-marker.md): pane marker; superseded by exit.json (superseded, 2026-11-02)
+ - [0003 Pane lifecycle](decisions/0003-pane-lifecycle-defaults.md): pane idle TTL and close rules; removed in step 3 (superseded, 2026-11-02)
+ - [0004 Failure-only retros](decisions/0004-failure-only-batched-retros.md): removed in prune step 4; was: queue on failure, one batched analyst ask, reviewer FAIL never queues (superseded, 2026-11-02)
+-- [0005 Gate only inside herdr](decisions/0005-gate-only-inside-herdr.md): step 1 (HERDR_ENV) and the global conductor superseded, steps 2-3 scoped by 0010; agent_type keys the gate (active, 2026-10-30)
++- [0005 Gate only inside herdr](decisions/0005-gate-only-inside-herdr.md): step 1 (HERDR_ENV) and the global conductor superseded, steps 2-3 scoped by 0010; agent_type keys the gate; 0012 supersedes the 4b consequence (active, 2026-10-30)
+ - [0006 Keep implementer pane](decisions/0006-keep-implementer-pane.md): kept implementer pane; no panes remain (superseded, 2026-11-02)
+ - [0007 Headless runner pilot](decisions/0007-headless-runner-pilot.md): `claude -p` detached; completion = exit file; `runner` key removed in step 3 (active, 2026-11-02)
+ - [0008 Worktree per ask](decisions/0008-worktree-per-ask.md): removed in prune step 4; was: `ask --worktree` gives a headless analyst/reviewer its own detached checkout; ask-id addressing (superseded, 2026-11-02)
+ - [0009 Headless implementer](decisions/0009-headless-implementer.md): headless implementer: pinned permissions, exit 2 on denials, auto-resume after non-zero exit, 90 min cap (active, 2026-11-02)
+ - [0010 Harness acts only in a checkout](decisions/0010-herdr-optional-gate-by-checkout.md): gate/resume key on .harness/asks (made by `harness init`); per-repo conductor agent; no HERDR_ENV switch; `harness wait`/`watch`; doctor and `--worktree` removed in step 4 (active, 2026-11-02)
+-- [0011 One runner: headless](decisions/0011-single-runner-headless.md): headless is the only runner; herdr is a viewer; prune plan steps 1-7, steps 3-4 done (active, 2026-11-02)
++- [0011 One runner: headless](decisions/0011-single-runner-headless.md): headless is the only runner; herdr is a viewer; prune plan steps 1-7, steps 3-5 done (active, 2026-11-05)
++- [0012 Gate shrink](decisions/0012-gate-shrink.md): keep the gate (B′ rejected), trim allowlist and dead cases, `--via` removed; permissions rules rejected (active, 2026-11-05)
+diff --git a/docs/wiki/log.md b/docs/wiki/log.md
+index 33155ad..bdd8e4b 100644
+--- a/docs/wiki/log.md
++++ b/docs/wiki/log.md
+@@ -41,3 +41,4 @@
+ - 2026-11-02 · implementer · prune step 3 · pane runner, spawn, close_after_ask, idle reap, /clear, late-report archive removed; viewer = pane running harness watch; 0002/0003/0006 + 5 pane pages superseded
+ - 2026-11-02 · implementer · prune step 3 review fixes · whole-second-timing marked stale (its test was deleted); 0009 drops the idle-TTL clause
+ - 2026-11-02 · implementer · prune step 4 · routing log, retro, --worktree (registry, locks) and doctor removed; 0004/0008 superseded; citations of removed suites fixed
++- 2026-11-05 · implementer · prune step 5 · --via removed; gate policy block + test for every conductor.md form; ADR 0012 gate shrink (B′ rejected 2026-11-03); 0011 step 5 done
+diff --git a/tests/gate.test.sh b/tests/gate.test.sh
+index 70afa4c..45a8563 100644
+--- a/tests/gate.test.sh
++++ b/tests/gate.test.sh
+@@ -168,7 +168,7 @@ expect deny  $C "Glob src pattern no path"      "$(tool Glob '{"pattern":"src/**
+ 
+ # --- Bash: allowlist ---------------------------------------------------------
+ expect allow $C "bash harness ask"        "$(bcmd 'harness ask analyst "what is this"')"
+-expect allow $C "bash harness ask --via"  "$(bcmd "harness ask implementer 'x' --via skill")"
++expect allow $C "bash harness ask --fresh" "$(bcmd "harness ask implementer 'x' --fresh")"
+ expect allow $C "bash harness status"     "$(bcmd 'harness status')"
+ expect allow $C "bash herdr"              "$(bcmd 'herdr pane current')"
+ expect allow $C "bash gh"                 "$(bcmd 'gh pr view 12')"
+@@ -283,6 +283,7 @@ expect allow $C "bash cat docs"           "$(bcmd 'cat docs/superpowers/specs/x.
+ expect allow $C "bash ls .harness"        "$(bcmd 'ls .harness/reports')"
+ expect allow $C "bash ls docs"            "$(bcmd 'ls -la docs/superpowers')"
+ expect allow $C "bash ls docs bare"       "$(bcmd 'ls docs')"
++expect allow $C "bash cat progress.md"     "$(bcmd 'cat .harness/progress.md')"
+ expect deny  $C "bash cat src"            "$(bcmd 'cat src/a.ts')"
+ expect deny  $C "bash ls src"             "$(bcmd 'ls src')"
+ expect deny  $C "bash ls .harnessx"       "$(bcmd 'ls .harnessx')"
+diff --git a/tests/progress.test.sh b/tests/progress.test.sh
+index cb1cf5d..62c6e5e 100755
+--- a/tests/progress.test.sh
++++ b/tests/progress.test.sh
+@@ -68,22 +68,11 @@ check "jsonl: verify null for analyst" [ "$(jl '.verify')" = null ]
+ long=$(printf 'x%.0s' $(seq 1 300))
+ run ask analyst "$long"
+ check "jsonl: instr 160 chars" [ "$(jl '.instr|length')" -eq 160 ]
+-# --via is a no-op until step 5 (a running conductor still sends --via skill): accepted, not sent as text
++# --via was removed in prune step 5: refused as an unknown option, nothing started
+ setup
+-hook_report analyst '# analyst report — x\nstatus: done\n'
+ run ask analyst "look" --via skill
+-check "via no-op: rc 0" [ "$RC" -eq 0 ]
+-check "via no-op: instr is just the text" [ "$(jl .instr)" = look ]
+-setup
+-hook_report analyst '# analyst report — x\nstatus: done\n'
+-run ask analyst "look" --via
+-check "via bare: rc 0" [ "$RC" -eq 0 ]
+-setup
+-hook_report analyst '# analyst report — x\nstatus: done\n'
+-run ask analyst "look" --via nope
+-check "via nope: rc 0" [ "$RC" -eq 0 ]
+-check "via nope: instr is just the text" [ "$(jl .instr)" = look ]
+-
++check "via removed: rc 1" [ "$RC" -eq 1 ]
++check "via removed: no run started" [ ! -e .harness/asks/analyst.exit.json ]
+ 
+ # --- exit 3 (no report), exit 4 (still running) ----------------------------------------------
+ setup
