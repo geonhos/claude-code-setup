@@ -46,8 +46,8 @@ has() { grep -qF -- "$1" <<<"$OUT"; }
 
 # full frame, implementer, text Now, no verify yet, no baseline
 frame
-EXPECT_HEAD='implementer  ask-1  ⏱ 12m04s  turns 2  ctx 82k  sonnet'
-check "header" [ "$(sed -n 1p <<<"$OUT")" = "$EXPECT_HEAD" ]
+# elapsed is wall-clock (date +%s - start): allow a few seconds of drift so a second boundary cannot flake it
+check "header" bash -c 'case "$1" in "implementer  ask-1  ⏱ 12m0"[4-9]"s  turns 2  ctx 82k  sonnet") true;; *) false;; esac' _ "$(sed -n 1p <<<"$OUT")"
 check "brief title" [ "$(sed -n 2p <<<"$OUT")" = "── Brief ── Implement the thing" ]
 GOLD_MID=$(cat <<'EOG'
 ── Now ──
