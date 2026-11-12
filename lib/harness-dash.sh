@@ -59,12 +59,27 @@ dash_facts() {
                 else "pass" end)}'
 }
 
+# jq def cw: display columns of a code point (2 = East-Asian Wide/Fullwidth, from Unicode EastAsianWidth W/F)
+DASH_JQ_CW='def cw: [[4352,4447],[8986,8987],[9193,9196],[9200,9200],[9203,9203],[9725,9726],[9748,9749],
+  [9800,9811],[9855,9855],[9875,9875],[9889,9889],[9898,9899],[9917,9918],[9924,9925],[9934,9934],[9940,9940],
+  [9962,9962],[9970,9973],[9978,9978],[9981,9981],[9989,9989],[9994,9995],[10024,10024],[10060,10060],
+  [10062,10062],[10067,10069],[10071,10071],[10133,10135],[10160,10160],[10175,10175],[11035,11036],
+  [11088,11088],[11093,11093],[11904,12350],[12353,13311],[13312,19903],[19968,40959],[40960,42191],
+  [44032,55203],[63744,64255],[65040,65049],[65072,65103],[65280,65376],[65504,65510],[127744,128591],
+  [128640,128767],[129280,129535],[129648,129791],[131072,262141]] as $r
+  | . as $c | if any($r[]; $c >= .[0] and $c <= .[1]) then 2 else 1 end;
+'
+
 # hl_dash_frame <role> <raw> — the dashboard text. Size: HARNESS_DASH_LINES / HARNESS_DASH_COLS,
 # else the terminal (24x80 when unknown). Final frame (result + report head) when the run is not
 # live: HARNESS_DASH_FINAL=1 forces it, else hl_alive decides.
 hl_dash_frame() {
   local role=$1 raw=$2 a="$ASK_DIR/$1" H W id start facts model turns ctx verify now_s dur final=0
-  H=${HARNESS_DASH_LINES:-$(tput lines 2>/dev/null)}; W=${HARNESS_DASH_COLS:-$(tput cols 2>/dev/null)}
+  # size: env override, else the controlling tty (tput inside $(...) has no tty on stdout), else tput
+  local sz=""
+  [ -n "${HARNESS_DASH_LINES:-}" ] && [ -n "${HARNESS_DASH_COLS:-}" ] || sz=$({ stty size </dev/tty; } 2>/dev/null)
+  H=${HARNESS_DASH_LINES:-${sz%% *}}; W=${HARNESS_DASH_COLS:-${sz##* }}
+  [ -n "$H" ] || H=$(tput lines 2>/dev/null); [ -n "$W" ] || W=$(tput cols 2>/dev/null)
   case "$H" in ''|*[!0-9]*|0) H=24 ;; esac
   case "$W" in ''|*[!0-9]*|0) W=80 ;; esac
   read -r id start _ < "$a.current" 2>/dev/null
@@ -169,14 +184,10 @@ hl_dash_frame() {
       [ -z "$l" ] || out="$out"$'\n'"${sec}Recent ──"$'\n'"$l"
     fi
   fi
-  # cut by display width (Hangul/CJK/fullwidth = 2 columns; jq works in code points, bash 3.2 ${v:0:n} in
-  # bytes) so no line wraps; a line is clipped, never wrapped
-  printf '%s\n' "$out" | jq -R -r --argjson w "$W" '
-    def cw: if (. >= 4352 and . <= 4447) or (. >= 11904 and . <= 42191) or (. >= 44032 and . <= 55203)
-              or (. >= 63744 and . <= 64255) or (. >= 65040 and . <= 65049) or (. >= 65072 and . <= 65135)
-              or (. >= 65280 and . <= 65376) or (. >= 65504 and . <= 65510) or (. >= 127744 and . <= 128591)
-              or (. >= 129280 and . <= 129535) or (. >= 131072 and . <= 262141) then 2 else 1 end;
-    explode | reduce .[] as $c ({w: 0, o: [], f: false};
+  # cut by display width (East-Asian Wide/Fullwidth incl. emoji = 2 columns; jq works in code points, bash 3.2
+  # ${v:0:n} in bytes) so no line wraps; a line is clipped, never wrapped. Tabs become 2 spaces first.
+  printf '%s\n' "$out" | jq -R -r --argjson w "$W" "$DASH_JQ_CW"'
+    gsub("\t"; "  ") | explode | reduce .[] as $c ({w: 0, o: [], f: false};
       if .f then . else ($c | cw) as $k | if .w + $k > $w then .f = true else .w += $k | .o += [$c] end end)
     | .o | implode'
 }
@@ -185,6 +196,7 @@ hl_dash_frame() {
 # end, then everything below the frame cleared
 dash_paint() {
   printf '\033[H'
-  printf '%s\n' "$1" | awk 'BEGIN { e = sprintf("%c", 27) } { print $0 e "[K" }'
+  # no newline after the last line: a frame of exactly H lines would scroll the pane by one every tick
+  printf '%s\n' "$1" | awk 'BEGIN { e = sprintf("%c", 27) } { if (NR > 1) printf "\n"; printf "%s%s[K", $0, e }'
   printf '\033[J'
 }

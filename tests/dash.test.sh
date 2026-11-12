@@ -168,6 +168,18 @@ done
 PAINT=$(dash_paint $'one\ntwo' | od -c | tr -d ' \n')
 check "paint: home + per-line clear + clear below, no 2J" bash -c 'case "$1" in *033[H*one033[K*two033[K*033[J*) ! case "$1" in *2J*) true;; *) false;; esac;; *) false;; esac' _ "$PAINT"
 
+# full frame: exactly H lines -> H-1 newlines (a trailing newline would scroll the pane every tick)
+FULL=$(printf 'l%s\n' 1 2 3 4 5 | sed '$d')$'\nl5'
+check "paint: H-line frame prints H-1 newlines" [ "$(dash_paint "$FULL" | tr -cd '\n' | wc -c | tr -d ' ')" = 4 ]
+
+# wide emoji/symbols count 2 columns; tabs expand
+printf '%s\n' '{"type":"assistant","message":{"id":"w1","content":[{"type":"text","text":"✅🚀❌⚡ ✅🚀❌⚡ ✅🚀❌⚡ ✅🚀❌⚡ ✅🚀❌⚡\n\tx\ty\tz\tabcdefghijklmnop"}]}}' > .harness/log/emoji.jsonl
+for w in 20 33; do
+  frame 30 $w implementer .harness/log/emoji.jsonl
+  check "emoji width: lines <= $w cols (Now present)" bash -c 'grep -qF "── Now" <<<"$1" && grep -qF "  ✅" <<<"$1" && [ "$(jq -R "explode | map(if (. >= 9989 and . <= 9989) or . == 10060 or . == 9889 or (. >= 127744 and . <= 128767) then 2 else 1 end) | add // 0" <<<"$1" | sort -n | tail -n 1)" -le "$2" ]' _ "$OUT" $w
+  check "tabs: none left, width <= $w" bash -c '! grep -q "$(printf "\t")" <<<"$1" && grep -qF "  x  y" <<<"$1" && [ "$(jq -R "length" <<<"$1" | sort -n | tail -n 1)" -le "$2" ]' _ "$OUT" $w
+done
+
 # final frame: result line + report head
 printf '%s\n' '# stale report' > .harness/reports/implementer.md; touch -t 200001010000 .harness/reports/implementer.md
 echo '{"ask_id":"ask-0","rc":0,"result":"success","num_turns":99,"cost_usd":9,"duration_ms":999000}' > $ASK_DIR/implementer.exit.json

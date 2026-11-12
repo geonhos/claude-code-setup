@@ -40,7 +40,8 @@ unchanged).
 
 ## Rendering rules
 - Pure function: `render(frame inputs) → text` sized to `tput lines`/`tput cols`
-  (overridable by env for tests). The loop only clears (`\033[H\033[2J`) and prints.
+  (overridable by env for tests). The loop moves the cursor home (`\033[H`), prints each line followed by `\033[K`
+  (no newline after the last line), then `\033[J`; it never clears the whole screen.
 - Truncate lines to width. When height is short, shrink sections in this order of keeping:
   header, Now, Steps, Verify, Diff, Recent (Recent shrinks first, then Diff, then Brief title kept to 1 line).
 - Steps capped at 10 lines; Now capped at 3 lines.
