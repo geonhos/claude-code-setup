@@ -164,6 +164,12 @@ for w in 20 33 61; do
   check "display width: Korean frame <= $w cols (Now + header present)" bash -c 'grep -qF "── Now" <<<"$1" && grep -qF "  한글" <<<"$1" && [ "$(jq -R "explode | map(if . >= 44032 and . <= 55203 then 2 else 1 end) | add // 0" <<<"$1" | sort -n | tail -n 1)" -le "$2" ]' _ "$OUT" $w
 done
 
+# cut at W-1: an ASCII-only line wider than W is cut to exactly W-1 columns (the trailing erase-to-EOL never hits glyph W)
+printf '# %s\n' abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyz > .harness/task-implementer.md
+frame 30 20
+check "W-1: header line is exactly 19 cols at W=20" [ "$(sed -n 1p <<<"$OUT" | jq -R length)" -eq 19 ]
+check "W-1: no line reaches 20 cols" [ "$(jq -R length <<<"$OUT" | sort -n | tail -n 1)" -le 19 ]
+
 # redraw: no full clear; home, clear line ends, clear below
 PAINT=$(dash_paint $'one\ntwo' | od -c | tr -d ' \n')
 check "paint: home + per-line clear + clear below, no 2J" bash -c 'case "$1" in *033[H*one033[K*two033[K*033[J*) ! case "$1" in *2J*) true;; *) false;; esac;; *) false;; esac' _ "$PAINT"
@@ -184,7 +190,7 @@ for w in 20 33; do
   check "🟢🟡🟠 line fits $w cols (2 cols each, hard-coded)" bash -c 'l=$(grep "🟢" <<<"$1" | head -n 1); k=$(printf "%s" "$l" | grep -o "[🟢🟡🟠]" | wc -l | tr -d " "); [ "$k" -ge 1 ] && [ $((2 + 2 * k)) -le "$2" ]' _ "$OUT" $w
 done
 # conservative: the rest of the 1F000 block and the listed misses count 2 cols too (hard-coded: 3 chars = 6 cols)
-for c in 🀄 🃏 🆎 🆑 🈁 🟠 〈; do
+for c in 🀄 🃏 🆎 🆑 🈁 🟠 〈 "$(printf '\xe2\x8c\xa9')" "$(printf '\xe2\x8c\xaa')" "$(printf '\xef\xb9\x90')" "$(printf '\xef\xb9\xab')"; do
   W=7; printf '{"type":"assistant","message":{"id":"c","content":[{"type":"text","text":"%s%s%s%s%s%s%s"}]}}\n' $c $c $c $c $c $c $c > .harness/log/one.jsonl
   frame 30 $W implementer .harness/log/one.jsonl
   check "width of $c counts 2 (2 + 2k <= 7 -> k <= 2)" bash -c 'k=$(grep -F "$2" <<<"$1" | while read -r l; do printf "%s" "$l" | grep -o "$2" | wc -l; done | sort -n | tail -n 1 | tr -d " "); [ "${k:-0}" -ge 1 ] && [ "$k" -le 2 ]' _ "$OUT" "$c"
@@ -198,9 +204,14 @@ check "only COLS set: ASCII header line <= 25 cols" [ "$(sed -n 1p <<<"$OUT" | j
 
 # autowrap off while drawing, restored on exit with a newline
 check "begin: cursor hidden + autowrap off" bash -c '[ "$1" = "$(printf "\033[?25l\033[?7l")" ]' _ "$(dash_begin)"
-END=$(dash_end | od -An -c | tr -d ' \n')
+dash_begin >/dev/null
+dash_end > .harness/log/end1.out   # main shell (not $(...)): the idempotence flag must persist
+END=$(od -An -c < .harness/log/end1.out | tr -d ' \n')
 check "end: autowrap on + cursor shown + newline" bash -c 'case "$1" in *033[?7h033[?25h\\n) true;; *) false;; esac' _ "$END"
+dash_end > .harness/log/end2.out
+check "end: idempotent (second call prints nothing)" [ ! -s .harness/log/end2.out ]
 SRC=$(cat "$HERE/../lib/harness-headless.sh")
+check "watch: traps cover INT TERM HUP QUIT EXIT" bash -c 'grep -qF "trap '"'"'dash_end; exit 129'"'"' HUP" <<<"$1" && grep -qF "trap '"'"'dash_end; exit 131'"'"' QUIT" <<<"$1" && grep -qF "trap dash_end EXIT" <<<"$1"' _ "$SRC"
 check "watch: trap and normal exit both use dash_begin/dash_end" bash -c 'grep -qF "trap '"'"'dash_end; exit 130'"'"' INT TERM" <<<"$1" && grep -q "^  dash_begin" <<<"$1" && grep -q "^  dash_end" <<<"$1"' _ "$SRC"
 
 # final frame: result line + report head

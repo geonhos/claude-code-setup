@@ -542,6 +542,9 @@ cmd_watch() {
   fi
   # live: a dashboard redrawn every HARNESS_DASH_SEC (2 s), then a final frame (result + report head)
   trap 'dash_end; exit 130' INT TERM
+  trap 'dash_end; exit 129' HUP
+  trap 'dash_end; exit 131' QUIT
+  trap dash_end EXIT
   dash_begin
   while hl_alive "$role" && ! hl_done "$role" "$id"; do
     dash_paint "$(hl_dash_frame "$role" "$raw")"

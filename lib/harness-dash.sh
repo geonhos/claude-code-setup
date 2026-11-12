@@ -187,7 +187,8 @@ hl_dash_frame() {
   fi
   # cut by display width (East-Asian Wide/Fullwidth incl. emoji = 2 columns; jq works in code points, bash 3.2
   # ${v:0:n} in bytes) so no line wraps; a line is clipped, never wrapped. Tabs become 2 spaces first.
-  printf '%s\n' "$out" | jq -R -r --argjson w "$W" "$DASH_JQ_CW"'
+  # Cut at W-1 columns: the trailing \033[K (dash_paint) must never erase the last glyph with autowrap off.
+  printf '%s\n' "$out" | jq -R -r --argjson w "$((W > 1 ? W - 1 : 1))" "$DASH_JQ_CW"'
     gsub("\t"; "  ") | explode | reduce .[] as $c ({w: 0, o: [], f: false};
       if .f then . else ($c | cw) as $k | if .w + $k > $w then .f = true else .w += $k | .o += [$c] end end)
     | .o | implode'
@@ -195,8 +196,10 @@ hl_dash_frame() {
 
 # dash_begin / dash_end — hide the cursor and turn terminal autowrap off while the loop draws, so a width
 # miscount can only cut a line short, never wrap or scroll; dash_end restores both and ends the line
-dash_begin() { printf '\033[?25l\033[?7l'; }
-dash_end() { printf '\033[?7h\033[?25h\n'; }
+# dash_end is idempotent (traps + normal exit may both call it): only the first call after dash_begin prints
+DASH_ON=0
+dash_begin() { DASH_ON=1; printf '\033[?25l\033[?7l'; }
+dash_end() { [ "$DASH_ON" = 1 ] || return 0; DASH_ON=0; printf '\033[?7h\033[?25h\n'; }
 
 # dash_paint <frame> — redraw in place (no full clear, so no flicker): home, each line cleared to its
 # end, then everything below the frame cleared
