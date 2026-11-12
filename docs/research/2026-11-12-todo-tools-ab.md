@@ -43,6 +43,6 @@ diff 크기는 조건 간 차이가 노이즈 수준(T1 추가 64-70줄 / T4 37-
 - 이벤트 열(T4-nudge-1): `ToolSearch select:TaskCreate,TaskUpdate` -> `TaskCreate "Commit 1: remove --via"` -> `TaskCreate "Commit 2: policy tables at top"` -> `TaskCreate "Commit 3: trim allowlist"` -> `TaskCreate "Commit 4: ADR 0012 docs"` -> `TaskUpdate {taskId:"1",status:"completed"}`. 이후 갱신 없음.
 
 ## 판정
-- **오버헤드는 측정되지 않을 만큼 작다**: Task 호출은 실행당 0-5회(전체 턴의 0-약 15%), 비용·토큰 차이는 n=2의 실행 간 편차(T1 base 한 쌍 안에서도 토큰 2.7배)보다 작다. todo/nudge가 base보다 싸 보이는 것은 노이즈다. 확실히 말할 수 있는 건 "눈에 띄는 비용 증가는 없었다"까지다.
-- **정작 문제는 사용률**: 환경 변수만으로는 사용 0%(8회 중 0회 + stage 1의 다수), 지시를 붙여도 4회 중 2회만 호출, 그중 1회는 목록이 stale. 즉 Task 이벤트로 Steps 체크리스트를 만들면 대부분 비어 있거나 틀린다. 쓰려면 implementer 프롬프트에 "작업 시작 때 TaskCreate, 단계마다 TaskUpdate" 같은 강제 문구가 필요하고, 그래도 순응은 보장되지 않는다.
+- **오버헤드는 측정되지 않을 만큼 작다**: Task 호출은 실행당 0-5회(전체 턴의 0-25%(T1-nudge-1은 4/16)), 비용·토큰 차이는 n=2의 실행 간 편차(T1 base 한 쌍 안에서도 토큰 2.7배)보다 작다. todo/nudge가 base보다 싸 보이는 것은 노이즈다. 확실히 말할 수 있는 건 "눈에 띄는 비용 증가는 없었다"까지다.
+- **정작 문제는 사용률**: 환경 변수만으로는 사용 0%(stage 2 todo 4회 중 0회, stage 1 무지시 전부 0), 지시를 붙여도 4회 중 2회만 호출, 그중 1회는 목록이 stale. 즉 Task 이벤트로 Steps 체크리스트를 만들면 대부분 비어 있거나 틀린다. 쓰려면 implementer 프롬프트에 "작업 시작 때 TaskCreate, 단계마다 TaskUpdate" 같은 강제 문구가 필요하고, 그래도 순응은 보장되지 않는다.
 - 주의: n=2, 동시 실행(시간 신뢰 낮음), 품질 채점 없음(스위트 통과만), sonnet만 stage 2에서 사용, TodoWrite 경로는 stage 2에서 측정 안 함, `nudge` 문구는 한 가지뿐이라 다른 문구의 순응률은 모른다.
