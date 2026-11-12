@@ -16,7 +16,8 @@ implementer  <ask-id>  ⏱ 12m04s  turns 38  ctx 82k  sonnet
 ── Brief ───  title line of the brief
 ── Steps ───  numbered list from the brief's `## Steps` (no progress marks in phase 1);
               fallback: the brief's `##` headings
-── Now ─────  last assistant text; else last tool_use (Bash description preferred over command)
+── Now ─────  whichever is later in the stream: last assistant text or last tool_use
+              (Bash description preferred over command)
 ── Recent ──  last N lines of harness-view output (N fits pane height)
 ── Verify ──  not started | verifying… | pass | fail (<step>)
 ── Diff ────  git diff --stat against verify/<role>.base sha (implementer only; omitted otherwise)

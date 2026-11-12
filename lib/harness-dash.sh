@@ -38,23 +38,23 @@ dash_brief() {
 # dash_facts <raw> — one JSON object of what the stream says (model, turns, ctx, now, verify)
 dash_facts() {
   local raw=$1
-  { if [ -f "$raw" ]; then tail -n 2000 "$raw"; elif [ -f "$raw.gz" ]; then gzip -dc "$raw.gz"; fi; } 2>/dev/null | jq -R -n -c '
+  { if [ -f "$raw" ]; then cat "$raw"; elif [ -f "$raw.gz" ]; then gzip -dc "$raw.gz"; fi; } 2>/dev/null | jq -R -n -c '
     def first_line: tostring | split("\n")[0];
     [inputs | fromjson? | select(type == "object")] as $e
     | ([$e[] | select(.type == "system" and .subtype == "init")] | first) as $i
     | [$e[] | select(.type == "assistant")] as $a
     | ([$a[] | .message.usage?] | map(select(. != null)) | last) as $u
-    | ([$a[] | (.message.content // [])[] | select(.type == "text" and ((.text // "") | test("\\S")))] | last) as $t
-    | ([$a[] | (.message.content // [])[] | select(.type == "tool_use")] | last) as $tu
+    | ([$a[] | (.message.content // [])[] | select((.type == "text" and ((.text // "") | test("\\S"))) or .type == "tool_use")] | last) as $n
     | ([$e[] | select(.type == "system" and .hook_event == "Stop" and (.subtype == "hook_started" or .subtype == "hook_response"))] | last) as $h
     | {model: ($i.model // "?"),
-       turns: ($a | length),
+       turns: ([$a | to_entries[] | (.value.message.id // "n\(.key)")] | unique | length),
        ctx: (if $u then (($u.input_tokens // 0) + ($u.cache_read_input_tokens // 0) + ($u.cache_creation_input_tokens // 0)) else 0 end),
-       now: (if $t then ($t.text | split("\n") | map(select(test("\\S"))) | .[0:3])
-             elif $tu then ["→ \($tu.name // "?") \(($tu.input // {}) | (.description // .command // .file_path // .pattern // .url // tostring) | first_line)"]
-             else [] end),
+       now: (if $n == null then []
+             elif $n.type == "text" then ($n.text | split("\n") | map(select(test("\\S"))) | .[0:3])
+             else ["→ \($n.name // "?") \(($n.input // {}) | (.description // .command // .file_path // .pattern // .url // tostring) | first_line)"] end),
        verify: (if $h == null then "none"
                 elif $h.subtype == "hook_started" then "running"
+                elif ([($h.stdout // "") | fromjson? | select(type == "object" and .decision == "block" and ((.reason // "") | test("\\.harness/reports/")))] | length > 0) then "report"
                 elif (($h.exit_code // 0) != 0) or ([($h.stdout // "") | fromjson? | select(type == "object" and .decision == "block")] | length > 0) then "fail"
                 else "pass" end)}'
 }
@@ -73,7 +73,11 @@ hl_dash_frame() {
   model=$(jq -r '.model' <<<"$facts"); turns=$(jq -r '.turns' <<<"$facts")
   ctx=$(jq -r 'if .ctx >= 1000 then "\((.ctx / 1000) | round)k" else "\(.ctx)" end' <<<"$facts")
   verify=$(jq -r '.verify' <<<"$facts")
-  if [ "$final" = 1 ] && [ -f "$a.exit.json" ]; then
+  # the exit record / report count only when they belong to this ask (not left over from an earlier one)
+  local exit_ok=0 rep_ok=0
+  if [ -f "$a.exit.json" ] && grep -q "\"ask_id\":\"$id\"" "$a.exit.json" 2>/dev/null; then exit_ok=1; fi
+  if [ -f ".harness/reports/$role.md" ] && ! [ ".harness/reports/$role.md" -ot "$a.current" ]; then rep_ok=1; fi
+  if [ "$final" = 1 ] && [ "$exit_ok" = 1 ]; then
     dur=$(jq -r '((.duration_ms // 0) / 1000) | floor' "$a.exit.json" 2>/dev/null)
   elif digits_only "${start:-}"; then dur=$(( $(date +%s) - start ))
   else dur=0; fi
@@ -94,9 +98,12 @@ hl_dash_frame() {
     none) vtxt="not started" ;;
     running) vtxt="verifying…" ;;
     pass) vtxt="pass" ;;
+    report) vtxt="waiting for report" ;;
     *) vtxt="fail"
-       l=$(jq -r '.step // empty' ".harness/verify/$role.json" 2>/dev/null)
-       [ -z "$l" ] || vtxt="fail ($l)" ;;
+       if ! [ ".harness/verify/$role.json" -ot "$a.current" ]; then
+         l=$(jq -r '.step // empty' ".harness/verify/$role.json" 2>/dev/null)
+         [ -z "$l" ] || vtxt="fail ($l)"
+       fi ;;
   esac
 
   # diff (implementer only): git diff --stat against the base sha of the ask
@@ -132,7 +139,7 @@ hl_dash_frame() {
   [ "$abrief" -eq 0 ] || out="$out"$'\n'"${sec}Brief ── $bt"
   if [ "$final" = 1 ]; then
     if [ "$anow" -ge 1 ]; then
-      if [ -f "$a.exit.json" ]; then
+      if [ "$exit_ok" = 1 ]; then
         l=$(jq -r '"■ \(.result // "ended") · rc \(.rc // "?") · \(.num_turns // 0) turns · \(((.duration_ms // 0) / 1000) | floor)s · $\(.cost_usd // 0)"' "$a.exit.json" 2>/dev/null)
       else l="■ ended (no result)"; fi
       out="$out"$'\n'"${sec}Result ── $l"
@@ -154,13 +161,30 @@ hl_dash_frame() {
   fi
   if [ "$arecent" -ge 2 ]; then
     if [ "$final" = 1 ]; then
-      l=$(head -n $((arecent - 1)) ".harness/reports/$role.md" 2>/dev/null); [ -n "$l" ] || l="(no report)"
+      l=""; [ "$rep_ok" != 1 ] || l=$(head -n $((arecent - 1)) ".harness/reports/$role.md" 2>/dev/null)
+      [ -n "$l" ] || l="(no report)"
       out="$out"$'\n'"${sec}Report ──"$'\n'"$(printf '%s\n' "$l" | sed 's/^/  /')"
     else
       l=$(tail -n 400 "$raw" 2>/dev/null | harness-view 2>/dev/null | tail -n $((arecent - 1)) | sed 's/^/  /')
       [ -z "$l" ] || out="$out"$'\n'"${sec}Recent ──"$'\n'"$l"
     fi
   fi
-  # jq cuts by character (bash 3.2 ${v:0:n} cuts bytes): the frame never wraps
-  printf '%s\n' "$out" | jq -R -r --argjson w "$W" '.[0:$w]'
+  # cut by display width (Hangul/CJK/fullwidth = 2 columns; jq works in code points, bash 3.2 ${v:0:n} in
+  # bytes) so no line wraps; a line is clipped, never wrapped
+  printf '%s\n' "$out" | jq -R -r --argjson w "$W" '
+    def cw: if (. >= 4352 and . <= 4447) or (. >= 11904 and . <= 42191) or (. >= 44032 and . <= 55203)
+              or (. >= 63744 and . <= 64255) or (. >= 65040 and . <= 65049) or (. >= 65072 and . <= 65135)
+              or (. >= 65280 and . <= 65376) or (. >= 65504 and . <= 65510) or (. >= 127744 and . <= 128591)
+              or (. >= 129280 and . <= 129535) or (. >= 131072 and . <= 262141) then 2 else 1 end;
+    explode | reduce .[] as $c ({w: 0, o: [], f: false};
+      if .f then . else ($c | cw) as $k | if .w + $k > $w then .f = true else .w += $k | .o += [$c] end end)
+    | .o | implode'
+}
+
+# dash_paint <frame> — redraw in place (no full clear, so no flicker): home, each line cleared to its
+# end, then everything below the frame cleared
+dash_paint() {
+  printf '\033[H'
+  printf '%s\n' "$1" | awk 'BEGIN { e = sprintf("%c", 27) } { print $0 e "[K" }'
+  printf '\033[J'
 }

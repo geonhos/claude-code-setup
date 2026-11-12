@@ -544,11 +544,11 @@ cmd_watch() {
   trap 'printf "\033[?25h"; exit 130' INT TERM
   printf '\033[?25l'
   while hl_alive "$role" && ! hl_done "$role" "$id"; do
-    printf '\033[H\033[2J%s\n' "$(hl_dash_frame "$role" "$raw")"
+    dash_paint "$(hl_dash_frame "$role" "$raw")"
     sleep "${HARNESS_DASH_SEC:-2}"
   done
   sleep 1   # let the runner write exit.json
-  printf '\033[H\033[2J%s\n' "$(HARNESS_DASH_FINAL=1 hl_dash_frame "$role" "$raw")"
+  dash_paint "$(HARNESS_DASH_FINAL=1 hl_dash_frame "$role" "$raw")"
   printf '\033[?25h'
   exit 0
 }
