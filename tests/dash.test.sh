@@ -172,13 +172,36 @@ check "paint: home + per-line clear + clear below, no 2J" bash -c 'case "$1" in 
 FULL=$(printf 'l%s\n' 1 2 3 4 5 | sed '$d')$'\nl5'
 check "paint: H-line frame prints H-1 newlines" [ "$(dash_paint "$FULL" | tr -cd '\n' | wc -c | tr -d ' ')" = 4 ]
 
-# wide emoji/symbols count 2 columns; tabs expand
+# wide emoji/symbols count 2 columns; tabs expand. Widths are hard-coded, not taken from the lib's table:
+# every sample emoji is 2 cols, so a line "  " + k emoji is 2 + 2k cols; ASCII-only lines are width = length.
 printf '%s\n' '{"type":"assistant","message":{"id":"w1","content":[{"type":"text","text":"✅🚀❌⚡ ✅🚀❌⚡ ✅🚀❌⚡ ✅🚀❌⚡ ✅🚀❌⚡\n\tx\ty\tz\tabcdefghijklmnop"}]}}' > .harness/log/emoji.jsonl
+printf '%s\n' '{"type":"assistant","message":{"id":"w2","content":[{"type":"text","text":"🟢🟡🟠🟢🟡🟠🟢🟡🟠🟢🟡🟠🟢🟡🟠🟢🟡🟠\n🀄🃏🆎🆑🆚🈁🈯🟠🟡🟢 〈x〉 ﹐﹑﹒"}]}}' > .harness/log/circles.jsonl
 for w in 20 33; do
   frame 30 $w implementer .harness/log/emoji.jsonl
-  check "emoji width: lines <= $w cols (Now present)" bash -c 'grep -qF "── Now" <<<"$1" && grep -qF "  ✅" <<<"$1" && [ "$(jq -R "explode | map(if (. >= 9989 and . <= 9989) or . == 10060 or . == 9889 or (. >= 127744 and . <= 128767) then 2 else 1 end) | add // 0" <<<"$1" | sort -n | tail -n 1)" -le "$2" ]' _ "$OUT" $w
-  check "tabs: none left, width <= $w" bash -c '! grep -q "$(printf "\t")" <<<"$1" && grep -qF "  x  y" <<<"$1" && [ "$(jq -R "length" <<<"$1" | sort -n | tail -n 1)" -le "$2" ]' _ "$OUT" $w
+  check "emoji width: Now present, emoji line kept" bash -c 'grep -qF "── Now" <<<"$1" && grep -qF "  ✅" <<<"$1"' _ "$OUT"
+  check "tabs: none left, ASCII tab line width <= $w" bash -c '! grep -q "$(printf "\t")" <<<"$1" && grep -qF "  x  y" <<<"$1" && [ "$(grep "x  y" <<<"$1" | jq -R "length" | sort -n | tail -n 1)" -le "$2" ]' _ "$OUT" $w
+  frame 30 $w implementer .harness/log/circles.jsonl
+  check "🟢🟡🟠 line fits $w cols (2 cols each, hard-coded)" bash -c 'l=$(grep "🟢" <<<"$1" | head -n 1); k=$(printf "%s" "$l" | grep -o "[🟢🟡🟠]" | wc -l | tr -d " "); [ "$k" -ge 1 ] && [ $((2 + 2 * k)) -le "$2" ]' _ "$OUT" $w
 done
+# conservative: the rest of the 1F000 block and the listed misses count 2 cols too (hard-coded: 3 chars = 6 cols)
+for c in 🀄 🃏 🆎 🆑 🈁 🟠 〈; do
+  W=7; printf '{"type":"assistant","message":{"id":"c","content":[{"type":"text","text":"%s%s%s%s%s%s%s"}]}}\n' $c $c $c $c $c $c $c > .harness/log/one.jsonl
+  frame 30 $W implementer .harness/log/one.jsonl
+  check "width of $c counts 2 (2 + 2k <= 7 -> k <= 2)" bash -c 'k=$(grep -F "$2" <<<"$1" | while read -r l; do printf "%s" "$l" | grep -o "$2" | wc -l; done | sort -n | tail -n 1 | tr -d " "); [ "${k:-0}" -ge 1 ] && [ "$k" -le 2 ]' _ "$OUT" "$c"
+done
+
+# one size var set: that one is honoured, the other comes from the terminal/default
+OUT=$(HARNESS_DASH_LINES=5 PATH="$HERE/../bin:$PATH" hl_dash_frame implementer "$RAW")
+check "only LINES set: <= 5 lines" [ "$(wc -l <<<"$OUT" | tr -d ' ')" -le 5 ]
+OUT=$(HARNESS_DASH_COLS=25 PATH="$HERE/../bin:$PATH" hl_dash_frame implementer "$RAW")
+check "only COLS set: ASCII header line <= 25 cols" [ "$(sed -n 1p <<<"$OUT" | jq -R length)" -le 25 ]
+
+# autowrap off while drawing, restored on exit with a newline
+check "begin: cursor hidden + autowrap off" bash -c '[ "$1" = "$(printf "\033[?25l\033[?7l")" ]' _ "$(dash_begin)"
+END=$(dash_end | od -An -c | tr -d ' \n')
+check "end: autowrap on + cursor shown + newline" bash -c 'case "$1" in *033[?7h033[?25h\\n) true;; *) false;; esac' _ "$END"
+SRC=$(cat "$HERE/../lib/harness-headless.sh")
+check "watch: trap and normal exit both use dash_begin/dash_end" bash -c 'grep -qF "trap '"'"'dash_end; exit 130'"'"' INT TERM" <<<"$1" && grep -q "^  dash_begin" <<<"$1" && grep -q "^  dash_end" <<<"$1"' _ "$SRC"
 
 # final frame: result line + report head
 printf '%s\n' '# stale report' > .harness/reports/implementer.md; touch -t 200001010000 .harness/reports/implementer.md

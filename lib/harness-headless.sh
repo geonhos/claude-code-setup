@@ -541,14 +541,14 @@ cmd_watch() {
     exit 0
   fi
   # live: a dashboard redrawn every HARNESS_DASH_SEC (2 s), then a final frame (result + report head)
-  trap 'printf "\033[?25h"; exit 130' INT TERM
-  printf '\033[?25l'
+  trap 'dash_end; exit 130' INT TERM
+  dash_begin
   while hl_alive "$role" && ! hl_done "$role" "$id"; do
     dash_paint "$(hl_dash_frame "$role" "$raw")"
     sleep "${HARNESS_DASH_SEC:-2}"
   done
   sleep 1   # let the runner write exit.json
   dash_paint "$(HARNESS_DASH_FINAL=1 hl_dash_frame "$role" "$raw")"
-  printf '\033[?25h'
+  dash_end
   exit 0
 }

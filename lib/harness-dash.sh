@@ -59,14 +59,15 @@ dash_facts() {
                 else "pass" end)}'
 }
 
-# jq def cw: display columns of a code point (2 = East-Asian Wide/Fullwidth, from Unicode EastAsianWidth W/F)
-DASH_JQ_CW='def cw: [[4352,4447],[8986,8987],[9193,9196],[9200,9200],[9203,9203],[9725,9726],[9748,9749],
+# jq def cw: display columns of a code point (2 = East-Asian Wide/Fullwidth; deliberately conservative: all of
+# U+1F000-1FAFF counts 2, overcounting only clips a line early). Autowrap is off while drawing (dash_begin).
+DASH_JQ_CW='def cw: [[4352,4447],[8986,8987],[9001,9002],[9193,9196],[9200,9200],[9203,9203],[9725,9726],[9748,9749],
   [9800,9811],[9855,9855],[9875,9875],[9889,9889],[9898,9899],[9917,9918],[9924,9925],[9934,9934],[9940,9940],
   [9962,9962],[9970,9973],[9978,9978],[9981,9981],[9989,9989],[9994,9995],[10024,10024],[10060,10060],
   [10062,10062],[10067,10069],[10071,10071],[10133,10135],[10160,10160],[10175,10175],[11035,11036],
   [11088,11088],[11093,11093],[11904,12350],[12353,13311],[13312,19903],[19968,40959],[40960,42191],
-  [44032,55203],[63744,64255],[65040,65049],[65072,65103],[65280,65376],[65504,65510],[127744,128591],
-  [128640,128767],[129280,129535],[129648,129791],[131072,262141]] as $r
+  [44032,55203],[63744,64255],[65040,65049],[65072,65131],[65280,65376],[65504,65510],[126976,129791],
+  [131072,262141]] as $r
   | . as $c | if any($r[]; $c >= .[0] and $c <= .[1]) then 2 else 1 end;
 '
 
@@ -191,6 +192,11 @@ hl_dash_frame() {
       if .f then . else ($c | cw) as $k | if .w + $k > $w then .f = true else .w += $k | .o += [$c] end end)
     | .o | implode'
 }
+
+# dash_begin / dash_end — hide the cursor and turn terminal autowrap off while the loop draws, so a width
+# miscount can only cut a line short, never wrap or scroll; dash_end restores both and ends the line
+dash_begin() { printf '\033[?25l\033[?7l'; }
+dash_end() { printf '\033[?7h\033[?25h\n'; }
 
 # dash_paint <frame> — redraw in place (no full clear, so no flicker): home, each line cleared to its
 # end, then everything below the frame cleared
