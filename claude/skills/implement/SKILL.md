@@ -22,6 +22,7 @@ change yourself (`harness ask` refuses to run in a worker session anyway).
      attribution lines given in this conversation), and whether to push.
      Say "do not commit" when unsure.
    - **Report**: files touched, how it verified, the commit hash.
+   - **Steps**: a `## Steps` numbered list, one line per step (the viewer dashboard shows it).
 2. Run with the Bash tool's `run_in_background: true` **and** `timeout: 7200000` (the Bash tool's maximum; without it the call is killed at the tool's default timeout, long before the 60-90 min wait ends) (the task notification wakes you when the run ends):
 
    ```

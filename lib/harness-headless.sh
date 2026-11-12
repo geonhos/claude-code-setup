@@ -512,10 +512,10 @@ hl_stream_of() {
 
 hl_stream_id() { awk 'NR == 1 { print $1 }' "$ASK_DIR/$1.stream" 2>/dev/null; }
 
-# cmd_watch <role> [-n N] — human only: follow a live run's rendered stream, or print the last N
+# cmd_watch <role> [-n N] — human only: a live run as a redrawn dashboard (lib/harness-dash.sh), or print the last N
 # (default 40) rendered lines of a finished one. 0 ok, 1 refused (not a tty), 3 no stream known.
 cmd_watch() {
-  local t=${1:-} n=40 role raw tp vp i fifo id
+  local t=${1:-} n=40 role raw i id
   [ -n "$t" ] || usage
   shift
   while [ $# -gt 0 ]; do
@@ -540,15 +540,15 @@ cmd_watch() {
     else echo "harness: stream $raw is gone" >&2; exit 3; fi
     exit 0
   fi
-  # live: tail -F into harness-view through a fifo (BSD tail has no --pid, so the tail's pid is kept to kill it)
-  fifo=$(mktemp -u "${TMPDIR:-/tmp}/harness-watch.XXXXXX") && mkfifo "$fifo" || die "watch: cannot make a fifo"
-  tail -n +1 -F "$raw" > "$fifo" 2>/dev/null & tp=$!
-  harness-view < "$fifo" & vp=$!
-  trap 'kill "$tp" "$vp" 2>/dev/null; rm -f "$fifo"; exit 130' INT TERM
-  while hl_alive "$role" && ! hl_done "$role" "$id"; do sleep 0.5; done
-  sleep 1   # drain what the run printed last
-  kill "$tp" 2>/dev/null
-  wait "$vp" 2>/dev/null
-  rm -f "$fifo"
+  # live: a dashboard redrawn every HARNESS_DASH_SEC (2 s), then a final frame (result + report head)
+  trap 'printf "\033[?25h"; exit 130' INT TERM
+  printf '\033[?25l'
+  while hl_alive "$role" && ! hl_done "$role" "$id"; do
+    printf '\033[H\033[2J%s\n' "$(hl_dash_frame "$role" "$raw")"
+    sleep "${HARNESS_DASH_SEC:-2}"
+  done
+  sleep 1   # let the runner write exit.json
+  printf '\033[H\033[2J%s\n' "$(HARNESS_DASH_FINAL=1 hl_dash_frame "$role" "$raw")"
+  printf '\033[?25h'
   exit 0
 }

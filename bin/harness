@@ -50,7 +50,7 @@ done
 case $src in */*) d=${src%/*} ;; *) d=. ;; esac   # no dirname: PATH may be bare in hooks/tests
 HARNESS_LIB=${HARNESS_LIB:-$(CDPATH= cd -P "$d/../lib" 2>/dev/null && pwd)}
 # Explicit list, fixed order, no glob: a stray file in lib/ is never sourced. Definitions only.
-for m in defaults root metrics headless; do
+for m in defaults root metrics headless dash; do
   . "$HARNESS_LIB/harness-$m.sh" 2>/dev/null || { echo "harness: cannot load lib/harness-$m.sh" >&2; exit 1; }
 done
 unset src d m
