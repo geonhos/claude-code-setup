@@ -1,0 +1,44 @@
+
+# Prune step 5: remove the `--via` no-op and shrink the conductor gate (decision 0011)
+
+Branch `chore/prune-5-gate-shrink` from `main` (77252a8). Commit in the order below; do **not** open the PR. Leave the untracked `docs/wiki/inbox/*.md` files alone (do not stage them). Read `docs/wiki/index.md` first and open `troubleshooting/live-gate-edit.md`, `troubleshooting/in-place-edit-breaks-running-scripts.md`, `troubleshooting/conductor-shell-one-command.md`.
+
+## Context
+- Step 4 (#43) left `--via` as a no-op arm in `ask_parse_args` (`bin/harness`) with a test ("--via no-op cases", commit bee6a4d). The skills and `conductor.md` no longer pass `--via`, so the arm can go now.
+- The gate plan is `.harness/gate-shrink-detail.md` (analyst, 2026-10-28, written against a 552-line gate). Its line numbers are stale; **re-derive them from the current `claude/hooks/conductor-gate.sh` (~513 lines)**. Of its §7 plan, these are already done: (g) agent_type keying, step 2 `tests/gate-denied.list` + loop, (a) single-command scanner (gate v21; wiki page conductor-shell-one-command). Verify each by reading the gate and tests, then skip them.
+- The B′ spike (native subagents) was rejected on 2026-11-03 (`.harness/spike-bprime/RESULTS.md`): the harness runner stays, so the gate stays and is trimmed as planned. Do not touch runner code.
+
+## Live-file traps (important)
+- `claude/hooks/conductor-gate.sh` and `bin/harness` are symlinked into `~/.claude` / `~/bin` and run **live** for the conductor that sent this ask. A syntax error in the gate denies every conductor tool call. Before every save of the gate: `bash -n`, then run `tests/gate.test.sh` singly. Write a new file and `mv` it over the old path (new inode); never edit in place.
+- `bin/harness` is brace-wrapped: same new-inode rule.
+
+## Work
+
+### Commit 1 — `refactor(prune-5): remove the --via no-op`
+- Remove the `--via` arm from `ask_parse_args` and any remaining `--via`/`ASK_VIA`/`via` writer in `bin/harness`, `lib/`, `install.sh`, tests, README, AGENTS.md, CLAUDE.md, skills, agent prompts (`grep -rn -- '--via\|ASK_VIA\|"via"' bin lib claude install.sh tests README.md AGENTS.md CLAUDE.md docs/wiki`).
+- Keep metrics/progress readers tolerant of old rows that carry a `via` field (nothing should read it; confirm `lib/harness-metrics.sh` does not). Remove the no-op test; add one asserting `harness ask analyst --via x 'y'` is refused as an unknown option (exit 1) without starting a run.
+- Suites: harness, progress, metrics, headless.
+
+### Commit 2 — `refactor(prune-5): gate policy tables at the top` (option e, no behaviour change)
+- Move `BASH_ALLOW`, the gh subcommand list, `GIT_DENY`, `JQ_DENY` (if still present) and the deny messages into one clearly labelled block near the top of the gate, after the prologue. Gate suite must pass **unchanged**.
+
+### Commit 3 — `refactor(prune-5): trim the gate allowlist and dead tool cases` (options c, d, b)
+- (c) gh: keep only `gh pr create|view|list|checks|comment|edit|merge` with the existing flag checks (`--body-file` only from `.harness/` or `docs/`; no `pr merge -d`; no `api`). Drop issue/run/repo/auth/browse/`pr status` handling.
+- (d) git: drop `git show --stat` if allowed; replace `git_branch_ok` with a regex allowing only `git branch` followed by any of `-a -r -v --show-current` (list-only). herdr: keep only `herdr pane get|current`; drop status/pane list/layout/workspace/tab.
+- (b) Remove the explicit Agent/Workflow/Monitor/NotebookEdit deny cases and the `mcp__filesystem__*` block **only if** `claude/agents/conductor.md` frontmatter `disallowedTools` already lists those tools (and `mcp__filesystem__*` if a prefix is accepted); if not, add them there in the same commit and note it in the report. Trim the hook MATCHER accordingly; update `install.sh`/`tests/install.test.sh` if they assert the matcher.
+- Every line of `tests/gate-denied.list` must still deny and the 5 controls must still allow. Every form listed under "You may run directly" in `claude/agents/conductor.md` must still be allowed: add a gate test per form if missing (`harness status`, `gh pr view 1`, `git log --oneline -3`, `git diff --stat`, `git branch -a`, `git branch --show-current`, `herdr pane current`, `cat .harness/progress.md`, `ls docs`).
+- Update the deny message text if a list changed, and `claude/agents/conductor.md` "You may run directly" so it matches the gate exactly.
+- Suites: gate, install.
+
+### Commit 4 — `docs(prune-5): ADR 0012 gate shrink; 0011 step 5 done`
+- `docs/wiki/decisions/0012-gate-shrink.md` (type decision, status active, frontmatter per AGENTS.md, ≤150 lines): context (gate-shrink-detail §1-3 usage data: 754 allowed calls, what was never used), decision (what was removed / kept and why the path helpers and Bash allowlist stay; option f "permissions rules" rejected because user-scope rules bind workers), status, consequences. Cite `.harness/gate-shrink-detail.md`, `.harness/spike-bprime/RESULTS.md` (B′ rejected 2026-11-03: subagents die on conductor exit, "1 local agent couldn't be moved and was stopped") and the commits.
+- `0011`: append "Step 5 done 2026-11-03: `--via` removed; gate trimmed (N → M lines), ADR 0012." `0005`: note in its index hook that 0012 supersedes the 4b consequence. Index lines for 0012 and 0011/0005 hooks; `docs/wiki/log.md` one line; `conductor-shell-one-command.md` only if the deny text changed. README: fix any gate line count or command list.
+- Suite: wiki (`harness wiki-lint`).
+
+Finish with `./install.sh --test` once (parallel). All suites green.
+
+
+Do not push. Local commits are fine.
+
+
+Track your progress with a task list: create one task per step with TaskCreate up front, and mark each in_progress/completed with TaskUpdate as you go.

@@ -1,0 +1,52 @@
+
+# Task: v14 step 1 — Stop hooks must work from the repo root, whatever the worker's cwd
+
+Read `docs/wiki/index.md` first. Bash 3.2 only. Use TDD: write the failing test first.
+
+## Setup
+PR #17 was just merged on GitHub. 
+`git checkout -b feature/v14-speed-stability`. The two untracked files under
+`docs/wiki/inbox/` (2026-10-22-analyst-1792671569-…, 2026-10-22-retro-1792643421-…) must
+come along untouched.
+
+## Bug (retro, see docs/wiki/inbox/2026-10-22-retro-1792643421-12588-9450.md)
+When a worker ends its turn after `cd <repo>/<subdir>` (e.g. `.harness`), Claude Code keeps
+that cwd and the Stop hook's input JSON carries cwd = the subdir. `enter_root`
+(bin/harness-verify:32-34) cd's there, then `mark_done` (:243) reads the relative
+`.harness/asks/<role>.current`, finds nothing and returns 0 silently → no done marker →
+`harness ask` gives up after the 30 s idle grace with exit 3 although the report exists.
+`cmd_stop` (implementer verify, enter_root at :274/:283) has the same problem.
+
+## Fix
+1. `enter_root`: after cd to the hook's cwd, move to `git rev-parse --show-toplevel` when
+   inside a git repo (keep current behaviour outside git). Check nothing else relies on the
+   old cwd (format subcommand uses file paths — make sure relative paths still resolve).
+2. `mark_done`: when `.harness/asks/<role>.current` is missing in a worker session, print one
+   warning line to stderr (still exit 0 — a Stop hook must not block on this).
+3. `bin/harness` exit-3 message (~:1083) currently suggests respawning for a stale hook.
+   Reword so it also names the other cause: "or the Stop hook ran from a directory without
+   .harness (check the worker's cwd)". Keep it one or two lines.
+4. Tests (tests/verify.test.sh and/or tests/harness.test.sh): `harness-verify done <role>`
+   with hook input cwd = a repo subdir writes the marker at the repo root; same for `stop`
+   (verify runs at root); missing `.current` warns on stderr.
+
+Full `./install.sh --test` must pass (the Stop hook runs it).
+
+## Commit (do not push)
+```
+fix(verify): run Stop hooks from the git toplevel, warn when no ask is current
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+```
+Then a second commit with the two inbox notes:
+```
+docs(wiki): inbox notes from the v13 retro
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+```
+
+
+Do not push. Local commits are fine.
+
+
+Track your progress with a task list: create one task per step with TaskCreate up front, and mark each in_progress/completed with TaskUpdate as you go.
