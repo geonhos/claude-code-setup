@@ -673,7 +673,7 @@ cmd_init() {
       else echo "note: could not add $a to git's exclude file" >&2; fi
     done
   fi
-  echo "workers run as detached headless Claude sessions: watch a run with `harness watch <role>`"
+  echo "workers run as detached headless Claude sessions: watch a run with 'harness watch <role>'"
   return 0
 }
 

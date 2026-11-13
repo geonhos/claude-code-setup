@@ -198,8 +198,9 @@ run init --bogus
 check "init rejects unknown flag" [ "$RC" != 0 ]
 
 setup; rm -rf .harness
-run init
-check "init: names harness watch" grep -q "harness watch" <<<"$OUT"
+INIT_OUT=$(PATH="$HERE/../bin:$PATH" env -u HARNESS_ROLE /bin/bash "$HARNESS" init 2>"$WORK/init.err")
+check "init: full watch hint" grep -qF "workers run as detached headless Claude sessions: watch a run with 'harness watch <role>'" <<<"$INIT_OUT"
+check "init: stderr is empty" [ ! -s "$WORK/init.err" ]
 
 setup; rm -rf .harness
 run init --shared

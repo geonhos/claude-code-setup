@@ -301,7 +301,7 @@ kill "$cpid" 2>/dev/null
 wait "$bg"
 unset HARNESS_HL_MAX_S
 
-# 16c. direct runs zombie runner, TERM-proof claude, foreign process, live-script safety
+# 16c. direct runs: zombie runner, TERM-proof claude, foreign process, live-script safety
 hdirect() { # hdirect MODE MAX_S -> starts harness-run under a parent that never reaps it; sets RID RPID
   FAKE_CLAUDE_MODE=$1
   mkdir -p .harness/asks

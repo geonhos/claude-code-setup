@@ -94,7 +94,7 @@ Bash는 호출마다 명령 하나만 허용된다(`;` `&&` `||` `|` `&`, 리디
 ```
 bin/harness                      CLI (ask, wait, report, status, init, ...)
 bin/harness-run                  detached로 claude -p 를 돌리고 exit.json을 쓴다
-bin/harness-view                 viewer pane용
+bin/harness-view                 `harness watch`가 쓰는 스트림 렌더러
 bin/harness-verify               워커 훅이 쓰는 format/lint/test 검사
 lib/harness-defaults.sh          역할과 기본 숫자 (bin/harness, bin/harness-verify가 source)
 lib/harness-root.sh              harness_root: 체크아웃 루트 찾기 (훅 둘과 bin 둘이 source)

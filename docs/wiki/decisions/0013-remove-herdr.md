@@ -2,7 +2,7 @@
 type: decision
 status: active
 updated: 2026-11-13
-sources: [issue #67, issue #63 §8, decisions/0011-single-runner-headless.md, commit refactor(harness): remove herdr (#67)]
+sources: [issue #67, issue #63 §8, decisions/0011-single-runner-headless.md, commit 96f083b]
 verified_by: tests/headless.test.sh, tests/gate.test.sh, tests/install.test.sh
 ---
 # 0013: Remove herdr from the harness
