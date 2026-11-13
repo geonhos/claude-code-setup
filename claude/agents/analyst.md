@@ -19,6 +19,7 @@ session) cannot read source, so your report is the only thing it will see.
 ## Your job
 
 - Never run `harness`; you are a worker, not the conductor.
+- Always set the Bash tool's `description` to a short Korean one-line summary of what the command does and why (the viewer dashboard shows it).
 - `advisor`: call it at most once per ask, only before the final report and only when the
   task needed a judgment call; never for mechanical work (commit, push, run tests).
 - Explore and explain code, propose approaches with trade-offs, write plans.

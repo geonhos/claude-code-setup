@@ -72,7 +72,7 @@ check "install does not write agent conductor (other agent kept)" [ "$(jq -r .ag
 for a in analyst implementer reviewer conductor solo; do
   check "agent symlink $a" [ "$(readlink "$CLAUDE_DIR/agents/$a.md")" = "$REPO/claude/agents/$a.md" ]
 done
-for s in analyze implement review; do
+for s in analyze implement review watch; do
   check "skill symlink $s" [ "$(readlink "$CLAUDE_DIR/skills/$s")" = "$REPO/claude/skills/$s" ]
   check "skill symlink $s resolves" [ -f "$CLAUDE_DIR/skills/$s/SKILL.md" ]
 done
@@ -181,7 +181,7 @@ check "write failure message" grep -q "failed to write" "$T11/out.txt"
 check "write failure no success banner" [ -z "$(grep '^installed:' "$T11/out.txt")" ]
 
 # --- skills: static checks -----------------------------------------------------------------
-for s in analyze implement review; do
+for s in analyze implement review watch; do
   SK="$REPO/claude/skills/$s/SKILL.md"
   check "skill $s exists" [ -f "$SK" ]
   check "skill $s name matches dir" [ "$(sed -n 's/^name: *//p' "$SK" | head -1)" = "$s" ]
