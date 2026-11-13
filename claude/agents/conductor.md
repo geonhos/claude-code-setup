@@ -100,7 +100,7 @@ you otherwise.
    After a restart or compaction, re-attach with `harness wait <worker>`
    (blocks until the run ends, never collects; run it in the background with `timeout: 7200000`, or foreground only with a short explicit `--timeout`), then `harness report <worker>`.
    Every ask starts a fresh session. Add `--keep` for a follow-up that needs the
-   previous conversation (resumes it); `--fresh` forces a clean start after a failed implementer ask.
+   previous conversation (resumes it).
    One run per role at a time; different roles may run side by side in the same checkout (the analyst then sees the implementer's moving tree).
 3. Read only the report that `harness ask` prints. Decide: done, iterate with
    another skill call, or ask the user.
@@ -122,7 +122,7 @@ of the progress file.
   reason are printed. Nothing to answer: re-ask with a changed brief (or ask the
   user to adjust the permissions).
 - `3` worker finished without a report. `harness ask <worker> 'Write the
-  report for the task you just finished.'`. An implementer whose last ask exited non-zero resumes its session automatically; no `--keep` needed.
+  report for the task you just finished.'`
 - `4` still working: the ask outlived `--timeout`, or the implementer's Stop hook is still verifying:
   `harness wait <worker>` (blocks until the run ends: background Bash with `timeout: 7200000`, or foreground with a short `--timeout`), then
   `harness report <worker>`; if that exits 3 (no report), ask it to write the
@@ -138,11 +138,10 @@ of the progress file.
   attempts (its report and a `verify: FAIL (<step>, <n> attempts)` line are
   printed), or the reviewer's report ends with `VERDICT: FAIL`. Send the
   failure or the findings to the implementer with `/implement`
-  (an implementer whose own last ask exited non-zero resumes its session and prints `keeping context`; use `--keep` for any other
-  explicit follow-up, `--fresh` to force a reset).
+  (use `--keep` for a follow-up that needs the implementer's previous conversation).
   If it still fails after 2 such rounds, ask the user.
-- Closing: a run ends with its process, so there is nothing to clean up. `harness close <worker>|--all` stops a
-  run (exit 4 = still running or an uncollected report; `--force` only if the user agrees, and it kills the run).
+- Closing: a run ends with its process, so there is nothing to clean up. `harness close <worker>` stops a
+  run (exit 4 = still running; `--force` only if the user agrees, and it kills the run).
   The user can watch a run with `harness watch <role>` in any terminal; `/watch <role>` prints the exact command (with `-C <folder>` for a work folder).
 
 ## Metrics

@@ -261,8 +261,8 @@ run init --shared
 check "init --shared: settings.json not excluded" bash -c '! git check-ignore -q .claude/settings.json'
 check "init --shared: settings.json visible to git" bash -c 'git status --porcelain -uall | grep -q "claude/settings.json"'
 setup; rm -rf .harness .claude; git init -q .
-git -c user.email=t@t -c user.name=t -c core.hooksPath=/dev/null commit -q --allow-empty -m s
-git worktree add -q "$WORK/wt3" 2>/dev/null
+git -C "$WORK" -c user.email=t@t -c user.name=t -c core.hooksPath=/dev/null commit -q --allow-empty -m s
+git -C "$WORK" worktree add -q "$WORK/wt3" 2>/dev/null
 ( cd "$WORK/wt3" && env -u HARNESS_ROLE /bin/bash "$HARNESS" init --no-agent >/dev/null 2>&1 )
 ( cd "$WORK/wt3" && mkdir -p docs/superpowers && echo x > docs/superpowers/p.md && echo x > .harness/a )
 check "worktree init: patterns excluded, worktree status clean" bash -c '! (cd "$1" && git status --porcelain -uall | grep -E "harness|superpowers")' _ "$WORK/wt3"
@@ -279,8 +279,8 @@ setup; rm -rf .harness; git init -q .; mkdir -p deep/er
 ( cd deep/er && env -u HARNESS_ROLE /bin/bash "$HARNESS" init --no-agent >/dev/null 2>&1 )
 check "init from a subdir: .harness/asks at the toplevel" [ -d .harness/asks ]
 check "init from a subdir: nothing created in the subdir" [ ! -e deep/er/.harness ]
-git -c user.email=t@t -c user.name=t -c core.hooksPath=/dev/null commit -q --allow-empty -m s
-git worktree add -q "$WORK/wt2" 2>/dev/null
+git -C "$WORK" -c user.email=t@t -c user.name=t -c core.hooksPath=/dev/null commit -q --allow-empty -m s
+git -C "$WORK" worktree add -q "$WORK/wt2" 2>/dev/null
 mkdir -p "$WORK/wt2/sub"; ( cd "$WORK/wt2/sub" && env -u HARNESS_ROLE /bin/bash "$HARNESS" init --no-agent >/dev/null 2>&1 )
 check "init from a worktree subdir: asks at the worktree root" [ -d "$WORK/wt2/.harness/asks" ]
 OUT=$(cd "$WORK/wt2/sub" && env -u HARNESS_ROLE /bin/bash "$HARNESS" ask nosuchrole q 2>&1)

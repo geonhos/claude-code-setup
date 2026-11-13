@@ -4,7 +4,7 @@
 {
 # harness — conductor-side wrapper for detached headless Claude workers (decision 0011).
 #
-#   harness ask    <agent> '<instruction>' [--timeout MS] [--fresh|--keep]
+#   harness ask    <agent> '<instruction>' [--timeout MS] [--keep]
 #     default --timeout = the role's headless run cap (a background ask returns when the run ends):
 #     implementer 5400000, analyst/reviewer 3600000
 #   harness report <agent>
@@ -14,7 +14,7 @@
 #   harness [-C DIR] <command> ...   run as if started in DIR (a work folder)
 #   harness lane <issue#> [slug] [--type feat|fix|docs] | lane ls | lane rm <issue#|path> [--force]   per-issue work folders (git worktrees)
 #   harness init [--no-agent] [--shared]   make this repo a harness checkout (.harness/asks, config, agent=conductor in .claude/settings.local.json; --shared: settings.json)
-#   harness close  <agent>|--all [--force]
+#   harness close  <agent> [--force]
 #   harness metrics [--since YYYY-MM-DD] [--json]   health numbers from progress.jsonl + the wiki
 #   harness wiki-lint [DIR]   check docs/wiki format and limits (0 = pass)
 #
@@ -35,7 +35,7 @@
 # Every ask is logged to .harness/log/ and .harness/progress.jsonl, and
 # .harness/progress.md is regenerated (log errors only warn on stderr).
 # Config: .harness/config.json (optional `headless_max_minutes`). `harness close` refuses (exit 4) a
-#   running ask or an uncollected report unless --force. Closes are logged to progress.jsonl.
+#   running ask unless --force. Closes are logged to progress.jsonl.
 # Output of `ask`: stdout = report on exit 0 and 5; diagnostics on stderr.
 set -u
 
@@ -66,12 +66,12 @@ DEFAULT_TIMEOUT=$HARNESS_DEFAULT_TIMEOUT_MS
 IMPLEMENTER_TIMEOUT=$HARNESS_IMPLEMENTER_TIMEOUT_MS
 ASK_DIR=".harness/asks"
 # parsed once by ask_parse_args (cmd_ask); ask_inner only reads them
-ASK_TIMEOUT=$DEFAULT_TIMEOUT; ASK_TIMEOUT_SET=0; ASK_FRESH=0; ASK_KEEP=0; ASK_BAD=0; ASK_NOLANE=0
+ASK_TIMEOUT=$DEFAULT_TIMEOUT; ASK_TIMEOUT_SET=0; ASK_KEEP=0; ASK_BAD=0; ASK_NOLANE=0
 
 usage() {
   cat >&2 <<EOF
 usage:
-  harness ask    <agent> '<instruction>' [--timeout MS (default: implementer $IMPLEMENTER_TIMEOUT, others $DEFAULT_TIMEOUT)] [--fresh|--keep]
+  harness ask    <agent> '<instruction>' [--timeout MS (default: implementer $IMPLEMENTER_TIMEOUT, others $DEFAULT_TIMEOUT)] [--keep]
   harness report <agent>
   harness wait   <agent> [--timeout MS]
   harness watch  <agent> [-n N]   (human terminal only)
@@ -79,7 +79,7 @@ usage:
   harness [-C DIR] <command> ...
   harness lane   <issue#> [slug] [--type feat|fix|docs] | ls | rm <issue#|path> [--force]
   harness init   [--no-agent] [--shared]   (once per repo: makes it a harness checkout; ask refuses without it)
-  harness close  <agent>|--all [--force]
+  harness close  <agent> [--force]
   harness wiki-lint [DIR]
   harness metrics [--since YYYY-MM-DD] [--json]
 agents: $AGENTS
@@ -124,11 +124,6 @@ last_ask_record() {
   prog="fromjson? | select(type == \"object\" and .agent == \$a and (.ask_id // \"\") == \"\") | select($where) | $field"
   grep -v '"event":"close"' "$JSONL" 2>/dev/null | tail -n 200 \
     | jq -R -r -c --arg a "$agent" "$prog" 2>/dev/null | tail -n 1
-}
-
-# last_exit <agent> — exit code of the agent's last logged ask (old rows with an ask_id are skipped); nothing when unknown
-last_exit() {
-  last_ask_record "$1" --where '(.exit | type) == "number"' --field .exit
 }
 
 # --- progress log ----------------------------------------------------------------------
@@ -215,14 +210,14 @@ record_progress() {
 }
 
 # ask_parse_args <agent> <text> [opts...] — the one walk over an ask's options (called by cmd_ask
-# after the agent and text checks). Sets ASK_TIMEOUT/FRESH/KEEP.
+# after the agent and text checks). Sets ASK_TIMEOUT/KEEP.
 # The instruction text is positional, so an option-looking word inside it is never an option. A bad option,
-# --timeout value or --fresh with --keep only sets ASK_BAD: ask_inner turns that into the usage
+# --timeout value only sets ASK_BAD: ask_inner turns that into the usage
 # error inside the logged subshell (exit 1 is recorded in progress).
 ask_parse_args() {
   local agent=$1
   shift 2
-  ASK_FRESH=0; ASK_KEEP=0; ASK_BAD=0
+  ASK_KEEP=0; ASK_BAD=0
   ASK_TIMEOUT=$DEFAULT_TIMEOUT; ASK_TIMEOUT_SET=0
   [ "$agent" != implementer ] || ASK_TIMEOUT=$IMPLEMENTER_TIMEOUT
   while [ $# -gt 0 ]; do
@@ -232,12 +227,10 @@ ask_parse_args() {
           ''|*[!0-9]*|0) ASK_BAD=1; shift ;;     # missing/invalid value: usage (logged)
           *) ASK_TIMEOUT=$2; ASK_TIMEOUT_SET=1; shift 2 ;;
         esac ;;
-      --fresh) ASK_FRESH=1; shift ;;
       --keep) ASK_KEEP=1; shift ;;
       *) ASK_BAD=1; shift ;;
     esac
   done
-  [ "$ASK_FRESH$ASK_KEEP" != 11 ] || ASK_BAD=1
 }
 
 # rotate_logs <current-log> — newest N logs kept, older than D days deleted; raw headless
@@ -300,7 +293,6 @@ verify_tool() {
 restore_interrupted() {
   [ "$1" = implementer ] && [ ! -f "$2" ] && [ -f "$2.pending" ] || return 0
   mv -f "$2.pending" "$2"
-  stamp_finished "$1"
   cat "$2"
   echo "verify: INTERRUPTED"
   exit 5
@@ -439,8 +431,6 @@ ask_finish() {
   record_progress "$ASK_AGENT" "$ASK_TEXT" "$rc" "$ASK_T0" "$ASK_HB" "$ASK_TMP" \
     || echo "harness: could not write the progress log (ask result unchanged)" >&2
   rm -f "$ASK_TMP" "${ASK_ERR:-}"
-  # a printed report (0, or 5 = failed verification/FAIL verdict) counts as collected
-  case "$rc" in 0|5) stamp_finished "$ASK_AGENT" ;; esac
   exit "$rc"
 }
 
@@ -477,7 +467,7 @@ cmd_ask() {
 }
 
 ask_inner() {
-  local agent=${1:-} text=${2:-} timeout=$ASK_TIMEOUT fresh=$ASK_FRESH keep=$ASK_KEEP
+  local agent=${1:-} text=${2:-} timeout=$ASK_TIMEOUT keep=$ASK_KEEP
   [ -n "$agent" ] && [ -n "$text" ] || usage
   valid_agent "$agent"
   [ "$ASK_BAD" = 0 ] || usage      # a bad option found by ask_parse_args: usage error, logged
@@ -486,7 +476,7 @@ ask_inner() {
     die "harness-verify not found on PATH; run ./install.sh (the implementer's checks would silently not run)"
   fi
 
-  ask_headless "$agent" "$text" "$timeout" "$fresh" "$keep"
+  ask_headless "$agent" "$text" "$timeout" "$keep"
 }
 
 # digits_only <string> — succeed only for a non-empty all-digit string
@@ -539,26 +529,6 @@ ensure_config() {
   return 0
 }
 
-# stamp_finished <agent> — mark the agent's report as collected now;
-# .harness/asks/<agent>.finished mtime = idle-since
-stamp_finished() {
-  mkdir -p .harness/asks 2>/dev/null && : > ".harness/asks/$1.finished" 2>/dev/null
-  return 0
-}
-
-# has_uncollected <agent> — 0 when the agent has a report nobody collected: a
-# .pending file, or a report that no collected-stamp covers (missing stamp, report
-# newer than the stamp, or a newer ask in flight)
-has_uncollected() {
-  local r="$REPORT_DIR/$1.md" f=".harness/asks/$1.finished" c=".harness/asks/$1.current"
-  [ -f "$r.pending" ] && return 0
-  [ -f "$r" ] || return 1
-  [ -f "$f" ] || return 0
-  [ "$r" -nt "$f" ] && return 0
-  [ -f "$c" ] && [ "$f" -ot "$c" ] && return 0
-  return 1
-}
-
 # log_close <role> <reason> [runner] — event line in progress.jsonl (key `role`, not
 # `agent`, so per-agent ask lookups never match it) + progress.md refresh
 log_close() {
@@ -574,28 +544,18 @@ log_close() {
 }
 
 cmd_close() {
-  local target="" force=0 a rc=0 r
+  local target="" force=0
   while [ $# -gt 0 ]; do
     case "$1" in
       --force) force=1 ;;
-      --all) [ -z "$target" ] || usage; target=$1 ;;
       -*) usage ;;
       *) [ -z "$target" ] || usage; target=$1 ;;
     esac
     shift
   done
   [ -n "$target" ] || usage
-  case "$target" in
-    --all)
-      for a in $AGENTS; do
-        ( close_headless "$a" "$force" 1 ); r=$?
-        # keep the most significant failure: 4 (refused) > 1
-        case "$r" in 0) ;; 4) rc=4 ;; *) [ "$rc" != 0 ] || rc=$r ;; esac
-      done
-      exit "$rc" ;;
-  esac
   valid_agent "$target"
-  close_headless "$target" "$force" 0
+  close_headless "$target" "$force"
   exit $?
 }
 
