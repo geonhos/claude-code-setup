@@ -56,109 +56,101 @@ check "report unknown agent rc" [ "$RC" -eq 1 ]
 
 run
 
-# --- report: ## Learned -> docs/wiki/inbox -------------------------------------------
-setup
-mkdir -p .harness/reports .harness/asks docs/wiki
-printf '1700000000-123-456 1700000000\n' > .harness/asks/analyst.current
-printf '# analyst report\nstatus: done\n## Learned\n- stat -f is GNU-hostile (bin/harness:815)\n- vague claim with no proof\n- fixed in commit 79a1964\n## Open questions\n- none\n' > .harness/reports/analyst.md
-fin analyst; run report analyst
-check "learned rc" [ "$RC" -eq 0 ]
-check "learned queue line" grep -q '^wiki: 2 lessons queued in docs/wiki/inbox/' <<<"$OUT"
-Q=$(ls docs/wiki/inbox/*-analyst-1700000000-123-456.md 2>/dev/null | head -1)
-check "learned file named by role+ask-id" [ -n "$Q" ]
-check "learned header" grep -q '^role: analyst' "$Q"
-check "learned header ask-id" grep -q '^ask-id: 1700000000-123-456' "$Q"
-check "learned keeps evidence bullet" grep -q 'bin/harness:815' "$Q"
-check "learned caps at 2 bullets" [ "$(grep -c '^- ' "$Q")" -eq 2 ]
-check "learned drops bullet without evidence" not grep -q 'vague claim' "$Q"
-fin analyst; run report analyst
-check "learned warns on dropped bullet" grep -q 'dropped 1 Notes bullet' <<<"$OUT"
-check "learned idempotent (one file)" [ "$(ls docs/wiki/inbox | wc -l | tr -d ' ')" -eq 1 ]
-check "learned second run no queue line" not grep -q '^wiki:' <<<"$OUT"
+# --- report: ## Notes -> `wiki` GitHub issues -------------------------------------------
+export FAKE_GH_LOG=$(mktemp); GH_LOGS="$FAKE_GH_LOG"
+trap 'cd / && for d in $WORKS; do rm -rf "$d"; done; rm -f $GH_LOGS' EXIT
+GH_PATH="$HERE/fake-gh:$PATH"
+ghrun() { PATH="$GH_PATH" run "$@"; }
+creates() { grep -c '^issue create --label wiki ' "$FAKE_GH_LOG"; }
+# notes_case BODY — fresh checkout with a report whose Notes section is BODY, then `report analyst`
+notes_case() {
+  setup
+  : > "$FAKE_GH_LOG"; unset FAKE_GH_OPEN FAKE_GH_FAIL
+  mkdir -p .harness/reports .harness/asks docs/wiki
+  printf '1700000000-123-456 1700000000\n' > .harness/asks/analyst.current
+  printf '# analyst report\nstatus: done\n## Notes\n%b## Open questions\n- none\n' "$1" > .harness/reports/analyst.md
+  fin analyst; ghrun report analyst
+}
+notes_case '- stat -f is GNU-hostile (bin/harness:815)\n- vague claim with no proof\n- fixed in commit 79a1964\n'
+check "notes rc" [ "$RC" -eq 0 ]
+check "notes: one issue per evidence bullet" [ "$(creates)" -eq 2 ]
+check "notes: summary line" grep -q '^wiki: 2 issues filed with label wiki' <<<"$OUT"
+check "notes: title is the bullet" grep -q -- '--title stat -f is GNU-hostile (bin/harness:815)' "$FAKE_GH_LOG"
+check "notes: no-evidence bullet not filed" not grep -q 'vague claim' "$FAKE_GH_LOG"
+check "notes: warns on dropped bullet" grep -q 'dropped 1 Notes bullet' <<<"$OUT"
+check "notes: body has source line" grep -q 'Source: analyst ask 1700000000-123-456, ' "$FAKE_GH_LOG"
+check "notes: nothing written under docs/wiki/inbox" [ ! -e docs/wiki/inbox ]
 
-setup
-mkdir -p .harness/reports docs/wiki
-printf '# analyst report\nstatus: done\n## Learned\n- none\n## Open questions\n- none\n' > .harness/reports/analyst.md
-fin analyst; run report analyst
-check "learned none: nothing queued" [ ! -d docs/wiki/inbox ]
-check "learned none: no wiki line" not grep -q '^wiki:' <<<"$OUT"
-printf '# analyst report\nstatus: done\n## Learned\n- no proof here at all\n' > .harness/reports/analyst.md
-fin analyst; run report analyst
-check "learned all dropped: nothing queued" [ ! -d docs/wiki/inbox ]
-printf '# analyst report\nstatus: done\n' > .harness/reports/analyst.md
-fin analyst; run report analyst
-check "no Learned section: nothing queued" [ ! -d docs/wiki/inbox ]
+# title cut at 70 chars
+L=$(printf 'x%.0s' $(seq 1 90))
+notes_case "- $L see bin/harness:1\n"
+check "notes: title cut to 70 chars" grep -q -- "--title $(printf 'x%.0s' $(seq 1 70)) --body" "$FAKE_GH_LOG"
+
+# duplicate: same title already open with label wiki
+setup; : > "$FAKE_GH_LOG"
+mkdir -p .harness/reports .harness/asks docs/wiki; printf '1700000000-1-1 1700000000\n' > .harness/asks/analyst.current
+printf '# analyst report\nstatus: done\n## Notes\n- seen in bin/harness:1\n- other in bin/harness:2\n' > .harness/reports/analyst.md
+fin analyst; FAKE_GH_OPEN='seen in bin/harness:1' ghrun report analyst
+check "notes dup: only the new bullet filed" [ "$(creates)" -eq 1 ]
+check "notes dup: list asked for wiki label" grep -q '^issue list --label wiki' "$FAKE_GH_LOG"
+check "notes dup: summary counts skip" grep -q '^wiki: 1 issue filed with label wiki (1 duplicate skipped)' <<<"$OUT"
+
+# gh failing: one warning, ask output and rc intact
+notes_case '- seen in bin/harness:1\n'; : > "$FAKE_GH_LOG"
+fin analyst; FAKE_GH_FAIL=1 ghrun report analyst
+check "notes gh fail: rc 0" [ "$RC" -eq 0 ]
+check "notes gh fail: warns once" [ "$(grep -c 'harness: wiki: gh' <<<"$OUT")" -eq 1 ]
+check "notes gh fail: report still printed" grep -q '^# analyst report' <<<"$OUT"
+# gh missing: PATH holds only the tools harness needs, no gh
+setup; mkdir -p nogh
+for t in bash sh awk sed cut grep date git jq mkdir cat printf ls wc tr head tail sort rm find stat perl env dirname basename uname mktemp; do
+  p=$(command -v "$t" 2>/dev/null) && [ -x "$p" ] && ln -sf "$p" "nogh/$t"
+done
+mkdir -p .harness/reports .harness/asks docs/wiki; printf '1700000000-1-1 1700000000\n' > .harness/asks/analyst.current
+printf '# analyst report\nstatus: done\n## Notes\n- seen in bin/harness:1\n' > .harness/reports/analyst.md
+fin analyst; OUT=$(PATH="$WORK/nogh" /bin/bash "$HARNESS" report analyst 2>&1); RC=$?
+check "notes gh missing: rc 0" [ "$RC" -eq 0 ]
+check "notes gh missing: warns" grep -q 'harness: wiki: gh not found' <<<"$OUT"
+
+# no-evidence-only, none, no Notes: gh never called
+notes_case '- none\n'
+check "notes none: gh not called" [ ! -s "$FAKE_GH_LOG" ]
+notes_case '- no proof here at all\n- also unproven\n'
+check "notes without evidence: warns" grep -q 'dropped 2 Notes bullet' <<<"$OUT"
+check "notes without evidence: gh not called" [ ! -s "$FAKE_GH_LOG" ]
+notes_case ''
+check "empty Notes: gh not called" [ ! -s "$FAKE_GH_LOG" ]
+
+# reviewer: Notes before VERDICT
+setup; : > "$FAKE_GH_LOG"
 mkdir -p .harness/reports .harness/asks
 printf '1700000001-1-2 1700000001\n' > .harness/asks/reviewer.current
-printf '# reviewer report\nstatus: done\n## Learned\n- race seen in .harness/progress.jsonl\nVERDICT: PASS\n' > .harness/reports/reviewer.md
-fin reviewer; run report reviewer
-check "learned before VERDICT: rc 0" [ "$RC" -eq 0 ]
-check "learned reviewer queued" [ "$(ls docs/wiki/inbox/*-reviewer-* 2>/dev/null | wc -l | tr -d ' ')" -eq 1 ]
+printf '# reviewer report\nstatus: done\n## Notes\n- race seen in .harness/progress.jsonl\nVERDICT: PASS\n' > .harness/reports/reviewer.md
+fin reviewer; ghrun report reviewer
+check "notes before VERDICT: rc 0" [ "$RC" -eq 0 ]
+check "notes reviewer filed" [ "$(creates)" -eq 1 ]
 check "reviewer VERDICT still last line" [ "$(printf '%s\n' "$OUT" | tail -1)" = "VERDICT: PASS" ]
 
-# learned: continuation lines, evidence strictness, idempotency, no ask-id, no docs/wiki
-learned_case() { # learned_case BODY -> fresh wiki repo, report, sets OUT/RC and Q (count of queued files)
-  setup
-  mkdir -p .harness/reports .harness/asks docs/wiki
-  printf '1700000002-9-9 1700000002\n' > .harness/asks/analyst.current
-  printf '# analyst report\nstatus: done\n## Learned\n%b## Open questions\n- none\n' "$1" > .harness/reports/analyst.md
-  fin analyst; run report analyst
-  Q=$(ls docs/wiki/inbox/ 2>/dev/null | wc -l | tr -d ' ')
-}
-learned_case '- wrapped lesson that\n  cites tests/x.sh:42 on the next line\n'
-check "learned continuation evidence kept" [ "$Q" -eq 1 ]
-check "learned continuation joined" grep -q 'that cites tests/x.sh:42' docs/wiki/inbox/*.md
+# continuation lines, evidence strictness, legacy ## Learned heading, no ask-id
+notes_case '- wrapped lesson that\n  cites tests/x.sh:42 on the next line\n'
+check "notes continuation joined" grep -q 'that cites tests/x.sh:42' "$FAKE_GH_LOG"
 for ok in 'see 1700000000-123-456' 'bin/harness:815' 'foo.sh:12' 'commit 79a1964' 'commit deadbee1' 'in .harness/progress.jsonl' 'see run.log'; do
-  learned_case "- $ok\n"
-  check "evidence accepted: $ok" [ "$Q" -eq 1 ]
+  notes_case "- $ok\n"
+  check "evidence accepted: $ok" [ "$(creates)" -eq 1 ]
 done
 for bad in 'step:2' 'host:8080' 'about 12345678 items' 'deadbeef word' 'abcdefabc' 'v1.2 notes'; do
-  learned_case "- $bad\n"
-  check "evidence rejected: $bad" [ "$Q" -eq 0 ]
+  notes_case "- $bad\n"
+  check "evidence rejected: $bad" [ "$(creates)" -eq 0 ]
 done
-learned_case '- see bin/harness:1\n'
-fin analyst; run report analyst
-check "learned idempotent by ask-id (different date)" [ "$(ls docs/wiki/inbox | wc -l | tr -d ' ')" -eq 1 ]
-mv docs/wiki/inbox/*.md docs/wiki/inbox/2020-01-01-analyst-1700000002-9-9.md
-fin analyst; run report analyst
-check "learned idempotent ignores date prefix" [ "$(ls docs/wiki/inbox | wc -l | tr -d ' ')" -eq 1 ]
-learned_case '- see bin/harness:1\n'
-rm -rf docs .harness/asks/analyst.current; mkdir -p docs/wiki
-fin analyst; run report analyst
-check "learned no ask-id: nothing queued" [ ! -d docs/wiki/inbox ]
-check "learned no ask-id: warns" grep -q 'no ask-id' <<<"$OUT"
-setup
-mkdir -p .harness/reports .harness/asks
-printf '1700000002-9-9 1700000002\n' > .harness/asks/analyst.current
-printf '# analyst report\nstatus: done\n## Learned\n- see bin/harness:1\n' > .harness/reports/analyst.md
-fin analyst; run report analyst
-check "learned without docs/wiki: nothing created" [ ! -d docs ]
-setup
-mkdir -p docs/wiki
-# the new `## Notes` heading is accepted (Learned above stays as the legacy form)
-mkdir -p .harness/asks .harness/reports; printf '1700000003-7-7 1700000003\n' > .harness/asks/analyst.current
-printf '# analyst report\nstatus: done\n## Notes\n- seen in bin/harness:844\n' > .harness/reports/analyst.md
-fin analyst; run report analyst
-check "Notes section queued" grep -q '^wiki: 1 lesson' <<<"$OUT"
-
-# Learned + Notes together: bullets from both, one shared 2-bullet cap
-setup
-mkdir -p docs/wiki .harness/asks .harness/reports; printf '1700000004-8-8 1700000004\n' > .harness/asks/analyst.current
-printf '# analyst report\nstatus: done\n## Learned\n- first in bin/harness:10\n## Notes\n- second in bin/harness:20\n- third in bin/harness:30\n' > .harness/reports/analyst.md
-fin analyst; run report analyst
-check "Learned+Notes queue line" grep -q '^wiki: 2 lessons' <<<"$OUT"
-Q=$(ls docs/wiki/inbox/*-analyst-1700000004-8-8.md 2>/dev/null | head -1)
-check "Learned+Notes keeps Learned bullet" grep -q 'bin/harness:10' "$Q"
-check "Learned+Notes keeps Notes bullet" grep -q 'bin/harness:20' "$Q"
-check "Learned+Notes shared cap drops third" not grep -q 'bin/harness:30' "$Q"
-
-# Notes bullets without evidence: dropped with a warning, nothing queued
-setup
-mkdir -p docs/wiki .harness/asks .harness/reports; printf '1700000005-6-6 1700000005\n' > .harness/asks/analyst.current
-printf '# analyst report\nstatus: done\n## Notes\n- no proof at all\n- also unproven\n' > .harness/reports/analyst.md
-fin analyst; run report analyst
-check "Notes without evidence: warns" grep -q 'dropped 2 Notes bullet' <<<"$OUT"
-check "Notes without evidence: nothing queued" [ ! -d docs/wiki/inbox ]
+notes_case '- x\n'; : > "$FAKE_GH_LOG"
+printf '# analyst report\nstatus: done\n## Learned\n- legacy in bin/harness:1\n' > .harness/reports/analyst.md
+fin analyst; ghrun report analyst
+check "legacy Learned heading filed" [ "$(creates)" -eq 1 ]
+notes_case '- see bin/harness:1\n'; : > "$FAKE_GH_LOG"
+rm -f .harness/asks/analyst.current
+fin analyst; ghrun report analyst
+check "notes no ask-id: gh not called" [ ! -s "$FAKE_GH_LOG" ]
+check "notes no ask-id: warns" grep -q 'no ask-id' <<<"$OUT"
 
 # --- shared defaults: one source (lib/harness-defaults.sh), prose copies must not drift -------
 setup
