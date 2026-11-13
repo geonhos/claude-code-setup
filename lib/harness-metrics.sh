@@ -3,7 +3,7 @@
 
 # --- wiki-lint ---------------------------------------------------------------------------
 # harness wiki-lint [DIR]   mechanical checks over DIR (default docs/wiki); prints
-# `file: problem` lines, exit 1 on any error (warnings: old inbox items, fluff).
+# `file: problem` lines, exit 1 on any error (warnings: fluff).
 cmd_wiki_lint() {
   local dir=${1:-docs/wiki} errs=0 f rel p n links l c k v t st
   while [ "${#dir}" -gt 1 ] && [ "${dir%/}" != "$dir" ]; do dir=${dir%/}; done
@@ -54,13 +54,6 @@ EOF_LINKS
   done <<EOF_PAGES
 $(find "$dir" -type f -name '*.md' 2>/dev/null | sort)
 EOF_PAGES
-  if [ -d "$dir/inbox" ]; then
-    while IFS= read -r f; do
-      [ -n "$f" ] && warn "$f" "inbox item older than 14 days; review or delete"
-    done <<EOF_OLD
-$(find "$dir/inbox" -type f -name '*.md' -mtime +14 2>/dev/null | sort)
-EOF_OLD
-  fi
   [ "$errs" -eq 0 ] || return 1
   return 0
 }
@@ -71,7 +64,7 @@ EOF_OLD
 # Windows: [start, now] and [start - len, start). Default start = now - 28 days.
 # Abnormal = a late-report row or an ask whose exit is not 0/5; rate = abnormal / rows.
 cmd_metrics() {
-  local since="" json=0 now top wiki="null" pages inbox_n=0 oldest="" f st mt idxl=0 inj=0
+  local since="" json=0 now top wiki="null" pages f st idxl=0 inj=0
   local act=0 stale=0 draft=0 sup=0 oth=0
   while [ $# -gt 0 ]; do
     case "$1" in
@@ -98,17 +91,11 @@ cmd_metrics() {
         draft) draft=$((draft + 1)) ;; superseded) sup=$((sup + 1)) ;; *) oth=$((oth + 1)) ;;
       esac
     done
-    for f in $(find "$top/docs/wiki/inbox" -type f -name '*.md' 2>/dev/null); do
-      inbox_n=$((inbox_n + 1))
-      mt=$(file_mtime "$f") || continue
-      if [ -z "$oldest" ] || [ "$mt" -lt "$oldest" ]; then oldest=$mt; fi
-    done
     [ ! -f "$top/docs/wiki/index.md" ] || idxl=$(wc -l < "$top/docs/wiki/index.md" | tr -d ' ')
     [ ! -f "$top/docs/wiki/index.md" ] || inj=$(LC_ALL=C grep -F '(active,' "$top/docs/wiki/index.md" | wc -c | tr -d ' ')
     wiki=$(jq -n -c --argjson a "$act" --argjson s "$stale" --argjson d "$draft" --argjson u "$sup" --argjson o "$oth" \
-      --argjson inbox "$inbox_n" --argjson oldest "$(num_or_null "$oldest")" --argjson now "$now" --argjson il "$idxl" --argjson ib "$inj" '
-      {pages: {active: $a, stale: $s, draft: $d, superseded: $u, other: $o}, inbox_items: $inbox,
-       inbox_oldest_days: (if $oldest == null then null else ((($now - $oldest) / 86400) | floor) end),
+      --argjson il "$idxl" --argjson ib "$inj" '
+      {pages: {active: $a, stale: $s, draft: $d, superseded: $u, other: $o},
        index_lines: $il, session_start_bytes: $ib}')
   fi
   { [ -f "$JSONL" ] && cat "$JSONL"; true; } | jq -R -s -r --argjson now "$now" --arg since "$since" --argjson json "$json" \
@@ -191,6 +178,6 @@ cmd_metrics() {
           "",
           (if .wiki == null then "wiki: none (no docs/wiki)" else
             "wiki: pages active \(.wiki.pages.active) · stale \(.wiki.pages.stale) · draft \(.wiki.pages.draft) · superseded \(.wiki.pages.superseded) · other \(.wiki.pages.other)",
-            "wiki: inbox \(.wiki.inbox_items) item(s), oldest \(.wiki.inbox_oldest_days | if . == null then "-" else "\(.)d" end) · index \(.wiki.index_lines) lines · SessionStart wiki \(.wiki.session_start_bytes) bytes" end) ]
+            "wiki: index \(.wiki.index_lines) lines · SessionStart wiki \(.wiki.session_start_bytes) bytes" end) ]
       | .[] end'
 }

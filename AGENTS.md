@@ -41,10 +41,9 @@ only when it is relevant to the task.**
 - `troubleshooting/*.md`: symptom, cause, fix, evidence; one trap per page
 - `how-to/*.md`: step-by-step procedures
 - `decisions/NNNN-*.md`: context / decision / status / consequences
-- `log.md` append-only, one line per change; `inbox/` unreviewed lessons
-  (from a report's `## Notes`), never listed in the index
+- `log.md` append-only, one line per change
 
-Page frontmatter (required except in inbox):
+Page frontmatter (required):
 ```
 type: troubleshooting|decision|how-to
 status: draft|active|stale|superseded
@@ -59,11 +58,11 @@ Retention: decisions are kept forever (superseded ones keep a banner); troublesh
 **Do not record what can be derived from code** (structure, signatures, git
 history). Record traps, reasons and decisions that the code does not show.
 A report's `## Notes` bullets (≤2) must each cite evidence (ask-id, commit,
-file:line or log).
+file:line or log); `harness report` files each as a GitHub issue labelled `wiki`.
 
 ### Promotion ladder
-1. `docs/wiki/inbox/`: unreviewed lesson with evidence
-2. wiki page: after review
+1. a `wiki`-label GitHub issue: unreviewed lesson with evidence
+2. wiki page: through a PR that closes the issue
 3. `AGENTS.md` (cross-agent rules) or, for Claude-specific ones, `.claude/rules/`
    or one line in an agent prompt, after 2+ recurrences
 4. `SKILL.md`: for a repeated procedure
