@@ -36,7 +36,7 @@ Read this first. Open a page only when it is relevant. Schema and promotion rule
 - [0004 Failure-only retros](decisions/0004-failure-only-batched-retros.md): removed in prune step 4 (superseded, 2026-11-02)
 - [0005 Gate only inside herdr](decisions/0005-gate-only-inside-herdr.md): step 1 (HERDR_ENV) and the global conductor superseded, steps 2-3 scoped by 0010; agent_type keys the gate; 0012 supersedes the 4b consequence (active, 2026-11-03)
 - [0006 Keep implementer pane](decisions/0006-keep-implementer-pane.md): implementer pane kept; no panes remain (superseded, 2026-11-02)
-- [0007 Headless runner pilot](decisions/0007-headless-runner-pilot.md): `claude -p` detached; completion = exit file; `runner` key removed in step 3 (active, 2026-11-02)
+- [0007 Headless runner pilot](decisions/0007-headless-runner-pilot.md): `claude -p` detached; completion = exit file; `runner` key removed in step 3 (active, 2026-11-13)
 - [0008 Worktree per ask](decisions/0008-worktree-per-ask.md): removed in prune step 4 (superseded, 2026-11-02)
 - [0009 Headless implementer](decisions/0009-headless-implementer.md): headless implementer: pinned permissions, exit 2 on denials, auto-resume after non-zero exit, 90 min cap (active, 2026-11-02)
 - [0010 Harness acts only in a checkout](decisions/0010-herdr-optional-gate-by-checkout.md): gate/resume key on .harness/asks (made by `harness init`); per-repo conductor agent; no HERDR_ENV switch; `harness wait`/`watch`; doctor and `--worktree` removed in step 4 (active, 2026-11-02)

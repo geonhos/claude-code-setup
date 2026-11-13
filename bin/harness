@@ -33,7 +33,7 @@
 # Every ask is logged to .harness/log/ and .harness/progress.jsonl, and
 # .harness/progress.md is regenerated (log errors only warn on stderr).
 # Config: .harness/config.json (`viewer`: auto|pane|none; a viewer is a herdr pane running
-#   `harness watch <role>`, closed when the run ends). `harness close` refuses (exit 4) a
+#   `harness watch <role>`; the harness never closes it). `harness close` refuses (exit 4) a
 #   running ask or an uncollected report unless --force. Closes are logged to progress.jsonl.
 # Output of `ask`: stdout = report on exit 0 and 5; diagnostics on stderr.
 set -u

@@ -119,7 +119,7 @@ of the progress file.
   If it still fails after 2 such rounds, ask the user.
 - Closing: a run ends with its process, so there is nothing to clean up. `harness close <worker>|--all` stops a
   run (exit 4 = still running or an uncollected report; `--force` only if the user agrees, and it kills the run).
-  A herdr viewer pane (`viewer` in `.harness/config.json`: `auto`|`pane`|`none`) runs `harness watch <role>` and is closed when the run ends (an ask that returned earlier closes it at the next `ask`, `wait`, `report` or `close`).
+  A herdr viewer pane (`viewer` in `.harness/config.json`: `auto`|`pane`|`none`) runs `harness watch <role>` and is never closed by the harness (the user closes it; each ask opens its own pane, so old ones may pile up).
 
 ## Metrics
 

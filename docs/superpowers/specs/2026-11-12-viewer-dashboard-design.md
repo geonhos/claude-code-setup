@@ -24,8 +24,8 @@ implementer  <ask-id>  ⏱ 12m04s  turns 38  ctx 82k  sonnet
 ```
 
 When the run ends: draw a final frame with the result line (turns, duration, cost from
-exit.json/result event) and the first lines of the report, then exit (pane close timing is
-unchanged).
+exit.json/result event) and the first lines of the report, then exit. The pane is a plain
+shell (`herdr pane run`), so the final frame stays on screen; the harness never closes the pane, the user does.
 
 ## Data sources (all existing; no new files or events)
 - Brief: `.harness/task-<role>.md` only when `.harness/asks/<role>.prompt` names it; otherwise

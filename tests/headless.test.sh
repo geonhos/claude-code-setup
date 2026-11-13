@@ -80,7 +80,7 @@ check "close --force: rc 0" [ "$RC" -eq 0 ]
 wait "$bg"
 check "close --force: running ask returned 3" [ "$(cat "$WORK/ask.rc")" -eq 3 ]
 check "close --force: killed signal" jqt '.killed == "signal"' .harness/asks/analyst.exit.json
-check "close --force: pane closed" logged "pane close"
+check "close --force: pane left open" not_logged "pane close"
 sleep 0.3
 check "close --force: no leftover fake claude" not kill -0 "$(cat "$FAKE_DIR/claude.pid")"
 check "close --force: logged force_kill" grep -q force_kill .harness/progress.jsonl
@@ -119,11 +119,11 @@ hrun ask analyst "a" --keep
 check "keep w/o session: note" grep -q "no previous session" <<<"$OUT"
 check "keep w/o session: fresh" not_logged "--resume"
 
-# 8. viewer pane: one per run, closed when the run ends
+# 8. viewer pane: one per run, never closed by the harness
 hsetup
 hrun ask analyst "a"; hrun ask analyst "b"
 check "viewer: one split per run" [ "$(grep -c 'pane split' "$FAKE_LOG")" -eq 2 ]
-check "viewer: closed after each run" [ "$(grep -c 'pane close' "$FAKE_LOG")" -eq 2 ]
+check "viewer: never closed by the harness" not_logged "pane close"
 hsetup; export HARNESS_VIEWER=none
 hrun ask analyst "a"
 check "viewer none: no pane" not_logged "pane split"
@@ -138,35 +138,35 @@ wait_exit() { local i=0; while [ $i -lt 150 ] && [ ! -f "${1:-.harness/asks}/ana
 # run_viewer [ask-dir] — the pane id recorded in .run
 run_viewer() { sed -n 's/^viewer=//p' "${1:-.harness/asks}/analyst.run" | head -n 1; }
 
-# 8b. an ask that returns before the run ends (exit 4) must not leak the viewer pane: the next ask,
-# `report`, `wait` or `close --force` closes it once (split == close per run)
+# 8b. an ask that returns before the run ends (exit 4): neither the next ask, `report`, `wait` nor
+# `close --force` closes the viewer pane (the user does)
 hsetup; export FAKE_CLAUDE_MODE=slow20
 hrun ask analyst "q" --timeout 500
-check "viewer leak: early return rc 4" [ "$RC" -eq 4 ]
+check "viewer kept: early return rc 4" [ "$RC" -eq 4 ]
 wait_exit
 export FAKE_CLAUDE_MODE=success
 hrun ask analyst "q2"
-check "viewer leak: next ask rc 0" [ "$RC" -eq 0 ]
-check "viewer leak: 2 splits for 2 runs" [ "$(grep -c 'pane split' "$FAKE_LOG")" -eq 2 ]
-check "viewer leak: 2 closes for 2 runs" [ "$(grep -c 'pane close' "$FAKE_LOG")" -eq 2 ]
+check "viewer kept: next ask rc 0" [ "$RC" -eq 0 ]
+check "viewer kept: 2 splits for 2 runs" [ "$(grep -c 'pane split' "$FAKE_LOG")" -eq 2 ]
+check "viewer kept: next ask closes no pane" not_logged "pane close"
 hsetup; export FAKE_CLAUDE_MODE=slow20
 hrun ask analyst "q" --timeout 500
 wait_exit
 hrun report analyst
-check "viewer leak: report closes the pane once" [ "$(grep -c 'pane close' "$FAKE_LOG")" -eq 1 ]
+check "viewer kept: report closes no pane" not_logged "pane close"
 hrun close analyst --force
-check "viewer leak: close after report closes no second time" [ "$(grep -c 'pane close' "$FAKE_LOG")" -eq 1 ]
+check "viewer kept: close after report closes no pane" not_logged "pane close"
 hsetup; export FAKE_CLAUDE_MODE=slow20
 hrun ask analyst "q" --timeout 500
 hrun wait analyst
-check "viewer leak: wait closes the pane once" [ "$(grep -c 'pane close' "$FAKE_LOG")" -eq 1 ]
+check "viewer kept: wait closes no pane" not_logged "pane close"
 hrun report analyst
-check "viewer leak: report after wait closes no second time" [ "$(grep -c 'pane close' "$FAKE_LOG")" -eq 1 ]
+check "viewer kept: report after wait closes no pane" not_logged "pane close"
 hsetup; export FAKE_CLAUDE_MODE=slow20
 hrun ask analyst "q" --timeout 500
 hrun close analyst --force
-check "viewer leak: close --force closes the pane once" [ "$(grep -c 'pane close' "$FAKE_LOG")" -eq 1 ]
-# a second ask while the run is live is refused before anything closes the viewer
+check "viewer kept: close --force closes no pane" not_logged "pane close"
+# a second ask while the run is live is refused before anything touches the viewer
 hsetup; export FAKE_CLAUDE_MODE=slow20
 hrun ask analyst "q" --timeout 500
 v=$(run_viewer)
@@ -459,7 +459,7 @@ unset HR_BIN
 hsetup
 hrun ask analyst "q"
 hrun status
-check "status: headless idle line" grep -Eq 'analyst +idle +bg' <<<"$OUT"
+check "status: headless idle line (viewer pane stays listed)" grep -Eq 'analyst +idle +w1:p2' <<<"$OUT"
 
 # metrics: runner split (old lines without runner count as pane)
 setup

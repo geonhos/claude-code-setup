@@ -171,10 +171,10 @@ check "view: single-line failure unchanged" grep -qx '✗ single' <<<"$OUT"
 OUT=$(vw 'not json' '{"type":"system","subtype":"hook_response","hook_event":"Stop","exit_code":0,"stdout":"not json"}' '{"type":"system","subtype":"hook_response","hook_event":"Stop","exit_code":2,"stderr":"boom"}')
 check "view: odd hook stdout still never fails" grep -q 'hook .* exit 2: boom' <<<"$OUT"
 
-# 5. lifecycle: the viewer pane is closed with the run, the session stays for --keep
+# 5. lifecycle: the viewer pane is left open after the run, the session stays for --keep
 isetup
 hrun ask implementer "q"
-check "lifecycle: viewer pane closed with the run" logged "pane close"
+check "lifecycle: viewer pane left open" not_logged "pane close"
 check "lifecycle: ... and the session kept for --keep" test -s .harness/asks/implementer.session
 
 # 6. per-role headless cap: implementer 90 min, analyst 60, config headless_max_minutes wins
