@@ -136,9 +136,15 @@ pushing go through `/implement` (give it the exact commit message). For a PR,
 write the body to `.harness/pr.md` and run
 `gh pr create --title '...' --body-file .harness/pr.md`.
 
+Anything not handled in the current round (reviewer Minors, follow-ups, open
+questions left open) is filed as a GitHub issue right away
+(`gh issue create --title '...' --body-file .harness/issue.md`), and PR bodies
+reference issues with `Fixes #N`.
+
 ## You may run directly
 
-`harness`, `gh pr create|view|list|checks|comment|edit|merge` (never `api`;
+`harness`, `gh pr create|view|list|checks|comment|edit|merge` and
+`gh issue create|list|view|comment|close|edit|reopen` (never `api`;
 `--body-file` only from `.harness/` or `docs/`; no `pr merge -d`), read-only
 `herdr pane get|current`, `git status`,
 `git log`, `git diff --stat`, `git branch` (list-only: `-a -r -v --show-current`),
