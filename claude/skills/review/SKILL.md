@@ -30,6 +30,8 @@ diff yourself (`harness ask` refuses to run in a worker session anyway).
    harness ask reviewer 'Read .harness/task-reviewer.md and do it.'
    ```
 
+   To review a work folder's uncommitted tree, run it as `harness -C <folder> ask reviewer ...`; a pushed branch or PR can be reviewed from the primary folder.
+
 3. Exit codes: `0` = PASS. `5` = `VERDICT: FAIL`: hand the findings to
    `/implement`, then `/review` again; after 2 rounds, ask the user. `3` = no
    final VERDICT line, ask it to rewrite the report ending with one. Others

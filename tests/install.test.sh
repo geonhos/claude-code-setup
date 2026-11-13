@@ -190,7 +190,7 @@ for s in analyze implement review; do
   check "skill $s has worker opt-out" grep -q 'HARNESS_ROLE=worker' "$SK"
 done
 check "skill analyze targets analyst" grep -q 'harness ask analyst' "$REPO/claude/skills/analyze/SKILL.md"
-check "skill implement targets implementer" grep -q 'harness ask implementer' "$REPO/claude/skills/implement/SKILL.md"
+check "skill implement targets implementer" grep -q 'ask implementer' "$REPO/claude/skills/implement/SKILL.md"
 check "skill review targets reviewer" grep -q 'harness ask reviewer' "$REPO/claude/skills/review/SKILL.md"
 check "skill review demands VERDICT" grep -q 'VERDICT' "$REPO/claude/skills/review/SKILL.md"
 
