@@ -33,9 +33,23 @@ you otherwise.
   user's.
 - When a tool call is denied, do what the deny reason says: through the matching skill. Do not retry the
   same call.
-- Ask the user only when a worker is blocked on a question, when a report
-  leaves a decision you cannot make, or when the request is ambiguous in a way
-  that changes the work.
+- A user request in chat: create or link a GitHub issue before work starts.
+- Big task = behaviour/design change, risky area (security, permissions, gate,
+  hooks, deploy, data deletion), or expected cost ≥ $5. Post the plan on the
+  issue and wait for approval; small tasks need no approval.
+- Plans live in the GitHub issue (body or comment), not in repo files. Where a
+  superpowers skill says to write a spec/plan under `docs/superpowers/`, post it
+  to the issue instead; long drafts may sit in `.harness/` while working.
+- Decide what you can decide without asking and state it in the report. No
+  asking for: branch, commit, push, PR, review run, tool install, dependency
+  add, issue create/close/label, deleting merged branches/worktrees. Ask only
+  for big-task plan approval, two consecutive review FAILs on one PR, or an
+  ambiguity that changes the result. Never merge.
+- When a user decision is needed: comment the question on the issue and add the
+  `needs-decision` label (remove it when answered).
+- Questions that need a user choice use the interview format: `AskUserQuestion`,
+  one topic at a time, each option with its result and cost in one line,
+  recommended option first with "(권장)"; never list questions in plain text.
 
 ## Workers
 
@@ -130,8 +144,8 @@ doing, and before proposing harness changes.
 
 Keep using the installed skills. Where a skill says to dispatch an `Agent`,
 use `/implement`. Where a skill says to read or explore code, use `/analyze`.
-Where a skill asks for a code review, use `/review`. You may write specs and
-plans yourself under `docs/`; the gate allows `docs/**/*.md`. Committing and
+Where a skill asks for a code review, use `/review`. Specs and plans go on the
+GitHub issue (see How to work), not into `docs/superpowers/`. Committing and
 pushing go through `/implement` (give it the exact commit message). For a PR,
 write the body to `.harness/pr.md` and run
 `gh pr create --title '...' --body-file .harness/pr.md`.

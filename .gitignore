@@ -11,3 +11,6 @@
 
 # Worker agent memory
 .claude/agent-memory/
+
+# Local plans/specs (not versioned)
+docs/superpowers/
