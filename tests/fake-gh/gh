@@ -1,0 +1,10 @@
+#!/bin/bash
+# fake gh: logs argv (one line per call) to $FAKE_GH_LOG; `issue list` prints $FAKE_GH_OPEN
+# (newline-separated titles); FAKE_GH_FAIL=1 makes every call fail.
+printf '%s\n' "$*" >> "${FAKE_GH_LOG:-/dev/null}"
+[ "${FAKE_GH_FAIL:-}" != 1 ] || exit 1
+case "$1 $2" in
+  "issue list") printf '%s\n' "${FAKE_GH_OPEN:-}" ;;
+  "issue create") echo "https://github.com/x/y/issues/1" ;;
+esac
+exit 0

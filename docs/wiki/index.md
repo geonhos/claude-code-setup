@@ -1,6 +1,6 @@
 # Wiki index
 
-Read this first. Open a page only when it is relevant. Schema and promotion rules: the Wiki section of `AGENTS.md`. Inbox notes go stale fast: check `git log` for a fix before triaging one.
+Read this first. Open a page only when it is relevant. Schema and promotion rules: the Wiki section of `AGENTS.md`. `wiki`-label issues go stale fast: check `git log` for a fix before triaging one.
 
 ## Troubleshooting: ask completion and timeouts
 - [ask --timeout is ms](troubleshooting/ask-timeout-is-milliseconds.md): `--timeout 1200` = 1.2s; defaults are role-aware (active, 2026-10-27)

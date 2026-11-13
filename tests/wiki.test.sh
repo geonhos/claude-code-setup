@@ -83,11 +83,7 @@ mk; printf 'nonsense\n' > "$W/inbox/x.md"; printf 'x\n' > "$W/log.md"; lint "$W"
 check "inbox/log/index need no frontmatter" [ "$RC" -eq 0 ]
 
 mk; printf 'old lesson\n' > "$W/inbox/old.md"; touch -t 202001010000 "$W/inbox/old.md"; lint "$W"
-check "old inbox item warns" has "inbox/old.md: warning: inbox item older than 14 days"
-check "old inbox item is not an error" [ "$RC" -eq 0 ]
-
-mk; printf 'new lesson\n' > "$W/inbox/new.md"; lint "$W"
-check "fresh inbox item silent" [ -z "$OUT" ]
+check "old inbox file (old checkout) is silent" [ -z "$OUT" ]
 
 mk; printf 'This works well.\n' >> "$W/troubleshooting/a.md"; lint "$W"
 check "fluff warns" has "troubleshooting/a.md: warning: fluff phrase"
