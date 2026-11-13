@@ -1,32 +1,21 @@
 #!/bin/bash
-# Headless runs without herdr (v24 PR 1): harness ask with no usable herdr
-# starts harness-run detached in the background. Run: /bin/bash tests/headless-bg.test.sh
+# Headless background runs: harness ask starts harness-run detached in the background. Run: /bin/bash tests/headless-bg.test.sh
 set -u
 . "$(dirname "$0")/harness-lib.sh"
 FAKE_CLAUDE="$HERE/fake-claude"
 RUNPIDS=$(mktemp)
 trap 'for p in $(cat "$RUNPIDS" 2>/dev/null); do kill "$p" 2>/dev/null; done; rm -f "$RUNPIDS"; cd / && for d in $WORKS; do rm -rf "$d"; done' EXIT
 
-# a herdr that must never run: logs and exits 99
-NOHERDR=$(mktemp -d); WORKS="$WORKS $NOHERDR"
-cat > "$NOHERDR/herdr" <<'EOS'
-#!/bin/bash
-echo "herdr $*" >> "${NOHERDR_CALLS:?}"
-exit 99
-EOS
-chmod +x "$NOHERDR/herdr"
-
-# nrun ARGS... -> OUT, RC: no herdr in the environment (HERDR_* unset), a trap herdr on PATH
+# nrun ARGS... -> OUT, RC
 nrun() {
-  OUT=$(env -u HERDR_ENV -u HERDR_PANE_ID -u HERDR_SOCKET_PATH -u HARNESS_ROLE -u HARNESS_VIEWER \
-    NOHERDR_CALLS="$WORK/herdr.calls" HARNESS_POLL_SEC=0.2 HARNESS_HL_START_S=10 \
-    PATH="$NOHERDR:$FAKE_CLAUDE:$HERE/../bin:$PATH" perl -e 'alarm($ENV{HRUN_ALARM_S} || 60);exec(@ARGV)' \
+  OUT=$(env -u HARNESS_ROLE \
+    HARNESS_POLL_SEC=0.2 HARNESS_HL_START_S=10 \
+    PATH="$FAKE_CLAUDE:$HERE/../bin:$PATH" perl -e 'alarm($ENV{HRUN_ALARM_S} || 60);exec(@ARGV)' \
     /bin/bash "$HARNESS" "$@" 2>&1)
   RC=$?
 }
 bsetup() {
   setup
-  : > "$WORK/herdr.calls"
   export FAKE_CLAUDE_MODE=success
   export FAKE_REPORT_CMD="mkdir -p $WORK/.harness/reports && printf '# analyst report\nstatus: done\n' > $WORK/.harness/reports/analyst.md"
 }
@@ -41,29 +30,25 @@ note_run() {
   RID=$(awk 'NR == 1 { print $1 }' .harness/asks/analyst.pid 2>/dev/null); RPID=$(awk 'NR == 1 { print $2 }' .harness/asks/analyst.pid 2>/dev/null)
   [ -z "$RPID" ] || echo "$RPID" >> "$RUNPIDS"
 }
-no_herdr_calls() { [ ! -s "$WORK/herdr.calls" ]; }
 
 # 1. bg success
 bsetup
 nrun ask analyst "q1"
 check "bg success: rc 0" [ "$RC" -eq 0 ]
 check "bg success: report printed" grep -q "analyst report" <<<"$OUT"
-check "bg success: note on stderr" grep -q "running analyst in the background" <<<"$OUT"
-check "bg success: herdr never called" no_herdr_calls
-check "bg success: .run viewer=bg" grep -qx "viewer=bg" .harness/asks/analyst.run
 check "bg success: .stream written" grep -q "^[^ ]* .*\.jsonl$" .harness/asks/analyst.stream
 check "bg success: exit.json rc 0" jqt '.rc == 0' .harness/asks/analyst.exit.json
 check "bg success: runner log kept under .harness" [ -e .harness/asks/analyst.runner.log ]
 nrun status
-check "status without a pane: idle bg" grep -Eq "^analyst +idle +bg +hl" <<<"$OUT"
+check "status after a run: idle" grep -Eq "^analyst +idle +hl" <<<"$OUT"
 
 # 2. detachment + 3. environment
 bsetup
 export FAKE_CLAUDE_MODE=slow30 FAKE_ENV_DUMP="$WORK/env.dump"
 MYPG=$(ps -o pgid= -p $$ | tr -d ' ')
-( env -u HERDR_ENV -u HARNESS_ROLE CLAUDECODE=1 CLAUDE_CODE_AGENT=conductor CLAUDE_CODE_ENTRYPOINT=cli \
-    HERDR_PANE_ID=w1:p1 HERDR_SOCKET_PATH=/nowhere NOHERDR_CALLS="$WORK/herdr.calls" HARNESS_POLL_SEC=0.2 \
-    PATH="$NOHERDR:$FAKE_CLAUDE:$HERE/../bin:$PATH" /bin/bash "$HARNESS" ask analyst "q2" >"$WORK/ask.out" 2>&1 ) &
+( env -u HARNESS_ROLE CLAUDECODE=1 CLAUDE_CODE_AGENT=conductor CLAUDE_CODE_ENTRYPOINT=cli \
+    HARNESS_POLL_SEC=0.2 \
+    PATH="$FAKE_CLAUDE:$HERE/../bin:$PATH" /bin/bash "$HARNESS" ask analyst "q2" >"$WORK/ask.out" 2>&1 ) &
 ASKPID=$!
 note_run
 check "detached: runner pid known" [ -n "$RPID" ]
@@ -77,37 +62,12 @@ wait "$ASKPID"
 check "detached: ask rc 0" [ "$?" -eq 0 ]
 OUT=$(cat "$WORK/ask.out")
 check "env: dump written" [ -s "$WORK/env.dump" ]
-check "env: no HERDR_*" not_grep "^HERDR_" "$WORK/env.dump"
 check "env: no CLAUDECODE" not_grep "^CLAUDECODE=" "$WORK/env.dump"
 check "env: no CLAUDE_CODE_AGENT" not_grep "^CLAUDE_CODE_AGENT=" "$WORK/env.dump"
 check "env: no CLAUDE_CODE_ENTRYPOINT" not_grep "^CLAUDE_CODE_ENTRYPOINT=" "$WORK/env.dump"
 check "env: HARNESS_ROLE=worker" grep -qx "HARNESS_ROLE=worker" "$WORK/env.dump"
 check "env: PATH passes through" grep -q "^PATH=" "$WORK/env.dump"
 unset FAKE_ENV_DUMP
-
-# 4. a failed split falls back to the background (auto and explicit viewer=pane)
-bsetup
-touch "$FAKE_DIR/split_fail"
-OUT=$(HERDR_ENV=1 HERDR_PANE_ID=w1:p1 HARNESS_POLL_SEC=0.2 HARNESS_HL_START_S=10 \
-  PATH="$FAKE_BIN:$FAKE_CLAUDE:$HERE/../bin:$PATH" perl -e 'alarm(60);exec(@ARGV)' env -u HARNESS_ROLE -u HARNESS_VIEWER /bin/bash "$HARNESS" ask analyst "q4" 2>&1); RC=$?
-check "auto: split failure falls back, rc 0" [ "$RC" -eq 0 ]
-check "auto: note printed" grep -q "running analyst in the background" <<<"$OUT"
-check "auto: run is bg" grep -qx "viewer=bg" .harness/asks/analyst.run
-check "auto: no pane run attempted" not_logged "pane run"
-bsetup
-touch "$FAKE_DIR/split_fail"
-OUT=$(HERDR_ENV=1 HERDR_PANE_ID=w1:p1 HARNESS_VIEWER=pane HARNESS_POLL_SEC=0.2 \
-  PATH="$FAKE_BIN:$FAKE_CLAUDE:$HERE/../bin:$PATH" perl -e 'alarm(60);exec(@ARGV)' env -u HARNESS_ROLE /bin/bash "$HARNESS" ask analyst "q4b" 2>&1); RC=$?
-check "viewer=pane: split failure falls back to bg, rc 0" [ "$RC" -eq 0 ]
-check "viewer=pane: split failure note" grep -q "running analyst in the background" <<<"$OUT"
-
-# 5. viewer=none with herdr available: no pane at all
-bsetup
-OUT=$(HERDR_ENV=1 HERDR_PANE_ID=w1:p1 HARNESS_VIEWER=none HARNESS_POLL_SEC=0.2 \
-  PATH="$FAKE_BIN:$FAKE_CLAUDE:$HERE/../bin:$PATH" perl -e 'alarm(60);exec(@ARGV)' env -u HARNESS_ROLE /bin/bash "$HARNESS" ask analyst "q5" 2>&1); RC=$?
-check "none: rc 0" [ "$RC" -eq 0 ]
-check "none: no pane split" not_logged "pane split"
-check "none: run is bg" grep -qx "viewer=bg" .harness/asks/analyst.run
 
 # 6. status while running + 7. close refused / --force kills
 bsetup
@@ -116,7 +76,7 @@ HRUN_ALARM_S=8 nrun ask analyst "q6" --timeout 3000
 check "hang: ask times out with exit 4" [ "$RC" -eq 4 ]
 note_run
 nrun status
-check "status while running shows bg" grep -Eq "^analyst +running +bg +hl" <<<"$OUT"
+check "status while running" grep -Eq "^analyst +running +hl" <<<"$OUT"
 nrun close analyst
 check "close without --force refused (4)" [ "$RC" -eq 4 ]
 check "close refused: run still alive" [ -n "$(live_runs "$RID")" ]
@@ -125,16 +85,15 @@ check "close --force rc 0" [ "$RC" -eq 0 ]
 wait_no_runs "$RID"
 check "close --force: no run left" [ -z "$(live_runs "$RID")" ]
 check "close --force: exit.json killed signal" jqt '.killed == "signal"' .harness/asks/analyst.exit.json
-check "close --force: no herdr call" no_herdr_calls
 nrun status
 check "status after close: -" grep -Eq "^analyst +-$" <<<"$OUT"
-check "close --force logged with pane -" grep -q '"event":"close".*"pane":"-".*"reason":"force_kill"' .harness/progress.jsonl
+check "close --force logged" grep -q '"event":"close".*"reason":"force_kill"' .harness/progress.jsonl
 
 # 8. an interrupted ask leaves the run alive; a later report collects it
 bsetup
 export FAKE_CLAUDE_MODE=slow40
-env -u HERDR_ENV -u HARNESS_ROLE NOHERDR_CALLS="$WORK/herdr.calls" HARNESS_POLL_SEC=0.2 \
-    PATH="$NOHERDR:$FAKE_CLAUDE:$HERE/../bin:$PATH" /bin/bash "$HARNESS" ask analyst "q8" >"$WORK/ask.out" 2>&1 &
+env -u HARNESS_ROLE HARNESS_POLL_SEC=0.2 \
+    PATH="$FAKE_CLAUDE:$HERE/../bin:$PATH" /bin/bash "$HARNESS" ask analyst "q8" >"$WORK/ask.out" 2>&1 &
 ASKPID=$!   # the harness ask itself (no wrapper subshell): TERM reaches it
 note_run
 kill -TERM "$ASKPID" 2>/dev/null; wait "$ASKPID" 2>/dev/null
@@ -146,9 +105,9 @@ check "interrupted: report collects it" grep -q "analyst report" <<<"$OUT"
 check "interrupted: report rc 0" [ "$RC" -eq 0 ]
 
 tty_run() {
-  env -u HERDR_ENV -u HERDR_PANE_ID -u HERDR_SOCKET_PATH -u HARNESS_ROLE NO_COLOR=1 \
-    NOHERDR_CALLS="$WORK/herdr.calls" HARNESS_POLL_SEC=0.2 HARNESS_HL_START_S=10 \
-    PATH="$NOHERDR:$FAKE_CLAUDE:$HERE/../bin:$PATH" perl -e 'alarm($ENV{HRUN_ALARM_S} || 60);exec(@ARGV)' \
+  env -u HARNESS_ROLE NO_COLOR=1 \
+    HARNESS_POLL_SEC=0.2 HARNESS_HL_START_S=10 \
+    PATH="$FAKE_CLAUDE:$HERE/../bin:$PATH" perl -e 'alarm($ENV{HRUN_ALARM_S} || 60);exec(@ARGV)' \
     script -q /dev/null /bin/bash "$HARNESS" "$@" >"$WORK/tty.out" 2>&1 </dev/null
   RC=$?
   OUT=$(tr -d '\r' <"$WORK/tty.out")

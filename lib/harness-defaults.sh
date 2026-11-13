@@ -6,7 +6,6 @@
 HARNESS_ROLES="analyst implementer reviewer"
 HARNESS_DEFAULT_TIMEOUT_MS=3600000           # ask --timeout default: analyst, reviewer = their headless cap below (60 min)
 HARNESS_IMPLEMENTER_TIMEOUT_MS=5400000       # same for the implementer = its cap (90 min); a background ask returns when the run ends
-HARNESS_VIEWER_DEFAULT=auto                  # viewer (top-level key): auto | pane | none; a herdr pane running `harness watch`
 HARNESS_HL_MAX_S_DEFAULT=3600                # headless run wall-clock cap, seconds (analyst, reviewer)
 HARNESS_HL_MAX_S_IMPLEMENTER_DEFAULT=5400    # same cap for the implementer: a 3x600 s verify loop plus work (90 min)
 

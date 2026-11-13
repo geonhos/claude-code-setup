@@ -11,7 +11,7 @@
 #                         HARNESS_TEST_SERIAL=1 runs them one at a time;
 #                         HARNESS_TEST_TIMEOUT=N caps each suite (default 300 s)
 #
-# Overridable for tests: CLAUDE_DIR, BIN_DIR, SKIP_HERDR_INTEGRATION=1
+# Overridable for tests: CLAUDE_DIR, BIN_DIR
 set -eu
 
 REPO=$(cd "$(dirname "$0")" && pwd)
@@ -132,11 +132,6 @@ if [ "${1:-}" = "--test" ]; then
 fi
 
 need jq
-# herdr is optional (decision 0011): without it the integration step is skipped
-if [ "${SKIP_HERDR_INTEGRATION:-0}" != 1 ] && ! command -v herdr >/dev/null 2>&1; then
-  echo "herdr not found: skipping its Claude integration (optional; only the viewer pane needs it)"
-  SKIP_HERDR_INTEGRATION=1
-fi
 
 # 0. validate before modifying anything
 mkdir -p "$CLAUDE_DIR"
@@ -144,17 +139,6 @@ mkdir -p "$CLAUDE_DIR"
 jq -e . "$SETTINGS" >/dev/null 2>&1 || die "$SETTINGS is not valid JSON; fix it before installing"
 jq -se 'length == 1 and (.[0] | type == "object")' "$SETTINGS" >/dev/null 2>&1 \
   || die "$SETTINGS is not a JSON object (or holds more than one value); fix it before installing"
-
-# 1. herdr's Claude integration first: it may rewrite settings.json itself,
-#    and our merge below must see the result.
-if [ "${SKIP_HERDR_INTEGRATION:-0}" != 1 ]; then
-  if herdr_out=$(herdr integration install claude 2>&1); then
-    echo "herdr: claude integration installed"
-  else
-    echo "warning: 'herdr integration install claude' failed; the viewer pane may be unavailable" >&2
-    echo "$herdr_out" >&2
-  fi
-fi
 
 # 2. agents + skills + harness symlinks
 mkdir -p "$CLAUDE_DIR/agents" "$BIN_DIR"

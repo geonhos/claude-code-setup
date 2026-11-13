@@ -1,12 +1,12 @@
 # claude-code-setup: conductor
 
-메인 세션을 **conductor(지휘 세션)** 로 쓰는 사용자 단위 Claude Code 설정. 평범한 질의는 conductor가 직접 답하고, 소스를 읽거나 고치거나 검증해야 하는 일은 `/analyze` `/implement` `/review` 스킬로 백그라운드에서 도는 headless Claude 워커(`claude -p`)에게 맡긴다. conductor는 워커 리포트만 읽는다. [herdr](https://herdr.dev)는 선택 사항이고 워커 화면을 보여 주는 viewer일 뿐이다.
+메인 세션을 **conductor(지휘 세션)** 로 쓰는 사용자 단위 Claude Code 설정. 평범한 질의는 conductor가 직접 답하고, 소스를 읽거나 고치거나 검증해야 하는 일은 `/analyze` `/implement` `/review` 스킬로 백그라운드에서 도는 headless Claude 워커(`claude -p`)에게 맡긴다. conductor는 워커 리포트만 읽는다.
 이유: 메인 세션 토큰이 비싸다. conductor는 소스를 컨텍스트에 올리지 않고, 워커(`analyst` opus · `implementer` sonnet · `reviewer` opus)가 일을 한다. analyst와 implementer는 프로젝트 메모리를 가져서 코드베이스를 매번 다시 파악하지 않는다. reviewer는 일부러 메모리를 두지 않아 리뷰마다 선입견 없이 시작한다.
 구조와 다이어그램은 [docs/architecture.md](docs/architecture.md), 명령·설정·게이트 상세는 [docs/reference.md](docs/reference.md), 함정과 결정은 [docs/wiki/index.md](docs/wiki/index.md).
 
 ## 빠른 시작
 
-요구 사항: macOS, `/bin/bash` 3.2 · `jq` · Claude Code ≥ 2.1.248 · `PATH`에 `~/.local/bin`. `herdr` ≥ 0.9는 선택(viewer pane을 쓸 때만).
+요구 사항: macOS, `/bin/bash` 3.2 · `jq` · Claude Code ≥ 2.1.248 · `PATH`에 `~/.local/bin`.
 
 ```bash
 git clone https://github.com/geonhos/claude-code-setup ~/workspace/claude-code-setup
@@ -42,4 +42,4 @@ harness status                            # 워커 상태
 
 ## 테스트
 
-`./install.sh --test`가 `tests/*.test.sh`를 병렬로 돌린다. 가짜 `tests/fake-herdr`와 `tests/fake-claude`를 쓰므로 herdr도 Claude도 필요 없다.
+`./install.sh --test`가 `tests/*.test.sh`를 병렬로 돌린다. 가짜 `tests/fake-claude`를 쓰므로 Claude가 필요 없다.

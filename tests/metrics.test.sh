@@ -13,11 +13,11 @@ setup() {
   WORKS="$WORKS $WORK"
   unset HARNESS_LOG_KEEP HARNESS_LOG_DAYS HARNESS_NOW
   cd "$WORK" || exit 1
-  env -u HERDR_ENV -u HARNESS_ROLE /bin/bash "$HARNESS" init --no-agent >/dev/null 2>&1
+  env -u HARNESS_ROLE /bin/bash "$HARNESS" init --no-agent >/dev/null 2>&1
 }
 GUARD="perl -e alarm(40);exec(@ARGV)"
 run() {
-  OUT=$($GUARD env -u HERDR_ENV -u HARNESS_ROLE /bin/bash "$HARNESS" "$@" 2>&1)
+  OUT=$($GUARD env -u HARNESS_ROLE /bin/bash "$HARNESS" "$@" 2>&1)
   RC=$?
 }
 check() { local label=$1; shift; if "$@"; then pass=$((pass + 1)); else fail=$((fail + 1)); echo "FAIL [$label]: $OUT"; fi; }

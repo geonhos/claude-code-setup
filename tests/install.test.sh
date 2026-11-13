@@ -22,7 +22,7 @@ install_in() {
 }
 
 T=$(newdir main)
-export CLAUDE_DIR="$T/claude" BIN_DIR="$T/bin" GIT_IGNORE="$T/gitignore" SKIP_HERDR_INTEGRATION=1
+export CLAUDE_DIR="$T/claude" BIN_DIR="$T/bin" GIT_IGNORE="$T/gitignore"
 mkdir -p "$CLAUDE_DIR"
 # pre-existing settings that must survive
 cat > "$CLAUDE_DIR/settings.json" <<'EOF'
@@ -396,22 +396,6 @@ printf '{"model":"keep"}\n' > "$CLAUDE_DIR/settings.json"
 run_install
 check "fresh install writes no agent key" [ "$(jq -r '.agent // "none"' "$S")" = none ]
 check "end note mentions harness init" grep -q "harness init" "$T/out.txt"
-
-# herdr integration branches (SKIP_HERDR_INTEGRATION unset)
-T5=$(newdir noherdr); mkdir -p "$T5/claude"
-# PATH = every dir of the real PATH that has no herdr, so jq and the coreutils stay reachable
-CLEAN_PATH=""; _oifs=$IFS; IFS=:
-for _d in $PATH; do [ -x "$_d/herdr" ] || CLEAN_PATH="$CLEAN_PATH${CLEAN_PATH:+:}$_d"; done
-IFS=$_oifs
-( unset SKIP_HERDR_INTEGRATION; PATH=$CLEAN_PATH; install_in "$T5"; echo "$RC" > "$T5/rc" )
-check "no herdr: rc 0" [ "$(cat "$T5/rc")" = 0 ]
-check "no herdr: skip note" grep -q "herdr not found: skipping" "$T5/out.txt"
-T6=$(newdir fakeherdr); mkdir -p "$T6/claude" "$T6/fb"
-printf '#!/bin/sh\necho "$*" >> "%s"\n' "$T6/herdr.log" > "$T6/fb/herdr"; chmod +x "$T6/fb/herdr"
-( unset SKIP_HERDR_INTEGRATION; PATH="$T6/fb:$CLEAN_PATH"; install_in "$T6"; echo "$RC" > "$T6/rc" )
-check "fake herdr: rc 0" [ "$(cat "$T6/rc")" = 0 ]
-check "fake herdr: integration install claude called" grep -qx "integration install claude" "$T6/herdr.log"
-check "fake herdr: no skip note" not_grep "herdr not found" "$T6/out.txt"
 
 echo "PASS $pass / FAIL $fail"
 [ "$fail" -eq 0 ]

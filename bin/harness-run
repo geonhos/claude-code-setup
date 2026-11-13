@@ -4,7 +4,7 @@
 {
 # harness-run <role> <ask-id> <root> — run ONE headless worker ask, detached.
 # Started by `harness ask`; not for the conductor (the gate only matches `harness`, and this
-# refuses to run without HARNESS_ROLE=worker). A viewer pane runs `harness watch`, not this.
+# refuses to run without HARNESS_ROLE=worker).
 # Reads  .harness/asks/<role>.prompt  and  .run (resume=, max_s=).
 # Writes .harness/asks/<role>.pid / .session / .err / .exit.json (atomic) and the raw
 # stream .harness/log/<stamp>-<role>.jsonl. Completion = exit.json for this ask-id.

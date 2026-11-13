@@ -5,9 +5,9 @@ set -u
 
 # --- preconditions -----------------------------------------------------------
 setup
-OUT=$(env -u HERDR_ENV -u HARNESS_ROLE PATH="$FAKE_BIN:$PATH" /bin/bash "$HARNESS" status 2>&1); RC=$?
-check "status works without herdr" [ "$RC" -eq 0 ]
-check "status without herdr lists the roles" grep -q "analyst" <<<"$OUT"
+OUT=$(env -u HARNESS_ROLE /bin/bash "$HARNESS" status 2>&1); RC=$?
+check "status works" [ "$RC" -eq 0 ]
+check "status lists the roles" grep -q "analyst" <<<"$OUT"
 run spawn analyst
 check "spawn is gone" [ "$RC" -eq 1 ]
 
@@ -28,12 +28,11 @@ check "ask without instruction rc" [ "$RC" -eq 1 ]
 
 # --- worker guard: ask refused in worker sessions ----------------------------
 setup
-OUT=$(HERDR_ENV=1 HERDR_PANE_ID=w1:p1 PATH="$FAKE_BIN:$PATH" HARNESS_ROLE=worker $GUARD /bin/bash "$HARNESS" ask analyst x 2>&1); RC=$?
+OUT=$(HARNESS_ROLE=worker $GUARD /bin/bash "$HARNESS" ask analyst x 2>&1); RC=$?
 check "worker ask rc 1" [ "$RC" -eq 1 ]
 check "worker ask message" grep -q conductor <<<"$OUT"
 check "worker ask: no progress.jsonl" [ ! -e "$WORK/.harness/progress.jsonl" ]
-check "worker ask: no viewer pane" not_logged "pane split"
-OUT=$(HERDR_ENV=1 HERDR_PANE_ID=w1:p1 PATH="$FAKE_BIN:$PATH" HARNESS_ROLE=worker $GUARD /bin/bash "$HARNESS" status 2>&1); RC=$?
+OUT=$(HARNESS_ROLE=worker $GUARD /bin/bash "$HARNESS" status 2>&1); RC=$?
 check "worker status still works" [ "$RC" -eq 0 ]
 
 # fin ROLE — a finished headless run for ROLE (report needs exit.json)
@@ -164,7 +163,6 @@ check "Notes without evidence: nothing queued" [ ! -d docs/wiki/inbox ]
 setup
 DEF=$(/bin/bash "$HARNESS" _defaults); dv() { printf '%s\n' "$DEF" | sed -n "s/^$1=//p"; }
 check "_defaults lists the roles" [ "$(dv HARNESS_ROLES)" = "analyst implementer reviewer" ]
-check "_defaults needs no herdr" [ -n "$DEF" ]
 CDPATH=. /bin/bash "$HARNESS" _defaults >"$WORK/cdp.out" 2>&1; rc=$?
 check "CDPATH=. harness _defaults exits 0" [ "$rc" = 0 ]
 check "CDPATH=. harness _defaults prints no extra output" [ "$(cat "$WORK/cdp.out")" = "$DEF" ]
@@ -175,12 +173,11 @@ done
 check "default ask timeouts equal the headless caps (ms)" bash -c '[ "$1" = $(($3 * 1000)) ] && [ "$2" = $(($4 * 1000)) ]' _ "$T_DEF" "$T_IMPL" "$(dv HARNESS_HL_MAX_S_DEFAULT)" "$(dv HARNESS_HL_MAX_S_IMPLEMENTER_DEFAULT)"
 check "no stray 6-8 digit number in conductor.md/implement skill" bash -c '! grep -ohE "\b[0-9]{6,8}\b" "$1" "$2" | grep -vxE "$3|$4|7200000"' _ "$HERE/../claude/agents/conductor.md" "$HERE/../claude/skills/implement/SKILL.md" "$T_IMPL" "$T_DEF"
 check "header comment quotes the default timeouts" bash -c 'sed -n 1,15p "$1" | grep -q "implementer $2" && sed -n 1,15p "$1" | grep -q "analyst/reviewer $3"' _ "$HARNESS" "$T_IMPL" "$T_DEF"
-OUT=$(HERDR_ENV=1 PATH="$FAKE_BIN:$PATH" /bin/bash "$HARNESS" 2>&1)
+OUT=$(/bin/bash "$HARNESS" 2>&1)
 check "usage text prints the default timeouts" bash -c 'grep -q "implementer $2" <<<"$1" && grep -q "others $3" <<<"$1"' _ "$OUT" "$T_IMPL" "$T_DEF"
 TPL=$(sed -n "/^config_template() {/,/^EOC/p" "$HARNESS" | sed '1,2d;$d')
-check "config template viewer = default" [ "$(printf '%s' "$TPL" | jq -r .viewer)" = "$(dv HARNESS_VIEWER_DEFAULT)" ]
-check "config template has only _doc and viewer" [ "$(printf '%s' "$TPL" | jq -r 'keys | join(" ")')" = "_doc viewer" ]
-check "metrics --json lists every role" bash -c 'cd "$1" && HERDR_ENV=1 "$2" metrics --json | jq -e ".current.roles | keys == [\"analyst\",\"implementer\",\"reviewer\"]" >/dev/null' _ "$WORK" "$HARNESS"
+check "config template has only _doc" [ "$(printf '%s' "$TPL" | jq -r 'keys | join(" ")')" = "_doc" ]
+check "metrics --json lists every role" bash -c 'cd "$1" && "$2" metrics --json | jq -e ".current.roles | keys == [\"analyst\",\"implementer\",\"reviewer\"]" >/dev/null' _ "$WORK" "$HARNESS"
 
 check "_defaults: headless cap implementer 90 min, others 60" bash -c '[ "$1" = 5400 ] && [ "$2" = 3600 ]' _ "$(dv HARNESS_HL_MAX_S_IMPLEMENTER_DEFAULT)" "$(dv HARNESS_HL_MAX_S_DEFAULT)"
 check "README quotes the headless caps (60 / 90 min)" bash -c 'grep -q "headless_max_minutes" "$1" && grep -q "implementer 90" "$1"' _ "$HERE/../README.md"
@@ -210,7 +207,7 @@ check "init rejects unknown flag" [ "$RC" != 0 ]
 
 setup; rm -rf .harness
 run init
-check "init: no herdr needed" grep -q "no herdr needed" <<<"$OUT"
+check "init: names harness watch" grep -q "harness watch" <<<"$OUT"
 
 setup; rm -rf .harness
 run init --shared
@@ -286,7 +283,7 @@ unset GIT_CONFIG_GLOBAL GIT_CONFIG_NOSYSTEM XDG_CONFIG_HOME
 
 # --- init from a subdir lands at the git toplevel (and from a git worktree) ---
 setup; rm -rf .harness; git init -q .; mkdir -p deep/er
-( cd deep/er && HERDR_ENV=1 env -u HARNESS_ROLE /bin/bash "$HARNESS" init --no-agent >/dev/null 2>&1 )
+( cd deep/er && env -u HARNESS_ROLE /bin/bash "$HARNESS" init --no-agent >/dev/null 2>&1 )
 check "init from a subdir: .harness/asks at the toplevel" [ -d .harness/asks ]
 check "init from a subdir: nothing created in the subdir" [ ! -e deep/er/.harness ]
 git -c user.email=t@t -c user.name=t -c core.hooksPath=/dev/null commit -q --allow-empty -m s

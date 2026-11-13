@@ -36,9 +36,6 @@ deny	harness status > docs/x.md
 deny	harness ask implementer "$(cat bin/harness)"
 deny	jq . bin/harness
 deny	jq --rawfile x bin/harness -n '$x'
-deny	herdr pane run 1 ls
-deny	herdr pane read 1
-deny	herdr agent prompt x hi
 deny	python3 -c 1
 deny	sed -n 1p bin/harness
 allow	harness status
@@ -47,12 +44,10 @@ allow	gh pr view 30
 allow	cat .harness/progress.md
 allow	ls docs
 deny	git status && harness status
-deny	herdr pane get a 2>&1
-deny	herdr pane get a | jq .result
+deny	harness status 2>&1
+deny	harness status | jq .result
 deny	harness status & harness status
 deny	cat docs/a.md # x
-deny	herdr status
-deny	herdr pane list
 deny	git show --stat HEAD
 deny	git branch --list feat
 deny	gh issue delete 3
