@@ -47,3 +47,4 @@
 - 2026-11-03 · implementer · prune step 7 · deleted plans/specs: herdr-conductor-setup, skill-routing, gate-hardening, progress-and-context-reset, verification-loop, wiki-phase1; research kev-vs-laya; docs/diagrams/; six troubleshooting pages (see C3 line); architecture.md and README rewritten; 0011 step 7 done
 - 2026-11-03 · implementer · inbox triage · 3 new pages (no-edits-brief-skips-report, wiki-lint-dangling-sources, half-assertion-tests), 3 merges (docs-only-asks-skip-the-suite, 0012-gate-shrink x2), 19 notes dropped (fixed/duplicate/no lesson); inbox emptied
 - 2026-11-13 · implementer · #63 exclude · decisions 0002-0005 sources now cite plan commits (336768a 30c4eb6 9e09485) since docs/superpowers/ is untracked and excluded
+- 2026-11-13 · implementer · #63 lanes · new how-to work-folders (closes #59)

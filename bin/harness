@@ -11,6 +11,8 @@
 #   harness wait   <agent> [--timeout MS]   block until the run ends (0 done, 3 no ask/gone, 4 timeout); does not collect
 #   harness watch  <agent> [-n N]   human terminal only: follow a live run, or the last N lines of a finished one
 #   harness status
+#   harness [-C DIR] <command> ...   run as if started in DIR (a work folder)
+#   harness lane <issue#> [slug] [--type feat|fix|docs] | lane ls | lane rm <issue#|path> [--force]   per-issue work folders (git worktrees)
 #   harness init [--no-agent] [--shared]   make this repo a harness checkout (.harness/asks, config, agent=conductor in .claude/settings.local.json; --shared: settings.json)
 #   harness close  <agent>|--all [--force]
 #   harness metrics [--since YYYY-MM-DD] [--json]   health numbers from progress.jsonl + the wiki
@@ -50,7 +52,7 @@ done
 case $src in */*) d=${src%/*} ;; *) d=. ;; esac   # no dirname: PATH may be bare in hooks/tests
 HARNESS_LIB=${HARNESS_LIB:-$(CDPATH= cd -P "$d/../lib" 2>/dev/null && pwd)}
 # Explicit list, fixed order, no glob: a stray file in lib/ is never sourced. Definitions only.
-for m in defaults root metrics headless; do
+for m in defaults root metrics headless lane; do
   . "$HARNESS_LIB/harness-$m.sh" 2>/dev/null || { echo "harness: cannot load lib/harness-$m.sh" >&2; exit 1; }
 done
 unset src d m
@@ -65,7 +67,7 @@ DEFAULT_TIMEOUT=$HARNESS_DEFAULT_TIMEOUT_MS
 IMPLEMENTER_TIMEOUT=$HARNESS_IMPLEMENTER_TIMEOUT_MS
 ASK_DIR=".harness/asks"
 # parsed once by ask_parse_args (cmd_ask); ask_inner only reads them
-ASK_TIMEOUT=$DEFAULT_TIMEOUT; ASK_TIMEOUT_SET=0; ASK_FRESH=0; ASK_KEEP=0; ASK_BAD=0
+ASK_TIMEOUT=$DEFAULT_TIMEOUT; ASK_TIMEOUT_SET=0; ASK_FRESH=0; ASK_KEEP=0; ASK_BAD=0; ASK_NOLANE=0
 
 usage() {
   cat >&2 <<EOF
@@ -75,6 +77,8 @@ usage:
   harness wait   <agent> [--timeout MS]
   harness watch  <agent> [-n N]   (human terminal only)
   harness status
+  harness [-C DIR] <command> ...
+  harness lane   <issue#> [slug] [--type feat|fix|docs] | ls | rm <issue#|path> [--force]
   harness init   [--no-agent] [--shared]   (once per repo: makes it a harness checkout; ask refuses without it)
   harness close  <agent>|--all [--force]
   harness wiki-lint [DIR]
@@ -221,11 +225,11 @@ record_progress() {
     --argjson exit "$rc" --arg verify "$verify" --argjson dur "$((now - t0))" \
     --arg hb "$hb" --arg ha "$ha" --argjson cb "$(num_or_null "$cb")" --argjson ca "$(num_or_null "$ca")" \
     --arg status "$status" --arg summary "$summary" --arg sha "$sha" --argjson va "$(num_or_null "$va")" \
-    --argjson hl "$hl" '
+    --argjson hl "$hl" --argjson nl "${ASK_NOLANE:-0}" '
     def nz: if . == "" then null else . end;
     {ts: $ts, agent: $agent, session: ($session | nz), instr: $instr, exit: $exit,
      verify: ($verify | nz), verify_attempts: $va, dur_s: $dur, head_before: ($hb | nz), head_after: ($ha | nz),
-     ctx_before: $cb, ctx_after: $ca, status: ($status | nz), summary: ($summary | nz), report_sha: ($sha | nz)} + $hl' >> "$JSONL" || return 1
+     ctx_before: $cb, ctx_after: $ca, status: ($status | nz), summary: ($summary | nz), report_sha: ($sha | nz)} + (if $nl == 1 then {no_lane: true} else {} end) + $hl' >> "$JSONL" || return 1
 
   rotate_logs "$logf"
   write_progress_md
@@ -443,6 +447,15 @@ ask_finish() {
 # ones; logging problems only warn on stderr.
 cmd_ask() {
   [ "${HARNESS_ROLE:-}" != worker ] || die "harness ask is for the conductor; a worker (HARNESS_ROLE=worker) does its task itself"
+  # --no-lane (option position only, never inside the instruction): allow the implementer in the primary worktree
+  local n=$# i=0 x
+  ASK_NOLANE=0
+  while [ "$i" -lt "$n" ]; do
+    x=$1; shift; i=$((i + 1))
+    if [ "$i" -gt 2 ] && [ "$x" = --no-lane ]; then ASK_NOLANE=1; else set -- "$@" "$x"; fi
+  done
+  [ "${1:-}" != implementer ] || [ "$ASK_NOLANE" = 1 ] || ! lane_in_primary \
+    || die "refusing to run the implementer in the primary worktree: create a work folder with 'harness lane <issue#>' and use 'harness -C <folder> ask implementer ...' (--no-lane: only for tasks that do not change this repo)"
   local agent=${1:-} text=${2:-}
   case " $AGENTS " in *" $agent "*) ;; *) ask_inner "$@" ;; esac
   [ -n "$text" ] || ask_inner "$@"
@@ -664,6 +677,12 @@ cmd_init() {
 }
 
 need jq
+# global -C DIR (like git -C): every subcommand then runs in DIR, whose .harness/ state is its own
+if [ "${1:-}" = -C ]; then
+  [ -n "${2:-}" ] || usage
+  cd "$2" 2>/dev/null || die "cannot enter $2"
+  shift 2
+fi
 # _mtime prints a file's epoch mtime (tests: fake GNU/BSD stat on PATH)
 if [ "${1:-}" = _mtime ]; then file_mtime "${2:-}"; exit $?; fi
 # _defaults prints the shared defaults as KEY=VALUE (tests: prose copies are checked against it)
@@ -673,6 +692,8 @@ if [ "${1:-}" = _defaults ]; then
 fi
 # init is file work: no herdr, no checkout needed
 if [ "${1:-}" = init ]; then shift; cmd_init "$@"; exit $?; fi
+# lane works on git worktrees from anywhere
+if [ "${1:-}" = lane ]; then shift; cmd_lane "$@"; exit $?; fi
 # wiki-lint is pure file checking: no herdr needed
 if [ "${1:-}" = wiki-lint ]; then shift; cmd_wiki_lint "$@"; exit $?; fi
 # metrics reads files only

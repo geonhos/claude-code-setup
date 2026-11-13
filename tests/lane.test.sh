@@ -1,0 +1,140 @@
+#!/bin/bash
+# harness lane / -C / implementer guard (issue #63): temp repos, a bare remote, fake gh and fake claude.
+# Run: /bin/bash tests/lane.test.sh
+set -u
+. "$(dirname "$0")/harness-lib.sh"
+FAKE_CLAUDE="$HERE/fake-claude"
+export GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@t GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@t
+
+# fake gh: `issue view` prints $FAKE_GH_TITLE; `pr view <branch>` prints the state in $GH_DIR/<branch with / -> _>
+GH_BIN=$(mktemp -d); GH_DIR=$(mktemp -d); WORKS="$WORKS $GH_BIN $GH_DIR"
+cat > "$GH_BIN/gh" <<'EOG'
+#!/bin/bash
+case "$1 $2" in
+  "issue view") echo "${FAKE_GH_TITLE:-}" ;;
+  "pr view") f=$GH_DIR/${3//\//_}; [ -f "$f" ] && cat "$f" || exit 1 ;;
+esac
+EOG
+chmod +x "$GH_BIN/gh"
+export GH_DIR
+
+hl() { # hl ARGS... -> OUT, RC (conductor env, fake claude + fake gh on PATH)
+  OUT=$(HARNESS_POLL_SEC=0.2 HARNESS_HL_START_S=5 PATH="$GH_BIN:$FAKE_CLAUDE:$HERE/../bin:$PATH" \
+    perl -e 'alarm(60);exec(@ARGV)' env -u HARNESS_ROLE -u HERDR_ENV /bin/bash "$HARNESS" "$@" 2>&1)
+  RC=$?
+}
+# lsetup — bare remote + primary clone (initialised) under a fresh base dir; cwd = primary
+lsetup() {
+  BASE=$(cd "$(mktemp -d)" && pwd -P); WORKS="$WORKS $BASE"
+  export FAKE_DIR="$BASE/fake" FAKE_LOG="$BASE/fake.log"; mkdir -p "$FAKE_DIR"; : > "$FAKE_LOG"
+  git init -q --bare -b main "$BASE/remote.git"
+  git clone -q "$BASE/remote.git" "$BASE/repo" 2>/dev/null
+  cd "$BASE/repo" || exit 1
+  git checkout -q -b main 2>/dev/null
+  mkdir -p .claude; echo '{"lane_setup": "touch .harness/lane-setup-ran"}' > .claude/harness.json
+  git add . && git commit -q -m init && git push -q origin main 2>/dev/null
+  git remote set-head origin main >/dev/null 2>&1
+  rm -f "$GH_DIR"/*; unset FAKE_GH_TITLE
+  hinit
+}
+alive_in() { local f="$1/.harness/asks/implementer.pid" id pid; read -r id pid _ < "$f" 2>/dev/null; [ -n "${pid:-}" ] && kill -0 "$pid" 2>/dev/null; }
+
+# 1. create: folder, branch, init, exclude, setup command, printed path
+lsetup
+hl lane 12 my-slug
+D="$BASE/repo-12"
+check "lane: rc 0" [ "$RC" -eq 0 ]
+check "lane: prints the folder path last" [ "$(printf '%s\n' "$OUT" | tail -n 1)" = "$D" ]
+check "lane: branch feat/12-my-slug" [ "$(git -C "$D" rev-parse --abbrev-ref HEAD)" = feat/12-my-slug ]
+check "lane: based on origin/main" [ "$(git -C "$D" rev-parse HEAD)" = "$(git rev-parse origin/main)" ]
+check "lane: harness init ran" test -d "$D/.harness/asks"
+check "lane: git status clean (exclude patterns)" [ -z "$(git -C "$D" status --porcelain)" ]
+check "lane: lane_setup ran in the folder" test -f "$D/.harness/lane-setup-ran"
+
+# 2. reuse
+hl lane 12 my-slug
+check "lane reuse: rc 0 and says so" grep -q "reusing" <<<"$OUT"
+check "lane reuse: still one folder" [ "$(git worktree list | wc -l | tr -d ' ')" = 2 ]
+
+# 3. slug from the issue title, --type
+export FAKE_GH_TITLE="Fix the Big Bug!! with a very long title here"
+hl lane 13 --type fix
+check "lane title: branch fix/13-<kebab, 30 chars>" [ "$(git -C "$BASE/repo-13" rev-parse --abbrev-ref HEAD)" = fix/13-fix-the-big-bug-with-a-very-lo ]
+unset FAKE_GH_TITLE
+
+# 4. ls
+echo OPEN > "$GH_DIR/feat_12-my-slug"
+hl lane ls
+check "ls: issue, branch, path, PR state" grep -q "#12  feat/12-my-slug  $D  PR:OPEN" <<<"$OUT"
+check "ls: no PR shows -" grep -q "#13 .*PR:-" <<<"$OUT"
+check "ls: not running" not_grep "running" <(printf '%s' "$OUT")
+
+# 5. rm
+hl lane rm 12
+check "rm: refuses an open PR" [ "$RC" -ne 0 ]
+check "rm: open PR keeps the folder" test -d "$D"
+hl lane rm 13
+check "rm: refuses without a PR" [ "$RC" -ne 0 ]
+git -C "$D" push -q origin feat/12-my-slug 2>/dev/null
+echo MERGED > "$GH_DIR/feat_12-my-slug"
+printf '#!/bin/bash\nsleep 30\n' > "$BASE/harness-run"; chmod +x "$BASE/harness-run"; "$BASE/harness-run" & SP=$!
+mkdir -p "$D/.harness/asks"; echo "id $SP" > "$D/.harness/asks/implementer.pid"
+hl lane ls
+check "ls: shows a running worker" grep -q "#12 .* running" <<<"$OUT"
+hl lane rm 12
+check "rm: refuses with a running worker" [ "$RC" -ne 0 ]
+check "rm: running worker keeps the folder" test -d "$D"
+kill "$SP" 2>/dev/null; wait "$SP" 2>/dev/null; rm -f "$D/.harness/asks/implementer.pid"
+hl lane rm "$D"
+check "rm merged: rc 0" [ "$RC" -eq 0 ]
+check "rm merged: folder gone" test ! -d "$D"
+check "rm merged: local branch gone" not git show-ref -q --verify refs/heads/feat/12-my-slug
+check "rm merged: remote branch gone" [ -z "$(git ls-remote --heads origin feat/12-my-slug)" ]
+hl lane rm 13 --force
+check "rm --force: removes without a PR" [ "$RC" -eq 0 ]
+check "rm --force: folder gone" test ! -d "$BASE/repo-13"
+
+# 6. -C and the implementer guard
+lsetup
+hl lane 20 x
+D="$BASE/repo-20"
+export FAKE_CLAUDE_MODE=success
+export FAKE_REPORT_CMD="mkdir -p .harness/reports && printf '# implementer report\nstatus: done\n' > .harness/reports/implementer.md"
+hl ask implementer "q"
+check "guard: refused in the primary worktree" [ "$RC" -ne 0 ]
+check "guard: message names harness lane" grep -q "harness lane" <<<"$OUT"
+hl ask analyst "q"
+check "guard: analyst is not guarded" not_grep "primary worktree" <(printf '%s' "$OUT")
+hl -C "$D" ask implementer "q"
+check "-C ask: rc 0" [ "$RC" -eq 0 ]
+check "-C ask: state in the folder" test -s "$D/.harness/progress.jsonl"
+check "-C ask: report in the folder" test -s "$D/.harness/reports/implementer.md"
+check "-C ask: none in the primary for the implementer" not_grep '"agent":"implementer"' .harness/progress.jsonl
+hl -C "$D" status
+check "-C status: implementer line" grep -q "^implementer" <<<"$OUT"
+hl -C "$D" report implementer
+check "-C report: prints the folder's report" grep -q "implementer report" <<<"$OUT"
+hl -C /nonexistent status
+check "-C: bad dir fails" [ "$RC" -ne 0 ]
+hl ask implementer "q" --no-lane
+check "--no-lane: allowed in the primary" [ "$RC" -eq 0 ]
+check "--no-lane: logged in progress.jsonl" jq -e 'select(.agent == "implementer" and .no_lane == true)' .harness/progress.jsonl
+
+# 7. two implementers in two folders at the same time
+hl lane 21 y
+D2="$BASE/repo-21"
+export FAKE_CLAUDE_MODE=slow30   # 3 s
+( hl -C "$D" ask implementer "a"; echo $RC > "$BASE/rc1" ) & P1=$!
+( hl -C "$D2" ask implementer "b"; echo $RC > "$BASE/rc2" ) & P2=$!
+i=0; both=0
+while [ "$i" -lt 40 ]; do
+  if alive_in "$D" && alive_in "$D2"; then both=1; break; fi
+  sleep 0.1; i=$((i + 1))
+done
+wait "$P1" "$P2"
+check "parallel: both runs alive at the same time" [ "$both" = 1 ]
+check "parallel: both finished rc 0" [ "$(cat "$BASE/rc1" "$BASE/rc2" | tr -d '\n')" = 00 ]
+check "parallel: each folder has its own report" test -s "$D2/.harness/reports/implementer.md"
+
+echo "PASS $pass / FAIL $fail"
+[ "$fail" -eq 0 ]
