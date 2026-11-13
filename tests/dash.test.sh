@@ -9,6 +9,7 @@ LIB="$HERE/../lib/harness-dash.sh"
 DO_SRC=$(sed -n '/^digits_only() {/,/^}/p' "$HARNESS")
 . "$LIB" 2>/dev/null || { echo "FAIL [load lib/harness-dash.sh]"; fail=$((fail + 1)); }
 eval "$DO_SRC"
+eval "$(sed -n '/^file_mtime() {/,/^}/p' "$HARNESS")"
 hl_alive() { return 0; }
 
 setup
@@ -51,7 +52,8 @@ check "header" bash -c 'case "$1" in "implementer  ask-1  ⏱ 12m0"[4-9]"s  turn
 check "brief title" [ "$(sed -n 2p <<<"$OUT")" = "── Brief ── Implement the thing" ]
 GOLD_MID=$(cat <<'EOG'
 ── Now ──
-  → Bash Say hi
+  → Say hi
+    echo hi
 ── Steps ──
   1. Branch from main
   2. Tests first
@@ -73,19 +75,19 @@ check "golden body (Now = later tool_use, Steps from ## Steps, Verify, Diff, Rec
 # Now from tool_use when no assistant text; Bash description preferred, then command
 grep -v '"type":"text"' $RAW > .harness/log/tool.jsonl
 frame 30 70 implementer .harness/log/tool.jsonl
-check "Now from tool_use (description preferred)" has "  → Bash Say hi"
+check "Now from tool_use (description preferred)" bash -c 'grep -qF "  → Say hi" <<<"$1" && grep -qF "    echo hi" <<<"$1"' _ "$OUT"
 sed 's/,"description":"Say hi"//' .harness/log/tool.jsonl > .harness/log/tool2.jsonl
 frame 30 70 implementer .harness/log/tool2.jsonl
-check "Now from tool_use (command fallback)" has "  → Bash echo hi"
+check "Now from tool_use (command fallback)" bash -c 'grep -qF "  → Bash echo hi" <<<"$1" && grep -qF "    echo hi" <<<"$1"' _ "$OUT"
 
 # Now = whichever is later in the stream (text after tool_use, and tool_use after text)
 { grep -v '"type":"text"' $RAW | sed -n 1,2p; echo '{"type":"assistant","message":{"id":"m3","content":[{"type":"text","text":"Final words"}]}}'; } > .harness/log/order1.jsonl
 frame 30 70 implementer .harness/log/order1.jsonl
 printf '%s\n' '{"type":"assistant","message":{"id":"m4","content":[{"type":"text","text":"l1\nl2\nl3\nl4"}]}}' >> .harness/log/order1.jsonl
 frame 30 70 implementer .harness/log/order1.jsonl
-check "Now: text later than tool_use wins, 3 lines max" bash -c 'N=$(sed -n "/── Now/,/── Steps/p" <<<"$1"); grep -qF "  l3" <<<"$N" && ! grep -qF "  l4" <<<"$N" && ! grep -qF "→ Bash" <<<"$N"' _ "$OUT"
+check "Now: text later than tool_use wins, shown wrapped (no summary line)" bash -c 'N=$(sed -n "/── Now/,/── Steps/p" <<<"$1"); grep -qF "  l3" <<<"$N" && grep -qF "  l4" <<<"$N" && ! grep -qF "→" <<<"$N"' _ "$OUT"
 frame 30 70 implementer $RAW
-check "Now: tool_use later than text wins" bash -c 'grep -qF "  → Bash Say hi" <<<"$1" && ! sed -n "/── Now/,/── Steps/p" <<<"$1" | grep -qF "Starting work"' _ "$OUT"
+check "Now: tool_use later than text wins" bash -c 'grep -qF "  → Say hi" <<<"$1" && ! sed -n "/── Now/,/── Steps/p" <<<"$1" | grep -qF "Starting work"' _ "$OUT"
 
 # turns count unique message ids: one message streamed as several content-block events is one turn
 cat > .harness/log/blocks.jsonl <<'EOS'
@@ -138,6 +140,68 @@ SHA=$(git rev-parse HEAD)
 printf '%s\nxx\n' "$SHA" > .harness/verify/implementer.base
 echo hello > newfile.txt; git add newfile.txt
 frame; check "diff stat shown" bash -c 'grep -qF "── Diff" <<<"$1" && grep -qF "newfile.txt" <<<"$1"' _ "$OUT"
+
+# --- Now = summary + full command wrapped; height priority; idle timer ---
+now_sec() { sed -En '/── Now/,/── (Steps|Verify)/p'; }
+# widths hard-coded (Hangul/emoji = 2 cols), not taken from the lib's table
+maxw() { jq -R 'explode | map(if . >= 44032 and . <= 55203 or . >= 126976 and . <= 129791 then 2 else 1 end) | add // 0' | sort -n | tail -n 1; }
+export -f now_sec maxw
+tool_stream() { # <file> <preceding text or ""> <tool> <input json>
+  { echo '{"type":"system","subtype":"init","model":"sonnet","session_id":"s1"}'
+    [ -z "$2" ] || printf '{"type":"assistant","message":{"id":"p1","content":[{"type":"text","text":"%s"}]}}\n' "$2"
+    printf '{"type":"assistant","message":{"id":"p2","content":[{"type":"tool_use","name":"%s","input":%s}]}}\n' "$3" "$4"; } > "$1"
+}
+tool_stream .harness/log/s1.jsonl "Checking the config\nmore words" Bash '{"command":"ls -la"}'
+frame 30 70 implementer .harness/log/s1.jsonl
+check "summary from the preceding assistant text's first line" bash -c 'grep -qF "  → Checking the config" <<<"$1" && grep -qF "    ls -la" <<<"$1" && ! now_sec <<<"$1" | grep -qF "more words"' _ "$OUT"
+tool_stream .harness/log/s2.jsonl "" Read '{"file_path":"/a/b.txt"}'
+frame 30 70 implementer .harness/log/s2.jsonl
+check "summary fallback: <Tool> <file_path>, path as detail" bash -c 'grep -qF "  → Read /a/b.txt" <<<"$1" && grep -qF "    /a/b.txt" <<<"$1"' _ "$OUT"
+tool_stream .harness/log/s3.jsonl "" Grep '{"pattern":"foo.*bar"}'
+frame 30 70 implementer .harness/log/s3.jsonl
+check "summary fallback: <Tool> <pattern>" has "  → Grep foo.*bar"
+
+CMD="START$(printf 'x%.0s' $(seq 1 60))MIDDLE$(printf 'y%.0s' $(seq 1 60))END"
+tool_stream .harness/log/long1.jsonl "" Bash "{\"command\":\"$CMD\",\"description\":\"긴 명령 실행\"}"
+frame 30 40 implementer .harness/log/long1.jsonl
+check "long command wraps: every line <= 39 cols, rest continues on later lines" bash -c 'D=$(now_sec <<<"$1" | grep "^    " | tr -d " \n"); [ "$D" = "$2" ] && [ "$(maxw <<<"$1")" -le 39 ]' _ "$OUT" "$CMD"
+BIG=$(printf 'abcdefghij%.0s' $(seq 1 40))END
+tool_stream .harness/log/long2.jsonl "" Bash "{\"command\":\"$BIG\",\"description\":\"d\"}"
+frame 30 40 implementer .harness/log/long2.jsonl
+check "more than 6 lines: 6 detail lines, last ends with …, tail not shown" bash -c 'D=$(now_sec <<<"$1" | grep "^    "); [ "$(wc -l <<<"$D")" -eq 6 ] && [ "$(tail -n 1 <<<"$D" | grep -o ".$")" = "…" ] && ! grep -qF "END" <<<"$D" && [ "$(maxw <<<"$D")" -le 39 ]' _ "$OUT"
+KO=$(printf '한글🟢abc%.0s' $(seq 1 12))
+tool_stream .harness/log/long3.jsonl "" Bash "{\"command\":\"$KO\",\"description\":\"d\"}"
+frame 30 30 implementer .harness/log/long3.jsonl
+check "Korean/emoji wrap: <= 29 cols per line, nothing lost" bash -c 'D=$(now_sec <<<"$1" | grep "^    " | tr -d " \n"); [ "$D" = "$2" ] && [ "$(maxw <<<"$1")" -le 29 ]' _ "$OUT" "$KO"
+printf '%s\n' '{"type":"assistant","message":{"id":"t9","content":[{"type":"text","text":"한글 문장이 아주 길어서 줄이 바뀌어야 합니다 🟢 계속 이어지는 문장입니다 끝"}]}}' > .harness/log/long4.jsonl
+frame 30 30 implementer .harness/log/long4.jsonl
+check "text Now wraps by display width and keeps the end" bash -c '[ "$(maxw <<<"$1")" -le 29 ] && grep -qF "끝" <<<"$1" && [ "$(now_sec <<<"$1" | grep -c "^  [^ ]")" -ge 2 ]' _ "$OUT"
+
+# height priority: Recent shrinks first, then Now detail lines (down to 1), then Diff
+tool_stream .harness/log/long5.jsonl "" Bash "{\"command\":\"$(printf 'abcdefghij%.0s' $(seq 1 25))\",\"description\":\"d\"}"
+for H in 30 24 20 18 16 14 12 10 9 8; do
+  frame $H 40 implementer .harness/log/long5.jsonl
+  nd=$(now_sec <<<"$OUT" | grep -c "^    ")
+  check "height $H: <= $H lines" [ "$(wc -l <<<"$OUT" | tr -d ' ')" -le $H ]
+  check "height $H: Recent present => 6 detail lines + Diff" bash -c '! grep -qF "── Recent" <<<"$1" || { [ "$2" -eq 6 ] && grep -qF "── Diff" <<<"$1"; }' _ "$OUT" "$nd"
+  check "height $H: fewer than 6 detail lines => no Recent" bash -c '[ "$2" -ge 6 ] || ! grep -qF "── Recent" <<<"$1"' _ "$OUT" "$nd"
+  check "height $H: Diff present => Now keeps >= 1 detail, Steps, Verify" bash -c '! grep -qF "── Diff" <<<"$1" || { [ "$2" -ge 1 ] && grep -qF "── Steps" <<<"$1" && grep -qF "── Verify" <<<"$1"; }' _ "$OUT" "$nd"
+  check "height $H: Diff absent => no Recent" bash -c 'grep -qF "── Diff" <<<"$1" || ! grep -qF "── Recent" <<<"$1"' _ "$OUT"
+done
+frame 16 40 implementer .harness/log/long5.jsonl
+check "height 16: detail shrinks to make room (Diff + Steps + Verify kept, < 6 detail)" bash -c 'grep -qF "── Diff" <<<"$1" && grep -qF "── Verify" <<<"$1" && [ "$(now_sec <<<"$1" | grep -c "^    ")" -lt 6 ] && [ "$(now_sec <<<"$1" | grep -c "^    ")" -ge 1 ]' _ "$OUT"
+
+# idle timer: from 10 s since the last stream line, only while live
+ago() { date -v-"$1"S +%Y%m%d%H%M.%S 2>/dev/null || date -d "-$1 sec" +%Y%m%d%H%M.%S; }
+touch .harness/log/long5.jsonl
+frame 30 80 implementer .harness/log/long5.jsonl
+check "idle hidden when the stream is fresh" bash -c '! grep -qF "idle" <<<"$1"' _ "$OUT"
+touch -t "$(ago 5)" .harness/log/long5.jsonl
+frame 30 80 implementer .harness/log/long5.jsonl
+check "idle hidden below 10 s" bash -c '! grep -qF "idle" <<<"$1"' _ "$OUT"
+touch -t "$(ago 45)" .harness/log/long5.jsonl
+frame 30 80 implementer .harness/log/long5.jsonl
+check "idle shown at >= 10 s (· idle 45s)" bash -c 'sed -n 1p <<<"$1" | grep -qE "⏱ 12m[0-5][0-9]s · idle (4[5-9]|5[0-9])s  turns"' _ "$OUT"
 
 # truncation: width cuts by character, height never exceeded and Recent shrinks first
 frame 30 20

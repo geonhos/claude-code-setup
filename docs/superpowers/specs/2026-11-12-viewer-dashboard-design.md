@@ -16,8 +16,9 @@ implementer  <ask-id>  ⏱ 12m04s  turns 38  ctx 82k  sonnet
 ── Brief ───  title line of the brief
 ── Steps ───  numbered list from the brief's `## Steps` (no progress marks in phase 1);
               fallback: the brief's `##` headings
-── Now ─────  whichever is later in the stream: last assistant text or last tool_use
-              (Bash description preferred over command)
+── Now ─────  summary line (Bash `description`, else the preceding assistant text's first line,
+              else `<Tool> <arg>`) + the full command/path wrapped (≤ 6 lines, `…` if more);
+              when the latest event is assistant text: that text wrapped (≤ 6 lines)
 ── Recent ──  last N lines of harness-view output (N fits pane height)
 ── Verify ──  not started | verifying… | pass | fail (<step>)
 ── Diff ────  git diff --stat against verify/<role>.base sha (implementer only; omitted otherwise)
@@ -45,8 +46,10 @@ shell (`herdr pane run`), so the final frame stays on screen; the harness never 
 - While drawing: cursor hidden and autowrap off (`\033[?25l\033[?7l`); every exit path
   restores `\033[?7h\033[?25h` and prints a newline. Lines are cut to W-1 columns.
 - Truncate lines to width. When height is short, shrink sections in this order of keeping:
-  header, Now, Steps, Verify, Diff, Recent (Recent shrinks first, then Diff, then Brief title kept to 1 line).
-- Steps capped at 10 lines; Now capped at 3 lines.
+  header, Brief (1 line), Now (summary + first detail line), Steps, Verify, Diff, Now's other detail lines, Recent
+  (Recent shrinks first, then Now's detail lines down to 1, then Diff).
+- Steps capped at 10 lines; Now detail capped at 6 wrapped lines (wrapped by display width at W-1, never cut).
+- Header shows `· idle Ns` after the elapsed time when the stream file has not grown for ≥ 10 s (live runs only).
 - bash 3.2, jq (already required). No new dependency.
 
 ## Removed mechanism

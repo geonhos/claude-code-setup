@@ -44,14 +44,20 @@ dash_facts() {
     | ([$e[] | select(.type == "system" and .subtype == "init")] | first) as $i
     | [$e[] | select(.type == "assistant")] as $a
     | ([$a[] | .message.usage?] | map(select(. != null)) | last) as $u
-    | ([$a[] | (.message.content // [])[] | select((.type == "text" and ((.text // "") | test("\\S"))) or .type == "tool_use")] | last) as $n
+    | [$a[] | (.message.content // [])[] | select((.type == "text" and ((.text // "") | test("\\S"))) or .type == "tool_use")] as $it
+    | ($it | last) as $n | ($it | if length > 1 then .[-2] else null end) as $p
     | ([$e[] | select(.type == "system" and .hook_event == "Stop" and (.subtype == "hook_started" or .subtype == "hook_response"))] | last) as $h
     | {model: ($i.model // "?"),
        turns: ([$a | to_entries[] | (.value.message.id // "n\(.key)")] | unique | length),
        ctx: (if $u then (($u.input_tokens // 0) + ($u.cache_read_input_tokens // 0) + ($u.cache_creation_input_tokens // 0)) else 0 end),
-       now: (if $n == null then []
-             elif $n.type == "text" then ($n.text | split("\n") | map(select(test("\\S"))) | .[0:3])
-             else ["→ \($n.name // "?") \(($n.input // {}) | (.description // .command // .file_path // .pattern // .url // tostring) | first_line)"] end),
+       now: (if $n == null then {sum: "", detail: ""}
+             elif $n.type == "text" then {sum: "", detail: $n.text}
+             else ($n.input // {}) as $in
+               | ($in | (.command // .file_path // .pattern // .url // .path // "") | tostring) as $arg
+               | {sum: (if ((($in.description // "") | tostring) | test("\\S")) then ($in.description | first_line)
+                        elif ($p != null and $p.type == "text") then ($p.text | split("\n") | map(select(test("\\S"))) | .[0] // "")
+                        else "\($n.name // "?") \($arg | first_line)" end),
+                  detail: $arg} end),
        verify: (if $h == null then "none"
                 elif $h.subtype == "hook_started" then "running"
                 elif ([($h.stdout // "") | fromjson? | select(type == "object" and .decision == "block" and ((.reason // "") | test("\\.harness/reports/")))] | length > 0) then "report"
@@ -71,6 +77,18 @@ DASH_JQ_CW='def cw: [[4352,4447],[8986,8987],[9001,9002],[9193,9196],[9200,9200]
   | . as $c | if any($r[]; $c >= .[0] and $c <= .[1]) then 2 else 1 end;
 '
 
+# dash_wrap <width> <max-lines> — stdin text -> wrapped lines on stdout (by display width, never cut: the rest
+# continues on the next line). Blank lines are dropped, tabs become 2 spaces; when more than <max-lines> remain,
+# the last kept line ends with "…".
+dash_wrap() {
+  jq -R -r -s --argjson w "$(( $1 > 2 ? $1 : 2 ))" --argjson m "$2" "$DASH_JQ_CW"'
+    def wrapline($n): explode | reduce .[] as $c ({w: 0, cur: [], out: []};
+        ($c | cw) as $k | if .w + $k > $n and (.cur | length) > 0 then .out += [.cur] | .cur = [$c] | .w = $k
+                          else .cur += [$c] | .w += $k end) | (.out + [.cur]) | map(implode);
+    split("\n") | map(gsub("\t"; "  ") | select(test("\\S"))) | map(wrapline($w)) | add // []
+    | if length > $m then .[0:$m] | .[-1] |= ((wrapline($w - 1) | .[0]) + "…") else . end | .[]'
+}
+
 # hl_dash_frame <role> <raw> — the dashboard text. Size: HARNESS_DASH_LINES / HARNESS_DASH_COLS,
 # else the terminal (24x80 when unknown). Final frame (result + report head) when the run is not
 # live: HARNESS_DASH_FINAL=1 forces it, else hl_alive decides.
@@ -85,7 +103,7 @@ hl_dash_frame() {
   case "$W" in ''|*[!0-9]*|0) W=80 ;; esac
   read -r id start _ < "$a.current" 2>/dev/null
   if [ "${HARNESS_DASH_FINAL:-}" = 1 ] || ! hl_alive "$role"; then final=1; fi
-  facts=$(dash_facts "$raw"); [ -n "$facts" ] || facts='{"model":"?","turns":0,"ctx":0,"now":[],"verify":"none"}'
+  facts=$(dash_facts "$raw"); [ -n "$facts" ] || facts='{"model":"?","turns":0,"ctx":0,"now":{"sum":"","detail":""},"verify":"none"}'
   model=$(jq -r '.model' <<<"$facts"); turns=$(jq -r '.turns' <<<"$facts")
   ctx=$(jq -r 'if .ctx >= 1000 then "\((.ctx / 1000) | round)k" else "\(.ctx)" end' <<<"$facts")
   verify=$(jq -r '.verify' <<<"$facts")
@@ -138,20 +156,35 @@ hl_dash_frame() {
   local rem=$H hdr=1 abrief=0 anow=0 asteps=0 averify=0 adiff=0 arecent=0 want
   rem=$((rem - 1)); [ "$rem" -ge 0 ] || rem=0
   [ "$rem" -lt 1 ] || { abrief=1; rem=$((rem - 1)); }
-  want=$(( $(printf '%s\n' "$(jq -r '.now[]' <<<"$facts")" | sed '/^$/d' | head -n 3 | wc -l) ))
-  [ "$final" = 1 ] && want=0
-  [ "$want" -gt 0 ] || want=1
-  anow=$(dash_min $((want + 1)) "$rem"); [ "$final" = 1 ] && anow=$(dash_min 1 "$rem")
+  # Now = summary line + the full command/text wrapped (<= 6 lines): the minimum (summary + 1 detail line) is
+  # kept before Steps; the other detail lines come after Diff and before Recent
+  local nsum=0 dl="" dn=0 xdet=0 dind="    " nmin=1
+  if [ "$final" != 1 ]; then
+    l=$(jq -r '.now.sum' <<<"$facts"); [ -z "$l" ] || nsum=1
+    [ "$nsum" = 1 ] || dind="  "
+    dl=$(jq -r '.now.detail' <<<"$facts" | dash_wrap $((W - 1 - ${#dind})) 6 | sed "s/^/$dind/")
+    [ -z "$dl" ] || dn=$(printf '%s\n' "$dl" | wc -l | tr -d ' ')
+    nmin=$((nsum + (dn > 0 ? 1 : 0))); [ "$nmin" -ge 1 ] || nmin=1
+  fi
+  anow=$(dash_min $((nmin + 1)) "$rem"); [ "$final" = 1 ] && anow=$(dash_min 1 "$rem")
   [ "$anow" -ge 2 ] || [ "$final" = 1 ] || anow=0
   rem=$((rem - anow))
   want=$(( $(printf '%s\n' "$steps" | sed '/^$/d' | wc -l) ))
   if [ "$want" -gt 0 ]; then asteps=$(dash_min $((want + 1)) "$rem"); [ "$asteps" -ge 2 ] || asteps=0; rem=$((rem - asteps)); fi
   [ "$rem" -lt 1 ] || { averify=1; rem=$((rem - 1)); }
   if [ "$dwant" -gt 0 ]; then adiff=$(dash_min "$dwant" "$rem"); [ "$adiff" -ge 2 ] || adiff=0; rem=$((rem - adiff)); fi
+  if [ "$final" != 1 ] && [ "$anow" -ge "$((nmin + 1))" ] && [ "$dn" -gt 1 ]; then
+    xdet=$(dash_min $((dn - 1)) "$rem"); anow=$((anow + xdet)); rem=$((rem - xdet))
+  fi
   [ "$rem" -ge 2 ] && arecent=$rem
 
   local out="" sec="── "
-  out=$(printf '%s  %s  ⏱ %s  turns %s  ctx %s  %s' "$role" "${id:-?}" "$(dash_fmt_dur "$dur")" "$turns" "$ctx" "$model")
+  # idle: seconds since the stream last grew (file mtime), shown from 10 s while the run is live
+  local idle="" mt
+  if [ "$final" != 1 ] && [ -f "$raw" ] && mt=$(file_mtime "$raw") && [ $(( $(date +%s) - mt )) -ge 10 ]; then
+    idle=" · idle $(dash_fmt_dur $(( $(date +%s) - mt )))"
+  fi
+  out=$(printf '%s  %s  ⏱ %s%s  turns %s  ctx %s  %s' "$role" "${id:-?}" "$(dash_fmt_dur "$dur")" "$idle" "$turns" "$ctx" "$model")
   [ "$abrief" -eq 0 ] || out="$out"$'\n'"${sec}Brief ── $bt"
   if [ "$final" = 1 ]; then
     if [ "$anow" -ge 1 ]; then
@@ -161,7 +194,8 @@ hl_dash_frame() {
       out="$out"$'\n'"${sec}Result ── $l"
     fi
   elif [ "$anow" -ge 2 ]; then
-    l=$(jq -r '.now[]' <<<"$facts" | sed '/^$/d' | head -n 3 | sed 's/^/  /')
+    l=$(jq -r '.now.sum' <<<"$facts" | sed '/^$/d' | sed 's/^/  → /')
+    [ -z "$dl" ] || l="${l:+$l$'\n'}$(printf '%s\n' "$dl" | head -n $((anow - 1 - nsum)))"
     [ -n "$l" ] || l="  (waiting for output)"
     out="$out"$'\n'"${sec}Now ──"$'\n'"$l"
   fi
