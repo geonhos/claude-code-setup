@@ -55,7 +55,7 @@ check "bg success: .stream written" grep -q "^[^ ]* .*\.jsonl$" .harness/asks/an
 check "bg success: exit.json rc 0" jqt '.rc == 0' .harness/asks/analyst.exit.json
 check "bg success: runner log kept under .harness" [ -e .harness/asks/analyst.runner.log ]
 nrun status
-check "status without a pane: idle bg" grep -Eq "^analyst +idle +bg +hl" <<<"$OUT"
+check "status without a pane: idle, no pane id" grep -Eq "^analyst +idle +- +hl" <<<"$OUT"
 
 # 2. detachment + 3. environment
 bsetup

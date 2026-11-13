@@ -286,9 +286,11 @@ killpids "$FAKE_DIR/claude.pids"
 wait "$bg"
 export FAKE_CLAUDE_MODE=success
 hrun close analyst
+CLOSE_OUT=$OUT
 hrun ask analyst "after close" --keep
 check "keep close: no resume across a close" not_logged "--resume"
 check "keep close: says a close ended it" grep -q "closed" <<<"$OUT"
+check "close output: pane left open, no pane id as closed" bash -c 'grep -q "closed analyst (pane left open)" <<<"$1"' _ "$CLOSE_OUT"
 check "keep close: runs fresh" grep -q "running fresh" <<<"$OUT"
 
 # 15b2. old rows: a row with an ask_id (removed --worktree asks) is never the session a plain --keep resumes
@@ -459,7 +461,8 @@ unset HR_BIN
 hsetup
 hrun ask analyst "q"
 hrun status
-check "status: headless idle line (viewer pane stays listed)" grep -Eq 'analyst +idle +w1:p2' <<<"$OUT"
+check "status: headless idle line has no pane id (run not live)" grep -Eq 'analyst +idle +-  ' <<<"$OUT"
+check "status: idle line does not list the pane" not_grep "w1:p2" <(printf '%s' "$OUT")
 
 # metrics: runner split (old lines without runner count as pane)
 setup

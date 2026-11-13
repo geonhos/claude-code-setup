@@ -156,7 +156,7 @@ frame 30 70 implementer .harness/log/s1.jsonl
 check "summary from the preceding assistant text's first line" bash -c 'grep -qF "  → Checking the config" <<<"$1" && grep -qF "    ls -la" <<<"$1" && ! now_sec <<<"$1" | grep -qF "more words"' _ "$OUT"
 tool_stream .harness/log/s2.jsonl "" Read '{"file_path":"/a/b.txt"}'
 frame 30 70 implementer .harness/log/s2.jsonl
-check "summary fallback: <Tool> <file_path>, path as detail" bash -c 'grep -qF "  → Read /a/b.txt" <<<"$1" && grep -qF "    /a/b.txt" <<<"$1"' _ "$OUT"
+check "summary fallback: <Tool> <file_path>, path not repeated as detail" bash -c 'grep -qF "  → Read /a/b.txt" <<<"$1" && ! grep -qF "    /a/b.txt" <<<"$1"' _ "$OUT"
 tool_stream .harness/log/s3.jsonl "" Grep '{"pattern":"foo.*bar"}'
 frame 30 70 implementer .harness/log/s3.jsonl
 check "summary fallback: <Tool> <pattern>" has "  → Grep foo.*bar"
@@ -293,6 +293,26 @@ check "final: result line" has "── Result ── ■ success · rc 0 · 38 t
 check "final: report head" bash -c 'grep -qF "── Report" <<<"$1" && grep -qF "  # implementer report" <<<"$1"' _ "$OUT"
 check "final: duration from exit.json" has "⏱ 2m05s"
 check "final: no Now (Result present)" bash -c 'grep -qF "── Result" <<<"$1" && ! grep -qF "── Now" <<<"$1"' _ "$OUT"
+
+# control chars never reach the frame raw (CR, ESC sequences, DEL); tools without a known arg key get a compact input
+printf 'ask-1 %s\n' $((NOW - 5)) > $ASK_DIR/implementer.current
+hl_alive() { return 0; }
+RAWC=.harness/log/ctl-implementer.jsonl
+printf '%s\n' '{"type":"assistant","message":{"id":"c1","content":[{"type":"tool_use","name":"Bash","input":{"command":"echo a\rEVIL\u001b[2Jb\u007fc"}}]}}' > $RAWC
+frame 30 70 implementer $RAWC
+check "ctl: no raw CR/ESC/DEL in the frame" bash -c '! printf "%s" "$1" | LC_ALL=C grep -q "[[:cntrl:]]" ' _ "$OUT"
+check "ctl: replaced by a placeholder" has "echo a·EVIL·[2Jb·c"
+check "ctl: header+detail wrap path too (Now has the text)" has "→ Bash echo a·EVIL"
+printf '%s\n' '{"type":"assistant","message":{"id":"c2","content":[{"type":"tool_use","name":"WebSearch","input":{"query":"harness dash","limit":3}}]}}' > $RAWC
+frame 30 70 implementer $RAWC
+check "fallback: tool without known key shows compact input" has '→ WebSearch {"query":"harness dash","limit":3}'
+check "fallback: detail line carries the input too" bash -c '[ "$(sed -n "/── Now/,/── Verify/p" <<<"$1" | grep -cF "\"query\"")" -eq 2 ]' _ "$OUT"
+printf '%s\n' '{"type":"assistant","message":{"id":"c3","content":[{"type":"tool_use","name":"Read","input":{"file_path":"/tmp/some/file.txt"}}]}}' > $RAWC
+frame 30 70 implementer $RAWC
+check "Read: path shown once (summary only)" bash -c '[ "$(sed -n "/── Now/,/── Verify/p" <<<"$1" | grep -cF "/tmp/some/file.txt")" -eq 1 ]' _ "$OUT"
+printf '%s\n' '{"type":"assistant","message":{"id":"c4","content":[{"type":"tool_use","name":"Read","input":{"file_path":"/tmp/some/file.txt","description":"look at it"}}]}}' > $RAWC
+frame 30 70 implementer $RAWC
+check "Read with description: path kept as detail" bash -c 'grep -qF "→ look at it" <<<"$1" && grep -qF "    /tmp/some/file.txt" <<<"$1"' _ "$OUT"
 
 echo "dash: $pass passed, $fail failed"
 [ "$fail" -eq 0 ]

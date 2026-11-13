@@ -120,7 +120,7 @@ hl_status_line() {
   [ "$st" != running ] || el=$(( $(date +%s) - $(awk 'NR == 1 { print $2 }' "$ASK_DIR/$role.current" 2>/dev/null || echo 0) ))
   if [ "$mode" = status ]; then
     if [ "$st" = running ]; then printf '%-12s %-8s %-8s hl %ss\n' "$role" "$st" "${pane:-bg}" "$el"
-    else printf '%-12s %-8s %-8s hl ctx %s\n' "$role" "$st" "${pane:-bg}" "$(fmt_ctx "$ctx")"; fi
+    else printf '%-12s %-8s %-8s hl ctx %s\n' "$role" "$st" "-" "$(fmt_ctx "$ctx")"; fi
   else
     printf '%s %s ctx %s hl' "$role" "$st" "$(fmt_ctx "$ctx")"
   fi
@@ -403,8 +403,8 @@ hl_finish_close() {
   [ ! -f "$a.run" ] || { sed 's/^viewer=.*/viewer=bg/' "$a.run" > "$a.run.tmp.$$" && mv "$a.run.tmp.$$" "$a.run"; }
   # .current ends the run slot: status shows "-" again (exit.json stays for the post-mortem)
   rm -f "$a.finished" "$a.session" "$a.current"
-  log_close "$1" "${2:--}" "$3" headless
-  echo "closed $1 (${2:-bg})"
+  log_close "$1" "-" "$3" headless
+  if [ -n "${2:-}" ]; then echo "closed $1 (pane left open)"; else echo "closed $1"; fi
 }
 
 # close_headless <role> <force> <skip-missing> — close the role's run slot: kill a live run (--force); its viewer pane stays open

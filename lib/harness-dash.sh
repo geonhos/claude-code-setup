@@ -53,11 +53,13 @@ dash_facts() {
        now: (if $n == null then {sum: "", detail: ""}
              elif $n.type == "text" then {sum: "", detail: $n.text}
              else ($n.input // {}) as $in
-               | ($in | (.command // .file_path // .pattern // .url // .path // "") | tostring) as $arg
+               | ($in | (.command // .file_path // .pattern // .url // .path // "") | tostring) as $known
+               | (if $known != "" then $known elif ($in | type) == "object" and ($in | length) > 0 then ($in | tojson) else "" end) as $arg
+               | "\($n.name // "?") \($arg | first_line)" as $fb
                | {sum: (if ((($in.description // "") | tostring) | test("\\S")) then ($in.description | first_line)
                         elif ($p != null and $p.type == "text") then ($p.text | split("\n") | map(select(test("\\S"))) | .[0] // "")
-                        else "\($n.name // "?") \($arg | first_line)" end),
-                  detail: $arg} end),
+                        else $fb end)} as $o
+               | $o + {detail: (if $o.sum == $fb and (($n.name // "") | IN("Read", "Edit", "Write")) then "" else $arg end)} end),
        verify: (if $h == null then "none"
                 elif $h.subtype == "hook_started" then "running"
                 elif ([($h.stdout // "") | fromjson? | select(type == "object" and .decision == "block" and ((.reason // "") | test("\\.harness/reports/")))] | length > 0) then "report"
@@ -75,6 +77,9 @@ DASH_JQ_CW='def cw: [[4352,4447],[8986,8987],[9001,9002],[9193,9196],[9200,9200]
   [44032,55203],[63744,64255],[65040,65049],[65072,65131],[65280,65376],[65504,65510],[126976,129791],
   [131072,262141]] as $r
   | . as $c | if any($r[]; $c >= .[0] and $c <= .[1]) then 2 else 1 end;
+# jq def ctl: C0 controls (except \t, handled apart; \n splits lines), DEL and C1 shown as "·", so stream text can
+# never drive the terminal (ESC sequences, \r) from inside the frame
+def ctl: gsub("[\u0001-\u0008\u000b-\u001f\u007f-\u009f]"; "·");
 '
 
 # dash_wrap <width> <max-lines> — stdin text -> wrapped lines on stdout (by display width, never cut: the rest
@@ -85,7 +90,7 @@ dash_wrap() {
     def wrapline($n): explode | reduce .[] as $c ({w: 0, cur: [], out: []};
         ($c | cw) as $k | if .w + $k > $n and (.cur | length) > 0 then .out += [.cur] | .cur = [$c] | .w = $k
                           else .cur += [$c] | .w += $k end) | (.out + [.cur]) | map(implode);
-    split("\n") | map(gsub("\t"; "  ") | select(test("\\S"))) | map(wrapline($w)) | add // []
+    split("\n") | map(gsub("\t"; "  ") | ctl | select(test("\\S"))) | map(wrapline($w)) | add // []
     | if length > $m then .[0:$m] | .[-1] |= ((wrapline($w - 1) | .[0]) + "…") else . end | .[]'
 }
 
@@ -223,7 +228,7 @@ hl_dash_frame() {
   # ${v:0:n} in bytes) so no line wraps; a line is clipped, never wrapped. Tabs become 2 spaces first.
   # Cut at W-1 columns: the trailing \033[K (dash_paint) must never erase the last glyph with autowrap off.
   printf '%s\n' "$out" | jq -R -r --argjson w "$((W > 1 ? W - 1 : 1))" "$DASH_JQ_CW"'
-    gsub("\t"; "  ") | explode | reduce .[] as $c ({w: 0, o: [], f: false};
+    gsub("\t"; "  ") | ctl | explode | reduce .[] as $c ({w: 0, o: [], f: false};
       if .f then . else ($c | cw) as $k | if .w + $k > $w then .f = true else .w += $k | .o += [$c] end end)
     | .o | implode'
 }
