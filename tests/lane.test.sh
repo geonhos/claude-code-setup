@@ -6,13 +6,15 @@ set -u
 FAKE_CLAUDE="$HERE/fake-claude"
 export GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@t GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@t
 
-# fake gh: `issue view` prints $FAKE_GH_TITLE; `pr view <branch>` prints the state in $GH_DIR/<branch with / -> _>
+# fake gh: `issue view` prints $FAKE_GH_TITLE; `pr view <branch> -q Q` runs jq Q on the JSON in $GH_DIR/<branch with / -> _>
 GH_BIN=$(mktemp -d); GH_DIR=$(mktemp -d); WORKS="$WORKS $GH_BIN $GH_DIR"
 cat > "$GH_BIN/gh" <<'EOG'
 #!/bin/bash
 case "$1 $2" in
   "issue view") echo "${FAKE_GH_TITLE:-}" ;;
-  "pr view") f=$GH_DIR/${3//\//_}; [ -f "$f" ] && cat "$f" || exit 1 ;;
+  "pr view") f=$GH_DIR/${3//\//_}; [ -f "$f" ] || exit 1
+    q=""; while [ $# -gt 0 ]; do [ "$1" = -q ] && q=$2; shift; done
+    jq -r "${q:-.}" "$f" ;;
 esac
 EOG
 chmod +x "$GH_BIN/gh"
@@ -37,6 +39,7 @@ lsetup() {
   rm -f "$GH_DIR"/*; unset FAKE_GH_TITLE
   hinit
 }
+setpr() { printf '{"state":"%s","headRefOid":"%s","number":1}\n' "$2" "${3:-}" > "$GH_DIR/${1//\//_}"; } # setpr BRANCH STATE [OID]
 alive_in() { local f="$1/.harness/asks/implementer.pid" id pid; read -r id pid _ < "$f" 2>/dev/null; [ -n "${pid:-}" ] && kill -0 "$pid" 2>/dev/null; }
 
 # 1. create: folder, branch, init, exclude, setup command, printed path
@@ -63,7 +66,7 @@ check "lane title: branch fix/13-<kebab, 30 chars>" [ "$(git -C "$BASE/repo-13" 
 unset FAKE_GH_TITLE
 
 # 4. ls
-echo OPEN > "$GH_DIR/feat_12-my-slug"
+setpr feat/12-my-slug OPEN
 hl lane ls
 check "ls: issue, branch, path, PR state" grep -q "#12  feat/12-my-slug  $D  PR:OPEN" <<<"$OUT"
 check "ls: no PR shows -" grep -q "#13 .*PR:-" <<<"$OUT"
@@ -76,7 +79,7 @@ check "rm: open PR keeps the folder" test -d "$D"
 hl lane rm 13
 check "rm: refuses without a PR" [ "$RC" -ne 0 ]
 git -C "$D" push -q origin feat/12-my-slug 2>/dev/null
-echo MERGED > "$GH_DIR/feat_12-my-slug"
+setpr feat/12-my-slug MERGED "$(git rev-parse feat/12-my-slug)"
 printf '#!/bin/bash\nsleep 30\n' > "$BASE/harness-run"; chmod +x "$BASE/harness-run"; "$BASE/harness-run" & SP=$!
 mkdir -p "$D/.harness/asks"; echo "id $SP" > "$D/.harness/asks/implementer.pid"
 hl lane ls
@@ -135,6 +138,76 @@ wait "$P1" "$P2"
 check "parallel: both runs alive at the same time" [ "$both" = 1 ]
 check "parallel: both finished rc 0" [ "$(cat "$BASE/rc1" "$BASE/rc2" | tr -d '\n')" = 00 ]
 check "parallel: each folder has its own report" test -s "$D2/.harness/reports/implementer.md"
+
+# 8. rm never deletes unmerged work
+lsetup
+hl lane 30 a; D="$BASE/repo-30"; B=feat/30-a
+git -C "$D" commit -q --allow-empty -m w1; git -C "$D" push -q origin "$B" 2>/dev/null
+setpr "$B" MERGED "$(git -C "$D" rev-parse HEAD)"
+git -C "$D" commit -q --allow-empty -m unpushed
+hl lane rm 30
+check "rm: unpushed commit after MERGED refused" [ "$RC" -ne 0 ]
+check "rm: unpushed commit keeps folder and branch" git show-ref -q --verify "refs/heads/$B"
+check "rm: refusal says commits are not in the PR" grep -q "not in its PR" <<<"$OUT"
+hl lane rm 30 --force
+check "rm --force: rc 0" [ "$RC" -eq 0 ]
+check "rm --force: reports the lost commit count" grep -q "1 commit(s)" <<<"$OUT"
+check "rm --force: folder gone" test ! -d "$D"
+
+lsetup
+hl lane 31 b; D="$BASE/repo-31"; B=feat/31-b
+git -C "$D" commit -q --allow-empty -m old; OLD=$(git -C "$D" rev-parse HEAD)
+setpr "$B" MERGED "$OLD"
+git -C "$D" commit -q --allow-empty -m "after the old merged PR"
+hl lane rm 31
+check "rm: reused branch with an old MERGED PR plus new commits refused" [ "$RC" -ne 0 ]
+check "rm: reused branch keeps the folder" test -d "$D"
+echo dirty > "$D/dirty.txt"
+setpr "$B" MERGED "$(git -C "$D" rev-parse HEAD)"
+hl lane rm 31
+check "rm: uncommitted changes refused" [ "$RC" -ne 0 ]
+check "rm: uncommitted changes keep the folder" test -f "$D/dirty.txt"
+rm -f "$D/dirty.txt"
+
+lsetup
+hl lane 32 c; D="$BASE/repo-32"; B=feat/32-c
+git -C "$D" commit -q --allow-empty -m w; git -C "$D" push -q origin "$B" 2>/dev/null
+setpr "$B" CLOSED "$(git -C "$D" rev-parse HEAD)"
+hl lane rm 32
+check "rm closed: rc 0" [ "$RC" -eq 0 ]
+check "rm closed: folder and local branch gone" test ! -d "$D"
+check "rm closed: remote branch kept" [ -n "$(git ls-remote --heads origin "$B")" ]
+
+lsetup
+hl lane 33 d; D="$BASE/repo-33"; B=feat/33-d
+git -C "$D" commit -q --allow-empty -m w; git -C "$D" push -q origin "$B" 2>/dev/null
+setpr "$B" MERGED "$(git -C "$D" rev-parse HEAD)"
+git push -q origin --delete "$B" 2>/dev/null   # "delete head branches" already did it
+hl lane rm 33
+check "rm merged, remote already auto-deleted: rc 0" [ "$RC" -eq 0 ]
+check "rm merged, remote already auto-deleted: folder gone" test ! -d "$D"
+
+# 9. reuse only a real work folder of this repo
+lsetup
+mkdir -p "$BASE/repo-40"
+hl lane 40 e
+check "reuse: a plain directory is refused" [ "$RC" -ne 0 ]
+check "reuse: refusal names git worktree list" grep -q "not a work folder" <<<"$OUT"
+
+# 10. canonical paths and strict issue matching
+lsetup
+ln -s "$BASE" "$BASE.link"; WORKS="$WORKS $BASE.link"
+hl lane 50 f
+cd "$BASE.link/repo" || exit 1
+hl lane ls
+check "symlink: ls works under a symlinked parent" grep -q "#50 " <<<"$OUT"
+hl lane rm "$BASE.link/repo-50" --force
+check "symlink: rm by the symlinked path works" [ "$RC" -eq 0 ]
+cd "$BASE/repo" || exit 1
+git worktree add -q "$BASE/other" -b topic/5-x origin/main 2>/dev/null
+hl lane rm 5
+check "match: issue 5 does not match topic/5-x" [ "$RC" -ne 0 ]
+check "match: non-lane folder kept" test -d "$BASE/other"
 
 echo "PASS $pass / FAIL $fail"
 [ "$fail" -eq 0 ]

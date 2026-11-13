@@ -12,11 +12,14 @@ lane_in_primary() {
   [ "$(cd "$g" && pwd -P)" = "$c" ]
 }
 
-# lane_rows — "path<TAB>branch" for every non-primary worktree
+# lane_rows — "path<TAB>branch" for every non-primary worktree (path canonical, pwd -P)
 lane_rows() {
+  local p b
   git worktree list --porcelain | awk -v RS= -F'\n' 'NR > 1 { p = b = ""
     for (i = 1; i <= NF; i++) { if ($i ~ /^worktree /) p = substr($i, 10); if ($i ~ /^branch /) b = substr($i, 19) }
-    print p "\t" b }'
+    print p "\t" b }' | while IFS="$(printf '\t')" read -r p b; do
+    printf '%s\t%s\n' "$(cd "$p" 2>/dev/null && pwd -P || echo "$p")" "$b"
+  done
 }
 
 # lane_running <path> — a worker of this folder is running
@@ -29,11 +32,16 @@ lane_running() {
 # lane_pr <branch> — PR state (OPEN|MERGED|CLOSED) or empty (no PR, no gh)
 lane_pr() { command -v gh >/dev/null 2>&1 && gh pr view "$1" --json state -q .state 2>/dev/null; }
 
-# lane_find <issue#|path> — "path<TAB>branch" of a work folder
+# lane_prinfo <branch> — "STATE<TAB>headRefOid" of the branch's PR, or empty (no PR, no gh)
+lane_prinfo() {
+  command -v gh >/dev/null 2>&1 && gh pr view "$1" --json state,headRefOid -q '[.state,.headRefOid]|@tsv' 2>/dev/null
+}
+
+# lane_find <issue#|path> — "path<TAB>branch" of a work folder (issue numbers match lane branches only)
 lane_find() {
   local t=$1 r
   [ ! -d "$t" ] || t=$(cd "$t" && pwd -P)
-  r=$(lane_rows | awk -F'\t' -v t="$t" '$1 == t || $2 ~ ("/" t "(-|$)") { print; exit }')
+  r=$(lane_rows | awk -F'\t' -v t="$t" '$1 == t || (t ~ /^[0-9]+$/ && $2 ~ ("^(feat|fix|docs)/" t "-")) { print; exit }')
   [ -n "$r" ] && printf '%s\n' "$r"
 }
 
@@ -70,6 +78,8 @@ lane_new() {
   git fetch origin -q 2>/dev/null || echo "harness lane: git fetch origin failed; using the local refs" >&2
   base=$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null) || base=origin/main
   if [ -d "$dir" ]; then
+    lane_rows | awk -F'\t' -v d="$(cd "$dir" && pwd -P)" '$1 == d { f = 1 } END { exit !f }' \
+      || die "$dir exists but is not a work folder of this repo (git worktree list); move it away or pick another issue"
     branch=$(git -C "$dir" rev-parse --abbrev-ref HEAD 2>/dev/null)
     echo "harness lane: $dir exists; reusing it ($branch)"
   else
@@ -93,23 +103,33 @@ lane_new() {
 
 lane_rm() {
   [ "${HARNESS_ROLE:-}" != worker ] || die "harness lane is for the conductor"
-  local force="" t="" row p b st
+  local force="" t="" row p b info st oid head n tab
+  tab=$(printf '\t')
   while [ $# -gt 0 ]; do
     case "$1" in --force) force=1 ;; -*) usage ;; *) [ -z "$t" ] || usage; t=$1 ;; esac
     shift
   done
   [ -n "$t" ] || usage
   row=$(lane_find "$t") || die "no work folder for '$t' (harness lane ls)"
-  p=${row%%$(printf '\t')*}; b=${row#*$(printf '\t')}; b=${b#refs/heads/}
+  p=${row%%"$tab"*}; b=${row#*"$tab"}; b=${b#refs/heads/}
   lane_running "$p" && die "a worker is running in $p; wait for it or harness -C $p close <role>"
-  st=$(lane_pr "$b")
+  info=$(lane_prinfo "$b"); st=${info%%"$tab"*}; oid=""
+  case "$info" in *"$tab"*) oid=${info#*"$tab"} ;; esac
+  head=$(git rev-parse "refs/heads/$b" 2>/dev/null)
   if [ -z "$force" ]; then
     case "$st" in MERGED|CLOSED) ;; *) die "PR of $b is '${st:-none}', not merged or closed; merge it first (or --force)" ;; esac
+    [ -n "$oid" ] && [ "$head" = "$oid" ] \
+      || die "$b has commits that are not in its PR (local ${head:0:8}, PR ${oid:0:8}); push or rescue them first (or --force)"
+  else
+    if [ -n "$oid" ] && git cat-file -e "$oid^{commit}" 2>/dev/null; then n=$(git rev-list --count "$oid..$b" 2>/dev/null)
+    else n=$(git rev-list --count "$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null || echo origin/main)..$b" 2>/dev/null); fi
+    echo "harness lane: --force; $b has ${n:-?} commit(s) not in a PR; uncommitted changes in $p are discarded" >&2
   fi
   cd "$(lane_primary)" || die "cannot enter the primary worktree"
   git worktree remove ${force:+--force} "$p" || die "git worktree remove failed for $p (uncommitted changes? --force)"
   git branch -D "$b" >/dev/null || echo "harness lane: could not delete branch $b" >&2
-  if git ls-remote --exit-code --heads origin "$b" >/dev/null 2>&1; then
+  # a merged PR's branch is done; a closed (unmerged) PR keeps its remote branch
+  if [ "$st" = MERGED ] && git ls-remote --exit-code --heads origin "$b" >/dev/null 2>&1; then
     git push origin --delete "$b" >/dev/null 2>&1 || echo "harness lane: could not delete origin/$b" >&2
   fi
   echo "removed $p and branch $b"
