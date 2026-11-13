@@ -439,15 +439,15 @@ hl_stream_of() {
 
 hl_stream_id() { awk 'NR == 1 { print $1 }' "$ASK_DIR/$1.stream" 2>/dev/null; }
 
-# cmd_watch <role> [-n N] — human only: follow a live run's rendered stream, or print the last N
+# cmd_watch <role> [-n N] — human only: a live run as a redrawn dashboard (lib/harness-dash.sh), or print the last N
 # (default 40) rendered lines of a finished one. 0 ok, 1 refused (not a tty), 3 no stream known.
 cmd_watch() {
-  local t=${1:-} n=40 role raw tp vp i fifo id
+  local t=${1:-} n=40 nset="" role raw i id
   [ -n "$t" ] || usage
   shift
   while [ $# -gt 0 ]; do
     case "$1" in
-      -n) case "${2:-}" in ''|*[!0-9]*) die "-n needs a number of lines" ;; esac; n=$2; shift 2 ;;
+      -n) case "${2:-}" in ''|*[!0-9]*) die "-n needs a number of lines" ;; esac; n=$2; nset=1; shift 2 ;;
       *) usage ;;
     esac
   done
@@ -461,21 +461,13 @@ cmd_watch() {
     sleep 0.2; i=$((i + 1)); raw=$(hl_stream_of "$role")
   done
   if [ -z "$raw" ]; then echo "harness: no stream known for $t" >&2; exit 3; fi
-  if ! hl_alive "$role"; then
+  # -n N (or a rotated .gz stream): one-shot plain tail of a finished run (scrollback text; reflows by itself)
+  if { [ -n "$nset" ] || [ ! -f "$raw" ]; } && ! hl_alive "$role"; then
     if [ -f "$raw" ]; then harness-view < "$raw" | tail -n "$n"
     elif [ -f "$raw.gz" ]; then gzip -dc "$raw.gz" | harness-view | tail -n "$n"
     else echo "harness: stream $raw is gone" >&2; exit 3; fi
     exit 0
   fi
-  # live: tail -F into harness-view through a fifo (BSD tail has no --pid, so the tail's pid is kept to kill it)
-  fifo=$(mktemp -u "${TMPDIR:-/tmp}/harness-watch.XXXXXX") && mkfifo "$fifo" || die "watch: cannot make a fifo"
-  tail -n +1 -F "$raw" > "$fifo" 2>/dev/null & tp=$!
-  harness-view < "$fifo" & vp=$!
-  trap 'kill "$tp" "$vp" 2>/dev/null; rm -f "$fifo"; exit 130' INT TERM
-  while hl_alive "$role" && ! hl_done "$role" "$id"; do sleep 0.5; done
-  sleep 1   # drain what the run printed last
-  kill "$tp" 2>/dev/null
-  wait "$vp" 2>/dev/null
-  rm -f "$fifo"
+  dash_watch "$role" "$raw" "$id"
   exit 0
 }

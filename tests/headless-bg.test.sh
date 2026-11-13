@@ -163,8 +163,10 @@ nrun ask analyst "q14"
 check "watch: setup ask ok" [ "$RC" -eq 0 ]
 nrun watch analyst
 check "watch without a tty: refused rc 1" bash -c '[ "$1" = 1 ] && grep -q "human terminal" <<<"$2"' _ "$RC" "$OUT"
-tty_run watch analyst
-check "watch finished (tty): rendered lines" bash -c 'grep -q "▶ fake-model" <<<"$1" && grep -q "■ success" <<<"$1" && grep -q "→ Bash echo hi" <<<"$1"' _ "$OUT"
+HRUN_ALARM_S=4 tty_run watch analyst   # stays alive on the final frame: only the alarm ends it
+check "watch finished (tty): final dashboard frame, still alive until killed" bash -c '[ "$1" = 142 ] && grep -q "── Result ── ■ success" <<<"$2"' _ "$RC" "$OUT"
+tty_run watch analyst -n 100
+check "watch finished -n (tty): rendered lines, exits" bash -c '[ "$1" = 0 ] && grep -q "▶ fake-model" <<<"$2" && grep -q "■ success" <<<"$2" && grep -q "→ Bash echo hi" <<<"$2"' _ "$RC" "$OUT"
 tty_run watch analyst -n 1
 check "watch -n 1: one line" bash -c '[ "$(grep -c "■ success" <<<"$1")" = 1 ] && ! grep -q "fake-model" <<<"$1" && grep -q "■ success" <<<"$1"' _ "$OUT"
 bsetup
@@ -172,12 +174,9 @@ export FAKE_CLAUDE_MODE=slow40
 nrun ask analyst "q14b" --timeout 1000
 check "watch live: slow ask left running (4)" [ "$RC" -eq 4 ]
 note_run
-tty_run watch analyst
-check "watch live: follows the run to its result, rc 0" bash -c '[ "$1" = 0 ] && grep -q "■ success" <<<"$2"' _ "$RC" "$OUT"
+HRUN_ALARM_S=47 tty_run watch analyst   # the final frame stays alive: the alarm (142) ends it
+check "watch live: dashboard follows the run to its final frame, then stays alive" bash -c '[ "$1" = 142 ] && grep -q "── Brief ──" <<<"$2" && grep -q "── Result ── ■ success" <<<"$2"' _ "$RC" "$OUT"
 wait_no_runs "$RID"
-# scoped to this run's own stream file: a live ask in the repo has its own tail (other path)
-STREAMP=$(sed 's/^[^ ]* //' .harness/asks/analyst.stream 2>/dev/null)
-check "watch live: no tail left behind" bash -c '[ -n "$1" ] && ! pgrep -f "tail -n \+1 -F $1" >/dev/null' _ "$STREAMP"
 
 # 15. sleep-aware deadline: pure helper, injected timestamps
 HL_SRC=$(sed -n '/^hl_clock_gap() {/,/^}/p;/^hl_deadline_bump() {/,/^}/p' "$HERE/../lib/harness-headless.sh")

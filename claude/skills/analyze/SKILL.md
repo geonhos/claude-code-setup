@@ -21,6 +21,7 @@ investigation yourself (`harness ask` refuses to run in a worker session anyway)
      ranges, current behaviour, options with trade-offs when asked.
    - Long detail goes to `.harness/<topic>-detail.md`; the report summarises
      it and names the file.
+   - **Steps**: a `## Steps` numbered list, one line per step (the viewer dashboard shows it).
 2. Run with the Bash tool's `run_in_background: true` **and** `timeout: 7200000` (the Bash tool's maximum; without it the call is killed at the tool's default timeout, long before the 60-90 min wait ends) (the task notification wakes you when the run ends):
 
    ```
