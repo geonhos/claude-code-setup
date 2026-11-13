@@ -274,7 +274,7 @@ END=$(od -An -c < .harness/log/end1.out | tr -d ' \n')
 check "end: autowrap on + cursor shown + newline" bash -c 'case "$1" in *033[?7h033[?25h\\n) true;; *) false;; esac' _ "$END"
 dash_end > .harness/log/end2.out
 check "end: idempotent (second call prints nothing)" [ ! -s .harness/log/end2.out ]
-SRC=$(cat "$HERE/../lib/harness-headless.sh")
+SRC=$(cat "$HERE/../lib/harness-dash.sh")
 check "watch: traps cover INT TERM HUP QUIT EXIT" bash -c 'grep -qF "trap '"'"'dash_end; exit 129'"'"' HUP" <<<"$1" && grep -qF "trap '"'"'dash_end; exit 131'"'"' QUIT" <<<"$1" && grep -qF "trap dash_end EXIT" <<<"$1"' _ "$SRC"
 check "watch: trap and normal exit both use dash_begin/dash_end" bash -c 'grep -qF "trap '"'"'dash_end; exit 130'"'"' INT TERM" <<<"$1" && grep -q "^  dash_begin" <<<"$1" && grep -q "^  dash_end" <<<"$1"' _ "$SRC"
 
@@ -313,6 +313,54 @@ check "Read: path shown once (summary only)" bash -c '[ "$(sed -n "/── Now/,
 printf '%s\n' '{"type":"assistant","message":{"id":"c4","content":[{"type":"tool_use","name":"Read","input":{"file_path":"/tmp/some/file.txt","description":"look at it"}}]}}' > $RAWC
 frame 30 70 implementer $RAWC
 check "Read with description: path kept as detail" bash -c 'grep -qF "→ look at it" <<<"$1" && grep -qF "    /tmp/some/file.txt" <<<"$1"' _ "$OUT"
+
+# size is read on every frame, from the harness-only override names; an exported LINES/COLUMNS is ignored
+sz() { HARNESS_DASH_LINES=$1 HARNESS_DASH_COLS=$2 PATH="$HERE/../bin:$PATH" dash_size; }
+check "size: override read per call (1)" [ "$(sz 20 50)" = "20 50" ]
+check "size: override read per call (2) differs" [ "$(sz 33 99)" = "33 99" ]
+frame 30 40; W1=$(jq -R length <<<"$OUT" | sort -n | tail -n 1)
+frame 30 90; W2=$(jq -R length <<<"$OUT" | sort -n | tail -n 1)
+check "size: two frames, two widths" bash -c '[ "$1" -le 39 ] && [ "$2" -gt 39 ] && [ "$2" -le 89 ]' _ "$W1" "$W2"
+check "size: LINES/COLUMNS env ignored" [ "$(LINES=7 COLUMNS=9 HARNESS_DASH_LINES=21 HARNESS_DASH_COLS=61 dash_size)" = "21 61" ]
+OUT=$(unset HARNESS_DASH_LINES HARNESS_DASH_COLS; LINES=7 COLUMNS=9 PATH="$HERE/../bin:$PATH" dash_size)
+check "size: no override + LINES/COLUMNS set -> not 7 9" [ "$OUT" != "7 9" ]
+
+# dash_watch on a finished run: draws the final frame, stays alive, re-renders on WINCH (no polling needed) and on a
+# polled size change, exits on HUP/INT/TERM with the terminal restored, and when the ask is removed
+cat > .harness/log/hold.sh <<'EOH'
+. "$LIB"
+. "$HERE/../lib/harness-defaults.sh" 2>/dev/null
+eval "$DO_SRC"
+hl_alive() { return 1; }
+hl_done() { return 0; }
+dash_size() { cat .harness/log/size; }
+ASK_DIR=.harness/asks
+dash_watch implementer "$RAW" ask-1
+EOH
+hold_start() {   # hold_start <name> -> HP; output in .harness/log/<name>.out
+  echo "30 40" > .harness/log/size; rm -f .harness/log/$1.out
+  LIB="$LIB" HERE="$HERE" DO_SRC="$DO_SRC" RAW="$RAW" PATH="$HERE/../bin:$PATH" HARNESS_DASH_IDLE_SEC=${2:-30} \
+    perl -e '$SIG{INT} = "DEFAULT"; exec @ARGV' /bin/bash .harness/log/hold.sh > .harness/log/$1.out 2>&1 </dev/null & HP=$!   # perl: a background job inherits SIGINT ignored, which no trap can undo
+  sleep 1.5
+}
+nframes() { grep -c "── Result" .harness/log/$1.out; }
+hold_start winch 30
+check "hold: final frame drawn, still alive" bash -c 'kill -0 "$1" && [ "$(grep -c "── Result" "$2")" = 1 ]' _ "$HP" .harness/log/winch.out
+echo "30 90" > .harness/log/size; kill -WINCH $HP; sleep 1
+check "hold: WINCH redraws at once (idle poll is 30 s)" [ "$(nframes winch)" = 2 ]
+kill -WINCH $HP; sleep 0.7
+check "hold: WINCH with an unchanged size does not repaint" [ "$(nframes winch)" = 2 ]
+kill -HUP $HP; wait $HP 2>/dev/null; HRC=$?
+check "hold: HUP exits 129, terminal restored" bash -c '[ "$1" = 129 ] && tail -c 20 "$2" | od -An -c | tr -d " \n" | grep -qF "$3"' _ "$HRC" .harness/log/winch.out '033[?7h033[?25h\n'
+hold_start poll 1
+echo "30 90" > .harness/log/size; sleep 2.5
+check "hold: size change picked up by the idle poll (no signal)" [ "$(nframes poll)" = 2 ]
+kill -INT $HP; wait $HP 2>/dev/null; HRC=$?
+check "hold: INT exits 130" [ "$HRC" = 130 ]
+hold_start gone 1
+cp $ASK_DIR/implementer.current .harness/log/cur.bak; rm -f $ASK_DIR/implementer.current; sleep 2.5
+check "hold: exits when the ask is removed, terminal restored" bash -c '! kill -0 "$1" 2>/dev/null && tail -c 20 "$2" | od -An -c | tr -d " \n" | grep -qF "$3"' _ "$HP" .harness/log/gone.out '033[?7h033[?25h\n'
+cp .harness/log/cur.bak $ASK_DIR/implementer.current
 
 echo "dash: $pass passed, $fail failed"
 [ "$fail" -eq 0 ]

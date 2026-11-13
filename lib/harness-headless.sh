@@ -497,12 +497,12 @@ hl_stream_id() { awk 'NR == 1 { print $1 }' "$ASK_DIR/$1.stream" 2>/dev/null; }
 # cmd_watch <role> [-n N] — human only: a live run as a redrawn dashboard (lib/harness-dash.sh), or print the last N
 # (default 40) rendered lines of a finished one. 0 ok, 1 refused (not a tty), 3 no stream known.
 cmd_watch() {
-  local t=${1:-} n=40 role raw i id
+  local t=${1:-} n=40 nset="" role raw i id
   [ -n "$t" ] || usage
   shift
   while [ $# -gt 0 ]; do
     case "$1" in
-      -n) case "${2:-}" in ''|*[!0-9]*) die "-n needs a number of lines" ;; esac; n=$2; shift 2 ;;
+      -n) case "${2:-}" in ''|*[!0-9]*) die "-n needs a number of lines" ;; esac; n=$2; nset=1; shift 2 ;;
       *) usage ;;
     esac
   done
@@ -516,24 +516,13 @@ cmd_watch() {
     sleep 0.2; i=$((i + 1)); raw=$(hl_stream_of "$role")
   done
   if [ -z "$raw" ]; then echo "harness: no stream known for $t" >&2; exit 3; fi
-  if ! hl_alive "$role"; then
+  # -n N (or a rotated .gz stream): one-shot plain tail of a finished run (scrollback text; reflows by itself)
+  if { [ -n "$nset" ] || [ ! -f "$raw" ]; } && ! hl_alive "$role"; then
     if [ -f "$raw" ]; then harness-view < "$raw" | tail -n "$n"
     elif [ -f "$raw.gz" ]; then gzip -dc "$raw.gz" | harness-view | tail -n "$n"
     else echo "harness: stream $raw is gone" >&2; exit 3; fi
     exit 0
   fi
-  # live: a dashboard redrawn every HARNESS_DASH_SEC (2 s), then a final frame (result + report head)
-  trap 'dash_end; exit 130' INT TERM
-  trap 'dash_end; exit 129' HUP
-  trap 'dash_end; exit 131' QUIT
-  trap dash_end EXIT
-  dash_begin
-  while hl_alive "$role" && ! hl_done "$role" "$id"; do
-    dash_paint "$(hl_dash_frame "$role" "$raw")"
-    sleep "${HARNESS_DASH_SEC:-2}"
-  done
-  sleep 1   # let the runner write exit.json
-  dash_paint "$(HARNESS_DASH_FINAL=1 hl_dash_frame "$role" "$raw")"
-  dash_end
+  dash_watch "$role" "$raw" "$id"
   exit 0
 }

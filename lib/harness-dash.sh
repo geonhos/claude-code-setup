@@ -94,18 +94,28 @@ dash_wrap() {
     | if length > $m then .[0:$m] | .[-1] |= ((wrapline($w - 1) | .[0]) + "…") else . end | .[]'
 }
 
-# hl_dash_frame <role> <raw> — the dashboard text. Size: HARNESS_DASH_LINES / HARNESS_DASH_COLS,
-# else the terminal (24x80 when unknown). Final frame (result + report head) when the run is not
+# dash_size — "H W" of the pane, read fresh on every call: HARNESS_DASH_LINES / HARNESS_DASH_COLS (tests only;
+# deliberately not LINES/COLUMNS, which an exported shell value would freeze), else the controlling tty
+# (tput inside $(...) has no tty on stdout), else tput, else 24x80. A single override is honoured alone.
+dash_size() {
+  local sz="" H W
+  [ -n "${HARNESS_DASH_LINES:-}" ] && [ -n "${HARNESS_DASH_COLS:-}" ] || sz=$({ stty size </dev/tty; } 2>/dev/null)
+  H=${HARNESS_DASH_LINES:-${sz%% *}}; W=${HARNESS_DASH_COLS:-${sz##* }}
+  [ -n "$H" ] || H=$(env -u LINES -u COLUMNS tput lines 2>/dev/null); [ -n "$W" ] || W=$(env -u LINES -u COLUMNS tput cols 2>/dev/null)
+  case "$H" in ''|*[!0-9]*|0) H=24 ;; esac
+  case "$W" in ''|*[!0-9]*|0) W=80 ;; esac
+  echo "$H $W"
+}
+
+# dash_nap <seconds> — sleep that a trapped signal (WINCH, INT, ...) interrupts at once (a foreground sleep would
+# delay the trap until it returns)
+dash_nap() { sleep "$1" & DASH_NAP_PID=$!; wait "$DASH_NAP_PID" 2>/dev/null; kill "$DASH_NAP_PID" 2>/dev/null; return 0; }
+
+# hl_dash_frame <role> <raw> — the dashboard text. Size: dash_size (read per frame). Final frame (result + report head) when the run is not
 # live: HARNESS_DASH_FINAL=1 forces it, else hl_alive decides.
 hl_dash_frame() {
   local role=$1 raw=$2 a="$ASK_DIR/$1" H W id start facts model turns ctx verify now_s dur final=0
-  # size: env override, else the controlling tty (tput inside $(...) has no tty on stdout), else tput
-  local sz=""
-  [ -n "${HARNESS_DASH_LINES:-}" ] && [ -n "${HARNESS_DASH_COLS:-}" ] || sz=$({ stty size </dev/tty; } 2>/dev/null)
-  H=${HARNESS_DASH_LINES:-${sz%% *}}; W=${HARNESS_DASH_COLS:-${sz##* }}
-  [ -n "$H" ] || H=$(tput lines 2>/dev/null); [ -n "$W" ] || W=$(tput cols 2>/dev/null)
-  case "$H" in ''|*[!0-9]*|0) H=24 ;; esac
-  case "$W" in ''|*[!0-9]*|0) W=80 ;; esac
+  read -r H W <<<"$(dash_size)"
   read -r id start _ < "$a.current" 2>/dev/null
   if [ "${HARNESS_DASH_FINAL:-}" = 1 ] || ! hl_alive "$role"; then final=1; fi
   facts=$(dash_facts "$raw"); [ -n "$facts" ] || facts='{"model":"?","turns":0,"ctx":0,"now":{"sum":"","detail":""},"verify":"none"}'
@@ -247,4 +257,37 @@ dash_paint() {
   # no newline after the last line: a frame of exactly H lines would scroll the pane by one every tick
   printf '%s\n' "$1" | awk 'BEGIN { e = sprintf("%c", 27) } { if (NR > 1) printf "\n"; printf "%s%s[K", $0, e }'
   printf '\033[J'
+}
+
+# dash_watch <role> <raw> <id> — the viewer loop: live frames every HARNESS_DASH_SEC and on SIGWINCH, then the final
+# frame, kept alive and re-rendered on a size change (polled every HARNESS_DASH_IDLE_SEC too) until HUP/INT/TERM/QUIT
+# or the ask is removed or replaced. dash_end runs on every exit path.
+dash_watch() {
+  local role=$1 raw=$2 id=$3
+  trap 'dash_end; exit 130' INT TERM
+  trap 'dash_end; exit 129' HUP
+  trap 'dash_end; exit 131' QUIT
+  trap dash_end EXIT
+  trap 'DASH_WINCH=1' WINCH
+  dash_begin
+  if hl_alive "$role"; then
+    while hl_alive "$role" && ! hl_done "$role" "$id"; do
+      DASH_WINCH=0
+      dash_paint "$(hl_dash_frame "$role" "$raw")"
+      [ "$DASH_WINCH" = 1 ] || dash_nap "${HARNESS_DASH_SEC:-2}"
+    done
+    sleep 1   # let the runner write exit.json
+  fi
+  local sz="" now
+  while :; do
+    DASH_WINCH=0; now=$(dash_size)
+    if [ "$now" != "$sz" ]; then
+      sz=$now
+      dash_paint "$(HARNESS_DASH_FINAL=1 hl_dash_frame "$role" "$raw")"
+    fi
+    # the ask was removed or replaced: nothing left to show
+    [ "$(awk 'NR == 1 { print $1 }' "$ASK_DIR/$role.current" 2>/dev/null)" = "$id" ] || break
+    [ "$DASH_WINCH" = 1 ] || dash_nap "${HARNESS_DASH_IDLE_SEC:-1}"
+  done
+  dash_end
 }

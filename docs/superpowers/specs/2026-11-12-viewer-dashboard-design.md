@@ -25,8 +25,10 @@ implementer  <ask-id>  ⏱ 12m04s  turns 38  ctx 82k  sonnet
 ```
 
 When the run ends: draw a final frame with the result line (turns, duration, cost from
-exit.json/result event) and the first lines of the report, then exit. The pane is a plain
-shell (`herdr pane run`), so the final frame stays on screen; the harness never closes the pane, the user does.
+exit.json/result event) and the first lines of the report. The final frame stays live: `harness watch`
+does not exit, it re-renders when the pane size changes (SIGWINCH, plus a 1 s size poll) and exits only on
+HUP (pane closed), Ctrl-C, TERM, or when the ask's state is removed/replaced. A `harness watch` on an already
+finished run does the same. The harness never closes the pane, the user does. `-n N` keeps the one-shot plain tail.
 
 ## Data sources (all existing; no new files or events)
 - Brief: `.harness/task-<role>.md` only when `.harness/asks/<role>.prompt` names it; otherwise
@@ -40,8 +42,9 @@ shell (`herdr pane run`), so the final frame stays on screen; the harness never 
 - Diff: `verify/<role>.base` sha.
 
 ## Rendering rules
-- Pure function: `render(frame inputs) → text` sized to `tput lines`/`tput cols`
-  (overridable by env for tests). The loop moves the cursor home (`\033[H`), prints each line followed by `\033[K`
+- Pure function: `render(frame inputs) → text`. The size is read on every frame (`stty size </dev/tty`, then
+  `tput`, then 24x80); tests override it with `HARNESS_DASH_LINES` / `HARNESS_DASH_COLS`, never `LINES`/`COLUMNS`
+  (an exported shell value would freeze it). The live loop also redraws at once on SIGWINCH. The loop moves the cursor home (`\033[H`), prints each line followed by `\033[K`
   (no newline after the last line), then `\033[J`; it never clears the whole screen.
 - While drawing: cursor hidden and autowrap off (`\033[?25l\033[?7l`); every exit path
   restores `\033[?7h\033[?25h` and prints a newline. Lines are cut to W-1 columns.
@@ -54,8 +57,8 @@ shell (`herdr pane run`), so the final frame stays on screen; the harness never 
 
 ## Removed mechanism
 The live `tail -n +1 -F raw > fifo | harness-view` branch of `cmd_watch` is replaced by the
-dashboard loop. The finished-run branch (`harness-view < raw | tail -n 40`) and `hl_view_tail`
-stay as they are.
+dashboard loop. The plain `harness-view < raw | tail -n N` output remains for `-n N` (and a rotated .gz stream); `hl_view_tail`
+stays as it is.
 
 ## Rule change
 `/analyze`, `/implement`, `/review` skills: the brief must contain a `## Steps` numbered list
