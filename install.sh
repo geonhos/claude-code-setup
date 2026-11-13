@@ -11,13 +11,12 @@
 #                         HARNESS_TEST_SERIAL=1 runs them one at a time;
 #                         HARNESS_TEST_TIMEOUT=N caps each suite (default 300 s)
 #
-# Overridable for tests: CLAUDE_DIR, BIN_DIR, GIT_IGNORE, SKIP_HERDR_INTEGRATION=1
+# Overridable for tests: CLAUDE_DIR, BIN_DIR, SKIP_HERDR_INTEGRATION=1
 set -eu
 
 REPO=$(cd "$(dirname "$0")" && pwd)
 CLAUDE_DIR=${CLAUDE_DIR:-$HOME/.claude}
 BIN_DIR=${BIN_DIR:-$HOME/.local/bin}
-GIT_IGNORE=${GIT_IGNORE:-${XDG_CONFIG_HOME:-$HOME/.config}/git/ignore}
 SETTINGS="$CLAUDE_DIR/settings.json"
 GATE="$REPO/claude/hooks/conductor-gate.sh"
 RESUME="$REPO/claude/hooks/conductor-resume.sh"
@@ -191,7 +190,7 @@ case ":$PATH:" in
   *) echo "warning: $BIN_DIR is not on PATH; add it so the conductor can run 'harness'" >&2 ;;
 esac
 
-# 3. settings.json: cache TTLs + exactly one entry each for the gate and resume hooks (and drops the retired route hook)
+# 3. settings.json: cache TTLs + exactly one entry each for the gate and resume hooks
 bak="$SETTINGS.bak.$(date +%Y%m%d%H%M%S)"
 cp "$SETTINGS" "$bak"
 tmp=$(mktemp)
@@ -215,23 +214,8 @@ jq --arg gate "$GATE" --arg matcher "$MATCHER" --arg resume "$RESUME" '
   | .hooks.SessionStart //= []
   | .hooks.SessionStart |= map(if any(.hooks[]?; .command == $resume) then (.hooks |= map(select(.command != $resume))) | select((.hooks | length) > 0) else . end)
   | .hooks.SessionStart += [{matcher: "startup|clear|compact", hooks: [{type: "command", command: $resume}]}]
-  # the routing-log hook was removed: drop any stale entry by path suffix (the repo may have moved)
-  | if .hooks.UserPromptSubmit then
-      .hooks.UserPromptSubmit |= map(if any(.hooks[]?; (.command // "") | endswith("/conductor-route.sh"))
-        then (.hooks |= map(select((.command // "") | endswith("/conductor-route.sh") | not))) | select((.hooks | length) > 0)
-        else . end)
-      | if .hooks.UserPromptSubmit == [] then del(.hooks.UserPromptSubmit) else . end
-    else . end
 ' "$SETTINGS" > "$tmp"
 cat "$tmp" > "$SETTINGS" || die "failed to write $SETTINGS; restore from $bak"
-
-# 4. global gitignore
-mkdir -p "$(dirname "$GIT_IGNORE")"
-touch "$GIT_IGNORE"
-if ! grep -qxF '.harness/' "$GIT_IGNORE"; then
-  if [ -s "$GIT_IGNORE" ] && [ -n "$(tail -c1 "$GIT_IGNORE")" ]; then printf '\n' >> "$GIT_IGNORE"; fi
-  printf '.harness/\n' >> "$GIT_IGNORE"
-fi
 
 cat <<EOF
 installed:
@@ -247,6 +231,5 @@ installed:
   agent          not set globally; 'harness init' in a repo writes .claude/settings.json agent=conductor
   cache TTL      promptCacheTtl=1h subagentPromptCacheTtl=1h
   bash timeouts  env.BASH_DEFAULT_TIMEOUT_MS=600000 env.BASH_MAX_TIMEOUT_MS=7200000
-  gitignore      $GIT_IGNORE (+ .harness/)
 next: run "harness init" in a repo to opt it in, then start Claude there.
 EOF

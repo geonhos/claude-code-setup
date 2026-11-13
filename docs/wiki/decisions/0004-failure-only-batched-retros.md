@@ -2,7 +2,7 @@
 type: decision
 status: superseded
 updated: 2026-11-02
-sources: [docs/superpowers/plans/2026-10-21-retro-metrics.md, commits d3ff2ec b35120e 4046e75, review of v11]
+sources: [plan commit 30c4eb6 (retro metrics), commits d3ff2ec b35120e 4046e75, review of v11]
 verified_by: human
 ---
 > Superseded by [0011](0011-single-runner-headless.md) (prune step 4): retro (queue, batched ask, `--via retro`) removed; `## Notes` harvest into `docs/wiki/inbox/` stays.

@@ -38,9 +38,7 @@ cat > "$CLAUDE_DIR/settings.json" <<'EOF'
     "Stop": [ { "matcher": "", "hooks": [ { "type": "command", "command": "/opt/stop.sh" } ] } ],
     "SessionStart": [ { "matcher": "startup", "hooks": [ { "type": "command", "command": "/opt/session.sh" } ] } ],
     "UserPromptSubmit": [
-      { "hooks": [ { "type": "command", "command": "/old/repo/claude/hooks/conductor-route.sh" } ] },
-      { "hooks": [ { "type": "command", "command": "/opt/prompt.sh" } ] },
-      { "hooks": [ { "type": "command", "command": "/elsewhere/claude/hooks/conductor-route.sh" }, { "type": "command", "command": "/opt/shared.sh" } ] }
+      { "hooks": [ { "type": "command", "command": "/opt/prompt.sh" } ] }
     ]
   }
 }
@@ -81,11 +79,7 @@ done
 check "foreign skill dir backed up" ls -d "$CLAUDE_DIR"/skills.bak/analyze.* >/dev/null 2>&1
 check "no backup left inside skills/" [ -z "$(ls -d "$CLAUDE_DIR"/skills/*.bak.* 2>/dev/null)" ]
 check "foreign skill dir warning" grep -q 'skills/analyze existed and was backed up' "$T/out.txt"
-check "no route hook entry left (stale entries removed by path suffix)" [ "$(jq '[.hooks.UserPromptSubmit[]?.hooks[]? | select(.command | endswith("/conductor-route.sh"))] | length' "$S")" -eq 0 ]
-check "stale-only entry dropped, two entries remain" [ "$(jq '.hooks.UserPromptSubmit | length' "$S")" -eq 2 ]
-check "shared entry keeps its other hook" [ "$(jq '[.hooks.UserPromptSubmit[] | select(any(.hooks[]?; .command=="/opt/shared.sh")) | .hooks | length] | .[0]' "$S")" -eq 1 ]
 check "other UserPromptSubmit hook preserved" [ "$(jq '[.hooks.UserPromptSubmit[]? | select(any(.hooks[]?; .command=="/opt/prompt.sh"))] | length' "$S")" -eq 1 ]
-check "installed output has no route hook line" not_grep 'route hook' "$T/out.txt"
 check "installed output lists skills" grep -q '^  skills  ' "$T/out.txt"
 check "harness symlink" [ "$(readlink "$BIN_DIR/harness")" = "$REPO/bin/harness" ]
 check "harness-verify symlink" [ "$(readlink "$BIN_DIR/harness-verify")" = "$REPO/bin/harness-verify" ]
@@ -97,8 +91,7 @@ check "harness runs through a symlink to a symlink" [ "$("$T/rel/h2" _defaults |
 check "harness-verify loads the defaults through its symlink" bash -c '"$1" detect >/dev/null 2>"$2"; ! grep -q "built-in role list" "$2"' _ "$BIN_DIR/harness-verify" "$T/verify.err"
 check "every bin/ script is linked" bash -c 'for f in "$1"/bin/*; do [ "$(readlink "$2/$(basename "$f")")" = "$f" ] || exit 1; done' _ "$REPO" "$BIN_DIR"
 check "CLAUDE.md not created" [ ! -e "$CLAUDE_DIR/CLAUDE.md" ]
-check "global gitignore has .harness/" grep -qx '.harness/' "$GIT_IGNORE"
-check "global gitignore keeps old lines" grep -qx 'node_modules/' "$GIT_IGNORE"
+check "install leaves an existing global gitignore untouched" [ "$(cat "$GIT_IGNORE")" = node_modules/ ]
 
 # second run: idempotent
 UPS1=$(jq -c .hooks.UserPromptSubmit "$S")
@@ -109,7 +102,6 @@ check "gate hook still once" [ "$(jq --arg g "$GATE" '[.hooks.PreToolUse[] | sel
 check "other hook still once" [ "$(jq '[.hooks.PreToolUse[] | select(.hooks[] | .command=="/opt/other-hook.sh")] | length' "$S")" -eq 1 ]
 check "other agent still kept after rerun" [ "$(jq -r .agent "$S")" = something ]
 check "CLAUDE.md still absent after rerun" [ ! -e "$CLAUDE_DIR/CLAUDE.md" ]
-check "gitignore line once" [ "$(grep -cx '.harness/' "$GIT_IGNORE")" -eq 1 ]
 check "rerun is idempotent for UserPromptSubmit" [ "$(jq -c .hooks.UserPromptSubmit "$S")" = "$UPS1" ]
 check "other UserPromptSubmit still once" [ "$(jq '[.hooks.UserPromptSubmit[]? | select(any(.hooks[]?; .command=="/opt/prompt.sh"))] | length' "$S")" -eq 1 ]
 check "skill symlink survives rerun" [ "$(readlink "$CLAUDE_DIR/skills/implement")" = "$REPO/claude/skills/implement" ]
@@ -131,7 +123,6 @@ assert_untouched() { # DIR ORIGINAL_CONTENT
   check "$1 settings untouched" [ "$(cat "$2/claude/settings.json")" = "$3" ]
   check "$1 no bin dir" [ ! -e "$2/bin" ]
   check "$1 no backup" [ -z "$(ls "$2"/claude/settings.json.bak.* 2>/dev/null)" ]
-  check "$1 no gitignore" [ ! -e "$2/gitignore" ]
   check "$1 no CLAUDE.md" [ ! -e "$2/claude/CLAUDE.md" ]
   check "$1 no agents dir" [ ! -e "$2/claude/agents" ]
 }
@@ -161,10 +152,6 @@ check "empty-hooks entry survives" jq -e '.hooks.PreToolUse[] | select(.matcher=
 check "stale gate replaced once" [ "$(jq --arg g "$GATE" '[.hooks.PreToolUse[] | select(any(.hooks[]?; .command==$g))] | length' "$T9/claude/settings.json")" -eq 1 ]
 check "stale matcher updated" jq -e '[.hooks.PreToolUse[] | select(.matcher=="Old")] | length == 0' "$T9/claude/settings.json" >/dev/null
 
-# gitignore without trailing newline
-T5=$(newdir nonl); printf 'node_modules/' > "$T5/gitignore"
-install_in "$T5"
-check "no-newline gitignore lines" [ "$(cat "$T5/gitignore")" = "$(printf 'node_modules/\n.harness/')" ]
 
 # symlinked settings.json stays a symlink
 T6=$(newdir symlink); mkdir -p "$T6/claude" "$T6/real"; echo '{"model":"x"}' > "$T6/real/settings.json"
