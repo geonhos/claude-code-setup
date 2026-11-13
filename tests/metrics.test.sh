@@ -113,27 +113,23 @@ check "metrics: no data text rc 0" [ "$RC" -eq 0 ]
 # wiki block
 setup
 unset HARNESS_NOW
-mkdir -p docs/wiki/troubleshooting docs/wiki/inbox
+mkdir -p docs/wiki/troubleshooting
 printf -- '---\nstatus: active\n---\n# a\n' > docs/wiki/troubleshooting/a.md
 printf -- '---\nstatus: active\n---\n# b\n' > docs/wiki/troubleshooting/b.md
 printf -- '---\nstatus: stale\n---\n# c\n' > docs/wiki/troubleshooting/c.md
 printf -- '---\nstatus: draft\n---\n# d\n' > docs/wiki/troubleshooting/d.md
 printf '# Wiki index\n\n- [a](troubleshooting/a.md) — h (active, 2026-10-21)\n- [b](troubleshooting/b.md) — h (active, 2026-10-21)\n- [c](troubleshooting/c.md) — h (stale, 2026-10-21)\n' > docs/wiki/index.md
 printf 'x\n' > docs/wiki/log.md
-printf 'recurrence of troubleshooting/a.md\nEvidence: x\n' > docs/wiki/inbox/n1.md
-printf -- '- lesson\n' > docs/wiki/inbox/n2.md
-now=$(date +%s)
-perl -e 'utime($ARGV[0],$ARGV[0],$ARGV[1])' $((now - 10 * 86400 - 100)) docs/wiki/inbox/n1.md
 run metrics --json
 J=$OUT
 check "wiki: pages" [ "$(jv '.wiki.pages|"\(.active)/\(.stale)/\(.draft)/\(.superseded)/\(.other)"')" = "2/1/1/0/0" ]
-check "wiki: inbox items" [ "$(jv .wiki.inbox_items)" -eq 2 ]
-check "wiki: oldest inbox days" [ "$(jv .wiki.inbox_oldest_days)" -eq 10 ]
 check "wiki: index lines" [ "$(jv .wiki.index_lines)" -eq 5 ]
 check "wiki: SessionStart bytes = active lines only" [ "$(jv .wiki.session_start_bytes)" -eq "$(grep -F '(active,' docs/wiki/index.md | LC_ALL=C wc -c | tr -d ' ')" ]
 run metrics
 check "text: wiki pages line" grep -q '^wiki: pages active 2 · stale 1 · draft 1' <<<"$OUT"
-check "text: wiki inbox line" grep -q '^wiki: inbox 2 item(s), oldest 10d · index 5 lines' <<<"$OUT"
+check "text: wiki index line" grep -q '^wiki: index 5 lines' <<<"$OUT"
+check "text: no inbox row" bash -c '! grep -q "wiki: inbox" <<<"$1"' _ "$OUT"
+check "json: no inbox fields" [ "$(jv '.wiki|has("inbox_items")')" = false ]
 
 echo "PASS $pass / FAIL $fail"
 [ "$fail" -eq 0 ]

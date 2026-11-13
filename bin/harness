@@ -337,14 +337,15 @@ learned_has_evidence() {
   return 1
 }
 
-# queue_learned <agent> <report> — copy up to 2 evidence-backed bullets of the
-# report's optional `## Notes` section (legacy `## Learned` is also accepted) to docs/wiki/inbox/<date>-<role>-<ask-id>.md,
-# only when docs/wiki/ already exists at the repo top level. Indented continuation
-# lines are joined to their bullet. Prints one stdout line when queued; bullets
-# without evidence are dropped with a one-line stderr warning. Never fails the
-# caller (idempotent per role+ask-id; no ask-id -> skipped with a warning).
+# queue_learned <agent> <report> — file each evidence-backed bullet of the report's
+# optional `## Notes` section (legacy `## Learned` is also accepted) as a GitHub
+# issue labelled `wiki` (title: first 70 chars; body: bullet + source line).
+# Indented continuation lines are joined to their bullet. An open `wiki` issue
+# with the same title is skipped. Bullets without evidence are dropped with a
+# one-line stderr warning. Never fails the caller: no gh, a failing gh or no
+# ask-id print one warning and continue.
 queue_learned() {
-  local agent=$1 report=$2 raw line kept="" n=0 dropped=0 askid date out top
+  local agent=$1 report=$2 raw line kept="" n=0 dropped=0 askid date title body open made=0 skipped=0
   raw=$(awk '
     function flush() { if (cur != "") print cur; cur = "" }
     /^## (Learned|Notes)[ \t]*$/ { on = 1; next }
@@ -355,13 +356,11 @@ queue_learned() {
     END { flush() }
   ' "$report" 2>/dev/null) || return 0
   [ -n "$raw" ] || return 0
-  top=$(git rev-parse --show-toplevel 2>/dev/null) || top=$PWD
-  [ -d "$top/docs/wiki" ] || return 0
   while IFS= read -r line; do
     case "$line" in "- none"|"- None"|"- none."|"- -") continue ;; esac
     if learned_has_evidence "$line"; then
       n=$((n + 1))
-      [ "$n" -le 2 ] && kept="$kept$line
+      kept="$kept$line
 "
     else
       dropped=$((dropped + 1))
@@ -373,17 +372,42 @@ EOF_LEARNED
   [ -n "$kept" ] || return 0
   askid=$(awk 'NR == 1 { print $1 }' "$ASK_DIR/$agent.current" 2>/dev/null)
   if [ -z "$askid" ]; then
-    echo "harness: wiki: no ask-id for $agent; Notes bullets not queued" >&2
+    echo "harness: wiki: no ask-id for $agent; Notes bullets not filed" >&2
+    return 0
+  fi
+  if ! command -v gh >/dev/null 2>&1; then
+    echo "harness: wiki: gh not found; Notes bullets not filed as issues" >&2
     return 0
   fi
   date=$(date +%Y-%m-%d)
-  # shellcheck disable=SC2144
-  ls "$top"/docs/wiki/inbox/*-"$agent-$askid".md >/dev/null 2>&1 && return 0
-  out="docs/wiki/inbox/$date-$agent-$askid.md"
-  mkdir -p "$top/docs/wiki/inbox" 2>/dev/null || return 0
-  { printf -- '---\nrole: %s\nask-id: %s\ndate: %s\n---\n' "$agent" "$askid" "$date"; printf '%s' "$kept"; } > "$top/$out" 2>/dev/null || return 0
-  n=$(printf '%s' "$kept" | grep -c '^- ')
-  echo "wiki: $n lesson$([ "$n" -eq 1 ] || echo s) queued in $out"
+  open=$(gh issue list --label wiki --state open --limit 200 --json title --jq '.[].title' 2>/dev/null) || {
+    echo "harness: wiki: gh issue list failed; Notes bullets not filed as issues" >&2
+    return 0
+  }
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    line=${line#- }
+    title=$(printf '%s' "$line" | cut -c1-70)
+    if printf '%s\n' "$open" | grep -qxF -- "$title"; then
+      skipped=$((skipped + 1))
+      continue
+    fi
+    body="$line
+
+Source: $agent ask $askid, $date"
+    if gh issue create --label wiki --title "$title" --body "$body" >/dev/null 2>&1; then
+      made=$((made + 1))
+      open="$open
+$title"
+    else
+      echo "harness: wiki: gh issue create failed; remaining Notes bullets not filed" >&2
+      break
+    fi
+  done <<EOF_KEPT
+$kept
+EOF_KEPT
+  [ "$made" -eq 0 ] && [ "$skipped" -eq 0 ] && return 0
+  echo "wiki: $made issue$([ "$made" -eq 1 ] || echo s) filed with label wiki ($skipped duplicate skipped)"
 }
 
 # finish_report <agent> <report> — print the report and exit with the
@@ -646,7 +670,7 @@ settings_set_agent() {
 # cmd_init [--no-agent] [--shared] — make the current repo (git toplevel, else the cwd) a harness
 # checkout: .harness/asks/, the default config, "agent": "conductor" in .claude/settings.local.json
 # (per user, untracked; --shared: .claude/settings.json, committed, never excluded), and every
-# harness-made path (.harness/, settings.local.json(.bak), agent-memory, wiki inbox, docs/superpowers)
+# harness-made path (.harness/, settings.local.json(.bak), agent-memory, docs/superpowers; docs/wiki/inbox/ kept for old checkouts)
 # in .git/info/exclude when git does not already ignore it. Idempotent.
 cmd_init() {
   [ "${HARNESS_ROLE:-}" != worker ] || die "harness init is for the conductor; a worker (HARNESS_ROLE=worker) does not set up checkouts"
