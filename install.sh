@@ -202,7 +202,7 @@ jq --arg gate "$GATE" --arg matcher "$MATCHER" --arg resume "$RESUME" --arg noti
   # same for the Notification hook (desktop notification when the conductor waits for the user)
   | .hooks.Notification //= []
   | .hooks.Notification |= map(if any(.hooks[]?; .command == $notify) then (.hooks |= map(select(.command != $notify))) | select((.hooks | length) > 0) else . end)
-  | .hooks.Notification += [{hooks: [{type: "command", command: $notify}]}]
+  | .hooks.Notification += [{matcher: "permission_prompt|idle_prompt|elicitation_dialog|elicitation_url_dialog|agent_needs_input", hooks: [{type: "command", command: $notify}]}]
 ' "$SETTINGS" > "$tmp"
 cat "$tmp" > "$SETTINGS" || die "failed to write $SETTINGS; restore from $bak"
 
@@ -210,7 +210,7 @@ cat <<EOF
 installed:
   gate hook      $GATE  (matcher: $MATCHER)
   resume hook    $RESUME  (SessionStart: startup|clear|compact)
-  notify hook    $NOTIFY  (Notification)
+  notify hook    $NOTIFY  (Notification: permission_prompt|idle_prompt|elicitation_dialog|elicitation_url_dialog|agent_needs_input)
   agents         $CLAUDE_DIR/agents/ ($(cd "$REPO/claude/agents" && ls *.md | tr '\n' ' '))
   skills         $CLAUDE_DIR/skills/ ($(cd "$REPO/claude/skills" && ls -d */ | tr -d / | tr '\n' ' '))
   harness        $BIN_DIR/harness
