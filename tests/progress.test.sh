@@ -19,18 +19,18 @@ setup() {
   : > "$FAKE_LOG"
   unset FAKE_REPORT_CMD HARNESS_LOG_KEEP HARNESS_LOG_DAYS HARNESS_JSONL_MAX
   cd "$WORK" || exit 1
-  env -u HERDR_ENV -u HARNESS_ROLE /bin/bash "$HARNESS" init --no-agent >/dev/null 2>&1
+  env -u HARNESS_ROLE /bin/bash "$HARNESS" init --no-agent >/dev/null 2>&1
   printf 'fake/\nclaude.log\n' > .gitignore
 }
 
 GUARD="perl -e alarm(40);exec(@ARGV)"
 run() {
-  OUT=$(PATH="$FAKE_BIN:$HERE/../bin:$PATH" $GUARD env -u HERDR_ENV -u HARNESS_ROLE /bin/bash "$HARNESS" "$@" 2>/dev/null)
+  OUT=$(PATH="$FAKE_BIN:$HERE/../bin:$PATH" $GUARD env -u HARNESS_ROLE /bin/bash "$HARNESS" "$@" 2>/dev/null)
   RC=$?
 }
 # runerr: same, stdout+stderr merged
 runerr() {
-  OUT=$(PATH="$FAKE_BIN:$HERE/../bin:$PATH" $GUARD env -u HERDR_ENV -u HARNESS_ROLE /bin/bash "$HARNESS" "$@" 2>&1)
+  OUT=$(PATH="$FAKE_BIN:$HERE/../bin:$PATH" $GUARD env -u HARNESS_ROLE /bin/bash "$HARNESS" "$@" 2>&1)
   RC=$?
 }
 check() { local label=$1; shift; if "$@"; then pass=$((pass + 1)); else fail=$((fail + 1)); echo "FAIL [$label]: $OUT"; fi; }
@@ -166,7 +166,7 @@ done
 # --- signals: the ask wrapper ends with the real signal exit, logs it; the detached run survives (lib/harness-headless.sh hl_spawn_bg) -------------------------
 sigtest() { # sigtest SIGNAL — start a slow ask, signal the wrapper while it waits
   setup
-  FAKE_CLAUDE_MODE=slow300 PATH="$FAKE_BIN:$HERE/../bin:$PATH" env -u HERDR_ENV -u HARNESS_ROLE /bin/bash "$HARNESS" ask analyst "long" > "$WORK/sig.out" 2>/dev/null &
+  FAKE_CLAUDE_MODE=slow300 PATH="$FAKE_BIN:$HERE/../bin:$PATH" env -u HARNESS_ROLE /bin/bash "$HARNESS" ask analyst "long" > "$WORK/sig.out" 2>/dev/null &
   KP=$!
   i=0; while [ $i -lt 100 ] && [ ! -s "$FAKE_DIR/claude.pid" ]; do sleep 0.1; i=$((i+1)); done
   GC=$(cat "$FAKE_DIR/claude.pid" 2>/dev/null)

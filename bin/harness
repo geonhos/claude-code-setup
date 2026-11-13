@@ -34,8 +34,7 @@
 # and, run from a subdir of the checkout, continues at the root.
 # Every ask is logged to .harness/log/ and .harness/progress.jsonl, and
 # .harness/progress.md is regenerated (log errors only warn on stderr).
-# Config: .harness/config.json (`viewer`: auto|pane|none; a viewer is a herdr pane running
-#   `harness watch <role>`, closed when the run ends). `harness close` refuses (exit 4) a
+# Config: .harness/config.json (optional `headless_max_minutes`). `harness close` refuses (exit 4) a
 #   running ask or an uncollected report unless --force. Closes are logged to progress.jsonl.
 # Output of `ask`: stdout = report on exit 0 and 5; diagnostics on stderr.
 set -u
@@ -92,32 +91,11 @@ die() { echo "harness: $*" >&2; exit 1; }
 
 need() { command -v "$1" >/dev/null 2>&1 || die "$1 not found on PATH"; }
 
-# herdr_env_ok — herdr can be talked to: HERDR_ENV=1 and the binary exists. Never execs herdr
-# otherwise (a real herdr may be on the PATH of a test or a worker).
-herdr_env_ok() { [ "${HERDR_ENV:-}" = 1 ] && command -v herdr >/dev/null 2>&1; }
-# herdr_usable — herdr_env_ok, and not a worker: a run may be shown in a viewer pane
-herdr_usable() { herdr_env_ok && [ "${HARNESS_ROLE:-}" != worker ]; }   # a viewer pane may be opened
 valid_agent() {
   case " $AGENTS " in
     *" $1 "*) return 0 ;;
   esac
   die "unknown agent '$1' (expected one of: $AGENTS)"
-}
-
-# Terminal cells are roughly twice as tall as wide; a pane is "wide" when
-# width >= 2.2 * height. Wide -> split right, otherwise down.
-# Without HERDR_PANE_ID there is no pane to measure: default to right.
-pick_direction() {
-  local layout w h
-  [ -n "${HERDR_PANE_ID:-}" ] || { echo right; return; }
-  layout=$(herdr pane layout --pane "${HERDR_PANE_ID:-}" 2>/dev/null) || { echo right; return; }
-  w=$(printf '%s' "$layout" | jq -r --arg p "${HERDR_PANE_ID:-}" '.result.layout.panes[] | select(.pane_id==$p) | .rect.width' 2>/dev/null)
-  h=$(printf '%s' "$layout" | jq -r --arg p "${HERDR_PANE_ID:-}" '.result.layout.panes[] | select(.pane_id==$p) | .rect.height' 2>/dev/null)
-  if [ -n "$w" ] && [ -n "$h" ] && [ "$w" -ge $((h * 22 / 10)) ]; then
-    echo right
-  else
-    echo down
-  fi
 }
 
 # fmt_ctx <tokens> — "137k", or "-" when unknown
@@ -545,8 +523,7 @@ CONFIG_FILE=".harness/config.json"
 config_template() {
   cat <<'EOC'
 {
-  "_doc": "viewer: auto | pane | none. Where a run is shown: a herdr pane running `harness watch <role>` (auto = a pane when herdr is usable, else none). Env override: HARNESS_VIEWER.",
-  "viewer": "auto"
+  "_doc": "Optional key: headless_max_minutes (number) overrides the headless run cap, in minutes."
 }
 EOC
 }
@@ -582,15 +559,15 @@ has_uncollected() {
   return 1
 }
 
-# log_close <role> <pane> <reason> [runner] — event line in progress.jsonl (key `role`, not
+# log_close <role> <reason> [runner] — event line in progress.jsonl (key `role`, not
 # `agent`, so per-agent ask lookups never match it) + progress.md refresh
 log_close() {
-  [ -n "$3" ] || return 0
+  [ -n "$2" ] || return 0
   # no marker side effects: create .harness/ only at a checkout root (an existing one is used as is)
   [ -d .harness/asks ] || [ "$(harness_root "$PWD" 2>/dev/null)" = "$(pwd -P)" ] || return 0
   mkdir -p .harness 2>/dev/null || return 0
-  jq -n -c --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg role "$1" --arg pane "$2" --arg reason "$3" --arg runner "${4:-}" \
-    '{ts: $ts, event: "close", role: $role, pane: $pane, reason: $reason}
+  jq -n -c --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg role "$1" --arg reason "$2" --arg runner "${3:-}" \
+    '{ts: $ts, event: "close", role: $role, reason: $reason}
      + (if $runner != "" then {runner: $runner} else {} end)' >> "$JSONL" 2>/dev/null
   write_progress_md
   return 0
@@ -696,7 +673,7 @@ cmd_init() {
       else echo "note: could not add $a to git's exclude file" >&2; fi
     done
   fi
-  echo "workers run as detached headless Claude sessions: no herdr needed (herdr is an optional viewer)"
+  echo "workers run as detached headless Claude sessions: watch a run with 'harness watch <role>'"
   return 0
 }
 
@@ -714,11 +691,11 @@ if [ "${1:-}" = _defaults ]; then
   for k in $(compgen -v HARNESS_ | grep -E '^HARNESS_(ROLES|[A-Z_]+_(MS|DEFAULT))$' | sort); do eval "printf '%s=%s\n' \"$k\" \"\${$k}\""; done
   exit 0
 fi
-# init is file work: no herdr, no checkout needed
+# init is file work: no checkout needed
 if [ "${1:-}" = init ]; then shift; cmd_init "$@"; exit $?; fi
 # lane works on git worktrees from anywhere
 if [ "${1:-}" = lane ]; then shift; cmd_lane "$@"; exit $?; fi
-# wiki-lint is pure file checking: no herdr needed
+# wiki-lint is pure file checking
 if [ "${1:-}" = wiki-lint ]; then shift; cmd_wiki_lint "$@"; exit $?; fi
 # metrics reads files only
 if [ "${1:-}" = metrics ]; then shift; cmd_metrics "$@"; exit $?; fi

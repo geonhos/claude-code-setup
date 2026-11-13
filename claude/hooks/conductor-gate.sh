@@ -3,7 +3,7 @@
 #
 # Role:   hook input agent_type -> conductor: gate; any other agent: allow
 #         (only when agent_id is absent; a subagent, agent_id set, uses the env rule)
-#         (herdr workers run as analyst/implementer/reviewer/solo). Keying on the
+#         (workers run as analyst/implementer/reviewer/solo). Keying on the
 #         agent, not the env, closes the daemon-inherits-worker-env hole: a
 #         conductor hosted by a daemon that exported HARNESS_ROLE=worker is still
 #         gated. Without agent_type, HARNESS_ROLE=worker allows (older hosts).
@@ -11,7 +11,6 @@
 #                                 dir from the cwd up to the .git dir; decision 0010).
 #                                 Elsewhere it allows everything, before jq or parsing,
 #                                 so it never touches a repo that does not use the harness.
-#                                 HERDR_ENV is ignored.
 #         otherwise            -> conductor rules below
 # Output: nothing (allow) or a PreToolUse deny JSON on stdout. Always exit 0.
 set -u
@@ -73,14 +72,13 @@ CWD=${CWD%/}
 MSG_WRITE="Conductor cannot edit source. Delegate with the /implement skill (implementer worker). Direct writes are allowed only under docs/**/*.md and .harness/."
 MSG_READ="Conductor does not read source. Delegate with the /analyze skill (analyst worker) and read its report. Direct reads are allowed only under .harness/, docs/, and *.md files."
 MSG_WATCH="harness watch is for a human terminal; the conductor reads the report (harness report <worker>, or harness wait <worker> to block until the run ends)."
-MSG_BASH="Conductor shell is limited to ONE command per call: harness (also harness -C <dir> ..., harness lane ...); gh pr create|view|list|checks|comment|edit|merge (no api, no merge -d); gh issue create|list|view|comment|close|edit|reopen; herdr pane get|current; git status / log / diff --stat / branch (list); cat or ls (no -R) under .harness/ and docs/. No ; & | redirects, backticks or \$(. Delegate command execution with the /implement skill (implementer worker)."
+MSG_BASH="Conductor shell is limited to ONE command per call: harness (also harness -C <dir> ..., harness lane ...); gh pr create|view|list|checks|comment|edit|merge (no api, no merge -d); gh issue create|list|view|comment|close|edit|reopen; git status / log / diff --stat / branch (list); cat or ls (no -R) under .harness/ and docs/. No ; & | redirects, backticks or \$(. Delegate command execution with the /implement skill (implementer worker)."
 
 # --- Bash allow/deny lists ---------------------------------------------------
 # Each piece below is one alternative; they are joined with | into one regex.
 
 # Commands the conductor may run (matched against a whole masked segment).
 BASH_ALLOW='harness( .*)?'                                        # delegation CLI
-BASH_ALLOW="$BASH_ALLOW|"'herdr pane (get|current)( .*)?'        # herdr, read-only state ...
 BASH_ALLOW="$BASH_ALLOW|"'gh( .*)?'                               # GitHub CLI (see GH_ALLOW, gh_segment_ok)
 BASH_ALLOW="$BASH_ALLOW|"'git status( (-[sb]+|--short|--branch|--porcelain(=v[12])?|--untracked-files=(no|normal|all)))*' # read-only git; no -v (prints diffs) ...
 BASH_ALLOW="$BASH_ALLOW|"'git log( .*)?'

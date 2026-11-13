@@ -1,14 +1,14 @@
 #!/bin/bash
 # Headless runner (decision 0007): bin/harness ask/report/close with runner=headless against
-# tests/fake-herdr + tests/fake-claude. Run: /bin/bash tests/headless.test.sh
+# tests/fake-claude. Run: /bin/bash tests/headless.test.sh
 set -u
 . "$(dirname "$0")/harness-lib.sh"
 FAKE_CLAUDE="$HERE/fake-claude"
 
 # hrun ARGS... -> OUT, RC. Like run(), with the fake claude on PATH and a longer alarm.
 hrun() {
-  OUT=$(HERDR_ENV=1 HERDR_PANE_ID=w1:p1 HARNESS_POLL_SEC=0.2 HARNESS_HL_START_S=5 \
-    PATH="$FAKE_BIN:$FAKE_CLAUDE:$HERE/../bin:$PATH" perl -e 'alarm($ENV{HRUN_ALARM_S} || 60);exec(@ARGV)' \
+  OUT=$(HARNESS_POLL_SEC=0.2 HARNESS_HL_START_S=5 \
+    PATH="$FAKE_CLAUDE:$HERE/../bin:$PATH" perl -e 'alarm($ENV{HRUN_ALARM_S} || 60);exec(@ARGV)' \
     env -u HARNESS_ROLE /bin/bash "$HARNESS" "$@" 2>&1)
   RC=$?
 }
@@ -35,8 +35,6 @@ hrun ask analyst "q1"
 check "success: rc 0" [ "$RC" -eq 0 ]
 check "success: report printed" grep -q "analyst report" <<<"$OUT"
 check "success: no agent start" not_logged "agent start"
-check "success: pane split once, plain" logged "pane split"
-check "success: viewer pane runs harness watch" logged "harness\\ watch\\ analyst"
 check "success: claude -p stream-json" logged "--output-format stream-json"
 check "success: instruction on stdin" logged "claude stdin: q1"
 check "success: progress runner" jqt '.runner == "headless" and .exit == 0 and .turns == 3 and (.cost_usd > 0.01)' <<<"$(lastprog)"
@@ -80,7 +78,6 @@ check "close --force: rc 0" [ "$RC" -eq 0 ]
 wait "$bg"
 check "close --force: running ask returned 3" [ "$(cat "$WORK/ask.rc")" -eq 3 ]
 check "close --force: killed signal" jqt '.killed == "signal"' .harness/asks/analyst.exit.json
-check "close --force: pane closed" logged "pane close"
 sleep 0.3
 check "close --force: no leftover fake claude" not kill -0 "$(cat "$FAKE_DIR/claude.pid")"
 check "close --force: logged force_kill" grep -q force_kill .harness/progress.jsonl
@@ -100,10 +97,10 @@ check "report after finish: report printed" grep -q "analyst report" <<<"$OUT"
 # 6. second ask while running -> 4, no second run
 hsetup; export FAKE_CLAUDE_MODE=slow30
 hrun ask analyst "q" --timeout 500
-n=$(grep -c 'pane run' "$FAKE_LOG")
+n=$(claude_runs)
 hrun ask analyst "q2" --timeout 500
 check "busy: rc 4" [ "$RC" -eq 4 ]
-check "busy: no second pane run" [ "$(grep -c 'pane run' "$FAKE_LOG")" -eq "$n" ]
+check "busy: no second run" [ "$(claude_runs)" -eq "$n" ]
 sleep 4
 
 # 7. fresh by default, --keep resumes
@@ -118,65 +115,6 @@ hsetup
 hrun ask analyst "a" --keep
 check "keep w/o session: note" grep -q "no previous session" <<<"$OUT"
 check "keep w/o session: fresh" not_logged "--resume"
-
-# 8. viewer pane: one per run, closed when the run ends
-hsetup
-hrun ask analyst "a"; hrun ask analyst "b"
-check "viewer: one split per run" [ "$(grep -c 'pane split' "$FAKE_LOG")" -eq 2 ]
-check "viewer: closed after each run" [ "$(grep -c 'pane close' "$FAKE_LOG")" -eq 2 ]
-hsetup; export HARNESS_VIEWER=none
-hrun ask analyst "a"
-check "viewer none: no pane" not_logged "pane split"
-check "viewer none: rc 0" [ "$RC" -eq 0 ]
-hsetup; export HARNESS_VIEWER=pane
-OUT=$(env -u HERDR_ENV HARNESS_VIEWER=pane HARNESS_POLL_SEC=0.2 PATH="$FAKE_BIN:$FAKE_CLAUDE:$HERE/../bin:$PATH" perl -e 'alarm(30);exec(@ARGV)' env -u HARNESS_ROLE /bin/bash "$HARNESS" ask analyst "a" 2>&1); RC=$?
-check "viewer=pane without herdr: refused" [ "$RC" -eq 1 ]
-unset HARNESS_VIEWER
-
-# wait_exit [ask-dir] — bounded (15 s) wait until the run's exit.json exists
-wait_exit() { local i=0; while [ $i -lt 150 ] && [ ! -f "${1:-.harness/asks}/analyst.exit.json" ]; do sleep 0.1; i=$((i + 1)); done; }
-# run_viewer [ask-dir] — the pane id recorded in .run
-run_viewer() { sed -n 's/^viewer=//p' "${1:-.harness/asks}/analyst.run" | head -n 1; }
-
-# 8b. an ask that returns before the run ends (exit 4) must not leak the viewer pane: the next ask,
-# `report`, `wait` or `close --force` closes it once (split == close per run)
-hsetup; export FAKE_CLAUDE_MODE=slow20
-hrun ask analyst "q" --timeout 500
-check "viewer leak: early return rc 4" [ "$RC" -eq 4 ]
-wait_exit
-export FAKE_CLAUDE_MODE=success
-hrun ask analyst "q2"
-check "viewer leak: next ask rc 0" [ "$RC" -eq 0 ]
-check "viewer leak: 2 splits for 2 runs" [ "$(grep -c 'pane split' "$FAKE_LOG")" -eq 2 ]
-check "viewer leak: 2 closes for 2 runs" [ "$(grep -c 'pane close' "$FAKE_LOG")" -eq 2 ]
-hsetup; export FAKE_CLAUDE_MODE=slow20
-hrun ask analyst "q" --timeout 500
-wait_exit
-hrun report analyst
-check "viewer leak: report closes the pane once" [ "$(grep -c 'pane close' "$FAKE_LOG")" -eq 1 ]
-hrun close analyst --force
-check "viewer leak: close after report closes no second time" [ "$(grep -c 'pane close' "$FAKE_LOG")" -eq 1 ]
-hsetup; export FAKE_CLAUDE_MODE=slow20
-hrun ask analyst "q" --timeout 500
-hrun wait analyst
-check "viewer leak: wait closes the pane once" [ "$(grep -c 'pane close' "$FAKE_LOG")" -eq 1 ]
-hrun report analyst
-check "viewer leak: report after wait closes no second time" [ "$(grep -c 'pane close' "$FAKE_LOG")" -eq 1 ]
-hsetup; export FAKE_CLAUDE_MODE=slow20
-hrun ask analyst "q" --timeout 500
-hrun close analyst --force
-check "viewer leak: close --force closes the pane once" [ "$(grep -c 'pane close' "$FAKE_LOG")" -eq 1 ]
-# a second ask while the run is live is refused before anything closes the viewer
-hsetup; export FAKE_CLAUDE_MODE=slow20
-hrun ask analyst "q" --timeout 500
-v=$(run_viewer)
-hrun ask analyst "q2" --timeout 500
-check "live 2nd ask: refused rc 4" [ "$RC" -eq 4 ]
-check "live 2nd ask: viewer recorded as a pane" [ "${v#pane:}" != "$v" ]
-check "live 2nd ask: no pane close" [ "$(grep -c 'pane close' "$FAKE_LOG")" -eq 0 ]
-check "live 2nd ask: .run keeps the viewer" [ "$(run_viewer)" = "$v" ]
-hrun close analyst --force
-export FAKE_CLAUDE_MODE=success
 
 # 9. watchdog
 hsetup; export FAKE_CLAUDE_MODE=hang HARNESS_HL_MAX_S=1
@@ -216,7 +154,7 @@ export FAKE_REPORT_CMD="mkdir -p $WORK/.harness/reports && printf '# analyst rep
 hrun ask analyst "q"
 check "default: headless rc 0" [ "$RC" -eq 0 ]
 check "default: no agent start" not_logged "agent start"
-check "default: config has only _doc and viewer" jqt 'keys == ["_doc","viewer"]' .harness/config.json
+check "default: config has only _doc" jqt 'keys == ["_doc"]' .harness/config.json
 setup
 mkdir -p .harness; echo '{"runner":{"analyst":"pane"},"close_after_ask":{"analyst":"never"},"idle_ttl_minutes":30}' > .harness/config.json
 export FAKE_CLAUDE_MODE=success FAKE_REPORT_CMD="mkdir -p $WORK/.harness/reports && printf '# analyst report\nstatus: done\n' > $WORK/.harness/reports/analyst.md"
@@ -363,7 +301,7 @@ kill "$cpid" 2>/dev/null
 wait "$bg"
 unset HARNESS_HL_MAX_S
 
-# 16c. direct runs (no herdr): zombie runner, TERM-proof claude, foreign process, live-script safety
+# 16c. direct runs: zombie runner, TERM-proof claude, foreign process, live-script safety
 hdirect() { # hdirect MODE MAX_S -> starts harness-run under a parent that never reaps it; sets RID RPID
   FAKE_CLAUDE_MODE=$1
   mkdir -p .harness/asks
@@ -426,7 +364,7 @@ check "guard: the watchdog ran and finished" bash -c '! kill -0 "$0" 2>/dev/null
 check "guard: a live process without the run identity was not killed" kill -0 "$CPID"
 kill -KILL -- "-$PG" 2>/dev/null                  # test cleanup by group id, never by pattern
 
-# 16e. set -m on a tty with tostop (the viewer pane): SIGTTOU must not stop the run
+# 16e. set -m on a tty with tostop (a terminal watching the run): SIGTTOU must not stop the run
 if [ "$(perl -e 'alarm 5; exec @ARGV' script -q /dev/null /bin/echo ttyok </dev/null 2>/dev/null | tr -d '\r\004\b^D')" = ttyok ]; then
   hsetup
   mkdir -p .harness/asks
@@ -459,7 +397,7 @@ unset HR_BIN
 hsetup
 hrun ask analyst "q"
 hrun status
-check "status: headless idle line" grep -Eq 'analyst +idle +bg' <<<"$OUT"
+check "status: headless idle line" grep -Eq 'analyst +idle +hl' <<<"$OUT"
 
 # metrics: runner split (old lines without runner count as pane)
 setup

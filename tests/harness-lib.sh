@@ -2,7 +2,6 @@
 # Sourcing suite must `set -u` first; $0 is then that suite, so HERE is tests/.
 HERE=$(cd "$(dirname "$0")" && pwd)
 HARNESS="$HERE/../bin/harness"
-FAKE_BIN="$HERE/fake-herdr"
 pass=0
 fail=0
 
@@ -17,7 +16,7 @@ setup() {
   WORK=$(mktemp -d)
   WORKS="$WORKS $WORK"
   export FAKE_DIR="$WORK/fake"
-  export FAKE_LOG="$WORK/herdr.log"
+  export FAKE_LOG="$WORK/claude.log"
   mkdir -p "$FAKE_DIR"
   : > "$FAKE_LOG"
   unset FAKE_PROMPT_HOOK
@@ -29,18 +28,18 @@ setup() {
 # run ARGS... -> sets OUT, RC  (killed by SIGALRM after 10s so a hang fails fast)
 GUARD="perl -e alarm(10);exec(@ARGV)"
 run() {
-  OUT=$(HERDR_ENV=1 HERDR_PANE_ID=w1:p1 HARNESS_POLL_SEC=0.2 PATH="$FAKE_BIN:$HERE/../bin:$PATH" $GUARD env -u HARNESS_ROLE /bin/bash "$HARNESS" "$@" 2>&1)
+  OUT=$(HARNESS_POLL_SEC=0.2 PATH="$HERE/../bin:$PATH" $GUARD env -u HARNESS_ROLE /bin/bash "$HARNESS" "$@" 2>&1)
   RC=$?
 }
 
+# FAKE_LOG holds `printf %q` of each fake-claude argv: match literally (spaces inside an
+# argument appear as "\ ").
+logged() { grep -qF -- "$1" "$FAKE_LOG"; }
+not_logged() { ! grep -qF -- "$1" "$FAKE_LOG"; }
 not() { ! "$@"; }
 check() { # check LABEL CONDITION...
   local label=$1; shift
   if "$@"; then pass=$((pass + 1)); else fail=$((fail + 1)); echo "FAIL [$label]: $OUT"; fi
 }
-# FAKE_LOG holds `printf %q` of each argv: match literally (spaces inside an
-# argument appear as "\ ").
-logged() { grep -qF -- "$1" "$FAKE_LOG"; }
 not_grep() { ! grep -q -- "$1" "$2" 2>/dev/null; }
-not_logged() { ! grep -qF -- "$1" "$FAKE_LOG"; }
 REPORT_HOOK() { echo "mkdir -p $WORK/.harness/reports && printf '# $1 report\nstatus: done\n' > $WORK/.harness/reports/$1.md"; }

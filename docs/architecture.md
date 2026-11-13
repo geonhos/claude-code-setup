@@ -1,6 +1,6 @@
 # 아키텍처
 
-이 harness는 **conductor(지휘 세션)** Claude 세션 하나와 워커 Claude 세션 셋(analyst, implementer, reviewer)으로 이뤄진다. 워커는 detached headless 세션(`claude -p`)으로 돌고(결정 0011), [herdr](https://herdr.dev) pane은 선택 사항인 viewer다. conductor에는 PreToolUse 훅 게이트가 걸려 있어 리포트 읽기와 `harness` 실행만 할 수 있다. 저장소 루트의 `.harness/`는 리포트, 로그, 검증 상태, 진행 요약을 두는 공용 저장소다. 설치 방법과 사용법은 [README](../README.md), 함정과 결정은 [`wiki/index.md`](wiki/index.md).
+이 harness는 **conductor(지휘 세션)** Claude 세션 하나와 워커 Claude 세션 셋(analyst, implementer, reviewer)으로 이뤄진다. 워커는 detached headless 세션(`claude -p`)으로 돌고(결정 0011). 진행은 사용자가 아무 터미널에서 `harness watch <role>`로 본다(결정 0013). conductor에는 PreToolUse 훅 게이트가 걸려 있어 리포트 읽기와 `harness` 실행만 할 수 있다. 저장소 루트의 `.harness/`는 리포트, 로그, 검증 상태, 진행 요약을 두는 공용 저장소다. 설치 방법과 사용법은 [README](../README.md), 함정과 결정은 [`wiki/index.md`](wiki/index.md).
 
 ## 1. 런타임 데이터 흐름
 
@@ -15,7 +15,6 @@ flowchart LR
   exj -- "수집 (exit 0-5)" --> hcli
   rep --> hcli
   hcli -- "log, progress.jsonl, progress.md" --> log[("log/ · progress.*")]
-  run -. "선택: viewer pane<br/>harness watch" .-> herdr[herdr]
   workers -- "Stop 훅 / run all" --> hv["bin/harness-verify"]
   hv --> vst[("verify/&lt;role&gt;.json")]
   log -- "SessionStart 훅이 progress.md 주입" --> cond
@@ -72,7 +71,7 @@ flowchart TD
   W & RD & B -- "아니오" --> DN(["deny + 고정 안내 문구"])
 ```
 
-경로는 심볼릭 링크를 푼 뒤에도 같은 규칙을 통과해야 한다. Bash는 `scan_command`가 `; & | < > #` 백틱, `$(`를 거부하고, 남은 단일 명령을 허용 목록(`harness`, `gh pr ...`, 읽기 전용 `git`, `herdr pane get|current`, `.harness/`·`docs/` 아래 `cat`/`ls`)에 맞춰 본다. 결정은 0005, 0010, 0012.
+경로는 심볼릭 링크를 푼 뒤에도 같은 규칙을 통과해야 한다. Bash는 `scan_command`가 `; & | < > #` 백틱, `$(`를 거부하고, 남은 단일 명령을 허용 목록(`harness`, `gh pr ...`, 읽기 전용 `git`, `.harness/`·`docs/` 아래 `cat`/`ls`)에 맞춰 본다. 결정은 0005, 0010, 0012.
 
 ## 4. 검증 루프
 

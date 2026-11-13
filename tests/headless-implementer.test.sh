@@ -1,14 +1,14 @@
 #!/bin/bash
-# Headless implementer (decision 0009): exit 2 on denials, verify exit map, auto-resume, viewer,
-# lifecycle. bin/harness ask with runner.implementer=headless against tests/fake-herdr + fake-claude.
+# Headless implementer (decision 0009): exit 2 on denials, verify exit map, auto-resume,
+# lifecycle. bin/harness ask against tests/fake-claude.
 # Run: /bin/bash tests/headless-implementer.test.sh
 set -u
 . "$(dirname "$0")/harness-lib.sh"
 FAKE_CLAUDE="$HERE/fake-claude"
 
 hrun() {
-  OUT=$(HERDR_ENV=1 HERDR_PANE_ID=w1:p1 HARNESS_POLL_SEC=0.2 HARNESS_HL_START_S=5 \
-    PATH="$FAKE_BIN:$FAKE_CLAUDE:$HERE/../bin:$PATH" perl -e 'alarm($ENV{HRUN_ALARM_S} || 60);exec(@ARGV)' \
+  OUT=$(HARNESS_POLL_SEC=0.2 HARNESS_HL_START_S=5 \
+    PATH="$FAKE_CLAUDE:$HERE/../bin:$PATH" perl -e 'alarm($ENV{HRUN_ALARM_S} || 60);exec(@ARGV)' \
     env -u HARNESS_ROLE /bin/bash "$HARNESS" "$@" 2>&1)
   RC=$?
 }
@@ -171,11 +171,10 @@ check "view: single-line failure unchanged" grep -qx '✗ single' <<<"$OUT"
 OUT=$(vw 'not json' '{"type":"system","subtype":"hook_response","hook_event":"Stop","exit_code":0,"stdout":"not json"}' '{"type":"system","subtype":"hook_response","hook_event":"Stop","exit_code":2,"stderr":"boom"}')
 check "view: odd hook stdout still never fails" grep -q 'hook .* exit 2: boom' <<<"$OUT"
 
-# 5. lifecycle: the viewer pane is closed with the run, the session stays for --keep
+# 5. lifecycle: the session stays for --keep
 isetup
 hrun ask implementer "q"
-check "lifecycle: viewer pane closed with the run" logged "pane close"
-check "lifecycle: ... and the session kept for --keep" test -s .harness/asks/implementer.session
+check "lifecycle: the session kept for --keep" test -s .harness/asks/implementer.session
 
 # 6. per-role headless cap: implementer 90 min, analyst 60, config headless_max_minutes wins
 isetup

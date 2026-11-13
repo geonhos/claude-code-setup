@@ -179,26 +179,14 @@ expect deny  $C "Glob src pattern no path"      "$(tool Glob '{"pattern":"src/**
 # --- Bash: allowlist ---------------------------------------------------------
 expect allow $C "bash harness ask"        "$(bcmd 'harness ask analyst "what is this"')"
 expect allow $C "bash harness status"     "$(bcmd 'harness status')"
-expect allow $C "bash herdr"              "$(bcmd 'herdr pane current')"
 expect allow $C "bash gh"                 "$(bcmd 'gh pr view 12')"
 expect deny  $C "bash npm test"           "$(bcmd 'npm test')"
 expect deny  $C "bash sed -i"             "$(bcmd 'sed -i s/a/b/ src/a.ts')"
 expect deny  $C "bash cd"                 "$(bcmd 'cd src && ls')"
 expect deny  $C "bash empty"              "$(tool Bash '{}')"   # missing command field: bcmd cannot build this
 expect deny  $C "bash only separator"     "$(bcmd ';')"
-expect deny  $C "bash herdr agent get"    "$(bcmd 'herdr agent get analyst')"
-expect deny  $C "bash herdr agent wait"   "$(bcmd 'herdr agent wait analyst --timeout 600')"
-expect deny  $C "bash herdr agent list"   "$(bcmd 'herdr agent list')"
-expect allow $C "bash herdr pane current" "$(bcmd 'herdr pane current')"
-expect allow $C "bash herdr pane get"     "$(bcmd 'herdr pane get w1:p2')"
 expect allow $C "bash git branch -a"      "$(bcmd 'git branch -a')"
 expect allow $C "bash gh pr merge"        "$(bcmd 'gh pr merge 30 --squash')"
-expect deny  $C "bash herdr pane run"     "$(bcmd 'herdr pane run w1:p2 "npm test"')"
-expect deny  $C "bash herdr send-keys"    "$(bcmd 'herdr agent send-keys analyst esc')"
-expect deny  $C "bash herdr prompt"       "$(bcmd 'herdr agent prompt analyst "x"')"
-expect deny  $C "bash herdr pane read"    "$(bcmd 'herdr pane read w1:p2')"
-expect deny  $C "bash herdr server stop"  "$(bcmd 'herdr server stop')"
-expect deny  $C "bash herdr quoted verb"  "$(bcmd 'herdr agent "send-keys" analyst esc')"
 expect allow $C "bash gh pr create"       "$(bcmd 'gh pr create --title x --body-file .harness/pr.md')"
 expect deny  $C "bash gh api"             "$(bcmd 'gh api repos/o/r/contents/src/a.ts')"
 expect deny  $C "bash gh pr diff"         "$(bcmd 'gh pr diff 12')"
@@ -250,14 +238,14 @@ expect deny  $C "bash dq escaped \$("    "$(bcmd 'harness ask analyst "cost \$(x
 # --- Bash: redirects ---------------------------------------------------------
 expect deny  $C "bash redirect"           "$(bcmd 'git status > out.txt')"
 expect deny  $C "bash here-string"        "$(bcmd 'jq . <<< x')"
-expect deny  $C "bash 2>&1 end denied"           "$(bcmd 'herdr pane get w1:p2 2>&1')"
-expect deny  $C "bash 2>&1 pipe denied"          "$(bcmd 'herdr pane get w1:p2 2>&1 | jq .result')"
+expect deny  $C "bash 2>&1 end denied"           "$(bcmd 'harness status 2>&1')"
+expect deny  $C "bash 2>&1 pipe denied"          "$(bcmd 'harness status 2>&1 | jq .result')"
 expect deny  $C "bash 2>&1 glued file"    "$(bcmd 'cat .harness/x2>&1src')"
 expect deny  $C "bash 2>&1 glued tail"    "$(bcmd 'harness status 2>&1x')"
 
 # --- Bash: jq is not on the allowlist (pipes are denied outright) ----------------------------------------------------------------
-expect deny  $C "bash jq pipe denied"           "$(bcmd 'herdr pane get w1:p2 | jq .result')"
-expect deny  $C "bash jq quoted pipe denied"   "$(bcmd "herdr agent list | jq -r '.result.agents[].pane_id'")"
+expect deny  $C "bash jq pipe denied"           "$(bcmd 'harness status | jq .result')"
+expect deny  $C "bash jq quoted pipe denied"   "$(bcmd "harness status | jq -r '.roles[]'")"
 expect deny  $C "bash jq first"           "$(bcmd 'jq . src/secret.json')"
 
 # --- Bash: git ---------------------------------------------------------------
@@ -504,7 +492,7 @@ expect allow $C "al harness read task"      "$(bcmd "harness ask implementer 'Re
 expect allow $C "al harness sq specials"    "$(bcmd "harness ask x 'a {b} (c) *d* \$e'")"
 expect allow $C "al gh create paren title"  "$(bcmd "gh pr create --title 'fix: x (y)' --body-file .harness/pr.md")"
 expect allow $C "al git diff range"         "$(bcmd 'git diff --stat main...HEAD')"
-expect deny  $C "al two segs denied"               "$(bcmd 'harness status; herdr agent get reviewer')"
+expect deny  $C "al two segs denied"               "$(bcmd 'harness status; git status')"
 expect deny  $C "al 2>&1 denied"                   "$(bcmd 'harness report implementer 2>&1')"
 expect allow $C "al dq plain"               "$(bcmd 'harness ask x "plain words, fine (really) {ok}"')"
 
@@ -551,9 +539,7 @@ gchk() {  # WANT DIR ENVSPEC JSON LABEL
 EDIT_SRC="$(tool Edit '{"file_path":"src/a.ts","old_string":"a","new_string":"b"}')"
 CHK=$GATE_HOME/chk
 PLAIN=$GATE_HOME/plain
-# 1-3: inside a checkout HERDR_ENV does not matter
-gchk deny  "$CHK" "-u HERDR_ENV HARNESS_ROLE=conductor" "$EDIT_SRC"          "chk, no HERDR_ENV: Edit src"
-gchk deny  "$CHK" "HERDR_ENV=0 HARNESS_ROLE=conductor"  "$(bcmd 'npm test')" "chk, HERDR_ENV=0: Bash"
+# 1: inside a checkout the gate applies
 gchk deny  "$CHK" "HARNESS_ROLE=conductor" 'not json at all'                 "chk: garbage"
 # 4-6: a plain repo is never gated
 gchk allow "$PLAIN" "HARNESS_ROLE=conductor" "$EDIT_SRC"                                        "plain: Edit src"
@@ -577,7 +563,7 @@ gchk allow "$PLAIN" "HARNESS_ROLE=conductor" "$EDIT_SRC" "stray config.json: all
 mkdir -p "$GATE_HOME/up/.harness/asks" "$GATE_HOME/up/repo/.git"
 gchk allow "$GATE_HOME/up/repo" "HARNESS_ROLE=conductor" "$EDIT_SRC" "asks above .git: allow"
 # 12: daemon case (conductor agent_type with an inherited worker env) stays gated
-gchk deny  "$CHK" "HARNESS_ROLE=worker HERDR_ENV=1" "$(jq -n -c '{tool_name:"Edit",agent_type:"conductor",tool_input:{file_path:"src/a.ts"}}')" "chk, daemon env + agent_type conductor: deny"
+gchk deny  "$CHK" "HARNESS_ROLE=worker" "$(jq -n -c '{tool_name:"Edit",agent_type:"conductor",tool_input:{file_path:"src/a.ts"}}')" "chk, inherited worker env + agent_type conductor: deny"
 gchk allow "$CHK" "HARNESS_ROLE=conductor" "$(jq -n -c '{tool_name:"Edit",agent_type:"analyst",tool_input:{file_path:"src/a.ts"}}')" "chk, agent_type analyst: allow"
 # 13: harness_root is defined once (column 0), in lib/harness-root.sh; the verify stub is indented
 fn_body() { awk -v n="$2" 'index($0, n "() {") == 1 {p=1} p{print} p&&/^}/{exit}' "$1"; }

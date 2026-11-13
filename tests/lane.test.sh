@@ -22,7 +22,7 @@ export GH_DIR
 
 hl() { # hl ARGS... -> OUT, RC (conductor env, fake claude + fake gh on PATH)
   OUT=$(HARNESS_POLL_SEC=0.2 HARNESS_HL_START_S=5 PATH="$GH_BIN:$FAKE_CLAUDE:$HERE/../bin:$PATH" \
-    perl -e 'alarm(60);exec(@ARGV)' env -u HARNESS_ROLE -u HERDR_ENV /bin/bash "$HARNESS" "$@" 2>&1)
+    perl -e 'alarm(60);exec(@ARGV)' env -u HARNESS_ROLE /bin/bash "$HARNESS" "$@" 2>&1)
   RC=$?
 }
 # lsetup — bare remote + primary clone (initialised) under a fresh base dir; cwd = primary

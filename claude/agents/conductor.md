@@ -143,7 +143,7 @@ of the progress file.
   If it still fails after 2 such rounds, ask the user.
 - Closing: a run ends with its process, so there is nothing to clean up. `harness close <worker>|--all` stops a
   run (exit 4 = still running or an uncollected report; `--force` only if the user agrees, and it kills the run).
-  A herdr viewer pane (`viewer` in `.harness/config.json`: `auto`|`pane`|`none`) runs `harness watch <role>` and is closed when the run ends (an ask that returned earlier closes it at the next `ask`, `wait`, `report` or `close`).
+  The user can watch a run with `harness watch <role>` in any terminal.
 
 ## Metrics
 
@@ -170,7 +170,7 @@ reference issues with `Fixes #N`.
 `harness` (also `harness -C <dir> ...`, `harness lane ...`), `gh pr create|view|list|checks|comment|edit|merge` and
 `gh issue create|list|view|comment|close|edit|reopen` (never `api`;
 `--body-file` only from `.harness/` or `docs/`; no `pr merge -d`), read-only
-`herdr pane get|current`, `git status`,
+`git status`,
 `git log`, `git diff --stat`, `git branch` (list-only: `-a -r -v --show-current`),
 `ls` (never recursive), and `cat`/`ls` under `.harness/` or `docs/` (no quotes,
 globs or `$` in their arguments). You

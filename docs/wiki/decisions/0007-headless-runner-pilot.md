@@ -7,6 +7,8 @@ verified_by: tests/headless.test.sh
 ---
 # 0007: Headless runner pilot: `claude -p` in a viewer pane
 
+> Superseded in part by [0013](0013-remove-herdr.md) (2026-11-13): the herdr viewer is removed; watch a run with `harness watch <role>`.
+
 > Updated 2026-11-02 (prune step 3, [0011](0011-single-runner-headless.md)): D1 (`runner.<role>`, `HARNESS_RUNNER_<ROLE>`), the kept viewer pane per role (D2) and the `pane` rollback no longer exist. Headless is the only runner; the viewer is a pane running `harness watch <role>`, opened per run and closed when it ends.
 
 **Context.** Pane completion rests on a chain (Stop-hook marker, report mtime, herdr idle, grace) whose races produced the exit-3/4 false positives ([0002](0002-completion-by-stop-hook-marker.md)). Nobody types into the workers (interaction need ~0), but the user wants to watch them ([0001](0001-keep-herdr-panes-despite-subagent-model.md)).

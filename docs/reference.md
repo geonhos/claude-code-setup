@@ -5,7 +5,6 @@
 ## 요구 사항과 설치
 
 - macOS, `/bin/bash` 3.2면 충분 · `jq` · Claude Code ≥ 2.1.248 · `PATH`에 `~/.local/bin`
-- `herdr` ≥ 0.9는 선택: viewer pane을 쓸 때만 필요하다
 
 ```bash
 git clone https://github.com/geonhos/claude-code-setup ~/workspace/claude-code-setup
@@ -18,7 +17,7 @@ cd ~/workspace/claude-code-setup
 - `claude/agents/*.md`를 `~/.claude/agents/`에, `claude/skills/*/`를 `~/.claude/skills/`에 심링크한다(이미 있던 다른 스킬은 `~/.claude/skills.bak/`으로 옮긴다).
 - `bin/*`(`harness`, `harness-verify`, `harness-run`, `harness-view`)를 `~/.local/bin`에 링크한다. `lib/`는 링크 없이 실제 경로로 찾는다.
 - `~/.claude/settings.json`에 PreToolUse 게이트 훅, SessionStart 훅(`conductor-resume.sh`), `env.BASH_DEFAULT_TIMEOUT_MS`/`BASH_MAX_TIMEOUT_MS`, `promptCacheTtl`/`subagentPromptCacheTtl: 1h`를 병합한다(백업을 남긴다). 전역 `agent` 키는 쓰지 않는다. 이전 설치가 남긴 `agent: conductor`는 한 번 제거한다.
-- 전역 gitignore에 `.harness/`를 추가하고, herdr가 있으면 `herdr integration install claude`를 실행한다.
+- 전역 gitignore에 `.harness/`를 추가한다.
 
 ## 저장소마다 `harness init`
 
@@ -61,7 +60,7 @@ implementer(결정 0009)는 `--permission-mode auto --permission-prompts none`�
 
 ## 설정
 
-- `.harness/config.json`의 최상위 키 `headless_max_minutes`(분; 모든 역할의 실행 상한, `HARNESS_HL_MAX_S` 초 단위 환경변수가 우선)와 `viewer`(`HARNESS_VIEWER`가 우선): `auto`(기본) = herdr를 쓸 수 있으면 `harness watch <role>`을 돌리는 viewer pane(run이 끝나면 닫는다), 아니면 pane 없이 백그라운드(로그 `.harness/asks/<role>.runner.log`) · `pane` = 항상 pane(herdr 필요) · `none` = 항상 백그라운드.
+- `.harness/config.json`의 최상위 키 `headless_max_minutes`(분; 모든 역할의 실행 상한, `HARNESS_HL_MAX_S` 초 단위 환경변수가 우선). run은 항상 백그라운드(로그 `.harness/asks/<role>.runner.log`)이고, 진행은 `harness watch <role>`로 본다.
 - 로그 정리(ask가 끝날 때마다): `HARNESS_LOG_KEEP`(기본 200개), `HARNESS_LOG_DAYS`(14일), `HARNESS_JSONL_MAX`(`progress.jsonl` 압축 기준, 바이트, 기본 1 MB).
 - 검증 명령은 명시적인 설정에서만 가져오고, 키마다 먼저 찾은 쪽이 이긴다: `.harness/verify.local.json` > `.claude/harness.json`. 언어는 감지하지 않는다. 없는 키(또는 `null`)는 그 단계를 건너뛴다. 이 저장소는 `{"test": "./install.sh --test"}`를 쓴다. `harness-verify detect`가 해석된 설정을 출력한다.
 
@@ -80,7 +79,7 @@ reviewer는 `harness-verify run all [--base <ref>]`를 돌리고 리포트 마�
 Bash는 호출마다 명령 하나만 허용된다(`;` `&&` `||` `|` `&`, 리디렉션, 백틱, `$(`는 거부; 독립된 명령은 병렬 호출).
 
 - `harness`, `gh pr create|view|list|checks|comment|edit|merge`(`api`, `merge -d` 금지; `--body-file`은 `.harness/`·`docs/` 아래만)
-- 읽기 전용 `herdr pane get|current`, `git status|log|diff --stat|branch`(목록만; patch·output·삭제 플래그 금지)
+- `git status|log|diff --stat|branch`(목록만; patch·output·삭제 플래그 금지)
 - `ls`(재귀 금지)와 `.harness/`·`docs/` 아래 `cat`/`ls`(인자에 따옴표, glob, `$` 금지)
 - `docs/` 아래 Markdown과 `.harness/` 아래 모든 파일 쓰기
 
@@ -88,14 +87,14 @@ Bash는 호출마다 명령 하나만 허용된다(`;` `&&` `||` `|` `&`, 리디
 
 ## 테스트
 
-`./install.sh --test`가 11개 스위트(`tests/*.test.sh`)를 병렬로 돌린다. `HARNESS_TEST_SERIAL=1`은 하나씩 돌린다. 가짜 `tests/fake-herdr`와 `tests/fake-claude`를 쓰므로 herdr도 Claude도 필요 없다.
+`./install.sh --test`가 11개 스위트(`tests/*.test.sh`)를 병렬로 돌린다. `HARNESS_TEST_SERIAL=1`은 하나씩 돌린다. 가짜 `tests/fake-claude`를 쓰므로 Claude가 필요 없다.
 
 ## 디렉터리 구성
 
 ```
 bin/harness                      CLI (ask, wait, report, status, init, ...)
 bin/harness-run                  detached로 claude -p 를 돌리고 exit.json을 쓴다
-bin/harness-view                 viewer pane용
+bin/harness-view                 `harness watch`가 쓰는 스트림 렌더러
 bin/harness-verify               워커 훅이 쓰는 format/lint/test 검사
 lib/harness-defaults.sh          역할과 기본 숫자 (bin/harness, bin/harness-verify가 source)
 lib/harness-root.sh              harness_root: 체크아웃 루트 찾기 (훅 둘과 bin 둘이 source)
@@ -106,6 +105,6 @@ claude/hooks/conductor-resume.sh SessionStart 훅: .harness/progress.md 주입
 claude/skills/<name>/SKILL.md    /analyze /implement /review
 claude/agents/                   conductor, analyst, implementer, reviewer, solo
 install.sh                       설치 (--test는 tests/ 실행)
-tests/                           *.test.sh, fake-herdr, fake-claude
+tests/                           *.test.sh, fake-claude
 docs/wiki/                       함정(troubleshooting), 절차(how-to), 결정(decisions)
 ```

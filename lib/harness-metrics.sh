@@ -1,4 +1,4 @@
-# harness-metrics.sh — `harness metrics` and `harness wiki-lint` (file-only, no herdr).
+# harness-metrics.sh — `harness metrics` and `harness wiki-lint` (file-only).
 # Sourced eagerly by bin/harness (see the loader there): definitions only, no side effects.
 
 # --- wiki-lint ---------------------------------------------------------------------------
