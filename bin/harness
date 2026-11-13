@@ -632,11 +632,12 @@ settings_set_agent() {
 
 # cmd_init [--no-agent] [--shared] — make the current repo (git toplevel, else the cwd) a harness
 # checkout: .harness/asks/, the default config, "agent": "conductor" in .claude/settings.local.json
-# (per user, untracked; --shared: .claude/settings.json, committed), and .harness/ in
-# .git/info/exclude when git does not already ignore it. Idempotent.
+# (per user, untracked; --shared: .claude/settings.json, committed, never excluded), and every
+# harness-made path (.harness/, settings.local.json(.bak), agent-memory, wiki inbox, docs/superpowers)
+# in .git/info/exclude when git does not already ignore it. Idempotent.
 cmd_init() {
   [ "${HARNESS_ROLE:-}" != worker ] || die "harness init is for the conductor; a worker (HARNESS_ROLE=worker) does not set up checkouts"
-  local agent=1 a top ex target=.claude/settings.local.json
+  local agent=1 a p top ex target=.claude/settings.local.json
   for a in "$@"; do
     case "$a" in --no-agent) agent=0 ;; --shared) target=.claude/settings.json ;; *) usage ;; esac
   done
@@ -650,12 +651,13 @@ cmd_init() {
   if [ "$agent" = 1 ]; then settings_set_agent "$target"
   else echo "$target untouched (--no-agent)"; fi
   if git rev-parse --git-dir >/dev/null 2>&1; then
-    if git check-ignore -q .harness/asks/x 2>/dev/null; then echo ".harness/ already ignored by git"
-    else
-      ex=$(git rev-parse --git-path info/exclude 2>/dev/null)
-      if [ -n "$ex" ] && mkdir -p "${ex%/*}" && printf '.harness/\n' >> "$ex"; then echo "added .harness/ to $ex"
-      else echo "note: could not add .harness/ to git's exclude file" >&2; fi
-    fi
+    ex=$(git rev-parse --git-path info/exclude 2>/dev/null)
+    for a in .harness/ .claude/settings.local.json .claude/settings.local.json.bak .claude/agent-memory/ docs/wiki/inbox/ docs/superpowers/; do
+      case "$a" in */) p=${a}x ;; *) p=$a ;; esac
+      if git check-ignore -q "$p" 2>/dev/null; then echo "$a already ignored by git"
+      elif [ -n "$ex" ] && mkdir -p "${ex%/*}" && printf '%s\n' "$a" >> "$ex"; then echo "added $a to $ex"
+      else echo "note: could not add $a to git's exclude file" >&2; fi
+    done
   fi
   echo "workers run as detached headless Claude sessions: no herdr needed (herdr is an optional viewer)"
   return 0

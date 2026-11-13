@@ -254,6 +254,30 @@ run init --no-agent
 check "init in git: exclude not duplicated" [ "$(grep -cx '.harness/' .git/info/exclude)" = 1 ]
 check "init in git: git status clean of .harness" bash -c '! git status --porcelain | grep -q harness'
 
+# every harness-made path stays out of git (#63); the user's excludesFile is neutralised
+touch_all() { mkdir -p .harness/asks .claude/agent-memory/implementer docs/wiki/inbox docs/superpowers/plans
+  echo x > .claude/settings.local.json; echo x > .claude/settings.local.json.bak
+  echo x > .claude/agent-memory/implementer/m.md; echo x > docs/wiki/inbox/l.md; echo x > docs/superpowers/plans/p.md; }
+export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.excludesFile GIT_CONFIG_VALUE_0=/dev/null
+setup; rm -rf .harness .claude; git init -q .
+run init --no-agent
+touch_all
+check "init in git: no harness-made path shows in git status" bash -c '! git status --porcelain -uall | grep -E "harness|settings.local|agent-memory|inbox|superpowers"'
+run init --no-agent
+check "init twice: no duplicate exclude lines" [ -z "$(grep -v '^#' .git/info/exclude | sort | uniq -d)" ]
+check "init: all six patterns present" [ "$(grep -cE '^(\.harness/|\.claude/settings\.local\.json|\.claude/settings\.local\.json\.bak|\.claude/agent-memory/|docs/wiki/inbox/|docs/superpowers/)$' .git/info/exclude)" = 6 ]
+setup; rm -rf .harness .claude; git init -q .
+run init --shared
+check "init --shared: settings.json not excluded" bash -c '! git check-ignore -q .claude/settings.json'
+check "init --shared: settings.json visible to git" bash -c 'git status --porcelain -uall | grep -q "claude/settings.json"'
+setup; rm -rf .harness .claude; git init -q .
+git -c user.email=t@t -c user.name=t -c core.hooksPath=/dev/null commit -q --allow-empty -m s
+git worktree add -q "$WORK/wt3" 2>/dev/null
+( cd "$WORK/wt3" && env -u HARNESS_ROLE /bin/bash "$HARNESS" init --no-agent >/dev/null 2>&1 )
+( cd "$WORK/wt3" && mkdir -p docs/superpowers && echo x > docs/superpowers/p.md && echo x > .harness/a )
+check "worktree init: patterns excluded, worktree status clean" bash -c '! (cd "$1" && git status --porcelain -uall | grep -E "harness|superpowers")' _ "$WORK/wt3"
+unset GIT_CONFIG_COUNT GIT_CONFIG_KEY_0 GIT_CONFIG_VALUE_0
+
 setup; rm -rf .harness
 run init --no-agent
 run ask analyst "q"

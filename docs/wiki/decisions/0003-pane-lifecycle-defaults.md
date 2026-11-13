@@ -2,7 +2,7 @@
 type: decision
 status: superseded
 updated: 2026-11-02
-sources: [docs/superpowers/plans/2026-10-21-harness-hardening.md Task 4, commits e32e59c 0fec869 1481946]
+sources: [plan commit 336768a (harness hardening, Task 4), commits e32e59c 0fec869 1481946]
 verified_by: tests/harness.test.sh; live `harness close --legacy` and implementer auto-close (2026-10-21)
 ---
 # 0003: Pane lifecycle defaults
