@@ -194,20 +194,89 @@ hl lane 40 e
 check "reuse: a plain directory is refused" [ "$RC" -ne 0 ]
 check "reuse: refusal names git worktree list" grep -q "not a work folder" <<<"$OUT"
 
-# 10. canonical paths and strict issue matching
+# 10. canonical paths and strict issue matching (each check asserts the reason)
 lsetup
 ln -s "$BASE" "$BASE.link"; WORKS="$WORKS $BASE.link"
-hl lane 50 f
+hl lane 50 f; hl lane 51 g
+ln -s "$BASE/repo-50" "$BASE/link50"
 cd "$BASE.link/repo" || exit 1
 hl lane ls
-check "symlink: ls works under a symlinked parent" grep -q "#50 " <<<"$OUT"
-hl lane rm "$BASE.link/repo-50" --force
-check "symlink: rm by the symlinked path works" [ "$RC" -eq 0 ]
+check "symlink: ls works under a symlinked parent" grep -q "#50 .*$BASE/repo-50 " <<<"$OUT"
+hl lane rm "$BASE.link/repo-51" --force
+check "symlink: rm through a symlinked parent removes that lane" grep -q "removed $BASE/repo-51 and branch feat/51-g" <<<"$OUT"
+check "symlink: the other lane is untouched" test -d "$BASE/repo-50"
+hl lane rm "$BASE/link50" --force
+check "symlink: rm through a symlink to the folder resolves it" grep -q "removed $BASE/repo-50 and branch feat/50-f" <<<"$OUT"
 cd "$BASE/repo" || exit 1
 git worktree add -q "$BASE/other" -b topic/5-x origin/main 2>/dev/null
 hl lane rm 5
-check "match: issue 5 does not match topic/5-x" [ "$RC" -ne 0 ]
-check "match: non-lane folder kept" test -d "$BASE/other"
+check "match: issue 5 does not match topic/5-x (no work folder)" grep -q "no work folder for '5'" <<<"$OUT"
+check "match: non-lane folder and branch kept" test -d "$BASE/other"
+check "match: non-lane branch kept" git show-ref -q --verify refs/heads/topic/5-x
+
+# 11. remote delete is lease-protected
+lsetup
+hl lane 60 h; D="$BASE/repo-60"; B=feat/60-h
+git -C "$D" commit -q --allow-empty -m w; git -C "$D" push -q origin "$B" 2>/dev/null
+setpr "$B" MERGED "$(git -C "$D" rev-parse HEAD)"
+git clone -q "$BASE/remote.git" "$BASE/other-clone" 2>/dev/null
+( cd "$BASE/other-clone" && git checkout -q "$B" && git commit -q --allow-empty -m "someone else" && git push -q origin "$B" ) 2>/dev/null
+hl lane rm 60
+check "lease: rm still succeeds locally" [ "$RC" -eq 0 ]
+check "lease: says the remote branch was kept" grep -q "kept origin/$B" <<<"$OUT"
+check "lease: remote branch with later commits survives" [ -n "$(git ls-remote --heads origin "$B")" ]
+
+# 12. detached HEAD
+lsetup
+hl lane 61 i; D="$BASE/repo-61"
+git -C "$D" checkout -q --detach
+hl lane rm "$D"
+check "detached: refused" [ "$RC" -ne 0 ]
+check "detached: clear message" grep -q "detached HEAD" <<<"$OUT"
+git -C "$D" commit -q --allow-empty -m d1; git -C "$D" commit -q --allow-empty -m d2
+cd /tmp || exit 1   # the caller's cwd must not matter
+hl -C "$BASE/repo" lane rm "$D" --force
+check "detached --force: counts the folder's own commits" grep -q "2 commit(s)" <<<"$OUT"
+check "detached --force: folder gone" test ! -d "$D"
+cd "$BASE/repo" || exit 1
+
+# 13. ignored files on remove
+lsetup
+echo "SECRET=1" > .env; printf '.env\nnode_modules/\n' >> .git/info/exclude
+hl lane 62 j; D="$BASE/repo-62"; B=feat/62-j
+setpr "$B" MERGED "$(git -C "$D" rev-parse HEAD)"
+cp .env "$D/.env"; mkdir -p "$D/node_modules"; echo x > "$D/node_modules/x"
+hl lane rm 62
+check "ignored: identical .env copy and node_modules do not block" [ "$RC" -eq 0 ]
+check "ignored: folder removed" test ! -d "$D"
+hl lane 63 k; D="$BASE/repo-63"; B=feat/63-k
+setpr "$B" MERGED "$(git -C "$D" rev-parse HEAD)"
+echo "SECRET=2" > "$D/.env"
+hl lane rm 63
+check "ignored: changed .env refused" [ "$RC" -ne 0 ]
+check "ignored: message names the file" grep -q ".env differs from the original folder" <<<"$OUT"
+check "ignored: folder kept" test -d "$D"
+echo "tok" > "$D/only.env"; printf 'only.env\n' >> .git/info/exclude
+hl lane rm 63
+check "ignored: file missing in the primary is listed" grep -q "only.env only in the work folder" <<<"$OUT"
+hl lane rm 63 --force
+check "ignored: --force removes" [ "$RC" -eq 0 ]
+check "ignored: --force folder gone" test ! -d "$D"
+
+# 14. lane_copy
+lsetup
+echo "SECRET=1" > .env; mkdir -p cfg; echo c > cfg/local.json
+printf '.env\ncfg/local.json\n' >> .git/info/exclude
+echo '{"lane_copy": [".env", "cfg/local.json", "missing.txt", "../escape", "/etc/hosts"]}' > .claude/harness.json
+hl lane 64 l; D="$BASE/repo-64"
+check "copy: .env copied" [ "$(cat "$D/.env" 2>/dev/null)" = "SECRET=1" ]
+check "copy: nested path copied" [ "$(cat "$D/cfg/local.json" 2>/dev/null)" = c ]
+check "copy: missing file noted and skipped" grep -q "missing.txt is missing" <<<"$OUT"
+check "copy: unsafe paths skipped" [ "$(grep -c 'unsafe path' <<<"$OUT")" -eq 2 ]
+check "copy: nothing escaped" test ! -e "$BASE/escape"
+echo '{}' > .claude/harness.json
+hl lane 65 m
+check "copy: default copies nothing" test ! -e "$BASE/repo-65/.env"
 
 echo "PASS $pass / FAIL $fail"
 [ "$fail" -eq 0 ]

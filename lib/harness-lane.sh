@@ -55,6 +55,29 @@ lane_ls() {
   done
 }
 
+# lane_copy <primary> <dir> — copy the files named in .claude/harness.json "lane_copy" (relative, no ..) from the primary
+lane_copy() {
+  local f
+  jq -r '.lane_copy[]? | strings' "$1/.claude/harness.json" 2>/dev/null | while IFS= read -r f; do
+    case "/$f/" in /*//*|*/../*|*/./*) f="" ;; esac
+    case "$f" in /*|"") echo "harness lane: lane_copy: skipping an unsafe path" >&2; continue ;; esac
+    [ -f "$1/$f" ] || { echo "harness lane: lane_copy: $f is missing in the primary folder; skipped" >&2; continue; }
+    [ ! -e "$2/$f" ] || continue
+    case "$f" in */*) mkdir -p "$2/${f%/*}" 2>/dev/null ;; esac
+    cp -p "$1/$f" "$2/$f" || echo "harness lane: lane_copy: could not copy $f" >&2
+  done
+}
+
+# lane_ignored_diff <primary> <dir> — ignored files of the work folder that differ from (or are missing in) the primary
+lane_ignored_diff() {
+  git -C "$2" ls-files --others --ignored --exclude-standard \
+    | grep -Ev '^\.harness/|^\.claude/settings\.local\.json$|(^|/)(node_modules|dist|build|\.venv|target|\.next|coverage|__pycache__)/' \
+    | while IFS= read -r f; do
+        if [ ! -e "$1/$f" ]; then echo "$f only in the work folder"
+        elif ! cmp -s "$1/$f" "$2/$f"; then echo "$f differs from the original folder"; fi
+      done
+}
+
 lane_new() {
   [ "${HARNESS_ROLE:-}" != worker ] || die "harness lane is for the conductor"
   local issue="" slug="" type=feat prim dir base branch hint setup shared=""
@@ -94,6 +117,7 @@ lane_new() {
   # same mode as the primary: shared only when its committed settings already name the conductor
   ! jq -e '.agent == "conductor"' "$prim/.claude/settings.json" >/dev/null 2>&1 || shared=--shared
   ( cd "$dir" && cmd_init $shared ) || echo "harness lane: harness init failed in $dir" >&2
+  lane_copy "$prim" "$dir"
   setup=$(jq -r '.lane_setup // empty' "$dir/.claude/harness.json" 2>/dev/null)
   if [ -n "$setup" ]; then
     ( cd "$dir" && sh -c "$setup" ) || echo "harness lane: lane_setup failed in $dir (folder kept)" >&2
@@ -103,7 +127,7 @@ lane_new() {
 
 lane_rm() {
   [ "${HARNESS_ROLE:-}" != worker ] || die "harness lane is for the conductor"
-  local force="" t="" row p b info st oid head n tab
+  local force="" t="" row p b info="" st="" oid="" head n tab prim base lost
   tab=$(printf '\t')
   while [ $# -gt 0 ]; do
     case "$1" in --force) force=1 ;; -*) usage ;; *) [ -z "$t" ] || usage; t=$1 ;; esac
@@ -112,27 +136,37 @@ lane_rm() {
   [ -n "$t" ] || usage
   row=$(lane_find "$t") || die "no work folder for '$t' (harness lane ls)"
   p=${row%%"$tab"*}; b=${row#*"$tab"}; b=${b#refs/heads/}
+  prim=$(lane_primary)
   lane_running "$p" && die "a worker is running in $p; wait for it or harness -C $p close <role>"
-  info=$(lane_prinfo "$b"); st=${info%%"$tab"*}; oid=""
-  case "$info" in *"$tab"*) oid=${info#*"$tab"} ;; esac
-  head=$(git rev-parse "refs/heads/$b" 2>/dev/null)
+  if [ -n "$b" ]; then
+    info=$(lane_prinfo "$b"); st=${info%%"$tab"*}
+    case "$info" in *"$tab"*) oid=${info#*"$tab"} ;; esac
+  elif [ -z "$force" ]; then
+    die "work folder $p is on a detached HEAD; check out a branch first (or --force)"
+  fi
+  head=$(git -C "$p" rev-parse HEAD 2>/dev/null)
   if [ -z "$force" ]; then
     case "$st" in MERGED|CLOSED) ;; *) die "PR of $b is '${st:-none}', not merged or closed; merge it first (or --force)" ;; esac
     [ -n "$oid" ] && [ "$head" = "$oid" ] \
       || die "$b has commits that are not in its PR (local ${head:0:8}, PR ${oid:0:8}); push or rescue them first (or --force)"
+    lost=$(lane_ignored_diff "$prim" "$p")
+    [ -z "$lost" ] || die "ignored files would be lost in $p (--force to remove anyway):
+$lost"
   else
-    if [ -n "$oid" ] && git cat-file -e "$oid^{commit}" 2>/dev/null; then n=$(git rev-list --count "$oid..$b" 2>/dev/null)
-    else n=$(git rev-list --count "$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null || echo origin/main)..$b" 2>/dev/null); fi
-    echo "harness lane: --force; $b has ${n:-?} commit(s) not in a PR; uncommitted changes in $p are discarded" >&2
+    if [ -n "$oid" ] && git -C "$p" cat-file -e "$oid^{commit}" 2>/dev/null; then base=$oid
+    else base=$(git -C "$p" symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null || echo origin/main); fi
+    n=$(git -C "$p" rev-list --count "$base..HEAD" 2>/dev/null)
+    echo "harness lane: --force; ${b:-detached HEAD} has ${n:-?} commit(s) not in a PR; uncommitted and ignored files in $p are discarded" >&2
   fi
-  cd "$(lane_primary)" || die "cannot enter the primary worktree"
+  cd "$prim" || die "cannot enter the primary worktree"
   git worktree remove ${force:+--force} "$p" || die "git worktree remove failed for $p (uncommitted changes? --force)"
-  git branch -D "$b" >/dev/null || echo "harness lane: could not delete branch $b" >&2
-  # a merged PR's branch is done; a closed (unmerged) PR keeps its remote branch
-  if [ "$st" = MERGED ] && git ls-remote --exit-code --heads origin "$b" >/dev/null 2>&1; then
-    git push origin --delete "$b" >/dev/null 2>&1 || echo "harness lane: could not delete origin/$b" >&2
+  [ -z "$b" ] || git branch -D "$b" >/dev/null || echo "harness lane: could not delete branch $b" >&2
+  # a merged PR's branch is done (unless someone pushed to it after the merge); a closed PR keeps its remote branch
+  if [ "$st" = MERGED ] && [ -n "$oid" ] && git ls-remote --exit-code --heads origin "$b" >/dev/null 2>&1; then
+    git push --force-with-lease="$b:$oid" origin --delete "$b" >/dev/null 2>&1 \
+      || echo "harness lane: kept origin/$b (it has commits after the merged PR head, or the delete failed)" >&2
   fi
-  echo "removed $p and branch $b"
+  echo "removed $p${b:+ and branch $b}"
 }
 
 cmd_lane() {
