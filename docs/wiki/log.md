@@ -48,3 +48,4 @@
 - 2026-11-03 · implementer · inbox triage · 3 new pages (no-edits-brief-skips-report, wiki-lint-dangling-sources, half-assertion-tests), 3 merges (docs-only-asks-skip-the-suite, 0012-gate-shrink x2), 19 notes dropped (fixed/duplicate/no lesson); inbox emptied
 - 2026-11-13 · implementer · viewer never auto-closed · hl_close_viewer removed; 0007 banner updated
 - 2026-11-13 · implementer · #63 exclude · decisions 0002-0005 sources now cite plan commits (336768a 30c4eb6 9e09485) since docs/superpowers/ is untracked and excluded
+- 2026-11-13 · implementer · #63 lanes · new how-to work-folders (closes #59)

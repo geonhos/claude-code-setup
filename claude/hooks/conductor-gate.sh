@@ -73,7 +73,7 @@ CWD=${CWD%/}
 MSG_WRITE="Conductor cannot edit source. Delegate with the /implement skill (implementer worker). Direct writes are allowed only under docs/**/*.md and .harness/."
 MSG_READ="Conductor does not read source. Delegate with the /analyze skill (analyst worker) and read its report. Direct reads are allowed only under .harness/, docs/, and *.md files."
 MSG_WATCH="harness watch is for a human terminal; the conductor reads the report (harness report <worker>, or harness wait <worker> to block until the run ends)."
-MSG_BASH="Conductor shell is limited to ONE command per call: harness; gh pr create|view|list|checks|comment|edit|merge (no api, no merge -d); gh issue create|list|view|comment|close|edit|reopen; herdr pane get|current; git status / log / diff --stat / branch (list); cat or ls (no -R) under .harness/ and docs/. No ; & | redirects, backticks or \$(. Delegate command execution with the /implement skill (implementer worker)."
+MSG_BASH="Conductor shell is limited to ONE command per call: harness (also harness -C <dir> ..., harness lane ...); gh pr create|view|list|checks|comment|edit|merge (no api, no merge -d); gh issue create|list|view|comment|close|edit|reopen; herdr pane get|current; git status / log / diff --stat / branch (list); cat or ls (no -R) under .harness/ and docs/. No ; & | redirects, backticks or \$(. Delegate command execution with the /implement skill (implementer worker)."
 
 # --- Bash allow/deny lists ---------------------------------------------------
 # Each piece below is one alternative; they are joined with | into one regex.
@@ -495,7 +495,7 @@ case "$TOOL" in
     case "$GP" in .harness|.harness/*|docs|docs/*) ;; *) deny "$MSG_READ" ;; esac ;;
   Bash)
     BCMD=$(field command)
-    printf '%s' "$BCMD" | grep -Eq '^[[:space:]]*harness[[:space:]]+["'"'"']?watch["'"'"']?([[:space:]]|$)' && deny "$MSG_WATCH"
+    printf '%s' "$BCMD" | grep -Eq '^[[:space:]]*harness[[:space:]]+(-C[[:space:]]+("[^"]*"|'"'"'[^'"'"']*'"'"'|[^[:space:]]+)[[:space:]]+)?["'"'"']?watch["'"'"']?([[:space:]]|$)' && deny "$MSG_WATCH"
     bash_ok "$BCMD" || deny "$MSG_BASH" ;;
 esac
 

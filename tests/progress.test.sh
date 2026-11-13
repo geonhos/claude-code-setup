@@ -84,7 +84,7 @@ sleep 3
 setup; gitwork
 mkdir -p .harness; printf '# Task: brief title\nBRIEF-BODY-LINE\n' > .harness/task-implementer.md
 export FAKE_REPORT_CMD="cd $WORK && echo c > c.txt && git add c.txt && git -c core.hooksPath=/dev/null commit -q -m c; mkdir -p .harness/reports .harness/verify; printf '# r — did it\nstatus: partial\n' > .harness/reports/implementer.md; printf '{\"status\":\"fail\",\"attempts\":3,\"step\":\"test\",\"tail\":\"\"}' > .harness/verify/implementer.json"
-run ask implementer "Read .harness/task-implementer.md and do it."
+run ask implementer "Read .harness/task-implementer.md and do it." --no-lane
 check "impl: exit 5" [ "$RC" -eq 5 ]
 check "impl: jsonl exit 5" [ "$(jl .exit)" = 5 ]
 check "impl: jsonl verify fail" [ "$(jl .verify)" = fail ]

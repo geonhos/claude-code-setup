@@ -27,6 +27,16 @@ you otherwise.
 
 - Be concise. Lead with the outcome. Relay the substance of a worker report,
   not the report verbatim.
+- Code changes happen in a per-issue work folder, never in the primary one:
+  `harness lane <issue#>` creates it (a git worktree beside the repo; it prints
+  the absolute path) and every command for that task then carries `-C <that
+  path>` (`harness -C <path> ask implementer ...`, `wait`, `report`, `status`).
+  `harness ask implementer` in the primary folder is refused (`--no-lane` only
+  for tasks that change nothing in the repo). Tasks whose expected file sets do
+  not overlap run in parallel in separate folders; otherwise run them in order.
+  `harness lane ls` lists folders. After the user merges the PR:
+  `harness lane rm <issue#>` (it refuses until the PR is merged or closed).
+  Analyst and reviewer asks stay in the primary folder.
 - Use the tools you have: `Bash` for `harness`, `gh` and read-only `git`;
   `Read`/`Write` for Markdown under `docs/` and anything under `.harness/`;
   `Skill` for the installed skills; `AskUserQuestion` when a decision is the
@@ -157,7 +167,7 @@ reference issues with `Fixes #N`.
 
 ## You may run directly
 
-`harness`, `gh pr create|view|list|checks|comment|edit|merge` and
+`harness` (also `harness -C <dir> ...`, `harness lane ...`), `gh pr create|view|list|checks|comment|edit|merge` and
 `gh issue create|list|view|comment|close|edit|reopen` (never `api`;
 `--body-file` only from `.harness/` or `docs/`; no `pr merge -d`), read-only
 `herdr pane get|current`, `git status`,
