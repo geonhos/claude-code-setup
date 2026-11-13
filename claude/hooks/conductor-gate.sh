@@ -69,10 +69,10 @@ CWD=$(printf '%s' "$INPUT" | jq -r '.cwd // empty' 2>/dev/null)
 CWD=${CWD%/}
 
 # Fixed strings: never interpolate per-call data (keeps the prompt cache stable).
-MSG_WRITE="Conductor cannot edit source. Delegate with the /implement skill (implementer worker). Direct writes are allowed only under docs/**/*.md and .harness/."
+MSG_WRITE="Conductor cannot edit source. Delegate with the /implement skill (implementer worker). Direct writes are allowed only under docs/**/*.md, .harness/, and the .harness/ of a registered work folder (git worktree)."
 MSG_READ="Conductor does not read source. Delegate with the /analyze skill (analyst worker) and read its report. Direct reads are allowed only under .harness/, docs/, and *.md files."
 MSG_WATCH="harness watch is for a human terminal; the conductor reads the report (harness report <worker>, or harness wait <worker> to block until the run ends)."
-MSG_BASH="Conductor shell is limited to ONE command per call: harness (also harness -C <dir> ..., harness lane ...); gh pr create|view|list|checks|comment|edit|merge (no api, no merge -d); gh issue create|list|view|comment|close|edit|reopen; git status / log / diff --stat / branch (list); cat or ls (no -R) under .harness/ and docs/. No ; & | redirects, backticks or \$(. Delegate command execution with the /implement skill (implementer worker)."
+MSG_BASH="Conductor shell is limited to ONE command per call: harness (also harness -C <dir> ..., harness lane ...); gh pr create|view|list|checks|comment|edit|merge (no api, no merge -d); gh issue create|list|view|comment|close|edit|reopen; git status / log / diff --stat / branch (list); git show --stat|--name-only <rev> or git show <rev>:<path> (path under .harness/ or docs/, or *.md); ls (no -R) and stat on any path; cat, head, tail -n N under .harness/ and docs/, in a work folder's .harness/, and of Bash task output files (/private/tmp/claude-*/**/tasks/*.output). No ; & | redirects, backticks or \$(. Delegate command execution with the /implement skill (implementer worker)."
 
 # --- Bash allow/deny lists ---------------------------------------------------
 # Each piece below is one alternative; they are joined with | into one regex.
@@ -84,8 +84,9 @@ BASH_ALLOW="$BASH_ALLOW|"'git status( (-[sb]+|--short|--branch|--porcelain(=v[12
 BASH_ALLOW="$BASH_ALLOW|"'git log( .*)?'
 BASH_ALLOW="$BASH_ALLOW|"'git diff --stat( .*)?'                  # ... summaries only
 BASH_ALLOW="$BASH_ALLOW|"'git branch( (-a|-r|-v|--show-current))*'  # list only
-BASH_ALLOW="$BASH_ALLOW|"'cat (\.harness|docs)(/[^ ]*)?'          # reports and docs
-BASH_ALLOW="$BASH_ALLOW|"'ls( -[A-Za-z]+)*( (\.harness|docs)(/[^ ]*)?)?' # top level, reports, docs
+BASH_ALLOW="$BASH_ALLOW|"'git show( .*)?'                         # git_show_ok narrows it: --stat/--name-only, or rev:path
+BASH_ALLOW="$BASH_ALLOW|"'(cat|head|tail)( [^ ]+)+'               # cat_ls_segment_ok checks the files
+BASH_ALLOW="$BASH_ALLOW|"'(ls|stat)( [^ ]+)*'                     # listing and metadata, any path, never recursive
 BASH_ALLOW="^($BASH_ALLOW)\$"
 
 # gh "<group> <subcommand>" pairs the conductor may run. api, run, repo,
@@ -205,6 +206,43 @@ writable_rel() {
   return 1
 }
 
+# lane_worktrees -> prints the path of every registered (non-bare) worktree of
+# the repo at CWD, one per line
+lane_worktrees() {
+  git -C "$CWD" worktree list --porcelain 2>/dev/null |
+    awk '/^worktree /{ if (p != "" && !b) print p; p = substr($0, 10); b = 0 }
+         /^bare$/{ b = 1 }
+         END { if (p != "" && !b) print p }'
+}
+
+# lane_harness_path PATH -> 0 when PATH, symlinks resolved, is under .harness/ of
+# a registered worktree of this repo (raw streams excluded). A relative PATH
+# resolves against CWD; a '..' segment is denied.
+lane_harness_path() {
+  local p=$1 full wt wr rest
+  [ -n "$p" ] || return 1
+  case "$p" in
+    ..|../*|*/..|*/../*|'~'*) return 1 ;;
+    /*) ;;
+    *) p=$CWD/$p ;;
+  esac
+  full=$(physical "$p") || return 1
+  while IFS= read -r wt; do
+    [ -n "$wt" ] || continue
+    wr=$(physical "$wt") || continue
+    [ "$wr" != / ] || continue
+    case "$full" in
+      "$wr"/.harness|"$wr"/.harness/*)
+        rest=${full#"$wr"/}
+        raw_stream_rel "$rest" && return 1
+        return 0 ;;
+    esac
+  done <<LANES
+$(lane_worktrees)
+LANES
+  return 1
+}
+
 # readable PATH -> 0 when the conductor may read it (lexically and after
 # resolving symlinks)
 readable() {
@@ -216,13 +254,13 @@ readable() {
 }
 
 # writable PATH -> 0 when the conductor may write it (lexically and after
-# resolving symlinks)
+# resolving symlinks), or it is under .harness/ of a registered work folder
 writable() {
   local p
-  p=$(rel "$1") || return 1
-  writable_rel "$p" || return 1
-  p=$(physrel "$1") || return 1
-  writable_rel "$p"
+  if p=$(rel "$1") && writable_rel "$p" && p=$(physrel "$1") && writable_rel "$p"; then
+    return 0
+  fi
+  lane_harness_path "$1"
 }
 
 # scan_command -> reads ONE command on stdin, scans it like the shell (single
@@ -403,34 +441,85 @@ unquoted_text_ok() {
     END { exit (bad || st != 0) ? 1 : 0 }'
 }
 
+# git_show_ok MASKED -> 0 for "git show --stat|--name-only [REV...]" (no other
+# option) or "git show REV:PATH" (one token; PATH under .harness/ or docs/, or
+# *.md, no '..' segment, no raw stream). Tokens are plain: no quotes.
+git_show_ok() {
+  local tok rev path stat=0
+  case "$1" in *[\"\']*) return 1 ;; esac
+  set -f
+  set -- $1
+  set +f
+  shift; shift   # git show
+  [ $# -ge 1 ] || return 1
+  if [ $# -eq 1 ]; then
+    case "$1" in
+      *:*)
+        rev=${1%%:*}; path=${1#*:}
+        [ -n "$rev" ] && [ -n "$path" ] || return 1
+        case "$rev" in -*|*[!A-Za-z0-9._/@-]*) return 1 ;; esac
+        case "$path" in *:*|/*|..|../*|*/..|*/../*) return 1 ;; esac
+        raw_stream_rel "$path" && return 1
+        case "$path" in .harness/*|docs/*|*.md) return 0 ;; esac
+        return 1 ;;
+    esac
+  fi
+  for tok in "$@"; do
+    case "$tok" in
+      --stat|--name-only) stat=1 ;;
+      -*|*:*|*[!A-Za-z0-9._/@-]*) return 1 ;;
+    esac
+  done
+  [ "$stat" -eq 1 ]
+}
+
+# task_output_ok PATH -> 0 for a Bash tool task output file,
+# /private/tmp/claude-*/**/tasks/*.output (absolute, symlinks resolved)
+task_output_ok() {
+  local full dir
+  case "$1" in /*) ;; *) return 1 ;; esac
+  full=$(physical "$1") || return 1
+  dir=${full%/*}
+  case "$dir" in /private/tmp/claude-*/tasks|/private/tmp/claude-*/*/tasks) ;; *) return 1 ;; esac
+  case "${full##*/}" in *.output) return 0 ;; esac
+  return 1
+}
+
 # cat_ls_segment_ok MASKED -> 0 when a cat / ls segment needs no quoting,
 # expansion or parent-directory access
 cat_ls_segment_ok() {
-  local tok p
+  local tok p cmd=${1%% *}
   case "$1" in *[\"\']*|*..*) return 1 ;; esac
   has_expansion "$1" && return 1
   set -f
   set -- $1
   set +f
   case "$1" in
-    ls)
+    ls|stat)             # any path: listing and metadata only, never recursive
       shift
       for tok in "$@"; do
         case "$tok" in
           --r*) return 1 ;;            # --recursive (and abbreviations)
           --*) ;;
           -*R*) return 1 ;;            # -R, -laR, ...
-          -*) ;;
-          *)  p=$(physrel "$tok") || return 1   # symlink-resolved path argument
-              case "$p" in .harness|.harness/*|docs|docs/*) ;; *) return 1 ;; esac ;;
         esac
       done ;;
-    cat)
+    cat|head|tail)
       shift
-      for tok in "$@"; do        # symlink-resolved: must stay in .harness/ or docs/
-        p=$(physrel "$tok") || return 1
-        raw_stream_rel "$p" && return 1
-        case "$p" in .harness|.harness/*|docs|docs/*) ;; *) return 1 ;; esac
+      if [ "${1:-}" = -n ] && [ "$cmd" != cat ]; then   # head/tail: optional "-n N" only (no -f)
+        case "${2:-}" in ''|*[!0-9]*) return 1 ;; esac
+        shift 2
+      fi
+      [ $# -ge 1 ] || return 1
+      for tok in "$@"; do
+        case "$tok" in -*) return 1 ;; esac
+        # symlink-resolved: .harness/ or docs/ here, a task output file, or a work folder's .harness/
+        if p=$(physrel "$tok") && ! raw_stream_rel "$p"; then
+          case "$p" in .harness|.harness/*|docs|docs/*) continue ;; esac
+        fi
+        task_output_ok "$tok" && continue
+        lane_harness_path "$tok" && continue
+        return 1
       done ;;
   esac
   return 0
@@ -453,10 +542,11 @@ bash_ok() {
   # reject '..' path components (but not git ranges like main...HEAD)
   printf ' %s ' "$seg" | grep -Eq '[ /=]\.\.([ /]|$)' && return 1
   case "$seg" in
+    git\ show|git\ show\ *) git_show_ok "$seg" || return 1 ;;
     git\ *)          git_segment_ok "$raw" || return 1
                      ;;
     gh|gh\ *)        gh_segment_ok "$seg" "$raw" || return 1 ;;
-    cat\ *|ls|ls\ *) cat_ls_segment_ok "$seg" || return 1 ;;
+    cat\ *|head\ *|tail\ *|ls|ls\ *|stat\ *) cat_ls_segment_ok "$seg" || return 1 ;;
   esac
   printf '%s' "$seg" | grep -Eq "$BASH_ALLOW"
 }

@@ -172,9 +172,14 @@ reference issues with `Fixes #N`.
 `--body-file` only from `.harness/` or `docs/`; no `pr merge -d`), read-only
 `git status`,
 `git log`, `git diff --stat`, `git branch` (list-only: `-a -r -v --show-current`),
-`ls` (never recursive), and `cat`/`ls` under `.harness/` or `docs/` (no quotes,
-globs or `$` in their arguments). You
-may write Markdown under `docs/` and anything under `.harness/`. Everything
+`git show --stat|--name-only <rev>` and `git show <rev>:<path>` (path under
+`.harness/` or `docs/`, or `*.md`), `ls` (never recursive) and `stat` on any
+path, and `cat`/`head`/`tail -n N` under `.harness/` or `docs/`, in a work
+folder's `.harness/` (absolute path of a registered worktree) and of Bash
+background task output files (`/private/tmp/claude-*/**/tasks/*.output`); no
+quotes, globs or `$` in their arguments. You
+may write Markdown under `docs/` and anything under `.harness/`, also in a work
+folder's `.harness/` (briefs next to the lane). Everything
 else goes through a skill. One command per Bash call: no `;`, `&&`, `||`, `|`, `&`,
 redirects (`>`, `2>&1`), backticks or `$(`; send independent commands as parallel calls.
 
