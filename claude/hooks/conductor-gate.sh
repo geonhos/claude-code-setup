@@ -73,7 +73,7 @@ CWD=${CWD%/}
 MSG_WRITE="Conductor cannot edit source. Delegate with the /implement skill (implementer worker). Direct writes are allowed only under docs/**/*.md and .harness/."
 MSG_READ="Conductor does not read source. Delegate with the /analyze skill (analyst worker) and read its report. Direct reads are allowed only under .harness/, docs/, and *.md files."
 MSG_WATCH="harness watch is for a human terminal; the conductor reads the report (harness report <worker>, or harness wait <worker> to block until the run ends)."
-MSG_BASH="Conductor shell is limited to ONE command per call: harness; gh pr create|view|list|checks|comment|edit|merge (no api, no merge -d); herdr pane get|current; git status / log / diff --stat / branch (list); cat or ls (no -R) under .harness/ and docs/. No ; & | redirects, backticks or \$(. Delegate command execution with the /implement skill (implementer worker)."
+MSG_BASH="Conductor shell is limited to ONE command per call: harness; gh pr create|view|list|checks|comment|edit|merge (no api, no merge -d); gh issue create|list|view|comment|close|edit|reopen; herdr pane get|current; git status / log / diff --stat / branch (list); cat or ls (no -R) under .harness/ and docs/. No ; & | redirects, backticks or \$(. Delegate command execution with the /implement skill (implementer worker)."
 
 # --- Bash allow/deny lists ---------------------------------------------------
 # Each piece below is one alternative; they are joined with | into one regex.
@@ -90,9 +90,10 @@ BASH_ALLOW="$BASH_ALLOW|"'cat (\.harness|docs)(/[^ ]*)?'          # reports and 
 BASH_ALLOW="$BASH_ALLOW|"'ls( -[A-Za-z]+)*( (\.harness|docs)(/[^ ]*)?)?' # top level, reports, docs
 BASH_ALLOW="^($BASH_ALLOW)\$"
 
-# gh "<group> <subcommand>" pairs the conductor may run. api, run, issue, repo,
-# auth, browse, pr diff|checkout|status are not here.
+# gh "<group> <subcommand>" pairs the conductor may run. api, run, repo,
+# auth, browse, issue delete|transfer|pin, pr diff|checkout|status are not here.
 GH_ALLOW='pr (create|view|list|checks|comment|edit|merge)'
+GH_ALLOW="$GH_ALLOW|"'issue (create|list|view|comment|close|edit|reopen)'
 
 # git long options that are denied anywhere in a git segment.
 GIT_DENY_LONG='output'                                            # writes files
@@ -306,7 +307,7 @@ bodyfile_ok() {
   return 1
 }
 
-# gh_segment_ok MASKED RAW -> 0 only for "gh pr <sub>" with <sub> in GH_ALLOW
+# gh_segment_ok MASKED RAW -> 0 only for "gh pr|issue <sub>" with <sub> in GH_ALLOW
 # (merge without -d). Global flags -R/--repo/--hostname (and --x=y) may precede
 # the group. Everything up to and including the subcommand is read from the
 # MASKED segment and must be plain unquoted tokens, so quoting cannot make this
