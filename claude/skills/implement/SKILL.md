@@ -40,6 +40,7 @@ change yourself (`harness ask` refuses to run in a worker session anyway).
    retries: send the printed failure back with another `/implement` (its
    context is kept automatically after a 5). After 2 failed rounds, ask the
    user.
-4. For anything beyond a trivial change, follow with `/review` before calling
-   the work done.
+4. Big task (behaviour/design change, risky area: security, permissions, gate,
+   hooks, deploy, data deletion, or expected cost ≥ $5): follow with `/review`
+   before the PR. Small task: open the PR after the implementer's lint/test pass.
 5. Relay the substance of the report, not the report verbatim.
