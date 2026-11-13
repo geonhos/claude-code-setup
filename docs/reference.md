@@ -43,6 +43,7 @@ harness init   [--no-agent] [--shared]                       # 이 저장소를 
 harness ask    <agent> '<instruction>' [--timeout MS] [--fresh|--keep]
 harness wait   <agent> [--timeout MS]                        # run이 끝날 때까지 block, 수집은 안 함
 harness watch  <agent> [-n N]                                # 사람용 터미널 뷰어(tty 필요, 게이트가 거부)
+harness open-watch <agent>                                   # herdr/tmux 새 pane 또는 Terminal 창에서 watch를 연다(없으면 명령 출력)
 harness report <agent>                                       # 기존 리포트 출력 (ask와 같은 exit code)
 harness status
 harness metrics [--since YYYY-MM-DD] [--json]                # progress.jsonl·위키 기반 지표 (최근 28일 vs 직전 28일)
@@ -94,6 +95,7 @@ Bash는 호출마다 명령 하나만 허용된다(`;` `&&` `||` `|` `&`, 리디
 ```
 bin/harness                      CLI (ask, wait, report, status, init, ...)
 bin/harness-run                  detached로 claude -p 를 돌리고 exit.json을 쓴다
+lib/harness-openwatch.sh         `harness open-watch` (herdr, tmux, Terminal 순)
 bin/harness-view                 `harness watch`가 쓰는 스트림 렌더러
 bin/harness-verify               워커 훅이 쓰는 format/lint/test 검사
 lib/harness-defaults.sh          역할과 기본 숫자 (bin/harness, bin/harness-verify가 source)

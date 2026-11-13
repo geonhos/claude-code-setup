@@ -8,7 +8,7 @@ gate the conductor's shell, verify worker output and resume from progress logs.
 
 ## Layout
 - `bin/`: `harness` (CLI: init, ask, wait, report, watch, close, status, metrics, wiki-lint), `harness-verify` (format/lint/test checks), `harness-run` (detached `claude -p` runner), `harness-view` (stream renderer used by `harness watch`)
-- `lib/`: `harness-defaults.sh` (roles, default timeouts; sourced by `harness` and `harness-verify`), `harness-metrics.sh` (metrics + wiki-lint), `harness-headless.sh` (headless runner glue), `harness-dash.sh` (redraw dashboard of `harness watch`), `harness-root.sh` (`harness_root`, sourced by both hooks and both bins); `bin/harness` sources its lib files eagerly from an explicit list
+- `lib/`: `harness-defaults.sh` (roles, default timeouts; sourced by `harness` and `harness-verify`), `harness-metrics.sh` (metrics + wiki-lint), `harness-headless.sh` (headless runner glue), `harness-dash.sh` (redraw dashboard of `harness watch`), `harness-openwatch.sh` (`harness open-watch`: dashboard in a herdr/tmux pane or Terminal window), `harness-root.sh` (`harness_root`, sourced by both hooks and both bins); `bin/harness` sources its lib files eagerly from an explicit list
 - `claude/agents/`: conductor, analyst, implementer, reviewer, solo prompts
 - `claude/hooks/`: conductor-gate, conductor-resume (SessionStart)
 - `claude/skills/`: /analyze, /implement, /review, /watch (conductor-only)

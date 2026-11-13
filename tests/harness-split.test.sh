@@ -78,7 +78,7 @@ done
 check "bin/harness loads every lib/harness-*.sh" all_listed "$ROOT/bin/harness" "$ROOT/lib"
 # test the test: a dropped list entry and a lazy source must both be caught
 M=$(mktemp -d); WORKS="$WORKS $M"
-sed 's/^for m in defaults root metrics headless dash lane;/for m in defaults root metrics headless;/' "$ROOT/bin/harness" > "$M/dropped"
+sed 's/^for m in defaults root metrics headless dash lane openwatch;/for m in defaults root metrics headless;/' "$ROOT/bin/harness" > "$M/dropped"
 mkdir -p "$M/lib"; cp $LIBS "$M/lib/"
 OUT="control: unmutated copy"
 check "control: unmutated copy passes all_listed" all_listed "$ROOT/bin/harness" "$M/lib"

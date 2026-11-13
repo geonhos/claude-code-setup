@@ -301,11 +301,11 @@ setup; rm -rf .harness; mkdir -p .harness/log; echo x > .harness/log/a1.md
 STRAY_BEFORE=$(find .harness | sort | tr '\n' ' ')
 run status
 check "status: stray .harness/ (no asks/) left unchanged" [ "$(find .harness | sort | tr '\n' ' ')" = "$STRAY_BEFORE" ]
-# /watch skill: prints both command forms, never runs harness watch
+# /watch skill: runs open-watch in both folder forms, never runs harness watch
 W="$HERE/../claude/skills/watch/SKILL.md"
-check "watch skill names the primary-folder form" grep -q 'harness watch <role>' "$W"
-check "watch skill names the work-folder form" grep -q 'harness -C <absolute work-folder path> watch <role>' "$W"
-check "watch skill never runs the command itself" grep -q 'never run it' "$W"
+check "watch skill names the primary-folder form" grep -q 'harness open-watch <role>' "$W"
+check "watch skill names the work-folder form" grep -q 'harness -C <absolute work-folder path> open-watch <role>' "$W"
+check "watch skill never runs the command itself" grep -q 'Never runs .harness watch. itself\|never run' "$W"
 check "watch skill points at harness lane ls" grep -q 'harness lane ls' "$W"
 echo "PASS $pass / FAIL $fail"
 [ "$fail" -eq 0 ]
