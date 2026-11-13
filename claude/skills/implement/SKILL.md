@@ -13,8 +13,7 @@ change yourself (`harness ask` refuses to run in a worker session anyway).
 ## Steps
 
 1. Write a self-contained brief to `.harness/task-implementer.md` from
-   `$ARGUMENTS` and the conversation. The implementer starts a fresh session
-   (it resumes after a non-zero exit such as 5). Cover:
+   `$ARGUMENTS` and the conversation. The implementer starts a fresh session. Cover:
    - **Goal**: the exact behaviour wanted, and what must not change.
    - **Files or area** to touch; the spec or plan under `docs/` to follow.
    - **Tests**: which to add or update, and the command that must pass.
@@ -34,7 +33,7 @@ change yourself (`harness ask` refuses to run in a worker session anyway).
 
    Why: harness waits for the run to end by default (5400000 ms, the implementer's run cap; analyst/reviewer 3600000), so no `--timeout` is needed and no polling loop. After a restart or compaction use `harness -C <path> wait implementer` (background, `timeout: 7200000`), then `harness report implementer`.
 
-   Use `--keep` only for a follow-up that needs its previous conversation. A fresh session starts every ask, except that an implementer whose last ask exited non-zero resumes its session automatically (`--fresh` starts clean). Exit 2 means a tool call was denied and no report was written: re-ask with a changed brief.
+   Use `--keep` only for a follow-up that needs its previous conversation. A fresh session starts every ask. Exit 2 means a tool call was denied and no report was written: re-ask with a changed brief.
 3. Handle the exit code as conductor.md's "Exit codes from `harness ask`"
    section says. In particular `5` means its lint/test checks failed after
    retries: send the printed failure back with another `/implement` (its

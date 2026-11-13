@@ -49,3 +49,4 @@
 - 2026-11-13 · implementer · #63 exclude · decisions 0002-0005 sources now cite plan commits (336768a 30c4eb6 9e09485) since docs/superpowers/ is untracked and excluded
 - 2026-11-13 · implementer · #63 lanes · new how-to work-folders (closes #59)
 - 2026-11-13 · implementer · #67 remove herdr · decision 0013; viewer/pane code, gate allow, install step, fake-herdr and herdr-only tests removed; 0011 index hook updated
+- 2026-11-13 · implementer · #72 shrink · deleted troubleshooting daemon-inherits-worker-env (herdr pane env) and test-wait-loops (wait_panes in the removed worktree suite); 0009 banner: auto-resume and --fresh removed
