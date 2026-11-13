@@ -659,7 +659,11 @@ done < "$HERE/gate-denied.list"
 # --- short reads and work-folder briefs (#70, #73) ----------------------------
 LR=$(cd "$(mktemp -d)" && pwd -P)
 mkdir -p "$LR/main/.harness/asks" "$LR/other/.harness"
-(cd "$LR/main" && git init -q . && git -c user.email=t@t -c user.name=t -c core.hooksPath=/dev/null commit -q --allow-empty -m s && git worktree add -q "$LR/lane" 2>/dev/null)
+(cd "$LR/main" && git init -q . && mkdir -p bin docs && echo src > bin/harness && echo doc > docs/x.md &&
+  git add bin docs && git -c user.email=t@t -c user.name=t -c core.hooksPath=/dev/null commit -q -m s1 &&
+  git -c user.email=t@t -c user.name=t -c core.hooksPath=/dev/null commit -q --allow-empty -m s2 &&
+  git tag v1 && git tag -a -m ann v2 && git worktree add -q "$LR/lane" 2>/dev/null)
+BLOB=$(cd "$LR/main" && git rev-parse HEAD:bin/harness); TREE=$(cd "$LR/main" && git rev-parse HEAD:bin)
 mkdir -p "$LR/lane/.harness/log" "$LR/lane/bin"
 echo x > "$LR/lane/.harness/task.md"; echo x > "$LR/lane/.harness/log/a.jsonl"; echo x > "$LR/lane/bin/harness"
 echo x > "$LR/other/.harness/task.md"
@@ -667,7 +671,7 @@ ln -s ../bin/harness "$LR/lane/.harness/srclink"
 ln -s "$LR/lane/.harness" "$LR/lanelink"
 TASKS=/private/tmp/claude-test70/proj/sess/tasks
 mkdir -p "$TASKS" 2>/dev/null && echo x > "$TASKS/abc.output" && echo x > "$TASKS/abc.txt"
-ltool() { jq -n -c --arg t "$1" --argjson i "$2" --arg c "$LR/main" '{tool_name:$t, tool_input:$i, cwd:$c}'; }
+ltool() { jq -n -c --arg t "$1" --argjson i "$2" --arg c "$LR/main" '{tool_name:$t, tool_input:$i, cwd:$c, session_id:"sess"}'; }
 lb() { ltool Bash "$(jq -n -c --arg c "$1" '{command:$c}')"; }
 lw() { ltool Write "$(jq -n -c --arg p "$1" '{file_path:$p, content:"x"}')"; }
 expect allow $C "ls -l any path"          "$(lb 'ls -l /etc')"
@@ -681,7 +685,7 @@ expect allow $C "stat -f fmt"             "$(lb 'stat -f %z bin/harness')"
 expect deny  $C "stat quoted"             "$(lb 'stat "/etc/passwd"')"
 expect deny  $C "stat redirect"           "$(lb 'stat x > y')"
 expect allow $C "git show --stat"         "$(lb 'git show --stat HEAD')"
-expect allow $C "git show --name-only"    "$(lb 'git show --name-only abc123')"
+expect allow $C "git show --name-only"    "$(lb 'git show --name-only HEAD')"
 expect allow $C "git show --stat two revs" "$(lb 'git show --stat main HEAD')"
 expect allow $C "git show rev:docs md"    "$(lb 'git show HEAD:docs/x.md')"
 expect allow $C "git show rev:.harness"   "$(lb 'git show main:.harness/progress.txt')"
@@ -728,6 +732,39 @@ expect deny  $C "Write lane .harness via symlink to src" "$(lw "$LR/lane/.harnes
 expect deny  $C "Write lane dotdot"       "$(lw "$LR/lane/.harness/../bin/harness")"
 expect deny  $C "Write non-worktree .harness" "$(lw "$LR/other/.harness/task.md")"
 expect deny  $C "Write /tmp"              "$(lw /tmp/x.md)"
+# review round 1: commits only, ~/^ revs, session-scoped task output, Read in lane .harness
+expect deny  $C "git show --stat blob sha"   "$(lb "git show --stat $BLOB")"
+expect deny  $C "git show --name-only blob"  "$(lb "git show --name-only $BLOB")"
+expect deny  $C "git show --stat tree sha"   "$(lb "git show --stat $TREE")"
+expect deny  $C "git show --stat HEAD blob"  "$(lb "git show --stat HEAD $BLOB")"
+expect deny  $C "git show blob:docs md"      "$(lb "git show $BLOB:docs/x.md")"
+expect deny  $C "git show --stat HEAD:bin tree" "$(lb 'git show --stat HEAD:bin')"
+expect deny  $C "git show --stat unknown rev" "$(lb 'git show --stat nosuchrev')"
+expect deny  $C "git show --stat range"      "$(lb 'git show --stat HEAD~1..HEAD')"
+expect allow $C "git show --stat HEAD"       "$(lb 'git show --stat HEAD')"
+expect allow $C "git show --stat HEAD~1"     "$(lb 'git show --stat HEAD~1')"
+expect allow $C "git show --stat HEAD^"      "$(lb 'git show --stat HEAD^')"
+expect allow $C "git show --stat HEAD~1^0"   "$(lb 'git show --stat HEAD~1^0')"
+expect allow $C "git show --stat tag"        "$(lb 'git show --stat v1')"
+expect allow $C "git show --name-only ann tag" "$(lb 'git show --name-only v2')"
+expect allow $C "git show HEAD~1:docs/x.md"  "$(lb 'git show HEAD~1:docs/x.md')"
+expect allow $C "git show tag:docs/x.md"     "$(lb 'git show v1:docs/x.md')"
+expect deny  $C "git show HEAD~1:src"        "$(lb 'git show HEAD~1:bin/harness')"
+expect deny  $C "git show --stat HEAD~"      "$(lb 'git show --stat HEAD~x')"
+expect deny  $C "git show ~ at word start"   "$(lb 'git show --stat ~1')"
+expect deny  $C "git show glob"              "$(lb 'git show --stat HEAD*')"
+expect allow $C "cat own-session task output" "$(lb 'cat /private/tmp/claude-test70/proj/sess/tasks/abc.output')"
+expect deny  $C "cat other-session task output" "$(lb 'cat /private/tmp/claude-test70/proj/other/tasks/abc.output')"
+expect deny  $C "cat task output no slug"    "$(lb 'cat /private/tmp/claude-test70/sess/tasks/abc.output')"
+expect deny  $C "cat task output deep"       "$(lb 'cat /private/tmp/claude-test70/proj/x/sess/tasks/abc.output')"
+expect deny  $C "cat task output subdir"     "$(lb 'cat /private/tmp/claude-test70/proj/sess/tasks/d/abc.output')"
+expect deny  $C "cat task output no session id" "$(ltool Bash '{"command":"cat /private/tmp/claude-test70/proj/sess/tasks/abc.output"}' | jq -c 'del(.session_id)')"
+expect allow $C "Read lane .harness"         "$(ltool Read "$(jq -n -c --arg p "$LR/lane/.harness/task.md" '{file_path:$p}')")"
+expect allow $C "Read lane .harness symlink dir" "$(ltool Read "$(jq -n -c --arg p "$LR/lanelink/task.md" '{file_path:$p}')")"
+expect deny  $C "Read lane raw stream"       "$(ltool Read "$(jq -n -c --arg p "$LR/lane/.harness/log/a.jsonl" '{file_path:$p}')")"
+expect deny  $C "Read lane src"              "$(ltool Read "$(jq -n -c --arg p "$LR/lane/bin/harness" '{file_path:$p}')")"
+expect deny  $C "Read lane .harness link to src" "$(ltool Read "$(jq -n -c --arg p "$LR/lane/.harness/srclink" '{file_path:$p}')")"
+expect deny  $C "Read non-worktree .harness" "$(ltool Read "$(jq -n -c --arg p "$LR/other/.harness/task.md" '{file_path:$p}')")"
 rm -rf "$LR" /private/tmp/claude-test70
 
 echo "PASS $pass / FAIL $fail"

@@ -67,12 +67,13 @@ fi
 CWD=$(printf '%s' "$INPUT" | jq -r '.cwd // empty' 2>/dev/null)
 [ -n "$CWD" ] || CWD=$PWD
 CWD=${CWD%/}
+SESSION_ID=$(printf '%s' "$INPUT" | jq -r '.session_id // empty' 2>/dev/null)
 
 # Fixed strings: never interpolate per-call data (keeps the prompt cache stable).
 MSG_WRITE="Conductor cannot edit source. Delegate with the /implement skill (implementer worker). Direct writes are allowed only under docs/**/*.md, .harness/, and the .harness/ of a registered work folder (git worktree)."
 MSG_READ="Conductor does not read source. Delegate with the /analyze skill (analyst worker) and read its report. Direct reads are allowed only under .harness/, docs/, and *.md files."
 MSG_WATCH="harness watch is for a human terminal; the conductor reads the report (harness report <worker>, or harness wait <worker> to block until the run ends)."
-MSG_BASH="Conductor shell is limited to ONE command per call: harness (also harness -C <dir> ..., harness lane ...); gh pr create|view|list|checks|comment|edit|merge (no api, no merge -d); gh issue create|list|view|comment|close|edit|reopen; git status / log / diff --stat / branch (list); git show --stat|--name-only <rev> or git show <rev>:<path> (path under .harness/ or docs/, or *.md); ls (no -R) and stat on any path; cat, head, tail -n N under .harness/ and docs/, in a work folder's .harness/, and of Bash task output files (/private/tmp/claude-*/**/tasks/*.output). No ; & | redirects, backticks or \$(. Delegate command execution with the /implement skill (implementer worker)."
+MSG_BASH="Conductor shell is limited to ONE command per call: harness (also harness -C <dir> ..., harness lane ...); gh pr create|view|list|checks|comment|edit|merge (no api, no merge -d); gh issue create|list|view|comment|close|edit|reopen; git status / log / diff --stat / branch (list); git show --stat|--name-only <rev> or git show <rev>:<path> (path under .harness/ or docs/, or *.md); ls (no -R) and stat on any path; cat, head, tail -n N under .harness/ and docs/, in a work folder's .harness/, and of this session's Bash task output files (/private/tmp/claude-*/<slug>/<session_id>/tasks/*.output). No ; & | redirects, backticks or \$(. Delegate command execution with the /implement skill (implementer worker)."
 
 # --- Bash allow/deny lists ---------------------------------------------------
 # Each piece below is one alternative; they are joined with | into one regex.
@@ -252,6 +253,9 @@ readable() {
   p=$(physrel "$1") || return 1
   readable_rel "$p"
 }
+
+# readable_or_lane PATH -> readable, or under .harness/ of a registered work folder
+readable_or_lane() { readable "$1" || lane_harness_path "$1"; }
 
 # writable PATH -> 0 when the conductor may write it (lexically and after
 # resolving symlinks), or it is under .harness/ of a registered work folder
@@ -441,6 +445,17 @@ unquoted_text_ok() {
     END { exit (bad || st != 0) ? 1 : 0 }'
 }
 
+# commit_rev_ok REV -> 0 when REV is a plain rev (letters, digits . _ / @ -, then
+# optional ~N / ^N suffixes) that resolves to a commit; a blob or tree SHA is
+# denied because git show would print its content
+commit_rev_ok() {
+  case "$1" in
+    ''|-*) return 1 ;;
+  esac
+  printf '%s' "$1" | grep -Eq '^[A-Za-z0-9._/@-]+([~^][0-9]*)*$' || return 1
+  git -C "$CWD" rev-parse -q --verify "$1^{commit}" >/dev/null 2>&1
+}
+
 # git_show_ok MASKED -> 0 for "git show --stat|--name-only [REV...]" (no other
 # option) or "git show REV:PATH" (one token; PATH under .harness/ or docs/, or
 # *.md, no '..' segment, no raw stream). Tokens are plain: no quotes.
@@ -457,7 +472,7 @@ git_show_ok() {
       *:*)
         rev=${1%%:*}; path=${1#*:}
         [ -n "$rev" ] && [ -n "$path" ] || return 1
-        case "$rev" in -*|*[!A-Za-z0-9._/@-]*) return 1 ;; esac
+        commit_rev_ok "$rev" || return 1
         case "$path" in *:*|/*|..|../*|*/..|*/../*) return 1 ;; esac
         raw_stream_rel "$path" && return 1
         case "$path" in .harness/*|docs/*|*.md) return 0 ;; esac
@@ -467,21 +482,29 @@ git_show_ok() {
   for tok in "$@"; do
     case "$tok" in
       --stat|--name-only) stat=1 ;;
-      -*|*:*|*[!A-Za-z0-9._/@-]*) return 1 ;;
+      -*|*:*) return 1 ;;
+      *) commit_rev_ok "$tok" || return 1 ;;
     esac
   done
   [ "$stat" -eq 1 ]
 }
 
-# task_output_ok PATH -> 0 for a Bash tool task output file,
-# /private/tmp/claude-*/**/tasks/*.output (absolute, symlinks resolved)
+# task_output_ok PATH -> 0 for a task output file of the calling session:
+# /private/tmp/claude-*/<slug>/<session_id>/tasks/*.output (absolute, symlinks resolved)
 task_output_ok() {
-  local full dir
+  local full rest a b c d e
+  case "$SESSION_ID" in ''|*[!A-Za-z0-9_-]*) return 1 ;; esac
   case "$1" in /*) ;; *) return 1 ;; esac
   full=$(physical "$1") || return 1
-  dir=${full%/*}
-  case "$dir" in /private/tmp/claude-*/tasks|/private/tmp/claude-*/*/tasks) ;; *) return 1 ;; esac
-  case "${full##*/}" in *.output) return 0 ;; esac
+  case "$full" in /private/tmp/claude-*) ;; *) return 1 ;; esac
+  rest=${full#/private/tmp/}
+  IFS=/ read -r a b c d e <<RESTEOF
+$rest
+RESTEOF
+  case "$a" in claude-*) ;; *) return 1 ;; esac
+  [ -n "$b" ] && [ "$c" = "$SESSION_ID" ] && [ "$d" = tasks ] || return 1
+  case "$e" in ''|*/*|*[!A-Za-z0-9._-]*) return 1 ;; esac
+  case "$e" in *.output) return 0 ;; esac
   return 1
 }
 
@@ -537,8 +560,12 @@ bash_ok() {
   seg=$(printf '%s' "$seg" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')
   raw=$(printf '%s' "$raw" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')
   [ -n "$seg" ] || return 1
-  # plain shell text only (character allowlist)
-  unquoted_text_ok "$raw" || return 1
+  # plain shell text only (character allowlist); in a git show segment ~N / ^N rev
+  # suffixes are exempt here (commit_rev_ok validates them strictly)
+  case "$seg" in
+    git\ show|git\ show\ *) unquoted_text_ok "$(printf '%s' "$raw" | sed -E 's/([A-Za-z0-9._@-])([~^][0-9]*)+/\1/g')" || return 1 ;;
+    *) unquoted_text_ok "$raw" || return 1 ;;
+  esac
   # reject '..' path components (but not git ranges like main...HEAD)
   printf ' %s ' "$seg" | grep -Eq '[ /=]\.\.([ /]|$)' && return 1
   case "$seg" in
@@ -555,7 +582,7 @@ case "$TOOL" in
   Edit|Write)
     writable "$(field file_path)" || deny "$MSG_WRITE" ;;
   Read)
-    readable "$(field file_path)" || deny "$MSG_READ" ;;
+    readable_or_lane "$(field file_path)" || deny "$MSG_READ" ;;
   Grep)
     readable "$(field path)" || deny "$MSG_READ"
     # a directory search would read the raw streams under .harness/log

@@ -51,7 +51,6 @@ deny	harness status 2>&1
 deny	harness status | jq .result
 deny	harness status & harness status
 deny	cat docs/a.md # x
-allow	git show --stat HEAD
 deny	git branch --list feat
 deny	gh issue delete 3
 deny	gh run list
