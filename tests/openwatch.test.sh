@@ -4,8 +4,8 @@
 set -u
 . "$(dirname "$0")/harness-lib.sh"
 BIN=$(mktemp -d); WORKS="$WORKS $BIN"
-for t in herdr tmux osascript; do
-  printf '#!/bin/bash\nprintf "%%s|%%s\\n" "$(basename "$0")" "$*" >> "$OW_LOG"\n[ "$(basename "$0")" = herdr ] && [ "$1 $2" = "pane split" ] && echo "{\\"result\\":{\\"pane\\":{\\"pane_id\\":\\"w:p9\\"}}}"\n[ -n "${OW_FAIL:-}" ] && exit 1\nexit 0\n' > "$BIN/$t"
+for t in herdr tmux osascript open; do
+  printf '#!/bin/bash\nprintf "%%s|%%s\\n" "$(basename "$0")" "$*" >> "$OW_LOG"\n[ "$(basename "$0")" = herdr ] && [ "$1 $2" = "pane split" ] && echo "{\\"result\\":{\\"pane\\":{\\"pane_id\\":\\"w:p9\\"}}}"\n[ -n "${OW_RUNFAIL:-}" ] && [ "$1 $2" = "pane run" ] && exit 1\n[ -n "${OW_FAIL:-}" ] && exit 1\nexit 0\n' > "$BIN/$t"
   chmod +x "$BIN/$t"
 done
 setup
@@ -33,6 +33,19 @@ check "terminal: space/quote path escaped" grep -qF 'harness -C '"$(printf '%q' 
 ow -- open-watch bogus
 check "unknown role refused" [ "$RC" -ne 0 ]
 check "unknown role: nothing launched" [ ! -s "$OW_LOG" ]
+# herdr: split ok but run fails -> the new pane is closed, then the next backend runs
+ow HERDR_ENV=1 TMUX=/tmp/x OW_RUNFAIL=1 -- open-watch analyst
+check "herdr run failure: pane closed" grep -q "^herdr|pane close w:p9" "$OW_LOG"
+check "herdr run failure: falls to tmux" grep -q "^tmux|split-window" "$OW_LOG"
+# Ghostty: new window through open -na, abs command; no Terminal.app
+ow TERM_PROGRAM=ghostty -- open-watch implementer
+check "ghostty: open -na Ghostty" grep -q "^open|-na Ghostty --args -e /bin/bash -c harness -C $ABS watch implementer" "$OW_LOG"
+check "ghostty: not osascript" not_grep '^osascript' "$OW_LOG"
+ow TERM_PROGRAM=ghostty TMUX=/tmp/x -- open-watch analyst
+check "tmux wins over ghostty" not_grep '^open|' "$OW_LOG"
+ow TERM_PROGRAM=ghostty OW_FAIL=1 -- open-watch analyst
+check "ghostty failure: prints command" grep -q "no pane backend.*harness -C $ABS watch analyst" <<<"$OUT"
+check "ghostty failure: not Terminal.app" not_grep '^osascript' "$OW_LOG"
 # no backend: the Terminal launcher fails too -> the command is printed, exit 0
 ow OW_FAIL=1 -- open-watch analyst
 check "no backend: exit 0" [ "$RC" -eq 0 ]
