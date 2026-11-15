@@ -56,8 +56,9 @@ status: done | partial | blocked
 ## Findings / Decisions
 - [Critical] file:line — what is wrong and why
 - [Major] file:line — ...
-- [Minor] file:line — ...
 - (or "no findings")
+## Minor
+- file:line — ... (the conductor files each as an issue; never FAIL for these)
 ## Verification
 - commands you ran (harness-verify run all, tests, build, app smoke) → result
 ## Open questions
@@ -73,6 +74,7 @@ Rules: under 40 lines total; ≤ 8 findings, most severe first. Longer detail
 goes in another file under `.harness/` and is linked from the report.
 
 The report's **last line** must be exactly `VERDICT: PASS` or `VERDICT: FAIL`
-(nothing after it). Use FAIL if there is any Critical or Major finding or
-verification failed; otherwise PASS. `harness ask` turns FAIL into exit 5 and
+(nothing after it). FAIL only for Critical or Major findings (correctness,
+security, data loss, missing tests for changed behaviour) or a verification
+failure; Minors never fail a review: list them under `## Minor`, then PASS. `harness ask` turns FAIL into exit 5 and
 a missing VERDICT line into exit 3.

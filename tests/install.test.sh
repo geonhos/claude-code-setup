@@ -37,6 +37,7 @@ cat > "$CLAUDE_DIR/settings.json" <<'EOF'
     ],
     "Stop": [ { "matcher": "", "hooks": [ { "type": "command", "command": "/opt/stop.sh" } ] } ],
     "SessionStart": [ { "matcher": "startup", "hooks": [ { "type": "command", "command": "/opt/session.sh" } ] } ],
+    "Notification": [ { "hooks": [ { "type": "command", "command": "/opt/notify.sh" } ] } ],
     "UserPromptSubmit": [
       { "hooks": [ { "type": "command", "command": "/opt/prompt.sh" } ] }
     ]
@@ -265,6 +266,41 @@ check "wiki truncation drops late lines" sh -c '! printf "%s" "$1" | grep -q "p5
 install_in "$T"
 check "resume hook still once after rerun" [ "$(jq --arg r "$RESUME" '[.hooks.SessionStart[]? | select(any(.hooks[]?; .command==$r))] | length' "$S")" -eq 1 ]
 check "other SessionStart still once" [ "$(jq '[.hooks.SessionStart[]? | select(any(.hooks[]?; .command=="/opt/session.sh"))] | length' "$S")" -eq 1 ]
+
+# --- Notification hook (desktop notification when the conductor waits) ------------------------
+NOTIFY="$REPO/claude/hooks/notify-decision.sh"
+check "notify hook executable" [ -x "$NOTIFY" ]
+check "notify hook matcher" jq -e --arg r "$NOTIFY" '.hooks.Notification[] | select(any(.hooks[]?; .command==$r)) | .matcher=="permission_prompt|idle_prompt|elicitation_dialog|elicitation_url_dialog|agent_needs_input"' "$S" >/dev/null
+check "notify hook added once" [ "$(jq --arg r "$NOTIFY" '[.hooks.Notification[]? | select(any(.hooks[]?; .command==$r))] | length' "$S")" -eq 1 ]
+check "other Notification still once" [ "$(jq '[.hooks.Notification[]? | select(any(.hooks[]?; .command=="/opt/notify.sh"))] | length' "$S")" -eq 1 ]
+install_in "$T"
+check "notify hook still once after rerun" [ "$(jq --arg r "$NOTIFY" '[.hooks.Notification[]? | select(any(.hooks[]?; .command==$r))] | length' "$S")" -eq 1 ]
+NB=$ROOT/nbin; mkdir -p "$NB" "$ROOT/proj/my-folder"
+printf '#!/bin/bash\nprintf "%%s\\n" "$@" > "%s/osa.args"\n' "$ROOT" > "$NB/osascript"; chmod +x "$NB/osascript"
+JQD=$(dirname "$(command -v jq)")
+IN=$(printf '{"agent_type":"conductor","cwd":"%s","message":"Claude needs your \\"permission\\"","notification_type":"permission_prompt"}' "$ROOT/proj/my-folder")
+rm -f "$ROOT/osa.args"
+printf '%s' "$IN" | env -u HARNESS_ROLE PATH="$NB:$JQD:/usr/bin:/bin" /bin/bash "$NOTIFY"; RC=$?
+check "notify rc 0" [ "$RC" -eq 0 ]
+check "notify calls osascript with title and message" grep -q 'display notification "Claude needs your \\"permission\\"" with title "Claude: my-folder"' "$ROOT/osa.args"
+rm -f "$ROOT/osa.args"
+printf '%s' "$IN" | sed 's/conductor/analyst/' | env -u HARNESS_ROLE PATH="$NB:$JQD:/usr/bin:/bin" /bin/bash "$NOTIFY"; RC=$?
+check "notify silent for another agent_type" [ ! -e "$ROOT/osa.args" ]
+check "notify other-agent rc 0" [ "$RC" -eq 0 ]
+printf '%s' "$IN" | sed 's/"agent_type":"conductor",//' | env -u HARNESS_ROLE PATH="$NB:$JQD:/usr/bin:/bin" /bin/bash "$NOTIFY"
+check "notify silent without agent_type" [ ! -e "$ROOT/osa.args" ]
+printf '%s' "$IN" | HARNESS_ROLE=worker PATH="$NB:$JQD:/usr/bin:/bin" /bin/bash "$NOTIFY"
+check "notify conductor with inherited HARNESS_ROLE=worker still notifies" [ -e "$ROOT/osa.args" ]
+rm -f "$ROOT/osa.args"
+NO=$ROOT/noosa; mkdir -p "$NO"; for c in jq cat tr sed; do ln -sf "$(command -v $c)" "$NO/$c"; done
+printf '%s' "$IN" | env -u HARNESS_ROLE PATH="$NO" /bin/bash "$NOTIFY"; RC=$?
+check "notify without osascript rc 0" [ "$RC" -eq 0 ]
+check "notify without osascript makes no call" [ ! -e "$ROOT/osa.args" ]
+# the prompts state the review scope and the Major-only verdict rule
+check "reviewer FAIL only for Critical/Major" grep -q 'Minor.*never FAIL\|FAIL only' "$REPO/claude/agents/reviewer.md"
+check "implement skill: review big tasks only" grep -qi 'big task' "$REPO/claude/skills/implement/SKILL.md"
+check "review skill: big task scope" grep -q 'big task' "$REPO/claude/skills/review/SKILL.md"
+check "conductor files Minors as issues before the PR" grep -q 'Minors with `gh issue create` before the PR' "$REPO/claude/agents/conductor.md"
 
 # --- test runner (install.sh --test) against scratch suites -----------------
 # INSTALL_SH can point at another copy of the script (used to show the tests red).

@@ -43,6 +43,7 @@ harness init   [--no-agent] [--shared]                       # 이 저장소를 
 harness ask    <agent> '<instruction>' [--timeout MS] [--keep]
 harness wait   <agent> [--timeout MS]                        # run이 끝날 때까지 block, 수집은 안 함
 harness watch  <agent> [-n N]                                # 사람용 터미널 뷰어(tty 필요, 게이트가 거부)
+harness open-watch <agent>                                   # herdr/tmux pane, Ghostty/Terminal 창에서 watch를 연다(없으면 명령 출력)
 harness report <agent>                                       # 기존 리포트 출력 (ask와 같은 exit code)
 harness status
 harness metrics [--since YYYY-MM-DD] [--json]                # progress.jsonl·위키 기반 지표 (최근 28일 vs 직전 28일)
@@ -82,4 +83,4 @@ Bash는 호출마다 명령 하나만 허용된다(`;` `&&` `||` `|` `&`, 리디
 - `ls`(재귀 금지)와 `.harness/`·`docs/` 아래 `cat`/`ls`(인자에 따옴표, glob, `$` 금지)
 - `docs/` 아래 Markdown과 `.harness/` 아래 모든 파일 쓰기
 
-그 밖의 호출은 거부된다. 한계: 게이트는 기본 파일/셸 도구만 막고, 파일을 읽는 다른 MCP 서버는 막지 못한다. 판단은 훅 입력의 `agent_type`으로 하고, `agent_type`이 없거나 서브에이전트(`agent_id` 있음)일 때만 `HARNESS_ROLE=worker`가 게이트를 끈다([결정 0010](wiki/decisions/0010-herdr-optional-gate-by-checkout.md)). instruction에 백틱이나 `$(`가 들어가면 작은따옴표로 감싼다. conductor 에이전트의 본문은 기본 시스템 프롬프트를 대체하므로(`--agent`의 동작) 동작 지침은 `claude/agents/conductor.md`에 있다.
+그 밖의 호출은 거부된다. 한계: 게이트는 기본 파일/셸 도구만 막고, 파일을 읽는 다른 MCP 서버는 막지 못한다. 경로는 심링크를 푼 뒤 한 번 더 검사한다. jq가 없거나 훅 입력을 파싱하지 못하면 게이트는 모든 호출을 거부한다(fail closed). 판단은 훅 입력의 `agent_type`으로 하고, `agent_type`이 없거나 서브에이전트(`agent_id` 있음)일 때만 `HARNESS_ROLE=worker`가 게이트를 끈다([결정 0010](wiki/decisions/0010-herdr-optional-gate-by-checkout.md)). instruction에 백틱이나 `$(`가 들어가면 작은따옴표로 감싼다. conductor 에이전트의 본문은 기본 시스템 프롬프트를 대체하므로(`--agent`의 동작) 동작 지침은 `claude/agents/conductor.md`에 있다.
