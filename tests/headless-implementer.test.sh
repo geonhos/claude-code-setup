@@ -1,5 +1,5 @@
 #!/bin/bash
-# Headless implementer (decision 0009): exit 2 on denials, verify exit map, auto-resume,
+# Headless implementer (decision 0009): exit 2 on denials, verify exit map,
 # lifecycle. bin/harness ask against tests/fake-claude.
 # Run: /bin/bash tests/headless-implementer.test.sh
 set -u
@@ -94,29 +94,16 @@ hrun report implementer
 check "killed mid-verify: report is INTERRUPTED rc 5" [ "$RC" -eq 5 ]
 check "killed mid-verify: INTERRUPTED line" grep -q 'verify: INTERRUPTED' <<<"$OUT"
 
-# 3. auto-resume after a non-zero implementer exit (decision 0009)
+# 3. failcmd: an implementer ask that ends with verification failed (exit 5)
 failcmd() { echo "mkdir -p $WORK/.harness/reports $WORK/.harness/verify && printf '# implementer report\nstatus: done\n' > $WORK/.harness/reports/implementer.md && printf '{\"status\":\"fail\",\"step\":\"test\",\"attempts\":3}' > $WORK/.harness/verify/implementer.json"; }
 isetup
 export FAKE_REPORT_CMD=$(failcmd)
 hrun ask implementer "first"
-check "autoresume: first ask exits 5" [ "$RC" -eq 5 ]
-check "autoresume: first ask runs fresh" not_logged "--resume"
+check "no autoresume: first ask exits 5" [ "$RC" -eq 5 ]
 export FAKE_REPORT_CMD="mkdir -p $WORK/.harness/reports && printf '# implementer report\nstatus: done\n' > $WORK/.harness/reports/implementer.md"
 hrun ask implementer "second"
-check "autoresume: second ask resumes the failed session" logged "--resume sess-1"
-check "autoresume: says it keeps context" grep -q 'keeping context (last ask exit 5)' <<<"$OUT"
-check "autoresume: progress resumed:true" jqt '.resumed == true and .resume == true and .exit == 0' <<<"$(lastprog)"
-hrun ask implementer "third"
-check "autoresume: after a clean exit the next ask is fresh" test "$(grep -c -- '--resume' "$FAKE_LOG")" = 1
-check "autoresume: no resumed flag when fresh" jqt '(.resumed // false) == false and .resume == false' <<<"$(lastprog)"
-
-isetup
-export FAKE_REPORT_CMD=$(failcmd)
-hrun ask implementer "first"
-export FAKE_REPORT_CMD="mkdir -p $WORK/.harness/reports && printf '# implementer report\nstatus: done\n' > $WORK/.harness/reports/implementer.md"
-hrun ask implementer "second" --fresh
-check "autoresume: --fresh overrides" not_logged "--resume"
-check "autoresume: --fresh progress not resumed" jqt '(.resumed // false) == false' <<<"$(lastprog)"
+check "no autoresume: the ask after a failure runs fresh" not_logged "--resume"
+check "no autoresume: progress not resumed" jqt '.resume == false' <<<"$(lastprog)"
 
 # 3b. a resume of a session claude no longer knows: one fresh retry in the same ask
 isetup
@@ -124,14 +111,14 @@ export FAKE_REPORT_CMD=$(failcmd)
 hrun ask implementer "first"
 export FAKE_REPORT_CMD="mkdir -p $WORK/.harness/reports && printf '# implementer report\nstatus: done\n' > $WORK/.harness/reports/implementer.md"
 export FAKE_CLAUDE_RESUME_MISSING=1
-hrun ask implementer "second"
+hrun ask implementer "second" --keep
 unset FAKE_CLAUDE_RESUME_MISSING
 check "resume missing: fresh retry succeeds, rc 0" [ "$RC" -eq 0 ]
 check "resume missing: first attempt did resume" logged "--resume sess-1"
 check "resume missing: second attempt ran fresh" test "$(grep -c '^claude: ' "$FAKE_LOG")" = 3
 check "resume missing: stderr line" grep -q 'resume of sess-1 failed, running fresh' <<<"$OUT"
 check "resume missing: report relayed" grep -q "implementer report" <<<"$OUT"
-check "resume missing: progress resume:false, not resumed" jqt '.resume == false and (.resumed // false) == false and .exit == 0' <<<"$(lastprog)"
+check "resume missing: progress resume:false" jqt '.resume == false and .exit == 0' <<<"$(lastprog)"
 check "resume missing: session no longer the dead one" jqt '.session != "sess-1" and .session != ""' <<<"$(lastprog)"
 
 # 3c. error branches win over the denial branch (exit 3 with the --keep hint, not 2)
@@ -142,12 +129,6 @@ check "denial + max_turns: --keep hint" grep -q -- '--keep' <<<"$OUT"
 isetup; export FAKE_CLAUDE_MODE=error FAKE_CLAUDE_DENY=1
 hrun ask implementer "q"
 check "denial + error result: rc 3" [ "$RC" -eq 3 ]
-
-isetup
-export FAKE_REPORT_CMD=$(failcmd)
-hrun ask analyst "first"
-hrun ask analyst "second"
-check "autoresume: analyst is not auto-resumed" not_logged "--resume"
 
 # 4. harness-view (design §7): verify blocks, Stop start/done, denials, failing-test tails
 vw() { printf '%s\n' "$@" | NO_COLOR=1 PATH="$HERE/../bin:$PATH" /bin/bash "$HERE/../bin/harness-view" 2>&1; }

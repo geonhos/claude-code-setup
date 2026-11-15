@@ -31,8 +31,8 @@ and (§1.5) that the global conductor made every session outside herdr useless.
 - **Superseded by 0010.** A session started outside herdr is ungated even though it runs the conductor
   prompt; the prompt tells it to work directly there.
 - Env-based checks trust inherited env. A Claude daemon started in a worker
-  pane hands `HARNESS_ROLE=worker` to every session it hosts, see
-  troubleshooting page [daemon inherits worker env](../troubleshooting/daemon-inherits-worker-env.md).
+  pane hands `HARNESS_ROLE=worker` to every session it hosts, (the
+  troubleshooting page for this was deleted 2026-11-13, #72: herdr panes are gone).
   `HERDR_ENV` is inherited too. Since v21 (step 4 above) the gate keys on
   `agent_type`, so that daemon case stays gated; only the no-`agent_type` fallback
   still trusts env.

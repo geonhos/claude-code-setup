@@ -1,6 +1,6 @@
 # harness-headless.sh — the headless runner glue (decisions 0007, 0011): hl_*, ask/report/close_headless.
 # Sourced eagerly by bin/harness (see the loader there): definitions only, no side effects.
-# Shared helpers (die, has_uncollected, ...) stay in bin/harness and resolve at call time.
+# Shared helpers (die, ...) stay in bin/harness and resolve at call time.
 
 # --- headless runner (decision 0007) --------------------------------------------------------------
 # `harness ask` writes the instruction to a file and starts `harness-run` (claude -p, stream-json)
@@ -42,16 +42,15 @@ hl_done() { grep -q "\"ask_id\":\"$2\"" "$ASK_DIR/$1.exit.json" 2>/dev/null; }
 # hl_progress_obj <role> <t0> — extra progress.jsonl fields of the role's last run, as one
 # JSON object (keys session / ctx_after are consumed by the caller)
 hl_progress_obj() {
-  local role=$1 t0=${2:-} ej="$ASK_DIR/$1.exit.json" id resume=false resumed=false
+  local role=$1 t0=${2:-} ej="$ASK_DIR/$1.exit.json" id resume=false
   id=$(awk 'NR == 1 { print $1 }' "$ASK_DIR/$role.current" 2>/dev/null)
   [ -z "$(sed -n 's/^resume=//p' "$ASK_DIR/$role.run" 2>/dev/null | head -n 1)" ] || resume=true
-  [ -f "$ASK_DIR/$role.autoresume" ] && [ "$resume" = true ] && resumed=true
   if [ -f "$ej" ] && { [ -z "$id" ] || hl_done "$role" "$id"; }; then
-    jq -c --argjson resume "$resume" --argjson resumed "$resumed" --argjson t0 "$(num_or_null "$t0")" '
+    jq -c --argjson resume "$resume" --argjson t0 "$(num_or_null "$t0")" '
       {runner: "headless", cost_usd: (.cost_usd // null), turns: (.num_turns // null), result: (.result // null),
        denials: (.denials // null), stream_log: (.stream_log // null), resume: $resume,
        startup_s: (if (.t_init | type) == "number" and $t0 != null then (.t_init - $t0) else null end),
-       session: (.session_id // ""), ctx_after: (.ctx // "")} + (if $resumed then {resumed: true} else {} end)' "$ej" 2>/dev/null && return 0
+       session: (.session_id // ""), ctx_after: (.ctx // "")}' "$ej" 2>/dev/null && return 0
   fi
   jq -n -c --argjson resume "$resume" '{runner: "headless", resume: $resume, session: "", ctx_after: ""}'
 }
@@ -162,7 +161,7 @@ hl_spawn_bg() {
 hl_launch() {
   local role=$1 id=$2 resume=$3 max_s=$4 ctxb=$5 start_s=$6 poll=$7 a="$ASK_DIR/$1" s0 root
   root=$(pwd -P)
-  rm -f "$a.finished" "$a.exit.json" "$a.pid"
+  rm -f "$a.exit.json" "$a.pid"
   printf 'resume=%s\nmax_s=%s\nctx_before=%s\n' "$resume" "$max_s" "$ctxb" > "$a.run"
   hl_spawn_bg "$role" "$id" "$root"
   # the run announces itself with its pid file
@@ -223,9 +222,9 @@ hl_deadline_bump() {
   fi
 }
 
-# ask_headless <role> <text> <timeout-ms> <fresh> <keep> — the whole headless ask; always exits
+# ask_headless <role> <text> <timeout-ms> <keep> — the whole headless ask; always exits
 ask_headless() {
-  local role=$1 text=$2 timeout=$3 fresh=$4 keep=$5 id start retried resume="" sid max_s ctxb="" report="$REPORT_DIR/$1.md" last
+  local role=$1 text=$2 timeout=$3 keep=$4 id start retried resume="" sid max_s ctxb="" report="$REPORT_DIR/$1.md"
   local a="$ASK_DIR/$role" now prev deadline dl0 poll=${HARNESS_POLL_SEC:-2} start_s=${HARNESS_HL_START_S:-15} s0 g
   mkdir -p "$ASK_DIR" "$REPORT_DIR" "$LOG_DIR"
   if hl_alive "$role"; then
@@ -233,16 +232,6 @@ ask_headless() {
     exit 4
   fi
   rm -f "$a.run"
-  # implementer only (decision 0009, amends D6): after an ask that did not end cleanly the next one
-  # continues the session; --fresh overrides, --keep needs no help
-  rm -f "$a.autoresume"
-  if [ "$role" = implementer ] && [ "$keep" = 0 ] && [ "$fresh" = 0 ]; then
-    last=$(last_exit "$role")
-    case "$last" in
-      ''|0) ;;
-      *) keep=1; : > "$a.autoresume"; echo "keeping context (last ask exit $last)" >&2 ;;
-    esac
-  fi
   if [ "$keep" = 1 ]; then
     sid=$(sed -n 1p "$a.session" 2>/dev/null)
     if [ -n "$sid" ]; then
@@ -263,7 +252,7 @@ ask_headless() {
   rm -f "$report"
   id="$(date +%s)-$$-$RANDOM"; start=$(date +%s)
   printf '%s %s\n' "$id" "$start" > "$a.current"
-  rm -f "$a.finished" "$a.exit.json" "$a.pid"
+  rm -f "$a.exit.json" "$a.pid"
   if [ "$role" = implementer ]; then verify_tool baseline implementer 2>/dev/null || rm -f .harness/verify/implementer.json; fi
   max_s=$(hl_max_s "$role")
   printf '%s\n' "$text" > "$a.prompt"
@@ -324,7 +313,6 @@ report_headless() {
     echo "harness: no finished run for $role" >&2
     exit 3
   fi
-  stamp_finished "$role"
   hl_collect "$role"
 }
 
@@ -348,16 +336,15 @@ hl_kill() {
 hl_finish_close() {
   local a="$ASK_DIR/$1"
   # .current ends the run slot: status shows "-" again (exit.json stays for the post-mortem)
-  rm -f "$a.finished" "$a.session" "$a.current"
+  rm -f "$a.session" "$a.current"
   log_close "$1" "$2" headless
   echo "closed $1"
 }
 
-# close_headless <role> <force> <skip-missing> — close the role's run slot: kill a live run (--force)
+# close_headless <role> <force> — close the role's run slot: kill a live run (--force)
 close_headless() {
-  local role=$1 force=$2 skip=$3 reason=manual
+  local role=$1 force=$2 reason=manual
   if ! hl_alive "$role" && [ ! -f "$ASK_DIR/$role.current" ]; then
-    [ "$skip" = 1 ] && return 0
     die "$role is not running"
   fi
   if hl_alive "$role"; then
@@ -367,9 +354,6 @@ close_headless() {
     fi
     hl_kill "$role"
     reason=force_kill
-  elif [ "$force" != 1 ] && has_uncollected "$role"; then
-    echo "harness: $role has a report that was not collected (harness report $role); not closing (use --force to close anyway)" >&2
-    return 4
   fi
   hl_finish_close "$role" "$reason"
 }

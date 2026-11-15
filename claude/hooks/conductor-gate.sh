@@ -4,7 +4,7 @@
 # Role:   hook input agent_type -> conductor: gate; any other agent: allow
 #         (only when agent_id is absent; a subagent, agent_id set, uses the env rule)
 #         (workers run as analyst/implementer/reviewer/solo). Keying on the
-#         agent, not the env, closes the daemon-inherits-worker-env hole: a
+#         agent, not the env, closes the inherited-worker-env hole: a
 #         conductor hosted by a daemon that exported HARNESS_ROLE=worker is still
 #         gated. Without agent_type, HARNESS_ROLE=worker allows (older hosts).
 #         Harness checkout: the gate acts only where .harness/asks/ exists (nearest

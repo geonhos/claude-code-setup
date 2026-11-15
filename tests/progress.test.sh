@@ -156,7 +156,7 @@ check "rotate: gz has old lines" [ "$(gzip -dc .harness/progress.jsonl.*.gz | wc
 check "rotate: new jsonl has only new line" [ "$(nlines .harness/progress.jsonl)" -eq 1 ]
 
 # --- usage errors inside the ask are logged (exit 1) ---------------------------------------
-for bad in "--fresh --keep" "--timeout abc" "--timeout 0" "--bogus" "--worktree" "--base x" "--via x"; do
+for bad in "--fresh" "--timeout abc" "--timeout 0" "--bogus" "--worktree" "--base x" "--via x"; do
   setup
   runerr ask analyst "q" $bad
   check "usage ($bad): rc 1" [ "$RC" -eq 1 ]
