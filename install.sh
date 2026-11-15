@@ -20,6 +20,7 @@ BIN_DIR=${BIN_DIR:-$HOME/.local/bin}
 SETTINGS="$CLAUDE_DIR/settings.json"
 GATE="$REPO/claude/hooks/conductor-gate.sh"
 RESUME="$REPO/claude/hooks/conductor-resume.sh"
+NOTIFY="$REPO/claude/hooks/notify-decision.sh"
 MATCHER="Edit|Write|Read|Grep|Glob|Bash"
 
 die() { echo "install: $*" >&2; exit 1; }
@@ -174,7 +175,7 @@ case ":$PATH:" in
   *) echo "warning: $BIN_DIR is not on PATH; add it so the conductor can run 'harness'" >&2 ;;
 esac
 
-# 3. settings.json: cache TTLs + exactly one entry each for the gate and resume hooks
+# 3. settings.json: cache TTLs + exactly one entry each for the gate, resume and notify hooks
 bak="$SETTINGS.bak.$(date +%Y%m%d%H%M%S)"
 cp "$SETTINGS" "$bak"
 tmp=$(mktemp)
@@ -182,7 +183,7 @@ trap 'rm -f "$tmp"' EXIT
 if [ "$(jq -r '.agent // empty' "$SETTINGS")" = conductor ]; then
   echo "note: removed the global agent=conductor from $SETTINGS; run 'harness init' in each repo that should use the conductor"
 fi
-jq --arg gate "$GATE" --arg matcher "$MATCHER" --arg resume "$RESUME" '
+jq --arg gate "$GATE" --arg matcher "$MATCHER" --arg resume "$RESUME" --arg notify "$NOTIFY" '
   (if .agent == "conductor" then del(.agent) else . end)
   | .promptCacheTtl = "1h"
   | .subagentPromptCacheTtl = "1h"
@@ -198,6 +199,10 @@ jq --arg gate "$GATE" --arg matcher "$MATCHER" --arg resume "$RESUME" '
   | .hooks.SessionStart //= []
   | .hooks.SessionStart |= map(if any(.hooks[]?; .command == $resume) then (.hooks |= map(select(.command != $resume))) | select((.hooks | length) > 0) else . end)
   | .hooks.SessionStart += [{matcher: "startup|clear|compact", hooks: [{type: "command", command: $resume}]}]
+  # same for the Notification hook (desktop notification when the conductor waits for the user)
+  | .hooks.Notification //= []
+  | .hooks.Notification |= map(if any(.hooks[]?; .command == $notify) then (.hooks |= map(select(.command != $notify))) | select((.hooks | length) > 0) else . end)
+  | .hooks.Notification += [{matcher: "permission_prompt|idle_prompt|elicitation_dialog|elicitation_url_dialog|agent_needs_input", hooks: [{type: "command", command: $notify}]}]
 ' "$SETTINGS" > "$tmp"
 cat "$tmp" > "$SETTINGS" || die "failed to write $SETTINGS; restore from $bak"
 
@@ -205,6 +210,7 @@ cat <<EOF
 installed:
   gate hook      $GATE  (matcher: $MATCHER)
   resume hook    $RESUME  (SessionStart: startup|clear|compact)
+  notify hook    $NOTIFY  (Notification: permission_prompt|idle_prompt|elicitation_dialog|elicitation_url_dialog|agent_needs_input)
   agents         $CLAUDE_DIR/agents/ ($(cd "$REPO/claude/agents" && ls *.md | tr '\n' ' '))
   skills         $CLAUDE_DIR/skills/ ($(cd "$REPO/claude/skills" && ls -d */ | tr -d / | tr '\n' ' '))
   harness        $BIN_DIR/harness

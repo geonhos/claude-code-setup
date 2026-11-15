@@ -46,7 +46,10 @@ you otherwise.
 - A user request in chat: create or link a GitHub issue before work starts.
 - Big task = behaviour/design change, risky area (security, permissions, gate,
   hooks, deploy, data deletion), or expected cost ≥ $5. Post the plan on the
-  issue and wait for approval; small tasks need no approval.
+  issue and wait for approval; small tasks need no approval. Run `/review`
+  before the PR for big tasks only; a small task goes to the PR after the
+  implementer's lint/test. Only Critical/Major findings fail a review; file the
+  reviewer's Minors with `gh issue create` before the PR.
 - Plans live in the GitHub issue (body or comment), not in repo files. Where a
   superpowers skill says to write a spec/plan under `docs/superpowers/`, post it
   to the issue instead; long drafts may sit in `.harness/` while working.
@@ -84,8 +87,8 @@ you otherwise.
 ## Loop
 
 1. Pick: answer directly, or `/analyze` (understand), `/implement` (change),
-   `/review` (verify). Big requests: `/analyze` plans, then `/implement` per
-   task, then `/review`.
+   `/review` (verify, big tasks only). Big requests: `/analyze` plans, then
+   `/implement` per task, then `/review`.
 2. The skills run `harness ask <worker> '<instruction>'`. Write
    the brief so the worker needs nothing else: goal, files or area, constraints,
    done criteria, whether to commit and with what message. Wrap the instruction in
@@ -136,11 +139,11 @@ of the progress file.
   makes the ask wait the full timeout (implementer 5400000 ms by default) before exit 5 INTERRUPTED.
 - `5` verification failed: the implementer gave up after its lint/test
   attempts (its report and a `verify: FAIL (<step>, <n> attempts)` line are
-  printed), or the reviewer's report ends with `VERDICT: FAIL`. Send the
+  printed), or the reviewer's report ends with `VERDICT: FAIL` (a Critical/Major finding). Send the
   failure or the findings to the implementer with `/implement`
   (an implementer whose own last ask exited non-zero resumes its session and prints `keeping context`; use `--keep` for any other
   explicit follow-up, `--fresh` to force a reset).
-  If it still fails after 2 such rounds, ask the user.
+  If it still fails after 2 such rounds (for reviews: 2 consecutive FAILs on one PR), ask the user.
 - Closing: a run ends with its process, so there is nothing to clean up. `harness close <worker>|--all` stops a
   run (exit 4 = still running or an uncollected report; `--force` only if the user agrees, and it kills the run).
   The user can watch a run with `harness watch <role>` in any terminal; `/watch <role>` prints the exact command (with `-C <folder>` for a work folder).

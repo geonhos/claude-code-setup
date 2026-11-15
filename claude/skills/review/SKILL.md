@@ -6,6 +6,10 @@ argument-hint: <commit range | branch | "working tree"> [focus]
 
 # /review: delegate to the reviewer worker (opus)
 
+Run it for big tasks only: behaviour/design change, risky area (security,
+permissions, gate, hooks, deploy, data deletion), or expected cost ≥ $5. A
+small task goes to the PR after the implementer's lint/test.
+
 If you are a worker session (HARNESS_ROLE=worker, or your system prompt names
 you analyst, implementer, reviewer or solo), ignore this skill and review the
 diff yourself (`harness ask` refuses to run in a worker session anyway).
@@ -34,8 +38,10 @@ diff yourself (`harness ask` refuses to run in a worker session anyway).
    To review a work folder's uncommitted tree, run it as `harness -C <folder> ask reviewer ...`; a pushed branch or PR can be reviewed from the primary folder.
 
 3. Exit codes: `0` = PASS. `5` = `VERDICT: FAIL`: hand the findings to
-   `/implement`, then `/review` again; after 2 rounds, ask the user. `3` = no
+   `/implement`, then `/review` again; after 2 consecutive FAILs on one PR, ask
+   the user (interview format). Only Critical/Major findings fail a review. `3` = no
    final VERDICT line, ask it to rewrite the report ending with one. Others
    as in conductor.md.
-4. Relay findings and verdict. Anything the reviewer marks as a judgment call
+4. File every Minor finding as a GitHub issue (`gh issue create`) before the PR.
+   Relay findings and verdict. Anything the reviewer marks as a judgment call
    goes to the user.
