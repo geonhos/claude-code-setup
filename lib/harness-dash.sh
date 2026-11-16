@@ -15,11 +15,26 @@ dash_fmt_dur() {
 # dash_min A B
 dash_min() { if [ "$1" -lt "$2" ]; then echo "$1"; else echo "$2"; fi; }
 
+# dash_now — epoch seconds; HARNESS_DASH_NOW pins the clock (tests)
+dash_now() { if [ -n "${HARNESS_DASH_NOW:-}" ]; then printf '%s' "$HARNESS_DASH_NOW"; else date +%s; fi; }
+
+# dash_brief_file <prompt> — the first existing .md under a .harness/ directory that the prompt names
+# (absolute or relative, e.g. "Read /abs/.harness/task-67.md"); nothing when none
+dash_brief_file() {
+  local tok
+  for tok in $(grep -oE '[^[:space:]`"'"'"'()]*\.harness/[^[:space:]`"'"'"'()]*\.md' "$1" 2>/dev/null); do
+    case "$tok" in */../*|*/..|../*) continue ;; esac
+    case "$tok" in .harness/*|*/.harness/*) ;; *) continue ;; esac
+    if [ -f "$tok" ]; then printf '%s\n' "$tok"; return 0; fi
+  done
+  return 1
+}
+
 # dash_brief <role> — title line, then "S<TAB>step" / "H<TAB>heading" lines. The brief is the task
-# file only when the ask's prompt names it; otherwise the prompt text itself (first line, no steps).
+# file only when the ask's prompt names one under .harness/; otherwise the prompt text itself (first line, no steps).
 dash_brief() {
-  local role=$1 p="$ASK_DIR/$1.prompt" f=".harness/task-$1.md"
-  if [ -f "$f" ] && grep -qF "$f" "$p" 2>/dev/null; then
+  local role=$1 p="$ASK_DIR/$1.prompt" f
+  if f=$(dash_brief_file "$p"); then
     awk '
       BEGIN { t = ""; sec = 0 }
       /^# / && t == "" { t = substr($0, 3); next }
@@ -128,7 +143,7 @@ hl_dash_frame() {
   if [ -f ".harness/reports/$role.md" ] && ! [ ".harness/reports/$role.md" -ot "$a.current" ]; then rep_ok=1; fi
   if [ "$final" = 1 ] && [ "$exit_ok" = 1 ]; then
     dur=$(jq -r '((.duration_ms // 0) / 1000) | floor' "$a.exit.json" 2>/dev/null)
-  elif digits_only "${start:-}"; then dur=$(( $(date +%s) - start ))
+  elif digits_only "${start:-}"; then dur=$(( $(dash_now) - start ))
   else dur=0; fi
 
   local bt brief_lines steps="" heads="" l k
@@ -196,8 +211,8 @@ hl_dash_frame() {
   local out="" sec="── "
   # idle: seconds since the stream last grew (file mtime), shown from 10 s while the run is live
   local idle="" mt
-  if [ "$final" != 1 ] && [ -f "$raw" ] && mt=$(file_mtime "$raw") && [ $(( $(date +%s) - mt )) -ge 10 ]; then
-    idle=" · idle $(dash_fmt_dur $(( $(date +%s) - mt )))"
+  if [ "$final" != 1 ] && [ -f "$raw" ] && mt=$(file_mtime "$raw") && [ $(( $(dash_now) - mt )) -ge 10 ]; then
+    idle=" · idle $(dash_fmt_dur $(( $(dash_now) - mt )))"
   fi
   out=$(printf '%s  %s  ⏱ %s%s  turns %s  ctx %s  %s' "$role" "${id:-?}" "$(dash_fmt_dur "$dur")" "$idle" "$turns" "$ctx" "$model")
   [ "$abrief" -eq 0 ] || out="$out"$'\n'"${sec}Brief ── $bt"
