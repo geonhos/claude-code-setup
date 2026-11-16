@@ -623,6 +623,8 @@ mkdir -p "$LR/main/.harness/asks" "$LR/other/.harness"
 (cd "$LR/main" && git init -q . && mkdir -p bin docs && echo src > bin/harness && echo doc > docs/x.md &&
   git add bin docs && git -c user.email=t@t -c user.name=t -c core.hooksPath=/dev/null commit -q -m s1 &&
   git -c user.email=t@t -c user.name=t -c core.hooksPath=/dev/null commit -q --allow-empty -m s2 &&
+  git -c user.email=t@t -c user.name=t -c core.hooksPath=/dev/null commit -q --allow-empty -m s3 &&
+  git -c user.email=t@t -c user.name=t -c core.hooksPath=/dev/null commit -q --allow-empty -m s4 &&
   git tag v1 && git tag -a -m ann v2 && git worktree add -q "$LR/lane" 2>/dev/null)
 BLOB=$(cd "$LR/main" && git rev-parse HEAD:bin/harness); TREE=$(cd "$LR/main" && git rev-parse HEAD:bin)
 mkdir -p "$LR/lane/.harness/log" "$LR/lane/bin"
@@ -709,7 +711,7 @@ expect allow $C "git show --stat HEAD^"      "$(lb 'git show --stat HEAD^')"
 expect allow $C "git show --stat HEAD~1^0"   "$(lb 'git show --stat HEAD~1^0')"
 expect allow $C "git show --stat tag"        "$(lb 'git show --stat v1')"
 expect allow $C "git show --name-only ann tag" "$(lb 'git show --name-only v2')"
-expect allow $C "git show HEAD~1:docs/x.md"  "$(lb 'git show HEAD~1:docs/x.md')"
+expect deny  $C "git show HEAD~1:docs/x.md"  "$(lb 'git show HEAD~1:docs/x.md')"
 expect allow $C "git show tag:docs/x.md"     "$(lb 'git show v1:docs/x.md')"
 expect deny  $C "git show HEAD~1:src"        "$(lb 'git show HEAD~1:bin/harness')"
 expect deny  $C "git show --stat HEAD~"      "$(lb 'git show --stat HEAD~x')"
@@ -727,7 +729,21 @@ expect deny  $C "Read lane src"              "$(ltool Read "$(jq -n -c --arg p "
 expect deny  $C "Read lane .harness link to src" "$(ltool Read "$(jq -n -c --arg p "$LR/lane/.harness/srclink" '{file_path:$p}')")"
 expect deny  $C "Read non-worktree .harness" "$(ltool Read "$(jq -n -c --arg p "$LR/other/.harness/task.md" '{file_path:$p}')")"
 # #90: ~/^ revs reach the shell unquoted and glob under zsh extendedglob; task output is project-scoped
-expect allow $C "git show --stat HEAD~0"     "$(lb 'git show --stat HEAD~0')"
+expect allow $C "git show --stat HEAD~2"     "$(lb 'git show --stat HEAD~2')"
+expect allow $C "git show --stat HEAD~1~1"   "$(lb 'git show --stat HEAD~1~1')"
+expect allow $C "git show --name-only HEAD^" "$(lb 'git show --name-only HEAD^')"
+expect allow $C "git show --name-only HEAD~1^" "$(lb 'git show --name-only HEAD~1^')"
+expect deny  $C "git show HEAD^:docs/x.md"   "$(lb 'git show HEAD^:docs/x.md')"
+expect deny  $C "git show HEAD^1:docs/x.md"  "$(lb 'git show HEAD^1:docs/x.md')"
+expect deny  $C "git show HEAD~1^:docs/x.md" "$(lb 'git show HEAD~1^:docs/x.md')"
+expect deny  $C "git show HEAD~:docs/x.md"   "$(lb 'git show HEAD~:docs/x.md')"
+# documents why: under zsh extendedglob a mid-word ^ is a negation pattern and expands to a file name
+if command -v zsh >/dev/null 2>&1; then
+  ZT=$(mktemp -d); : > "$ZT/main.go"
+  zgot=$(cd "$ZT" && zsh -fc 'setopt extendedglob; print -r -- main^:x.md' 2>&1)
+  [ "$zgot" = "main.go" ] && report ok "zsh extendedglob expands main^:x.md" x x x || report bad "zsh extendedglob expands main^:x.md" "main.go" "$zgot" '{}'
+  rm -rf "$ZT"
+fi
 expect allow $C "git show --stat HEAD^1"     "$(lb 'git show --stat HEAD^1')"
 expect deny  $C "git show --stat bare ~"     "$(lb 'git show --stat HEAD~')"
 expect deny  $C "git show --stat ~~"         "$(lb 'git show --stat HEAD~~')"

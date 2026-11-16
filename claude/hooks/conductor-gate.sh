@@ -439,9 +439,10 @@ unquoted_text_ok() {
 # commit_rev_ok REV -> 0 when REV is a plain rev (letters, digits . _ / @ -, then
 # optional ~N / ^N suffixes, a final bare ^) that resolves to a commit; a blob or
 # tree SHA is denied because git show would print its content. The rev reaches the
-# shell unquoted and zsh extendedglob treats ~ and ^ as glob operators, so every ~
-# needs digits after it and every ^ digits or the end of the rev: a bare ~, ~~ or ^^
-# is denied.
+# shell unquoted and zsh extendedglob treats ~ and ^ as glob operators (exclusion and
+# negation), so every ~ needs digits after it and every ^ digits or the end of the rev:
+# a bare ~, ~~ or ^^ is denied. Even ~N / ^N stays a pattern word, so git_show_ok allows
+# them only in the --stat/--name-only form, never before a ':'.
 commit_rev_ok() {
   case "$1" in
     ''|-*) return 1 ;;
@@ -466,6 +467,9 @@ git_show_ok() {
       *:*)
         rev=${1%%:*}; path=${1#*:}
         [ -n "$rev" ] && [ -n "$path" ] || return 1
+        # ~ / ^ before ':' is a glob under extendedglob: main^:x.md can expand to a
+        # file name such as main.go, so the rev:path form takes no ~ or ^ at all
+        case "$rev" in *[~^]*) return 1 ;; esac
         commit_rev_ok "$rev" || return 1
         case "$path" in *:*|*[~^]*|/*|..|../*|*/..|*/../*) return 1 ;; esac
         doc_rel_ok "$path" md && return 0
@@ -497,6 +501,8 @@ task_output_ok() {
 $rest
 RESTEOF
   case "$a" in claude-?*) ;; *) return 1 ;; esac
+  # tr works per byte, so one multibyte UTF-8 character becomes several '-' where Claude Code
+  # may write one: such a cwd is falsely denied, never falsely allowed (fail closed)
   slug=$(printf '%s' "$CWD" | tr -c 'A-Za-z0-9' '-')
   [ -n "$b" ] && [ "$b" = "$slug" ] && [ "$c" = "$SESSION_ID" ] && [ "$d" = tasks ] || return 1
   case "$e" in ''|*/*|*[!A-Za-z0-9._-]*) return 1 ;; esac
