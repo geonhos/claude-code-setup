@@ -9,7 +9,7 @@ argument-hint: <role> [issue#]
 If you are a worker session (HARNESS_ROLE=worker, or your system prompt names
 you analyst, implementer, reviewer or solo), ignore this skill.
 
-`harness watch` needs a human terminal and the conductor gate denies it for you; run
+`harness watch` needs a human terminal and refuses without a tty; run
 `harness open-watch` instead, which launches it in a new pane or window. Only on /watch, never on ask.
 
 1. Take the role (`analyst`, `implementer` or `reviewer`) and an optional issue number from the arguments.

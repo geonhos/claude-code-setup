@@ -61,7 +61,6 @@ SESSION_ID=$(printf '%s' "$INPUT" | jq -r '.session_id // empty' 2>/dev/null)
 # Fixed strings: never interpolate per-call data (keeps the prompt cache stable).
 MSG_WRITE="Conductor cannot edit source. Delegate with the /implement skill (implementer worker). Direct writes are allowed only under docs/**/*.md, .harness/, and the .harness/ of a registered work folder (git worktree)."
 MSG_READ="Conductor does not read source. Delegate with the /analyze skill (analyst worker) and read its report. Direct reads are allowed only under .harness/, docs/, and *.md files."
-MSG_WATCH="harness watch is for a human terminal; the conductor reads the report (harness report <worker>, or harness wait <worker> to block until the run ends)."
 MSG_BASH="Conductor shell is limited to ONE command per call: harness (also harness -C <dir> ..., harness lane ...); gh pr create|view|list|checks|comment|edit|merge (no api, no merge -d); gh issue create|list|view|comment|close|edit|reopen; git status / log / diff --stat / branch (list); git show --stat|--name-only <rev> or git show <rev>:<path> (path under .harness/ or docs/, or *.md); ls (no -R) and stat on any path; cat, head, tail -n N under .harness/ and docs/, in a work folder's .harness/, and of this session's Bash task output files (/private/tmp/claude-*/<slug>/<session_id>/tasks/*.output). No ; & | redirects, backticks or \$(. Delegate command execution with the /implement skill (implementer worker)."
 
 # --- Bash allow/deny lists ---------------------------------------------------
@@ -613,7 +612,6 @@ case "$TOOL" in
     case "$CANON_PHYS" in .harness|.harness/*|docs|docs/*) ;; *) deny "$MSG_READ" ;; esac ;;
   Bash)
     BCMD=$(field command)
-    printf '%s' "$BCMD" | grep -Eq '^[[:space:]]*harness[[:space:]]+(-C[[:space:]]+("[^"]*"|'"'"'[^'"'"']*'"'"'|[^[:space:]]+)[[:space:]]+)?["'"'"']?watch["'"'"']?([[:space:]]|$)' && deny "$MSG_WATCH"
     bash_ok "$BCMD" || deny "$MSG_BASH" ;;
 esac
 
