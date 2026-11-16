@@ -7,7 +7,7 @@ experimental:
   cacheTtl: 1h
 hooks:
   PostToolUse:
-    - matcher: "Edit|Write|MultiEdit"
+    - matcher: "Edit|Write"
       hooks:
         - type: command
           command: harness-verify format
