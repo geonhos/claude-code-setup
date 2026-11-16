@@ -79,7 +79,35 @@ check "notes: body has source line" grep -q 'Source: analyst ask 1700000000-123-
 # title cut at 70 chars
 L=$(printf 'x%.0s' $(seq 1 90))
 notes_case "- $L see bin/harness:1\n"
-check "notes: title cut to 70 chars" grep -q -- "--title $(printf 'x%.0s' $(seq 1 70)) --body" "$FAKE_GH_LOG"
+check "notes: unbroken word cut at 70 chars + ellipsis" grep -q -- "--title $(printf 'x%.0s' $(seq 1 70))… --body" "$FAKE_GH_LOG"
+
+# title cut at a word/clause boundary, never mid-word (English and Korean)
+notes_case '- Hooks run in a fresh shell, so exported variables from the parent session are lost (bin/harness:9)\n'
+check "notes: english title cut at word boundary" grep -q -- '--title Hooks run in a fresh shell… --body' "$FAKE_GH_LOG"
+notes_case '- 워커 세션은 부모 셸의 환경 변수를 물려받지 않으므로 헤드리스 실행기에서 명시적으로 넘겨야 하고 그렇지 않으면 값이 사라진다 (bin/harness:9)\n'
+check "notes: korean title ends with ellipsis" grep -q -- '--title .*… --body' "$FAKE_GH_LOG"
+check "notes: korean title cut at a space" grep -q -- '--title 워커 세션은 부모 셸의 환경 변수를 물려받지 않으므로 헤드리스 실행기에서 명시적으로 넘겨야 하고 그렇지 않으면 값이 사라진다… --body' "$FAKE_GH_LOG"
+
+# status-only bullets are dropped, lessons kept
+notes_case '- Commit 34f73c6, 7 files, +79/-14, pushed; PR not opened.\n- seen in bin/harness:1\n'
+check "notes status: only the lesson filed" [ "$(creates)" -eq 1 ]
+check "notes status: status bullet not filed" not grep -q '34f73c6' "$FAKE_GH_LOG"
+check "notes status: warns on dropped bullet" grep -q 'dropped 1 Notes bullet' <<<"$OUT"
+notes_case '- Commit 34f73c6, 7 files, +79/-14, pushed; PR not opened.\n'
+check "notes status only: gh not called" [ ! -s "$FAKE_GH_LOG" ]
+
+# same title twice in one report -> one issue
+notes_case '- seen in bin/harness:1\n- seen in bin/harness:1\n'
+check "notes same title twice: one issue" [ "$(creates)" -eq 1 ]
+check "notes same title twice: counts skip" grep -q '^wiki: 1 issue filed with label wiki (1 duplicate skipped)' <<<"$OUT"
+
+# closed duplicate -> skipped; list asks for all states
+setup; : > "$FAKE_GH_LOG"
+mkdir -p .harness/reports .harness/asks docs/wiki; printf '1700000000-1-1 1700000000\n' > .harness/asks/analyst.current
+printf '# analyst report\nstatus: done\n## Notes\n- seen in bin/harness:1\n' > .harness/reports/analyst.md
+fin analyst; FAKE_GH_CLOSED='seen in bin/harness:1' ghrun report analyst
+check "notes closed dup: not filed" [ "$(creates)" -eq 0 ]
+check "notes closed dup: list covers all states" grep -q '^issue list --label wiki --state all' "$FAKE_GH_LOG"
 
 # duplicate: same title already open with label wiki
 setup; : > "$FAKE_GH_LOG"
@@ -129,7 +157,7 @@ check "reviewer VERDICT still last line" [ "$(printf '%s\n' "$OUT" | tail -1)" =
 # continuation lines, evidence strictness, no ask-id
 notes_case '- wrapped lesson that\n  cites tests/x.sh:42 on the next line\n'
 check "notes continuation joined" grep -q 'that cites tests/x.sh:42' "$FAKE_GH_LOG"
-for ok in 'see 1700000000-123-456' 'bin/harness:815' 'foo.sh:12' 'commit 79a1964' 'commit deadbee1' 'in .harness/progress.jsonl' 'see run.log'; do
+for ok in 'see 1700000000-123-456' 'bin/harness:815' 'foo.sh:12' 'stale cache, commit 79a1964' 'stale cache, commit deadbee1' 'in .harness/progress.jsonl' 'see run.log'; do
   notes_case "- $ok\n"
   check "evidence accepted: $ok" [ "$(creates)" -eq 1 ]
 done
