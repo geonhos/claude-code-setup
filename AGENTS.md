@@ -16,7 +16,7 @@ gate the conductor's shell, verify worker output and resume from progress logs.
 - `docs/`: `wiki/` (durable knowledge), `superpowers/plans/`, `research/`
 
 ## Working rules
-- Language: text for people (chat, reports, issues, PR summaries for the user) in Korean; machine-facing text (code, commits, PR titles/bodies, agent prompts, briefs, wiki) in English.
+- Language: text for people (chat, reports, issues, PR summaries for the user, README.md) in Korean; machine-facing text (code, commits, PR titles/bodies, agent prompts, briefs, wiki) in English.
 - Style: no AI stock phrases or filler ("좋은 질문입니다", "핵심은", "살펴보겠습니다", "seamless/robust", metaphors, emoji decoration, closing pleasantries). Plain sentences: fact, conclusion, evidence.
 - Every task is tracked by a GitHub issue; unhandled items (review Minors, follow-ups, open questions) become issues at once.
 - Branch `feat|fix|docs/<issue#>-<slug>`; conventional commits in English with the Co-Authored-By trailer; PR body Summary / Test plan / `Fixes #N`; squash merge; the user merges.
