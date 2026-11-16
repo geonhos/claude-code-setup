@@ -14,6 +14,7 @@ Read this first. Open a page only when it is relevant. Schema and promotion rule
 - [In-place edit breaks running scripts](troubleshooting/in-place-edit-breaks-running-scripts.md): bin/ is live; bodies are brace-wrapped, edit via new inode; lib/ is safe while sourced eagerly (active, 2026-10-28)
 
 ## Troubleshooting: conductor
+- [zsh extendedglob in gate revs](troubleshooting/zsh-extendedglob-in-gate-revs.md): `^` in a git show rev globs to file names; gate denies `^`, allows only `~N` with --stat (active, 2026-11-16)
 - [Conductor shell: one command](troubleshooting/conductor-shell-one-command.md): exactly one simple command: no `;`, `&&`, `|`, redirects (active, 2026-10-21)
 
 ## Troubleshooting: shell portability and tests

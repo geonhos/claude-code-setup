@@ -437,17 +437,17 @@ unquoted_text_ok() {
 }
 
 # commit_rev_ok REV -> 0 when REV is a plain rev (letters, digits . _ / @ -, then
-# optional ~N / ^N suffixes, a final bare ^) that resolves to a commit; a blob or
-# tree SHA is denied because git show would print its content. The rev reaches the
-# shell unquoted and zsh extendedglob treats ~ and ^ as glob operators (exclusion and
-# negation), so every ~ needs digits after it and every ^ digits or the end of the rev:
-# a bare ~, ~~ or ^^ is denied. Even ~N / ^N stays a pattern word, so git_show_ok allows
-# them only in the --stat/--name-only form, never before a ':'.
+# optional ~N suffixes) that resolves to a commit; a blob or tree SHA is denied because
+# git show would print its content. The rev reaches the shell unquoted and zsh
+# extendedglob treats ^ as negation (HEAD^ expands to matching file names) and ~ as
+# exclusion, so ^ is denied outright and every ~ needs digits after it. Even ~N stays a
+# pattern word, so git_show_ok allows it only in the --stat/--name-only form, never
+# before a ':'.
 commit_rev_ok() {
   case "$1" in
     ''|-*) return 1 ;;
   esac
-  printf '%s' "$1" | grep -Eq '^[A-Za-z0-9._/@-]+([~^][0-9]+)*\^?$' || return 1
+  printf '%s' "$1" | grep -Eq '^[A-Za-z0-9._/@-]+(~[0-9]+)*$' || return 1
   git -C "$CWD" rev-parse -q --verify "$1^{commit}" >/dev/null 2>&1
 }
 
