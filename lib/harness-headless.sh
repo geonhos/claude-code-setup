@@ -21,15 +21,13 @@ hl_alive() {
   ps -p "$pid" -o command= 2>/dev/null | grep -q 'harness-run'
 }
 # hl_last_session <role> — session id of the role's latest *successful* headless run (progress
-# line with result "success" and a session). Old rows with an ask_id (the removed --worktree asks)
-# are ignored, as in last_ask_record. A close event of the role is a boundary: when one came after the last such run, print "closed" instead (no session id looks like that).
+# line with result "success" and a session). A close event of the role is a boundary: when one came after the last such run, print "closed" instead (no session id looks like that).
 hl_last_session() {
   [ -f "$JSONL" ] || return 1
   tail -n 200 "$JSONL" 2>/dev/null \
     | jq -R -n -r --arg r "$1" '
         reduce (inputs | fromjson? | select(type == "object")) as $e ({sid: "", closed: false};
-          if $e.event == "close" then (if $e.role == $r and ($e.ask_id // "") == "" then {sid: "", closed: true} else . end)
-          elif ($e.ask_id // "") != "" then .
+          if $e.event == "close" then (if $e.role == $r then {sid: "", closed: true} else . end)
           elif $e.agent == $r and $e.runner == "headless" and $e.result == "success" and (($e.session // "") != "") then {sid: $e.session, closed: false}
           else . end)
         | if .sid != "" then .sid elif .closed then "closed" else empty end' 2>/dev/null \

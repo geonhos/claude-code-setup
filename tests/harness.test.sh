@@ -8,13 +8,10 @@ setup
 OUT=$(env -u HARNESS_ROLE /bin/bash "$HARNESS" status 2>&1); RC=$?
 check "status works" [ "$RC" -eq 0 ]
 check "status lists the roles" grep -q "analyst" <<<"$OUT"
-run spawn analyst
-check "spawn is gone" [ "$RC" -eq 1 ]
 
 run
 check "no args shows usage" [ "$RC" -eq 1 ]
 check "usage text" grep -q "harness ask" <<<"$OUT"
-check "usage has no spawn" bash -c '! grep -q "harness spawn" <<<"$1"' _ "$OUT"
 
 setup
 run ask analyst "x" --timeout
@@ -78,7 +75,6 @@ check "notes: title is the bullet" grep -q -- '--title stat -f is GNU-hostile (b
 check "notes: no-evidence bullet not filed" not grep -q 'vague claim' "$FAKE_GH_LOG"
 check "notes: warns on dropped bullet" grep -q 'dropped 1 Notes bullet' <<<"$OUT"
 check "notes: body has source line" grep -q 'Source: analyst ask 1700000000-123-456, ' "$FAKE_GH_LOG"
-check "notes: nothing written under docs/wiki/inbox" [ ! -e docs/wiki/inbox ]
 
 # title cut at 70 chars
 L=$(printf 'x%.0s' $(seq 1 90))
@@ -130,7 +126,7 @@ check "notes before VERDICT: rc 0" [ "$RC" -eq 0 ]
 check "notes reviewer filed" [ "$(creates)" -eq 1 ]
 check "reviewer VERDICT still last line" [ "$(printf '%s\n' "$OUT" | tail -1)" = "VERDICT: PASS" ]
 
-# continuation lines, evidence strictness, legacy ## Learned heading, no ask-id
+# continuation lines, evidence strictness, no ask-id
 notes_case '- wrapped lesson that\n  cites tests/x.sh:42 on the next line\n'
 check "notes continuation joined" grep -q 'that cites tests/x.sh:42' "$FAKE_GH_LOG"
 for ok in 'see 1700000000-123-456' 'bin/harness:815' 'foo.sh:12' 'commit 79a1964' 'commit deadbee1' 'in .harness/progress.jsonl' 'see run.log'; do
@@ -142,9 +138,6 @@ for bad in 'step:2' 'host:8080' 'about 12345678 items' 'deadbeef word' 'abcdefab
   check "evidence rejected: $bad" [ "$(creates)" -eq 0 ]
 done
 notes_case '- x\n'; : > "$FAKE_GH_LOG"
-printf '# analyst report\nstatus: done\n## Learned\n- legacy in bin/harness:1\n' > .harness/reports/analyst.md
-fin analyst; ghrun report analyst
-check "legacy Learned heading filed" [ "$(creates)" -eq 1 ]
 notes_case '- see bin/harness:1\n'; : > "$FAKE_GH_LOG"
 rm -f .harness/asks/analyst.current
 fin analyst; ghrun report analyst
@@ -164,7 +157,6 @@ for f in claude/agents/conductor.md claude/skills/implement/SKILL.md; do
 done
 check "default ask timeouts equal the headless caps (ms)" bash -c '[ "$1" = $(($3 * 1000)) ] && [ "$2" = $(($4 * 1000)) ]' _ "$T_DEF" "$T_IMPL" "$(dv HARNESS_HL_MAX_S_DEFAULT)" "$(dv HARNESS_HL_MAX_S_IMPLEMENTER_DEFAULT)"
 check "no stray 6-8 digit number in conductor.md/implement skill" bash -c '! grep -ohE "\b[0-9]{6,8}\b" "$1" "$2" | grep -vxE "$3|$4|7200000"' _ "$HERE/../claude/agents/conductor.md" "$HERE/../claude/skills/implement/SKILL.md" "$T_IMPL" "$T_DEF"
-check "header comment quotes the default timeouts" bash -c 'sed -n 1,15p "$1" | grep -q "implementer $2" && sed -n 1,15p "$1" | grep -q "analyst/reviewer $3"' _ "$HARNESS" "$T_IMPL" "$T_DEF"
 OUT=$(/bin/bash "$HARNESS" 2>&1)
 check "usage text prints the default timeouts" bash -c 'grep -q "implementer $2" <<<"$1" && grep -q "others $3" <<<"$1"' _ "$OUT" "$T_IMPL" "$T_DEF"
 TPL=$(sed -n "/^config_template() {/,/^EOC/p" "$HARNESS" | sed '1,2d;$d')
@@ -245,17 +237,17 @@ check "init in git: exclude not duplicated" [ "$(grep -cx '.harness/' .git/info/
 check "init in git: git status clean of .harness" bash -c '! git status --porcelain | grep -q harness'
 
 # every harness-made path stays out of git (#63); the user's excludesFile is neutralised
-touch_all() { mkdir -p .harness/asks .claude/agent-memory/implementer docs/wiki/inbox docs/superpowers/plans
+touch_all() { mkdir -p .harness/asks .claude/agent-memory/implementer docs/superpowers/plans
   echo x > .claude/settings.local.json; echo x > .claude/settings.local.json.bak
-  echo x > .claude/agent-memory/implementer/m.md; echo x > docs/wiki/inbox/l.md; echo x > docs/superpowers/plans/p.md; }
+  echo x > .claude/agent-memory/implementer/m.md; echo x > docs/superpowers/plans/p.md; }
 export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.excludesFile GIT_CONFIG_VALUE_0=/dev/null
 setup; rm -rf .harness .claude; git init -q .
 run init --no-agent
 touch_all
-check "init in git: no harness-made path shows in git status" bash -c '! git status --porcelain -uall | grep -E "harness|settings.local|agent-memory|inbox|superpowers"'
+check "init in git: no harness-made path shows in git status" bash -c '! git status --porcelain -uall | grep -E "harness|settings.local|agent-memory|superpowers"'
 run init --no-agent
 check "init twice: no duplicate exclude lines" [ -z "$(grep -v '^#' .git/info/exclude | sort | uniq -d)" ]
-check "init: all six patterns present" [ "$(grep -cE '^(\.harness/|\.claude/settings\.local\.json|\.claude/settings\.local\.json\.bak|\.claude/agent-memory/|docs/wiki/inbox/|docs/superpowers/)$' .git/info/exclude)" = 6 ]
+check "init: all five patterns present" [ "$(grep -cE '^(\.harness/|\.claude/settings\.local\.json|\.claude/settings\.local\.json\.bak|\.claude/agent-memory/|docs/superpowers/)$' .git/info/exclude)" = 5 ]
 setup; rm -rf .harness .claude; git init -q .
 run init --shared
 check "init --shared: settings.json not excluded" bash -c '! git check-ignore -q .claude/settings.json'
