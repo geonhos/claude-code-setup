@@ -255,11 +255,37 @@ learned_has_evidence() {
   return 1
 }
 
+# learned_is_status <text> — true when the bullet is only task status: after dropping
+# commit shas, numbers, diff stats and status words (commit, pushed, PR, files changed,
+# tests pass ...) no other word is left. A bullet that states a lesson keeps its words.
+learned_is_status() {
+  printf '%s\n' "$1" | perl -CSD -ne '
+    s/^-\s+//; $_ = lc;
+    s/\b[0-9a-f]{7,40}\b//g; s/[+-]\d+//g; s/\d+//g;
+    s/\b(commit(ted|s)?|push(ed)?|pr|pull|request|not|no|opened?|files?|changed|tests?|pass(ed|es|ing)?|fail(ed)?|done|merged?|branch|lines?|and|the|on|to|in|a|of|is|are|was|were|yet|origin|main|added|updated)\b//g;
+    s/[^\p{L}]//g;
+    exit($_ eq "" ? 0 : 1);'
+}
+
+# learned_title <text> — the bullet cut for an issue title: whole when <= 70 chars, else
+# cut at the last clause/sentence boundary (or word boundary) inside 70 chars, + `…`.
+learned_title() {
+  printf '%s' "$1" | perl -CSD -ne '
+    chomp; if (length($_) <= 70) { print; exit }
+    my $w = substr($_, 0, 70); my $n = substr($_, 70, 1); my $c;
+    if ($n =~ /\s/) { $c = $w }
+    elsif ($w =~ /^(.{25,}[.;:!?,。])\s/s) { $c = $1 }
+    elsif ($w =~ /^(.{10,})\s+\S*$/s) { $c = $1 }
+    else { $c = $w }
+    $c =~ s/[\s,;:-]+$//; print $c . "\x{2026}";'
+}
+
 # queue_learned <agent> <report> — file each evidence-backed bullet of the report's
 # optional `## Notes` section as a GitHub
-# issue labelled `wiki` (title: first 70 chars; body: bullet + source line).
+# issue labelled `wiki` (title: cut at a clause boundary near 70 chars; body: bullet + source line).
 # Indented continuation lines are joined to their bullet. An open `wiki` issue
-# with the same title is skipped. Bullets without evidence are dropped with a
+# or closed `wiki` issue with the same title (or one filed earlier in this run) is skipped.
+# Status-only bullets (commit/push/PR info) and bullets without evidence are dropped with a
 # one-line stderr warning. Never fails the caller: no gh, a failing gh or no
 # ask-id print one warning and continue.
 queue_learned() {
@@ -276,7 +302,9 @@ queue_learned() {
   [ -n "$raw" ] || return 0
   while IFS= read -r line; do
     case "$line" in "- none"|"- None"|"- none."|"- -") continue ;; esac
-    if learned_has_evidence "$line"; then
+    if learned_is_status "$line"; then
+      dropped=$((dropped + 1))
+    elif learned_has_evidence "$line"; then
       n=$((n + 1))
       kept="$kept$line
 "
@@ -286,7 +314,7 @@ queue_learned() {
   done <<EOF_LEARNED
 $raw
 EOF_LEARNED
-  [ "$dropped" -eq 0 ] || echo "harness: wiki: dropped $dropped Notes bullet(s) without evidence (ask-id, commit, file:line or log)" >&2
+  [ "$dropped" -eq 0 ] || echo "harness: wiki: dropped $dropped Notes bullet(s) without evidence or only task status (need a lesson plus ask-id, commit, file:line or log)" >&2
   [ -n "$kept" ] || return 0
   askid=$(awk 'NR == 1 { print $1 }' "$ASK_DIR/$agent.current" 2>/dev/null)
   if [ -z "$askid" ]; then
@@ -298,14 +326,14 @@ EOF_LEARNED
     return 0
   fi
   date=$(date +%Y-%m-%d)
-  open=$(gh issue list --label wiki --state open --limit 200 --json title --jq '.[].title' 2>/dev/null) || {
+  open=$(gh issue list --label wiki --state all --limit 500 --json title --jq '.[].title' 2>/dev/null) || {
     echo "harness: wiki: gh issue list failed; Notes bullets not filed as issues" >&2
     return 0
   }
   while IFS= read -r line; do
     [ -n "$line" ] || continue
     line=${line#- }
-    title=$(printf '%s' "$line" | cut -c1-70)
+    title=$(learned_title "$line")
     if printf '%s\n' "$open" | grep -qxF -- "$title"; then
       skipped=$((skipped + 1))
       continue

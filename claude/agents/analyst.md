@@ -47,7 +47,8 @@ status: done | partial | blocked
 - ≤ 3 bullets, or "none"
 ## Notes
 - (optional, ≤ 2 bullets) a reusable lesson, each citing evidence: ask-id,
-  commit, file:line or log. Omit the section if there is none.
+  commit, file:line or log. Omit the section if there is none. Notes are
+  lessons for the wiki (a trap, a cause, a rule), not task status.
 ```
 
 Rules: under 40 lines total. Longer detail goes in another file under
