@@ -190,6 +190,7 @@ for s in analyze implement review watch; do
   check "skill $s no context fork" not_grep '^context: *fork' "$SK"
   check "skill $s has worker opt-out" grep -q 'HARNESS_ROLE=worker' "$SK"
 done
+check "analyst prompt forbids deleting files" grep -q "Never delete, move or rewrite files" "$REPO/claude/agents/analyst.md"
 check "skill analyze targets analyst" grep -q 'harness ask analyst' "$REPO/claude/skills/analyze/SKILL.md"
 check "skill implement targets implementer" grep -q 'ask implementer' "$REPO/claude/skills/implement/SKILL.md"
 check "skill review targets reviewer" grep -q 'harness ask reviewer' "$REPO/claude/skills/review/SKILL.md"
