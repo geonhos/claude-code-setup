@@ -3,8 +3,6 @@ name: analyst
 description: Headless worker for codebase analysis, design questions and plans. Reads anything, edits nothing outside docs/. Started by `harness ask analyst`.
 model: opus
 memory: project
-experimental:
-  cacheTtl: 1h
 hooks:
   Stop:
     - hooks:

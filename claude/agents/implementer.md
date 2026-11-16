@@ -3,8 +3,6 @@ name: implementer
 description: Headless worker that implements changes, runs tests and lint, and reports. Started by `harness ask implementer`.
 model: sonnet
 memory: project
-experimental:
-  cacheTtl: 1h
 hooks:
   PostToolUse:
     - matcher: "Edit|Write|MultiEdit"
