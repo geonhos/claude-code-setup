@@ -35,6 +35,9 @@ if [ "${1:-}" = "--test" ]; then
   else
     names="$names wikilint"
   fi
+  # guard (#92): a suite must not register a worktree of the repo under test in a temp dir
+  tmp_worktrees() { git -C "$REPO" worktree list --porcelain 2>/dev/null | sed -n 's/^worktree //p' | grep -E '^(/private)?(/var/folders/|/tmp/|/var/tmp/)' || true; }
+  wt_before=$(tmp_worktrees)
   tdir=$(mktemp -d "${TMPDIR:-/tmp}/harness-tests.XXXXXX")
   descendants() {  # descendants PID — every transitive child, one per line
     local c
@@ -114,6 +117,11 @@ if [ "${1:-}" = "--test" ]; then
     [ -z "$queue" ] && [ -z "$running" ] || sleep 0.2
   done
   wait
+  wt_leak=$(tmp_worktrees | WT_BEFORE="$wt_before" awk 'BEGIN { n = split(ENVIRON["WT_BEFORE"], a, "\n"); for (i = 1; i <= n; i++) seen[a[i]] = 1 } !($0 in seen)')
+  if [ -n "$wt_leak" ]; then
+    echo "FAILED: the test run registered temp worktrees of $REPO (use a temp repo):"; echo "$wt_leak"
+    rc=1; failed="$failed worktree-guard"
+  fi
   [ -z "$failed" ] || echo "FAILED suites:$failed"
   exit $rc
 fi
