@@ -4,16 +4,7 @@
 # Run: /bin/bash tests/headless-implementer.test.sh
 set -u
 . "$(dirname "$0")/harness-lib.sh"
-FAKE_CLAUDE="$HERE/fake-claude"
 
-hrun() {
-  OUT=$(HARNESS_POLL_SEC=0.2 HARNESS_HL_START_S=5 \
-    PATH="$FAKE_CLAUDE:$HERE/../bin:$PATH" perl -e 'alarm($ENV{HRUN_ALARM_S} || 60);exec(@ARGV)' \
-    env -u HARNESS_ROLE /bin/bash "$HARNESS" "$@" 2>&1)
-  RC=$?
-}
-jqt() { jq -e "$@" >/dev/null; }
-lastprog() { tail -n 1 .harness/progress.jsonl 2>/dev/null; }
 # isetup — implementer (and analyst) headless; the fake claude writes an implementer report
 isetup() {
   setup

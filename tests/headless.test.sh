@@ -3,30 +3,13 @@
 # tests/fake-claude. Run: /bin/bash tests/headless.test.sh
 set -u
 . "$(dirname "$0")/harness-lib.sh"
-FAKE_CLAUDE="$HERE/fake-claude"
 
-# hrun ARGS... -> OUT, RC. Like run(), with the fake claude on PATH and a longer alarm.
-hrun() {
-  OUT=$(HARNESS_POLL_SEC=0.2 HARNESS_HL_START_S=5 \
-    PATH="$FAKE_CLAUDE:$HERE/../bin:$PATH" perl -e 'alarm($ENV{HRUN_ALARM_S} || 60);exec(@ARGV)' \
-    env -u HARNESS_ROLE /bin/bash "$HARNESS" "$@" 2>&1)
-  RC=$?
-}
 hsetup() {
   setup
   :
   export FAKE_CLAUDE_MODE=success
   export FAKE_REPORT_CMD="mkdir -p $WORK/.harness/reports && printf '# analyst report\nstatus: done\n' > $WORK/.harness/reports/analyst.md"
 }
-jqt() { jq -e "$@" >/dev/null; }
-lastprog() { tail -n 1 .harness/progress.jsonl 2>/dev/null; }
-# killpids FILE — kill exactly the pids a test recorded (no pattern kills anywhere in tests/)
-killpids() { local p; for p in $(cat "$1" 2>/dev/null); do kill "$p" 2>/dev/null; done; return 0; }
-# live_runs RID — pids whose command line carries this run id (empty RID matches nothing)
-live_runs() { [ -n "${1:-}" ] || return 0; pgrep -f "harness-run analyst $1 "; }
-# wait_no_runs <run-id> [tenths] — until no process of that run is left (the watchdog reaps the
-# group in steps: claude dies first, the pipeline's subshells a moment later; 15 s cap)
-wait_no_runs() { local i=0; while [ $i -lt "${2:-150}" ] && [ -n "$(live_runs "$1")" ]; do sleep 0.1; i=$((i + 1)); done; }
 claude_runs() { grep -c '^claude: ' "$FAKE_LOG"; }
 
 # 1. success

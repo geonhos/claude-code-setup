@@ -1,12 +1,9 @@
 #!/bin/bash
 # Tests for install.sh. Run: /bin/bash tests/install.test.sh
 set -u
-HERE=$(cd "$(dirname "$0")" && pwd)
+. "$(dirname "$0")/harness-lib.sh"
+OUT=""
 REPO=$(cd "$HERE/.." && pwd)
-pass=0
-fail=0
-check() { local label=$1; shift; if "$@"; then pass=$((pass + 1)); else fail=$((fail + 1)); echo "FAIL [$label]" >&2; fi; }
-not_grep() { ! grep "$@"; }
 
 ROOT=$(mktemp -d)
 trap 'rm -rf "$ROOT"' EXIT
