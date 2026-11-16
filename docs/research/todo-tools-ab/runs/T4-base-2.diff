@@ -1,0 +1,270 @@
+diff --git a/bin/harness b/bin/harness
+index 8e766c8..d8bf5ca 100755
+--- a/bin/harness
++++ b/bin/harness
+@@ -233,7 +233,7 @@ record_progress() {
+ 
+ # ask_parse_args <agent> <text> [opts...] — the one walk over an ask's options (called by cmd_ask
+ # after the agent and text checks). Sets ASK_TIMEOUT/FRESH/KEEP.
+-# The instruction text is positional, so a "--via" inside it is never an option. A bad option,
++# A bad option (the instruction text is positional, so an option-looking word inside it is never one),
+ # --timeout value or --fresh with --keep only sets ASK_BAD: ask_inner turns that into the usage
+ # error inside the logged subshell (exit 1 is recorded in progress).
+ ask_parse_args() {
+@@ -251,7 +251,6 @@ ask_parse_args() {
+         esac ;;
+       --fresh) ASK_FRESH=1; shift ;;
+       --keep) ASK_KEEP=1; shift ;;
+-      --via) if [ $# -ge 2 ]; then shift 2; else shift; fi ;;   # no-op until step 5: a running conductor still sends --via skill
+       *) ASK_BAD=1; shift ;;
+     esac
+   done
+diff --git a/claude/hooks/conductor-gate.sh b/claude/hooks/conductor-gate.sh
+index ea5a9e8..e39661a 100755
+--- a/claude/hooks/conductor-gate.sh
++++ b/claude/hooks/conductor-gate.sh
+@@ -42,6 +42,52 @@ harness_root() {
+   printf '%s' "$start"
+ }
+ 
++# ============================================================================
++# POLICY TABLES: everything the gate allows or says, in one place. The code
++# below only applies them. Edit policy here; run bash -n and tests/gate.test.sh
++# before saving (live file, see troubleshooting/live-gate-edit.md).
++# ============================================================================
++
++# Fixed strings: never interpolate per-call data (keeps the prompt cache stable).
++MSG_WRITE="Conductor cannot edit source. Delegate with the /implement skill (implementer worker). Direct writes are allowed only under docs/**/*.md and .harness/."
++MSG_READ="Conductor does not read source. Delegate with the /analyze skill (analyst worker) and read its report. Direct reads are allowed only under .harness/, docs/, and *.md files."
++MSG_WATCH="harness watch is for a human terminal; the conductor reads the report (harness report <worker>, or harness wait <worker> to block until the run ends)."
++MSG_BASH="Conductor shell is limited to ONE command per call: harness; gh pr create|view|list|checks|comment|edit|merge (no api, no merge -d); herdr pane get|current; git status / log / diff --stat / branch (list); cat or ls (no -R) under .harness/ and docs/. No ; & | redirects, backticks or \$(. Delegate command execution with the /implement skill (implementer worker)."
++
++# Bash allow/deny lists. Each piece below is one alternative; they are joined with | into one regex.
++
++# Commands the conductor may run (matched against a whole masked segment).
++BASH_ALLOW='harness( .*)?'                                        # delegation CLI
++BASH_ALLOW="$BASH_ALLOW|"'herdr pane (get|current)( .*)?'        # herdr, read-only state ...
++BASH_ALLOW="$BASH_ALLOW|"'gh( .*)?'                               # GitHub CLI (see GH_ALLOW, gh_segment_ok)
++BASH_ALLOW="$BASH_ALLOW|"'git status( (-[sb]+|--short|--branch|--porcelain(=v[12])?|--untracked-files=(no|normal|all)))*' # read-only git; no -v (prints diffs) ...
++BASH_ALLOW="$BASH_ALLOW|"'git log( .*)?'
++BASH_ALLOW="$BASH_ALLOW|"'git diff --stat( .*)?'                  # ... summaries only
++BASH_ALLOW="$BASH_ALLOW|"'git branch( (-a|-r|-v|--show-current))*'  # list only
++BASH_ALLOW="$BASH_ALLOW|"'cat (\.harness|docs)(/[^ ]*)?'          # reports and docs
++BASH_ALLOW="$BASH_ALLOW|"'ls( -[A-Za-z]+)*( (\.harness|docs)(/[^ ]*)?)?' # top level, reports, docs
++BASH_ALLOW="^($BASH_ALLOW)\$"
++
++# gh "<group> <subcommand>" pairs the conductor may run. api, run, issue, repo,
++# auth, browse, pr diff|checkout|status are not here.
++GH_ALLOW='pr (create|view|list|checks|comment|edit|merge)'
++
++# git long options that are denied anywhere in a git segment.
++GIT_DENY_LONG='output'                                            # writes files
++GIT_DENY_LONG="$GIT_DENY_LONG|delete|move|copy"                   # mutates branches
++GIT_DENY_LONG="$GIT_DENY_LONG|patch|unified|cc|binary|remerge-diff|dd|diff-merges|raw|check" # prints diff content
++
++# Initials of git short-flag groups that are denied (e.g. -D, -Df, -U3):
++#   o = --output (writes files)
++#   d D m M c C = branch delete / move / copy (mutates branches)
++#   p u U = patch / unified context (prints diff content)
++#   G S = git log pickaxe (probes file contents)
++GIT_DENY_SHORT='odDmMcCpuUGS'
++
++GIT_DENY="--($GIT_DENY_LONG)| -[$GIT_DENY_SHORT][A-Za-z0-9]* "
++
++# ============================ end of policy tables ===========================
++
+ INPUT=$(cat)
+ 
+ DIR=$PWD
+@@ -81,45 +127,6 @@ CWD=$(printf '%s' "$INPUT" | jq -r '.cwd // empty' 2>/dev/null)
+ [ -n "$CWD" ] || CWD=$PWD
+ CWD=${CWD%/}
+ 
+-# Fixed strings: never interpolate per-call data (keeps the prompt cache stable).
+-MSG_WRITE="Conductor cannot edit source. Delegate with the /implement skill (implementer worker). Direct writes are allowed only under docs/**/*.md and .harness/."
+-MSG_READ="Conductor does not read source. Delegate with the /analyze skill (analyst worker) and read its report. Direct reads are allowed only under .harness/, docs/, and *.md files."
+-MSG_WATCH="harness watch is for a human terminal; the conductor reads the report (harness report <worker>, or harness wait <worker> to block until the run ends)."
+-MSG_BASH="Conductor shell is limited to ONE command per call: harness; gh pr create|view|list|checks|comment|edit|merge (no api, no merge -d); herdr pane get|current; git status / log / diff --stat / branch (list); cat or ls (no -R) under .harness/ and docs/. No ; & | redirects, backticks or \$(. Delegate command execution with the /implement skill (implementer worker)."
+-
+-# --- Bash allow/deny lists ---------------------------------------------------
+-# Each piece below is one alternative; they are joined with | into one regex.
+-
+-# Commands the conductor may run (matched against a whole masked segment).
+-BASH_ALLOW='harness( .*)?'                                        # delegation CLI
+-BASH_ALLOW="$BASH_ALLOW|"'herdr pane (get|current)( .*)?'        # herdr, read-only state ...
+-BASH_ALLOW="$BASH_ALLOW|"'gh( .*)?'                               # GitHub CLI (see GH_ALLOW, gh_segment_ok)
+-BASH_ALLOW="$BASH_ALLOW|"'git status( (-[sb]+|--short|--branch|--porcelain(=v[12])?|--untracked-files=(no|normal|all)))*' # read-only git; no -v (prints diffs) ...
+-BASH_ALLOW="$BASH_ALLOW|"'git log( .*)?'
+-BASH_ALLOW="$BASH_ALLOW|"'git diff --stat( .*)?'                  # ... summaries only
+-BASH_ALLOW="$BASH_ALLOW|"'git branch( (-a|-r|-v|--show-current))*'  # list only
+-BASH_ALLOW="$BASH_ALLOW|"'cat (\.harness|docs)(/[^ ]*)?'          # reports and docs
+-BASH_ALLOW="$BASH_ALLOW|"'ls( -[A-Za-z]+)*( (\.harness|docs)(/[^ ]*)?)?' # top level, reports, docs
+-BASH_ALLOW="^($BASH_ALLOW)\$"
+-
+-# gh "<group> <subcommand>" pairs the conductor may run. api, run, issue, repo,
+-# auth, browse, pr diff|checkout|status are not here.
+-GH_ALLOW='pr (create|view|list|checks|comment|edit|merge)'
+-
+-# git long options that are denied anywhere in a git segment.
+-GIT_DENY_LONG='output'                                            # writes files
+-GIT_DENY_LONG="$GIT_DENY_LONG|delete|move|copy"                   # mutates branches
+-GIT_DENY_LONG="$GIT_DENY_LONG|patch|unified|cc|binary|remerge-diff|dd|diff-merges|raw|check" # prints diff content
+-
+-# Initials of git short-flag groups that are denied (e.g. -D, -Df, -U3):
+-#   o = --output (writes files)
+-#   d D m M c C = branch delete / move / copy (mutates branches)
+-#   p u U = patch / unified context (prints diff content)
+-#   G S = git log pickaxe (probes file contents)
+-GIT_DENY_SHORT='odDmMcCpuUGS'
+-
+-GIT_DENY="--($GIT_DENY_LONG)| -[$GIT_DENY_SHORT][A-Za-z0-9]* "
+-
+ deny() {
+   jq -n --arg r "$1" \
+     '{hookSpecificOutput:{hookEventName:"PreToolUse",permissionDecision:"deny",permissionDecisionReason:$r}}'
+diff --git a/docs/wiki/decisions/0011-single-runner-headless.md b/docs/wiki/decisions/0011-single-runner-headless.md
+index 3ae92fd..1d0d955 100644
+--- a/docs/wiki/decisions/0011-single-runner-headless.md
++++ b/docs/wiki/decisions/0011-single-runner-headless.md
+@@ -1,7 +1,7 @@
+ ---
+ type: decision
+ status: active
+-updated: 2026-11-02
++updated: 2026-11-03
+ sources: [.harness/setup-review.md, .harness/progress.jsonl, 0001, 0007, 0009, 0010]
+ verified_by: harness metrics + tests/headless*.test.sh
+ ---
+@@ -25,3 +25,5 @@ verified_by: harness metrics + tests/headless*.test.sh
+ Step 3 done 2026-11-02: pane runner, `harness spawn`, `close_after_ask`, idle-TTL reap, `/clear` scheduling, late-report archive and the `runner` config key are removed; 0002, 0003, 0006 and five pane troubleshooting pages are superseded.
+ 
+ Step 4 done 2026-11-02: routing log and route hook, retro, `--worktree` (registry, locks, `max_parallel`) and doctor removed; `--via` is a no-op until step 5; 0004 and 0008 superseded.
++
++Step 5 done 2026-11-03: `--via` removed; gate trimmed (552 → 520 lines), ADR [0012](0012-gate-shrink.md).
+diff --git a/docs/wiki/decisions/0012-gate-shrink.md b/docs/wiki/decisions/0012-gate-shrink.md
+new file mode 100644
+index 0000000..a625097
+--- /dev/null
++++ b/docs/wiki/decisions/0012-gate-shrink.md
+@@ -0,0 +1,28 @@
++---
++type: decision
++status: active
++updated: 2026-11-03
++sources: [.harness/gate-shrink-detail.md, .harness/spike-bprime/RESULTS.md, 3556e27, 0be020e, 732af47, 6f606e5, c4a72dd, 0011]
++verified_by: tests/gate.test.sh
++---
++# 0012: Shrink the conductor gate, keep it a script
++
++**Context.** The "4b" item (gate shrink, [0005](0005-gate-only-inside-herdr.md)) asked for `permissions` rules plus a ≤50-line gate. The analyst's inventory (`.harness/gate-shrink-detail.md` §2-3) found a 552-line gate. Replaying 881 real conductor Bash calls (2026-10-18..10-28) gave 754 allowed, 127 denied (106 from two ungated sessions). Allowed usage was `harness`, `cat`/`ls` under `.harness|docs`, `git log|status|diff --stat|branch`, `gh pr create|merge|view|edit|list|comment|checks`, and `herdr pane current|get`. Never used: `git show --stat`, `herdr status|pane list|layout|workspace|tab`, `gh issue|run|repo|auth|browse|pr status`, and jq as a pipe consumer (0 allowed). Chaining with `;`/`&` was 44 of 754 (5.8%), pipes 0. No filesystem MCP server was configured.
++
++The B′ spike (native subagents instead of the harness runner) was rejected on 2026-11-03 (`.harness/spike-bprime/RESULTS.md`): subagents die when the conductor exits ("1 local agent couldn't be moved and was stopped"), so detached `claude -p` workers stay ([0011](0011-single-runner-headless.md)) and so does the gate that confines the conductor.
++
++**Decision.** Keep the gate as a bash script and cut it to observed use, in steps that each kept `tests/gate.test.sh` green:
++- Single-command scanner (`scan_command`, one simple command per call), `agent_type` keying, and `tests/gate-denied.list` (every probe must stay denied, controls allowed): done before this step.
++- Allowlist trimmed to usage (3556e27): `gh pr create|view|list|checks|comment|edit|merge` only (`--body-file` from `.harness/` or `docs/`, no `pr merge -d`, no `api`); `git branch` list-only (`-a -r -v --show-current`); `herdr pane get|current`; no `jq`, no `git show`.
++- Dead tool cases dropped (0be020e): `Agent`, `Workflow`, `Monitor`, `NotebookEdit` and the `mcp__filesystem__*` block are gone from the gate; `claude/agents/conductor.md` `disallowedTools` carries the first four, and the hook matcher is `Edit|Write|Read|Grep|Glob|Bash`.
++- Policy tables (`MSG_*`, `BASH_ALLOW`, `GH_ALLOW`, `GIT_DENY`) moved into one labelled block at the top (6f606e5), so policy edits do not touch parser code.
++- `--via` no-op removed from `harness ask` (732af47); an unknown option is refused (exit 1) without starting a run.
++- Gate tests added for each form listed under "You may run directly" in `conductor.md`, plus deny probes for the dropped forms (c4a72dd).
++
++**Kept, and why.** The path helpers (`rel`, `physrel`, `physical`, `readable`, `writable`) and the quote-aware scanner and character allowlist stay: they are what stops `Read bin/harness`, `..`, symlinks from `docs/` into source, raw `.harness/log/*.jsonl` streams and chaining, and they carry most of the review-fix tests. The Bash allowlist stays an allowlist, not a deny list: anything unlisted (`python3`, `sed`, `herdr pane run`) is denied by default.
++
++**Rejected: option f, `permissions` rules instead of the script.** Rules live in user-scope `~/.claude/settings.json`, so they also bind the workers (headless `claude -p` sessions of the same user), which must read and edit source. Only a hook can key on `agent_type` (conductor vs worker) and on the harness checkout (0010). Path symlink resolution and `--body-file` checks also have no rule syntax.
++
++**Status.** Active. The gate is 520 lines (552 at the analysis, 513 before the policy header); the 50-line target of 0005's critique is dropped.
++
++**Consequences.** Supersedes the 4b consequence in 0005 (gate shrink via permissions). A new conductor command form needs a line in the policy block, a gate test, and a line under "You may run directly" in `conductor.md`. The gate is a live file: `bash -n` and the gate suite before every save ([live-gate-edit](../troubleshooting/live-gate-edit.md)). The deny text did not change, so [conductor-shell-one-command](../troubleshooting/conductor-shell-one-command.md) is unchanged.
+diff --git a/docs/wiki/index.md b/docs/wiki/index.md
+index 197278e..e4254c3 100644
+--- a/docs/wiki/index.md
++++ b/docs/wiki/index.md
+@@ -37,10 +37,11 @@ Read this first. Open a page only when it is relevant. Schema and promotion rule
+ - [0002 Stop-hook completion](decisions/0002-completion-by-stop-hook-marker.md): pane marker; superseded by exit.json (superseded, 2026-11-02)
+ - [0003 Pane lifecycle](decisions/0003-pane-lifecycle-defaults.md): pane idle TTL and close rules; removed in step 3 (superseded, 2026-11-02)
+ - [0004 Failure-only retros](decisions/0004-failure-only-batched-retros.md): removed in prune step 4; was: queue on failure, one batched analyst ask, reviewer FAIL never queues (superseded, 2026-11-02)
+-- [0005 Gate only inside herdr](decisions/0005-gate-only-inside-herdr.md): step 1 (HERDR_ENV) and the global conductor superseded, steps 2-3 scoped by 0010; agent_type keys the gate (active, 2026-10-30)
++- [0005 Gate only inside herdr](decisions/0005-gate-only-inside-herdr.md): step 1 (HERDR_ENV) and the global conductor superseded, steps 2-3 scoped by 0010; agent_type keys the gate; 0012 supersedes the 4b (permissions rules) consequence (active, 2026-10-30)
+ - [0006 Keep implementer pane](decisions/0006-keep-implementer-pane.md): kept implementer pane; no panes remain (superseded, 2026-11-02)
+ - [0007 Headless runner pilot](decisions/0007-headless-runner-pilot.md): `claude -p` detached; completion = exit file; `runner` key removed in step 3 (active, 2026-11-02)
+ - [0008 Worktree per ask](decisions/0008-worktree-per-ask.md): removed in prune step 4; was: `ask --worktree` gives a headless analyst/reviewer its own detached checkout; ask-id addressing (superseded, 2026-11-02)
+ - [0009 Headless implementer](decisions/0009-headless-implementer.md): headless implementer: pinned permissions, exit 2 on denials, auto-resume after non-zero exit, 90 min cap (active, 2026-11-02)
+ - [0010 Harness acts only in a checkout](decisions/0010-herdr-optional-gate-by-checkout.md): gate/resume key on .harness/asks (made by `harness init`); per-repo conductor agent; no HERDR_ENV switch; `harness wait`/`watch`; doctor and `--worktree` removed in step 4 (active, 2026-11-02)
+-- [0011 One runner: headless](decisions/0011-single-runner-headless.md): headless is the only runner; herdr is a viewer; prune plan steps 1-7, steps 3-4 done (active, 2026-11-02)
++- [0011 One runner: headless](decisions/0011-single-runner-headless.md): headless is the only runner; herdr is a viewer; prune plan steps 1-7, steps 3-5 done (active, 2026-11-03)
++- [0012 Gate shrink](decisions/0012-gate-shrink.md): gate kept as a script, trimmed to observed use; permissions rules rejected (they bind workers); B′ rejected (active, 2026-11-03)
+diff --git a/docs/wiki/log.md b/docs/wiki/log.md
+index 33155ad..4fdc328 100644
+--- a/docs/wiki/log.md
++++ b/docs/wiki/log.md
+@@ -41,3 +41,4 @@
+ - 2026-11-02 · implementer · prune step 3 · pane runner, spawn, close_after_ask, idle reap, /clear, late-report archive removed; viewer = pane running harness watch; 0002/0003/0006 + 5 pane pages superseded
+ - 2026-11-02 · implementer · prune step 3 review fixes · whole-second-timing marked stale (its test was deleted); 0009 drops the idle-TTL clause
+ - 2026-11-02 · implementer · prune step 4 · routing log, retro, --worktree (registry, locks) and doctor removed; 0004/0008 superseded; citations of removed suites fixed
++- 2026-11-03 · implementer · prune step 5 · --via no-op removed; gate policy tables at top, gate tests per conductor form; decision 0012 (gate shrink), 0011 step 5 done
+diff --git a/tests/gate.test.sh b/tests/gate.test.sh
+index 70afa4c..65d8ca8 100644
+--- a/tests/gate.test.sh
++++ b/tests/gate.test.sh
+@@ -168,7 +168,6 @@ expect deny  $C "Glob src pattern no path"      "$(tool Glob '{"pattern":"src/**
+ 
+ # --- Bash: allowlist ---------------------------------------------------------
+ expect allow $C "bash harness ask"        "$(bcmd 'harness ask analyst "what is this"')"
+-expect allow $C "bash harness ask --via"  "$(bcmd "harness ask implementer 'x' --via skill")"
+ expect allow $C "bash harness status"     "$(bcmd 'harness status')"
+ expect allow $C "bash herdr"              "$(bcmd 'herdr pane current')"
+ expect allow $C "bash gh"                 "$(bcmd 'gh pr view 12')"
+@@ -628,6 +627,23 @@ expect_reason_lacks "harness ask" "no raw ask: read"  "$(tool Read '{"file_path"
+ expect_reason_lacks "harness ask" "no raw ask: bash"  "$(bcmd 'npm test')"
+ expect_event  "event name"                              "$(bcmd 'npm test')"
+ 
++# --- every form under "You may run directly" in claude/agents/conductor.md stays allowed ----
++expect allow $C "direct harness status"          "$(bcmd 'harness status')"
++expect allow $C "direct gh pr view 1"            "$(bcmd 'gh pr view 1')"
++expect allow $C "direct git log --oneline -3"    "$(bcmd 'git log --oneline -3')"
++expect allow $C "direct git diff --stat"         "$(bcmd 'git diff --stat')"
++expect allow $C "direct git branch -a"           "$(bcmd 'git branch -a')"
++expect allow $C "direct git branch --show-current" "$(bcmd 'git branch --show-current')"
++expect allow $C "direct herdr pane current"      "$(bcmd 'herdr pane current')"
++expect allow $C "direct cat progress"            "$(bcmd 'cat .harness/progress.md')"
++expect allow $C "direct ls docs"                 "$(bcmd 'ls docs')"
++# trimmed in prune 5 / never allowed
++expect deny  $C "direct gh issue list"           "$(bcmd 'gh issue list')"
++expect deny  $C "direct gh pr status"            "$(bcmd 'gh pr status')"
++expect deny  $C "direct git show --stat"         "$(bcmd 'git show --stat')"
++expect deny  $C "direct herdr pane list"         "$(bcmd 'herdr pane list')"
++expect deny  $C "direct herdr workspace list"    "$(bcmd 'herdr workspace list')"
++
+ # --- regression list: tests/gate-denied.list (deny probes must stay denied) ---
+ while IFS="$(printf '\t')" read -r want cmd; do
+   case "$want" in deny|allow) ;; *) continue ;; esac
+diff --git a/tests/progress.test.sh b/tests/progress.test.sh
+index cb1cf5d..08784a1 100755
+--- a/tests/progress.test.sh
++++ b/tests/progress.test.sh
+@@ -68,21 +68,12 @@ check "jsonl: verify null for analyst" [ "$(jl '.verify')" = null ]
+ long=$(printf 'x%.0s' $(seq 1 300))
+ run ask analyst "$long"
+ check "jsonl: instr 160 chars" [ "$(jl '.instr|length')" -eq 160 ]
+-# --via is a no-op until step 5 (a running conductor still sends --via skill): accepted, not sent as text
++# --via is gone: refused as an unknown option, no run started
+ setup
+-hook_report analyst '# analyst report — x\nstatus: done\n'
+ run ask analyst "look" --via skill
+-check "via no-op: rc 0" [ "$RC" -eq 0 ]
+-check "via no-op: instr is just the text" [ "$(jl .instr)" = look ]
+-setup
+-hook_report analyst '# analyst report — x\nstatus: done\n'
+-run ask analyst "look" --via
+-check "via bare: rc 0" [ "$RC" -eq 0 ]
+-setup
+-hook_report analyst '# analyst report — x\nstatus: done\n'
+-run ask analyst "look" --via nope
+-check "via nope: rc 0" [ "$RC" -eq 0 ]
+-check "via nope: instr is just the text" [ "$(jl .instr)" = look ]
++check "via refused: rc 1" [ "$RC" -eq 1 ]
++check "via refused: logged exit 1" [ "$(jl .exit)" = 1 ]
++check "via refused: claude not started" [ ! -s "$FAKE_LOG" ]
+ 
+ 
+ # --- exit 3 (no report), exit 4 (still running) ----------------------------------------------
