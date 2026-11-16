@@ -106,35 +106,38 @@ deny() {
 
 field() { printf '%s' "$INPUT" | jq -r ".tool_input.$1 // empty" 2>/dev/null; }
 
-# rel PATH -> prints the path relative to CWD, or returns 1 when the path is
-# empty, outside CWD, or contains a '..' segment.
-rel() {
-  local p=$1
-  [ -n "$p" ] || return 1
-  case "$p" in
-    ..|../*|*/..|*/../*|'~'*) return 1 ;;
+# path_bad PATH -> 0 for a path the gate never resolves: '..' segment or leading ~
+path_bad() {
+  case "$1" in
+    ..|../*|*/..|*/../*|'~'*) return 0 ;;
   esac
-  case "$p" in
-    "$CWD")   p="." ;;
-    "$CWD"/*) p=${p#"$CWD"/} ;;
-    /*)       return 1 ;;
-    ./*)      p=${p#./} ;;
-  esac
-  printf '%s' "$p"
+  return 1
 }
 
-# physrel PATH -> prints the symlink-resolved path relative to the resolved CWD
-# ("." for CWD itself); returns 1 when it resolves outside CWD, loops, or
-# exceeds 16 symlink hops. Needs only cd -P / pwd -P / readlink (bash 3.2, BSD).
-# A path that does not exist yet resolves through its nearest existing ancestor.
-physrel() {
+# canon PATH -> the one canonical-path helper. Sets CANON_LEX (path relative to CWD as
+# written, "." for CWD) and CANON_PHYS (symlink-resolved, relative to the resolved CWD);
+# returns 1 when PATH is empty, has a '..' segment, resolves outside CWD, loops, or
+# exceeds 16 symlink hops. A path that does not exist yet resolves through its nearest
+# existing ancestor. Callers check BOTH values. Needs only cd -P / pwd -P / readlink
+# (bash 3.2, BSD). Call it directly, not in $(...), so the variables survive.
+canon() {
   local p=$1 root full
+  CANON_LEX=""; CANON_PHYS=""
+  [ -n "$p" ] || return 1
+  path_bad "$p" && return 1
+  case "$p" in
+    "$CWD")   CANON_LEX="." ;;
+    "$CWD"/*) CANON_LEX=${p#"$CWD"/} ;;
+    /*)       return 1 ;;
+    ./*)      CANON_LEX=${p#./} ;;
+    *)        CANON_LEX=$p ;;
+  esac
   root=$(physical "$CWD") || return 1
   case "$p" in /*) ;; *) p=$CWD/$p ;; esac
   full=$(physical "$p") || return 1
   case "$full" in
-    "$root") printf '.' ;;
-    "$root"/*) printf '%s' "${full#"$root"/}" ;;
+    "$root")   CANON_PHYS="." ;;
+    "$root"/*) CANON_PHYS=${full#"$root"/} ;;
     *) return 1 ;;
   esac
 }
@@ -211,11 +214,8 @@ lane_worktrees() {
 lane_harness_path() {
   local p=$1 full wt wr rest
   [ -n "$p" ] || return 1
-  case "$p" in
-    ..|../*|*/..|*/../*|'~'*) return 1 ;;
-    /*) ;;
-    *) p=$CWD/$p ;;
-  esac
+  path_bad "$p" && return 1
+  case "$p" in /*) ;; *) p=$CWD/$p ;; esac
   full=$(physical "$p") || return 1
   while IFS= read -r wt; do
     [ -n "$wt" ] || continue
@@ -236,11 +236,7 @@ LANES
 # readable PATH -> 0 when the conductor may read it (lexically and after
 # resolving symlinks)
 readable() {
-  local p
-  p=$(rel "$1") || return 1
-  readable_rel "$p" || return 1
-  p=$(physrel "$1") || return 1
-  readable_rel "$p"
+  canon "$1" && readable_rel "$CANON_LEX" && readable_rel "$CANON_PHYS"
 }
 
 # readable_or_lane PATH -> readable, or under .harness/ of a registered work folder
@@ -249,8 +245,7 @@ readable_or_lane() { readable "$1" || lane_harness_path "$1"; }
 # writable PATH -> 0 when the conductor may write it (lexically and after
 # resolving symlinks), or it is under .harness/ of a registered work folder
 writable() {
-  local p
-  if p=$(rel "$1") && writable_rel "$p" && p=$(physrel "$1") && writable_rel "$p"; then
+  if canon "$1" && writable_rel "$CANON_LEX" && writable_rel "$CANON_PHYS"; then
     return 0
   fi
   lane_harness_path "$1"
@@ -322,18 +317,25 @@ plain_tok() {
   return 0
 }
 
+# doc_rel_ok REL [md] -> 0 when a repo-relative path is under .harness/ or docs/ (or, with
+# "md", any *.md) and is not a raw stream. Shared by bodyfile_ok and git_show_ok.
+doc_rel_ok() {
+  raw_stream_rel "$1" && return 1
+  case "$1" in
+    .harness/*|docs/*) return 0 ;;
+    *.md) [ "${2:-}" = md ] && return 0 ;;
+  esac
+  return 1
+}
+
 # bodyfile_ok VALUE -> 0 when a gh --body-file / -F value is a path that stays
 # (symlinks resolved) under .harness/ or docs/. "-" (stdin) is denied.
 bodyfile_ok() {
-  local v=$1 p
+  local v=$1
   [ -n "$v" ] && [ "$v" != - ] || return 1
   plain_tok "$v" || return 1
   has_expansion "$v" && return 1
-  p=$(rel "$v") || return 1
-  p=$(physrel "$v") || return 1
-  raw_stream_rel "$p" && return 1
-  case "$p" in .harness/*|docs/*) return 0 ;; esac
-  return 1
+  canon "$v" && doc_rel_ok "$CANON_PHYS"
 }
 
 # gh_segment_ok MASKED RAW -> 0 only for "gh pr|issue <sub>" with <sub> in GH_ALLOW
@@ -435,13 +437,17 @@ unquoted_text_ok() {
 }
 
 # commit_rev_ok REV -> 0 when REV is a plain rev (letters, digits . _ / @ -, then
-# optional ~N / ^N suffixes) that resolves to a commit; a blob or tree SHA is
-# denied because git show would print its content
+# optional ~N / ^N suffixes, a final bare ^) that resolves to a commit; a blob or
+# tree SHA is denied because git show would print its content. The rev reaches the
+# shell unquoted and zsh extendedglob treats ~ and ^ as glob operators (exclusion and
+# negation), so every ~ needs digits after it and every ^ digits or the end of the rev:
+# a bare ~, ~~ or ^^ is denied. Even ~N / ^N stays a pattern word, so git_show_ok allows
+# them only in the --stat/--name-only form, never before a ':'.
 commit_rev_ok() {
   case "$1" in
     ''|-*) return 1 ;;
   esac
-  printf '%s' "$1" | grep -Eq '^[A-Za-z0-9._/@-]+([~^][0-9]*)*$' || return 1
+  printf '%s' "$1" | grep -Eq '^[A-Za-z0-9._/@-]+([~^][0-9]+)*\^?$' || return 1
   git -C "$CWD" rev-parse -q --verify "$1^{commit}" >/dev/null 2>&1
 }
 
@@ -461,10 +467,12 @@ git_show_ok() {
       *:*)
         rev=${1%%:*}; path=${1#*:}
         [ -n "$rev" ] && [ -n "$path" ] || return 1
+        # ~ / ^ before ':' is a glob under extendedglob: main^:x.md can expand to a
+        # file name such as main.go, so the rev:path form takes no ~ or ^ at all
+        case "$rev" in *[~^]*) return 1 ;; esac
         commit_rev_ok "$rev" || return 1
-        case "$path" in *:*|/*|..|../*|*/..|*/../*) return 1 ;; esac
-        raw_stream_rel "$path" && return 1
-        case "$path" in .harness/*|docs/*|*.md) return 0 ;; esac
+        case "$path" in *:*|*[~^]*|/*|..|../*|*/..|*/../*) return 1 ;; esac
+        doc_rel_ok "$path" md && return 0
         return 1 ;;
     esac
   fi
@@ -479,9 +487,11 @@ git_show_ok() {
 }
 
 # task_output_ok PATH -> 0 for a task output file of the calling session:
-# /private/tmp/claude-*/<slug>/<session_id>/tasks/*.output (absolute, symlinks resolved)
+# /private/tmp/claude-<x>/<slug>/<session_id>/tasks/*.output (absolute, symlinks resolved);
+# <x> is non-empty and <slug> is this project's slug: CWD with every character outside
+# A-Za-z0-9 turned into '-' (Claude Code's project directory naming)
 task_output_ok() {
-  local full rest a b c d e
+  local full rest a b c d e slug
   case "$SESSION_ID" in ''|*[!A-Za-z0-9_-]*) return 1 ;; esac
   case "$1" in /*) ;; *) return 1 ;; esac
   full=$(physical "$1") || return 1
@@ -490,8 +500,11 @@ task_output_ok() {
   IFS=/ read -r a b c d e <<RESTEOF
 $rest
 RESTEOF
-  case "$a" in claude-*) ;; *) return 1 ;; esac
-  [ -n "$b" ] && [ "$c" = "$SESSION_ID" ] && [ "$d" = tasks ] || return 1
+  case "$a" in claude-?*) ;; *) return 1 ;; esac
+  # tr works per byte, so one multibyte UTF-8 character becomes several '-' where Claude Code
+  # may write one: such a cwd is falsely denied, never falsely allowed (fail closed)
+  slug=$(printf '%s' "$CWD" | tr -c 'A-Za-z0-9' '-')
+  [ -n "$b" ] && [ "$b" = "$slug" ] && [ "$c" = "$SESSION_ID" ] && [ "$d" = tasks ] || return 1
   case "$e" in ''|*/*|*[!A-Za-z0-9._-]*) return 1 ;; esac
   case "$e" in *.output) return 0 ;; esac
   return 1
@@ -500,7 +513,7 @@ RESTEOF
 # cat_ls_segment_ok MASKED -> 0 when a cat / ls segment needs no quoting,
 # expansion or parent-directory access
 cat_ls_segment_ok() {
-  local tok p cmd=${1%% *}
+  local tok cmd=${1%% *}
   case "$1" in *[\"\']*|*..*) return 1 ;; esac
   has_expansion "$1" && return 1
   set -f
@@ -526,8 +539,8 @@ cat_ls_segment_ok() {
       for tok in "$@"; do
         case "$tok" in -*) return 1 ;; esac
         # symlink-resolved: .harness/ or docs/ here, a task output file, or a work folder's .harness/
-        if p=$(physrel "$tok") && ! raw_stream_rel "$p"; then
-          case "$p" in .harness|.harness/*|docs|docs/*) continue ;; esac
+        if canon "$tok" && ! raw_stream_rel "$CANON_PHYS"; then
+          case "$CANON_PHYS" in .harness|.harness/*|docs|docs/*) continue ;; esac
         fi
         task_output_ok "$tok" && continue
         lane_harness_path "$tok" && continue
@@ -573,10 +586,11 @@ case "$TOOL" in
   Read)
     readable_or_lane "$(field file_path)" || deny "$MSG_READ" ;;
   Grep)
-    readable "$(field path)" || deny "$MSG_READ"
+    GPATH=$(field path)
+    readable "$GPATH" || deny "$MSG_READ"
     # a directory search would read the raw streams under .harness/log
-    GRP=$(physrel "$(field path)") || deny "$MSG_READ"
-    case "$GRP" in .harness|.harness/log) deny "$MSG_READ" ;; esac ;;
+    canon "$GPATH" || deny "$MSG_READ"
+    case "$CANON_PHYS" in .harness|.harness/log) deny "$MSG_READ" ;; esac ;;
   Glob)
     PATTERN=$(field pattern)
     case "$PATTERN" in *..*|/*|'~'*) deny "$MSG_READ" ;; esac
@@ -595,8 +609,8 @@ case "$TOOL" in
     if [ "$GPRE" = "$PATTERN" ]; then GDIR=$PATTERN
     else case "$GPRE" in */*) GDIR=${GPRE%/*} ;; *) GDIR="" ;; esac
     fi
-    GP=$(physrel "$GBASE${GDIR:+/$GDIR}") || deny "$MSG_READ"
-    case "$GP" in .harness|.harness/*|docs|docs/*) ;; *) deny "$MSG_READ" ;; esac ;;
+    canon "$GBASE${GDIR:+/$GDIR}" || deny "$MSG_READ"
+    case "$CANON_PHYS" in .harness|.harness/*|docs|docs/*) ;; *) deny "$MSG_READ" ;; esac ;;
   Bash)
     BCMD=$(field command)
     printf '%s' "$BCMD" | grep -Eq '^[[:space:]]*harness[[:space:]]+(-C[[:space:]]+("[^"]*"|'"'"'[^'"'"']*'"'"'|[^[:space:]]+)[[:space:]]+)?["'"'"']?watch["'"'"']?([[:space:]]|$)' && deny "$MSG_WATCH"

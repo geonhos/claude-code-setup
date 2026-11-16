@@ -623,6 +623,8 @@ mkdir -p "$LR/main/.harness/asks" "$LR/other/.harness"
 (cd "$LR/main" && git init -q . && mkdir -p bin docs && echo src > bin/harness && echo doc > docs/x.md &&
   git add bin docs && git -c user.email=t@t -c user.name=t -c core.hooksPath=/dev/null commit -q -m s1 &&
   git -c user.email=t@t -c user.name=t -c core.hooksPath=/dev/null commit -q --allow-empty -m s2 &&
+  git -c user.email=t@t -c user.name=t -c core.hooksPath=/dev/null commit -q --allow-empty -m s3 &&
+  git -c user.email=t@t -c user.name=t -c core.hooksPath=/dev/null commit -q --allow-empty -m s4 &&
   git tag v1 && git tag -a -m ann v2 && git worktree add -q "$LR/lane" 2>/dev/null)
 BLOB=$(cd "$LR/main" && git rev-parse HEAD:bin/harness); TREE=$(cd "$LR/main" && git rev-parse HEAD:bin)
 mkdir -p "$LR/lane/.harness/log" "$LR/lane/bin"
@@ -630,7 +632,9 @@ echo x > "$LR/lane/.harness/task.md"; echo x > "$LR/lane/.harness/log/a.jsonl"; 
 echo x > "$LR/other/.harness/task.md"
 ln -s ../bin/harness "$LR/lane/.harness/srclink"
 ln -s "$LR/lane/.harness" "$LR/lanelink"
-TASKS=/private/tmp/claude-test70/proj/sess/tasks
+SLUG=$(printf '%s' "$LR/main" | sed 's/[^A-Za-z0-9]/-/g')   # Claude Code's project slug for cwd
+TD=/private/tmp/claude-test70/$SLUG
+TASKS=$TD/sess/tasks
 mkdir -p "$TASKS" 2>/dev/null && echo x > "$TASKS/abc.output" && echo x > "$TASKS/abc.txt"
 ltool() { jq -n -c --arg t "$1" --argjson i "$2" --arg c "$LR/main" '{tool_name:$t, tool_input:$i, cwd:$c, session_id:"sess"}'; }
 lb() { ltool Bash "$(jq -n -c --arg c "$1" '{command:$c}')"; }
@@ -665,13 +669,13 @@ expect deny  $C "git show --stat path"    "$(lb 'git show --stat HEAD:bin/harnes
 expect deny  $C "git show rev:md + opt"   "$(lb 'git show -p HEAD:docs/x.md')"
 expect deny  $C "git show quoted"         "$(lb 'git show "HEAD:bin/harness"')"
 expect deny  $C "git show --output"       "$(lb 'git show --stat --output=x HEAD')"
-expect allow $C "cat task output"         "$(lb 'cat /private/tmp/claude-test70/proj/sess/tasks/abc.output')"
-expect allow $C "tail -n task output"     "$(lb 'tail -n 20 /private/tmp/claude-test70/proj/sess/tasks/abc.output')"
-expect allow $C "head -n task output"     "$(lb 'head -n 5 /private/tmp/claude-test70/proj/sess/tasks/abc.output')"
-expect deny  $C "tail -f task output"     "$(lb 'tail -f /private/tmp/claude-test70/proj/sess/tasks/abc.output')"
-expect deny  $C "tail -n x"               "$(lb 'tail -n x /private/tmp/claude-test70/proj/sess/tasks/abc.output')"
-expect deny  $C "task non-output file"    "$(lb 'cat /private/tmp/claude-test70/proj/sess/tasks/abc.txt')"
-expect deny  $C "task output dotdot"      "$(lb 'cat /private/tmp/claude-test70/proj/sess/tasks/../../../../../etc/passwd')"
+expect allow $C "cat task output"         "$(lb "cat $TASKS/abc.output")"
+expect allow $C "tail -n task output"     "$(lb "tail -n 20 $TASKS/abc.output")"
+expect allow $C "head -n task output"     "$(lb "head -n 5 $TASKS/abc.output")"
+expect deny  $C "tail -f task output"     "$(lb "tail -f $TASKS/abc.output")"
+expect deny  $C "tail -n x"               "$(lb "tail -n x $TASKS/abc.output")"
+expect deny  $C "task non-output file"    "$(lb "cat $TASKS/abc.txt")"
+expect deny  $C "task output dotdot"      "$(lb "cat $TASKS/../../../../../etc/passwd")"
 expect deny  $C "cat /etc/passwd"         "$(lb 'cat /etc/passwd')"
 expect deny  $C "head src"                "$(lb 'head -n 5 bin/harness')"
 expect deny  $C "tail src"                "$(lb 'tail bin/harness')"
@@ -707,23 +711,80 @@ expect allow $C "git show --stat HEAD^"      "$(lb 'git show --stat HEAD^')"
 expect allow $C "git show --stat HEAD~1^0"   "$(lb 'git show --stat HEAD~1^0')"
 expect allow $C "git show --stat tag"        "$(lb 'git show --stat v1')"
 expect allow $C "git show --name-only ann tag" "$(lb 'git show --name-only v2')"
-expect allow $C "git show HEAD~1:docs/x.md"  "$(lb 'git show HEAD~1:docs/x.md')"
+expect deny  $C "git show HEAD~1:docs/x.md"  "$(lb 'git show HEAD~1:docs/x.md')"
 expect allow $C "git show tag:docs/x.md"     "$(lb 'git show v1:docs/x.md')"
 expect deny  $C "git show HEAD~1:src"        "$(lb 'git show HEAD~1:bin/harness')"
 expect deny  $C "git show --stat HEAD~"      "$(lb 'git show --stat HEAD~x')"
 expect deny  $C "git show ~ at word start"   "$(lb 'git show --stat ~1')"
 expect deny  $C "git show glob"              "$(lb 'git show --stat HEAD*')"
-expect deny  $C "cat other-session task output" "$(lb 'cat /private/tmp/claude-test70/proj/other/tasks/abc.output')"
-expect deny  $C "cat task output no slug"    "$(lb 'cat /private/tmp/claude-test70/sess/tasks/abc.output')"
-expect deny  $C "cat task output deep"       "$(lb 'cat /private/tmp/claude-test70/proj/x/sess/tasks/abc.output')"
-expect deny  $C "cat task output subdir"     "$(lb 'cat /private/tmp/claude-test70/proj/sess/tasks/d/abc.output')"
-expect deny  $C "cat task output no session id" "$(ltool Bash '{"command":"cat /private/tmp/claude-test70/proj/sess/tasks/abc.output"}' | jq -c 'del(.session_id)')"
+expect deny  $C "cat other-session task output" "$(lb "cat $TD/other/tasks/abc.output")"
+expect deny  $C "cat task output no slug"    "$(lb "cat /private/tmp/claude-test70/sess/tasks/abc.output")"
+expect deny  $C "cat task output deep"       "$(lb "cat $TD/x/sess/tasks/abc.output")"
+expect deny  $C "cat task output subdir"     "$(lb "cat $TASKS/d/abc.output")"
+expect deny  $C "cat task output no session id" "$(ltool Bash "$(jq -n -c --arg c "cat $TASKS/abc.output" '{command:$c}')" | jq -c 'del(.session_id)')"
 expect allow $C "Read lane .harness"         "$(ltool Read "$(jq -n -c --arg p "$LR/lane/.harness/task.md" '{file_path:$p}')")"
 expect allow $C "Read lane .harness symlink dir" "$(ltool Read "$(jq -n -c --arg p "$LR/lanelink/task.md" '{file_path:$p}')")"
 expect deny  $C "Read lane raw stream"       "$(ltool Read "$(jq -n -c --arg p "$LR/lane/.harness/log/a.jsonl" '{file_path:$p}')")"
 expect deny  $C "Read lane src"              "$(ltool Read "$(jq -n -c --arg p "$LR/lane/bin/harness" '{file_path:$p}')")"
 expect deny  $C "Read lane .harness link to src" "$(ltool Read "$(jq -n -c --arg p "$LR/lane/.harness/srclink" '{file_path:$p}')")"
 expect deny  $C "Read non-worktree .harness" "$(ltool Read "$(jq -n -c --arg p "$LR/other/.harness/task.md" '{file_path:$p}')")"
+# #90: ~/^ revs reach the shell unquoted and glob under zsh extendedglob; task output is project-scoped
+expect allow $C "git show --stat HEAD~2"     "$(lb 'git show --stat HEAD~2')"
+expect allow $C "git show --stat HEAD~1~1"   "$(lb 'git show --stat HEAD~1~1')"
+expect allow $C "git show --name-only HEAD^" "$(lb 'git show --name-only HEAD^')"
+expect allow $C "git show --name-only HEAD~1^" "$(lb 'git show --name-only HEAD~1^')"
+expect deny  $C "git show HEAD^:docs/x.md"   "$(lb 'git show HEAD^:docs/x.md')"
+expect deny  $C "git show HEAD^1:docs/x.md"  "$(lb 'git show HEAD^1:docs/x.md')"
+expect deny  $C "git show HEAD~1^:docs/x.md" "$(lb 'git show HEAD~1^:docs/x.md')"
+expect deny  $C "git show HEAD~:docs/x.md"   "$(lb 'git show HEAD~:docs/x.md')"
+# documents why: under zsh extendedglob a mid-word ^ is a negation pattern and expands to a file name
+if command -v zsh >/dev/null 2>&1; then
+  ZT=$(mktemp -d); : > "$ZT/main.go"
+  zgot=$(cd "$ZT" && zsh -fc 'setopt extendedglob; print -r -- main^:x.md' 2>&1)
+  [ "$zgot" = "main.go" ] && report ok "zsh extendedglob expands main^:x.md" x x x || report bad "zsh extendedglob expands main^:x.md" "main.go" "$zgot" '{}'
+  rm -rf "$ZT"
+fi
+expect allow $C "git show --stat HEAD^1"     "$(lb 'git show --stat HEAD^1')"
+expect deny  $C "git show --stat bare ~"     "$(lb 'git show --stat HEAD~')"
+expect deny  $C "git show --stat ~~"         "$(lb 'git show --stat HEAD~~')"
+expect deny  $C "git show --stat ^^"         "$(lb 'git show --stat HEAD^^')"
+expect deny  $C "git show --stat ~1~"        "$(lb 'git show --stat HEAD~1~')"
+expect deny  $C "git show --stat ^x"         "$(lb 'git show --stat HEAD^x')"
+expect deny  $C "git show --stat ~ then glob" "$(lb 'git show --stat HEAD~1*')"
+expect deny  $C "git show path with ~"       "$(lb 'git show HEAD:docs/a~b.md')"
+expect deny  $C "git show path with ^"       "$(lb 'git show HEAD:docs/a^1.md')"
+mkdir -p "/private/tmp/claude-/$SLUG/sess/tasks" "$TD-other/sess/tasks" /private/tmp/claude-test70/other-proj/sess/tasks
+for d in "/private/tmp/claude-/$SLUG" "$TD-other" /private/tmp/claude-test70/other-proj; do echo x > "$d/sess/tasks/abc.output"; done
+expect deny  $C "task output empty claude- suffix" "$(lb "cat /private/tmp/claude-/$SLUG/sess/tasks/abc.output")"
+expect deny  $C "task output other project slug"   "$(lb 'cat /private/tmp/claude-test70/other-proj/sess/tasks/abc.output')"
+expect deny  $C "task output slug prefix only"     "$(lb "cat $TD-other/sess/tasks/abc.output")"
+expect deny  $C "task output slug via dotdot"     "$(lb "cat $TD/sess/tasks/../../../other-proj/sess/tasks/abc.output")"
+rm -rf "/private/tmp/claude-/$SLUG" "$TD-other"
+rmdir /private/tmp/claude- 2>/dev/null
+# #109: every rule resolves paths through canon; a '..' or symlink variant stays denied
+ln -s ../bin "$LR/main/docs/lnk"; ln -s ../bin/harness "$LR/main/docs/lnk.md"
+ln -s ../bin "$LR/main/.harness/lnk"; ln -s ../bin/harness "$LR/main/.harness/lnk.md"
+rd() { ltool Read "$(jq -n -c --arg p "$1" '{file_path:$p}')"; }
+expect allow $C "canon Read docs"            "$(rd "$LR/main/docs/x.md")"
+expect deny  $C "canon Read dotdot"          "$(rd "$LR/main/docs/../bin/harness")"
+expect deny  $C "canon Read dir symlink"     "$(rd "$LR/main/docs/lnk/harness")"
+expect deny  $C "canon Read file symlink"    "$(rd "$LR/main/docs/lnk.md")"
+expect deny  $C "canon Write dotdot"         "$(lw "$LR/main/docs/../bin/x.md")"
+expect deny  $C "canon Write dir symlink"    "$(lw "$LR/main/docs/lnk/x.md")"
+expect deny  $C "canon Write file symlink"   "$(lw "$LR/main/.harness/lnk.md")"
+expect deny  $C "canon Grep dotdot"          "$(ltool Grep '{"pattern":"x","path":"docs/../bin"}')"
+expect deny  $C "canon Grep dir symlink"     "$(ltool Grep '{"pattern":"x","path":"docs/lnk"}')"
+expect deny  $C "canon Glob dotdot"          "$(ltool Glob '{"pattern":"*","path":"docs/../bin"}')"
+expect deny  $C "canon Glob dir symlink"     "$(ltool Glob '{"pattern":"*","path":"docs/lnk"}')"
+expect deny  $C "canon Glob pattern symlink" "$(ltool Glob '{"pattern":"docs/lnk/*"}')"
+expect deny  $C "canon cat dir symlink"      "$(lb 'cat docs/lnk/harness')"
+expect deny  $C "canon cat file symlink"     "$(lb 'cat docs/lnk.md')"
+expect deny  $C "canon head symlink .harness" "$(lb 'head -n 1 .harness/lnk/harness')"
+expect deny  $C "canon body-file dotdot"     "$(lb 'gh pr comment 1 --body-file docs/../bin/harness')"
+expect deny  $C "canon body-file dir symlink" "$(lb 'gh pr comment 1 --body-file docs/lnk/harness')"
+expect deny  $C "canon body-file file symlink" "$(lb 'gh pr comment 1 --body-file docs/lnk.md')"
+expect deny  $C "canon git show dotdot"      "$(lb 'git show HEAD:docs/../bin/harness')"
+expect deny  $C "canon git show raw stream md" "$(lb 'git show HEAD:.harness/log/a.jsonl.md')"
 rm -rf "$LR" /private/tmp/claude-test70
 
 echo "PASS $pass / FAIL $fail"
