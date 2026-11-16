@@ -50,5 +50,18 @@ check "ghostty failure: not Terminal.app" not_grep '^osascript' "$OW_LOG"
 ow OW_FAIL=1 -- open-watch analyst
 check "no backend: exit 0" [ "$RC" -eq 0 ]
 check "no backend: command shown" grep -q "no pane backend.*harness -C $ABS watch analyst" <<<"$OUT"
+# osascript that hangs (first Automation prompt): killed at the deadline, command printed
+printf '#!/bin/bash\nsleep 30\n' > "$BIN/osascript.slow"
+mkdir -p "$BIN/slow"; cp "$BIN/osascript.slow" "$BIN/slow/osascript"; chmod +x "$BIN/slow/osascript"; rm -f "$BIN/osascript.slow"
+T0=$SECONDS
+OUT=$(env -u HARNESS_ROLE -u HERDR_ENV -u TMUX HARNESS_OSASCRIPT_TIMEOUT=1 PATH="$BIN/slow:$HERE/../bin:/usr/bin:/bin:$(dirname "$(command -v jq)")" /bin/bash "$HARNESS" open-watch analyst 2>&1); RC=$?
+check "osascript hang: returns within the deadline" [ $((SECONDS - T0)) -lt 15 ]
+check "osascript hang: exit 0, command printed" grep -q "no pane backend.*harness -C $ABS watch analyst" <<<"$OUT"
+# control characters in the folder path: command printed, nothing launched
+CP="$WORK/ctl"$'\t'"dir"; mkdir -p "$CP"
+ow -- -C "$CP" open-watch analyst
+check "control char path: nothing launched" [ ! -s "$OW_LOG" ]
+check "control char path: message, exit 0" grep -q "control characters" <<<"$OUT"
+check "control char path: exit 0" [ "$RC" -eq 0 ]
 echo "PASS $pass / FAIL $fail"
 [ "$fail" -eq 0 ]

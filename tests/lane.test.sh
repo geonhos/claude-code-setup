@@ -60,11 +60,16 @@ check "lane title: branch fix/13-<kebab, 30 chars>" [ "$(git -C "$BASE/repo-13" 
 unset FAKE_GH_TITLE
 
 # 4. ls
-setpr feat/12-my-slug OPEN
+setpr feat/12-my-slug OPEN "$(git -C "$D" rev-parse HEAD)"
 hrun lane ls
 check "ls: issue, branch, path, PR state" grep -q "#12  feat/12-my-slug  $D  PR:OPEN" <<<"$OUT"
 check "ls: no PR shows -" grep -q "#13 .*PR:-" <<<"$OUT"
 check "ls: not running" not_grep "running" <(printf '%s' "$OUT")
+# reused branch with an old merged PR (head differs): no PR state, old PR noted
+setpr feat/12-my-slug MERGED 0000000000000000000000000000000000000000
+hrun lane ls
+check "ls: stale PR shows PR:- and old #N merged" grep -q "#12 .*PR:- (old #1 merged)" <<<"$OUT"
+setpr feat/12-my-slug OPEN "$(git -C "$D" rev-parse HEAD)"
 
 # 5. rm
 hrun lane rm 12
