@@ -29,7 +29,7 @@ diff yourself (`harness ask` refuses to run in a worker session anyway).
    - **Report**: findings ordered by severity, each with `file:line` and why;
      the **last line must be `VERDICT: PASS` or `VERDICT: FAIL`**.
    - **Steps**: a `## Steps` numbered list, one line per step (the viewer dashboard shows it).
-2. Run with the Bash tool's `run_in_background: true` **and** `timeout: 7200000` (the Bash tool's maximum; without it the call is killed at the tool's default timeout, long before the 60-90 min wait ends) (the task notification wakes you when the run ends):
+2. Run it as conductor.md's Loop step 2 says (Bash `run_in_background: true` and `timeout: 7200000`; the task notification wakes you):
 
    ```
    harness ask reviewer 'Read .harness/task-reviewer.md and do it.'

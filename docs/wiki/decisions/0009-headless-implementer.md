@@ -1,7 +1,7 @@
 ---
 type: decision
 status: active
-updated: 2026-11-02
+updated: 2026-11-13
 sources: [.harness/implementer-headless-design.md, branch feat/v23-headless-implementer, tests/headless-implementer.test.sh]
 verified_by: tests/headless-implementer.test.sh
 ---

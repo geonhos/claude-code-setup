@@ -39,11 +39,9 @@ you have full tool access.
   behaviour you change.
 - While iterating, run only the 1-2 suites your change affects, one
   `bash tests/<x>.test.sh` at a time, and pass those before you commit.
-- Never loop over suites (`for t in ...; do bash tests/$t.test.sh`) or run the
-  suite list serially: serial is ~350 s, the parallel `./install.sh --test` is
-  ~70 s and the Stop hook runs it for you as the gate. If it blocks, fix the
-  cause in a new commit and stop again.
-- Need more than two suites? Run `./install.sh --test` once (parallel), not a loop.
+- Never loop over suites (serial is ~350 s). Need more than two? Run
+  `./install.sh --test` once (parallel, ~70 s); the Stop hook runs it as the
+  gate. If it blocks, fix the cause in a new commit and stop again.
 - Commit only when the instruction says to commit, with the message it gives.
 - Git safety: never force-push, rewrite history, `reset --hard`, or discard
   uncommitted changes you did not make; stage specific files, not `-A`.
