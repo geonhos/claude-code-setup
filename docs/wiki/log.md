@@ -50,3 +50,4 @@
 - 2026-11-13 · implementer · #63 lanes · new how-to work-folders (closes #59)
 - 2026-11-13 · implementer · #67 remove herdr · decision 0013; viewer/pane code, gate allow, install step, fake-herdr and herdr-only tests removed; 0011 index hook updated
 - 2026-11-13 · implementer · #72 shrink · deleted troubleshooting daemon-inherits-worker-env (a Claude daemon kept the env of the first shell that started it; herdr panes are gone) and test-wait-loops (wait_panes in the removed worktree suite); 0009 banner: auto-resume and --fresh removed
+- 2026-11-16 · implementer · wiki issue triage · new troubleshooting global-gitignore-masks-ignore-gaps (#78); merged #74 #75 #76 into transcript-forensics, #79 into harness-root-lookup, #81 #82 #83 into half-assertion-tests; closed #77 #80 #87 #95 (shipped or fixed)

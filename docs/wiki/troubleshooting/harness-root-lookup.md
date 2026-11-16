@@ -1,8 +1,8 @@
 ---
 type: troubleshooting
 status: active
-updated: 2026-11-03
-sources: [ask 1792643421-12588-9450, ask 1792644961-69735-4647, ask 1792672554-53823-31362, ask 1792674241-84663-18593, lib/harness-root.sh:9-26, bin/harness-verify:60-67 (enter_root), claude/hooks/conductor-gate.sh:22-24, claude/hooks/conductor-resume.sh:23-25, commits 7a5f750 c29c735 07d94b5]
+updated: 2026-11-16
+sources: [ask 1792643421-12588-9450, ask 1792644961-69735-4647, ask 1792672554-53823-31362, ask 1792674241-84663-18593, lib/harness-root.sh:9-26, bin/harness-verify:60-67 (enter_root), claude/hooks/conductor-gate.sh:22-24, claude/hooks/conductor-resume.sh:23-25, commits 7a5f750 c29c735 07d94b5, "#79", claude/hooks/conductor-gate.sh:23-28]
 verified_by: tests/gate.test.sh (agree, defined-once), tests/verify.test.sh (subdir)
 ---
 # Where `.harness/` lives is decided in more than one place
@@ -12,3 +12,5 @@ verified_by: tests/gate.test.sh (agree, defined-once), tests/verify.test.sh (sub
 **Cause.** The conductor (`bin/harness`) uses `.harness/` in its own cwd. The Stop hook gets the *worker's* last Bash cwd and has to find the same directory again. Stray `.harness/config.json` dirs (old `ensure_config`, `tests/.harness`) made a plain `.harness/` an unreliable marker. The README also documents the location. Change one definition and state silently splits.
 
 **Fix (one definition since prune step 6).** `harness_root` lives only in `lib/harness-root.sh`; change it there. `bin/harness`, `bin/harness-verify` and both hooks source it. `enter_root` only adds the cwd fallback and `IS_GIT`. A hook without its lib: the gate denies the conductor only (reason names `./install.sh`), the resume hook stays silent. `mark_done` warns on stderr when it finds no ask; workers never create `.harness/`. Keep the subdir tests in `tests/verify.test.sh` and `agree`/defined-once in `tests/gate.test.sh`.
+
+**Probing the gate by hand.** The gate acts only when `harness_root` finds `.harness/asks/` from the payload `cwd`, else `$PWD` (claude/hooks/conductor-gate.sh:23-28). Elsewhere it allows every call, so a probe from a plain directory proves nothing. Run probes from a dir like the `chk` fixture (tests/gate.test.sh:9-10).
