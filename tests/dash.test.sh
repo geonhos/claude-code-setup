@@ -42,13 +42,13 @@ not json at all
 {"type":"assistant","message":{"id":"m1","content":[{"type":"text","text":"Starting work\nsecond\nthird\nfourth"}],"usage":{"input_tokens":100,"cache_read_input_tokens":80000,"cache_creation_input_tokens":2000}}}
 {"type":"assistant","message":{"id":"m2","content":[{"type":"tool_use","name":"Bash","input":{"command":"echo hi","description":"Say hi"}}],"usage":{"input_tokens":1,"cache_read_input_tokens":82000,"cache_creation_input_tokens":0}}}
 EOS
-frame() { OUT=$(HARNESS_DASH_LINES=${1:-30} HARNESS_DASH_COLS=${2:-70} PATH="$HERE/../bin:$PATH" hl_dash_frame "${3:-implementer}" "${4:-$RAW}"); }
+frame() { OUT=$(HARNESS_DASH_NOW=$NOW HARNESS_DASH_LINES=${1:-30} HARNESS_DASH_COLS=${2:-70} PATH="$HERE/../bin:$PATH" hl_dash_frame "${3:-implementer}" "${4:-$RAW}"); }
 has() { grep -qF -- "$1" <<<"$OUT"; }
 
 # full frame, implementer, text Now, no verify yet, no baseline
 frame
-# elapsed is wall-clock (date +%s - start): allow a few seconds of drift so a second boundary cannot flake it
-check "header" bash -c 'case "$1" in "implementer  ask-1  ⏱ 12m0"[4-9]"s  turns 2  ctx 82k  sonnet") true;; *) false;; esac' _ "$(sed -n 1p <<<"$OUT")"
+# the clock is pinned (HARNESS_DASH_NOW=$NOW in frame): elapsed is exactly 724 s
+check "header" [ "$(sed -n 1p <<<"$OUT")" = "implementer  ask-1  ⏱ 12m04s  turns 2  ctx 82k  sonnet" ]
 check "brief title" [ "$(sed -n 2p <<<"$OUT")" = "── Brief ── Implement the thing" ]
 GOLD_MID=$(cat <<'EOG'
 ── Now ──
@@ -192,8 +192,8 @@ frame 16 40 implementer .harness/log/long5.jsonl
 check "height 16: detail shrinks to make room (Diff + Steps + Verify kept, < 6 detail)" bash -c 'grep -qF "── Diff" <<<"$1" && grep -qF "── Verify" <<<"$1" && [ "$(now_sec <<<"$1" | grep -c "^    ")" -lt 6 ] && [ "$(now_sec <<<"$1" | grep -c "^    ")" -ge 1 ]' _ "$OUT"
 
 # idle timer: from 10 s since the last stream line, only while live
-ago() { date -v-"$1"S +%Y%m%d%H%M.%S 2>/dev/null || date -d "-$1 sec" +%Y%m%d%H%M.%S; }
-touch .harness/log/long5.jsonl
+ago() { local t=$((NOW - $1)); date -r "$t" +%Y%m%d%H%M.%S 2>/dev/null || date -d "@$t" +%Y%m%d%H%M.%S; }   # relative to the pinned NOW
+touch -t "$(ago 0)" .harness/log/long5.jsonl
 frame 30 80 implementer .harness/log/long5.jsonl
 check "idle hidden when the stream is fresh" bash -c '! grep -qF "idle" <<<"$1"' _ "$OUT"
 touch -t "$(ago 5)" .harness/log/long5.jsonl
@@ -201,7 +201,7 @@ frame 30 80 implementer .harness/log/long5.jsonl
 check "idle hidden below 10 s" bash -c '! grep -qF "idle" <<<"$1"' _ "$OUT"
 touch -t "$(ago 45)" .harness/log/long5.jsonl
 frame 30 80 implementer .harness/log/long5.jsonl
-check "idle shown at >= 10 s (· idle 45s)" bash -c 'sed -n 1p <<<"$1" | grep -qE "⏱ 12m[0-5][0-9]s · idle (4[5-9]|5[0-9])s  turns"' _ "$OUT"
+check "idle shown at >= 10 s (· idle 45s)" bash -c 'sed -n 1p <<<"$1" | grep -qF "⏱ 12m04s · idle 45s  turns"' _ "$OUT"
 
 # truncation: width cuts by character, height never exceeded and Recent shrinks first
 frame 30 20
@@ -213,6 +213,21 @@ check "height 12: Recent dropped before them" bash -c 'grep -qF "── Verify" 
 frame 3 70
 check "height 3: header + brief + at most 1 more" bash -c 'grep -qF "── Brief" <<<"$1" && [ "$(wc -l <<<"$1")" -le 3 ]' _ "$OUT"
 check "height 3: header first" [ "$(sed -n 1p <<<"$OUT" | cut -c1-11)" = implementer ]
+
+# brief path named in the prompt: absolute or relative, any .md under a .harness/ dir; nothing outside .harness/
+mkdir -p .harness/other elsewhere
+printf '# Abs brief\n## Steps\n1. one\n2. two\n' > .harness/other/task-67.md
+printf '# Outside brief\n## Steps\n1. nope\n' > elsewhere/task-9.md
+printf 'Read %s/.harness/other/task-67.md and do it.\n' "$PWD" > $ASK_DIR/implementer.prompt
+check "brief: absolute path in the prompt is followed" [ "$(dash_brief implementer | head -n 1)" = "Abs brief" ]
+check "brief: its steps are listed" [ "$(dash_brief implementer | grep -c '^S')" = 2 ]
+printf 'Read .harness/other/task-67.md.\n' > $ASK_DIR/implementer.prompt
+check "brief: relative path (trailing period) is followed" [ "$(dash_brief implementer | head -n 1)" = "Abs brief" ]
+printf 'Read elsewhere/task-9.md and do it.\nsecond\n' > $ASK_DIR/implementer.prompt
+check "brief: file outside .harness/ is not read (prompt line shown)" [ "$(dash_brief implementer)" = "Read elsewhere/task-9.md and do it." ]
+printf 'Read .harness/../elsewhere/task-9.md\n' > $ASK_DIR/implementer.prompt
+check "brief: .. escape is not followed" [ "$(dash_brief implementer | head -n 1)" = "Read .harness/../elsewhere/task-9.md" ]
+printf 'Read .harness/task-implementer.md and do it.\n' > $ASK_DIR/implementer.prompt
 
 # multibyte brief title is cut by character, not byte
 printf '# 한글제목한글제목한글제목\n## Steps\n1. a\n' > .harness/task-implementer.md
@@ -231,8 +246,16 @@ done
 # cut at W-1: an ASCII-only line wider than W is cut to exactly W-1 columns (the trailing erase-to-EOL never hits glyph W)
 printf '# %s\n' abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyz > .harness/task-implementer.md
 frame 30 20
-check "W-1: header line is exactly 19 cols at W=20" [ "$(sed -n 1p <<<"$OUT" | jq -R length)" -eq 19 ]
-check "W-1: no line reaches 20 cols" [ "$(jq -R length <<<"$OUT" | sort -n | tail -n 1)" -le 19 ]
+dw() { jq -R "explode | map(if (. >= 44032 and . <= 55203) or (. >= 126976 and . <= 129791) then 2 else 1 end) | add // 0"; }   # display width: Hangul and emoji = 2
+check "W-1: header line is exactly 19 cols at W=20" [ "$(sed -n 1p <<<"$OUT" | dw)" -eq 19 ]
+check "W-1: no line reaches 20 cols" [ "$(dw <<<"$OUT" | sort -n | tail -n 1)" -le 19 ]
+# wide characters: a 2-column glyph that would straddle column 19 is dropped, so the line is 18 or 19 columns, never 20
+printf '# %s\n' 한한한한한한한한한한한한한한한한 > .harness/task-implementer.md
+frame 30 20
+check "W-1: Hangul Brief line is 18 or 19 display cols (not jq length), never 20" bash -c '[ "$1" -ge 18 ] && [ "$1" -le 19 ] && [ "$(sed -n 2p <<<"$2" | jq -R length)" -lt "$1" ]' _ "$(sed -n 2p <<<"$OUT" | dw)" "$OUT"
+printf '# %s\n' 😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀 > .harness/task-implementer.md
+frame 30 20
+check "W-1: emoji frame has no line over 19 display cols" [ "$(dw <<<"$OUT" | sort -n | tail -n 1)" -le 19 ]
 
 # redraw: no full clear; home, clear line ends, clear below
 PAINT=$(dash_paint $'one\ntwo' | od -c | tr -d ' \n')
@@ -352,6 +375,26 @@ kill -WINCH $HP; sleep 0.7
 check "hold: WINCH with an unchanged size does not repaint" [ "$(nframes winch)" = 2 ]
 kill -HUP $HP; wait $HP 2>/dev/null; HRC=$?
 check "hold: HUP exits 129, terminal restored" bash -c '[ "$1" = 129 ] && tail -c 20 "$2" | od -An -c | tr -d " \n" | grep -qF "$3"' _ "$HRC" .harness/log/winch.out '033[?7h033[?25h\n'
+# live loop (the run is alive, not done): real HUP/INT/TERM while painting frames
+cat > .harness/log/live.sh <<'EOH'
+. "$LIB"
+eval "$DO_SRC"
+hl_alive() { return 0; }
+hl_done() { return 1; }
+dash_size() { echo "30 40"; }
+hl_dash_frame() { echo "live frame"; }
+ASK_DIR=.harness/asks
+dash_watch implementer "$RAW" ask-1
+EOH
+for sg in HUP:129 INT:130 TERM:130; do
+  n=${sg%%:*}; want=${sg##*:}
+  rm -f .harness/log/live-$n.out
+  LIB="$LIB" DO_SRC="$DO_SRC" RAW="$RAW" HARNESS_DASH_SEC=30 \
+    perl -e '$SIG{INT} = "DEFAULT"; exec @ARGV' /bin/bash .harness/log/live.sh > .harness/log/live-$n.out 2>&1 </dev/null & HP=$!
+  sleep 1
+  kill -$n $HP; wait $HP 2>/dev/null; HRC=$?
+  check "live loop: $n exits $want, output ends with autowrap on + cursor shown + newline" bash -c '[ "$1" = "$2" ] && grep -qF "live frame" "$3" && [ "$(tail -c 20 "$3" | od -An -c | tr -d " \n" | grep -oF "$4" | wc -l | tr -d " ")" = 1 ] && tail -c 20 "$3" | od -An -c | tr -d " \n" | grep -qF "$4"' _ "$HRC" "$want" .harness/log/live-$n.out '033[?7h033[?25h\n'
+done
 hold_start poll 1
 echo "30 90" > .harness/log/size; sleep 2.5
 check "hold: size change picked up by the idle poll (no signal)" [ "$(nframes poll)" = 2 ]
