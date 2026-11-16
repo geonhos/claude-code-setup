@@ -562,10 +562,10 @@ bash_ok() {
   seg=$(printf '%s' "$seg" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')
   raw=$(printf '%s' "$raw" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')
   [ -n "$seg" ] || return 1
-  # plain shell text only (character allowlist); in a git show segment ~N / ^N rev
+  # plain shell text only (character allowlist); in a git show segment ~N rev
   # suffixes are exempt here (commit_rev_ok validates them strictly)
   case "$seg" in
-    git\ show|git\ show\ *) unquoted_text_ok "$(printf '%s' "$raw" | sed -E 's/([A-Za-z0-9._@-])([~^][0-9]*)+/\1/g')" || return 1 ;;
+    git\ show|git\ show\ *) unquoted_text_ok "$(printf '%s' "$raw" | sed -E 's/([A-Za-z0-9._@-])(~[0-9][0-9]*)+/\1/g')" || return 1 ;;
     *) unquoted_text_ok "$raw" || return 1 ;;
   esac
   # reject '..' path components (but not git ranges like main...HEAD)
