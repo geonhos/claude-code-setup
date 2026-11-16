@@ -37,11 +37,20 @@ hl_pid() { awk 'NR == 1 { print $2 }' "$ASK_DIR/$1.pid" 2>/dev/null; }
 # hl_done <role> <ask-id> — exit.json exists for that ask
 hl_done() { grep -q "\"ask_id\":\"$2\"" "$ASK_DIR/$1.exit.json" 2>/dev/null; }
 
+# hl_grace <role> <id> — wait up to ~3 s for exit.json (the runner may still be writing it); 0 when there
+hl_grace() {
+  local g=0
+  while [ "$g" -lt 30 ] && ! hl_done "$1" "$2"; do sleep 0.1; g=$((g + 1)); done
+  hl_done "$1" "$2"
+}
+hl_cur_id() { awk 'NR == 1 { print $1 }' "$ASK_DIR/$1.current" 2>/dev/null; }
+hl_cur_start() { awk 'NR == 1 { print $2 }' "$ASK_DIR/$1.current" 2>/dev/null; }
+
 # hl_progress_obj <role> <t0> — extra progress.jsonl fields of the role's last run, as one
 # JSON object (keys session / ctx_after are consumed by the caller)
 hl_progress_obj() {
   local role=$1 t0=${2:-} ej="$ASK_DIR/$1.exit.json" id resume=false
-  id=$(awk 'NR == 1 { print $1 }' "$ASK_DIR/$role.current" 2>/dev/null)
+  id=$(hl_cur_id "$role")
   [ -z "$(sed -n 's/^resume=//p' "$ASK_DIR/$role.run" 2>/dev/null | head -n 1)" ] || resume=true
   if [ -f "$ej" ] && { [ -z "$id" ] || hl_done "$role" "$id"; }; then
     jq -c --argjson resume "$resume" --argjson t0 "$(num_or_null "$t0")" '
@@ -65,7 +74,7 @@ hl_status_line() {
   fi
   ctx=$(jq -r '.ctx // empty' "$ASK_DIR/$role.exit.json" 2>/dev/null)
   el=""
-  [ "$st" != running ] || el=$(( $(date +%s) - $(awk 'NR == 1 { print $2 }' "$ASK_DIR/$role.current" 2>/dev/null || echo 0) ))
+  [ "$st" != running ] || el=$(( $(date +%s) - $(hl_cur_start "$role" || echo 0) ))
   if [ "$mode" = status ]; then
     if [ "$st" = running ]; then printf '%-12s %-8s hl %ss\n' "$role" "$st" "$el"
     else printf '%-12s %-8s hl ctx %s\n' "$role" "$st" "$(fmt_ctx "$ctx")"; fi
@@ -223,7 +232,7 @@ hl_deadline_bump() {
 # ask_headless <role> <text> <timeout-ms> <keep> — the whole headless ask; always exits
 ask_headless() {
   local role=$1 text=$2 timeout=$3 keep=$4 id start retried resume="" sid max_s ctxb="" report="$REPORT_DIR/$1.md"
-  local a="$ASK_DIR/$role" now prev deadline dl0 poll=${HARNESS_POLL_SEC:-2} start_s=${HARNESS_HL_START_S:-15} s0 g
+  local a="$ASK_DIR/$role" now prev deadline dl0 poll=${HARNESS_POLL_SEC:-2} start_s=${HARNESS_HL_START_S:-15}
   mkdir -p "$ASK_DIR" "$REPORT_DIR" "$LOG_DIR"
   if hl_alive "$role"; then
     echo "harness: $role is still running (pid $(hl_pid "$role")); nothing sent. Collect with: harness report $role; stop: harness close $role --force" >&2
@@ -275,8 +284,7 @@ ask_headless() {
     fi
     if ! hl_alive "$role"; then
       # the runner may still be writing exit.json (jq, mv) as its pid disappears: give it ~3 s
-      g=0; while [ "$g" -lt 30 ] && ! hl_done "$role" "$id"; do sleep 0.1; g=$((g + 1)); done
-      if hl_done "$role" "$id"; then continue; fi
+      if hl_grace "$role" "$id"; then continue; fi
       sid=$(sed -n 1p "$a.session" 2>/dev/null | cut -c1-8)
       if [ -n "$sid" ]; then
         echo "harness: $role's run is gone without a result (killed?); --keep resumes session $sid"
@@ -304,7 +312,7 @@ ask_headless() {
 report_headless() {
   local role=$1 report="$REPORT_DIR/$1.md"
   if hl_alive "$role"; then
-    echo "harness: still running ($(( $(date +%s) - $(awk 'NR == 1 { print $2 }' "$ASK_DIR/$role.current" 2>/dev/null || echo 0) ))s); harness wait $role blocks until done" >&2
+    echo "harness: still running ($(( $(date +%s) - $(hl_cur_start "$role" || echo 0) ))s); harness wait $role blocks until done" >&2
     exit 4
   fi
   if [ ! -f "$ASK_DIR/$role.exit.json" ]; then
@@ -374,7 +382,7 @@ hl_starting() {
 # cmd_wait <role> [--timeout ms] — block until the target's run ends; never collects.
 # 0 done (exit.json carries the ask), 3 no ask / run gone without a result, 4 timeout.
 cmd_wait() {
-  local t=${1:-} timeout="" role id a start deadline dl0 max_s prev now g poll=${HARNESS_POLL_SEC:-2}
+  local t=${1:-} timeout="" role id a start deadline dl0 max_s prev now poll=${HARNESS_POLL_SEC:-2}
   [ -n "$t" ] || usage
   shift
   while [ $# -gt 0 ]; do
@@ -385,7 +393,7 @@ cmd_wait() {
   done
   hl_target wait "$t"
   role=$ASK_AGENT; a="$ASK_DIR/$role"
-  id=$(awk 'NR == 1 { print $1 }' "$a.current" 2>/dev/null)
+  id=$(hl_cur_id "$role")
   [ -n "$id" ] || { echo "harness: no ask for $role" >&2; exit 3; }
   [ -n "$timeout" ] || timeout=$(( $(hl_max_s "$role") * 1000 ))
   start=$(date +%s); deadline=$((start + (timeout + 999) / 1000)); prev=$start; dl0=$deadline; max_s=$(hl_max_s "$role")
@@ -393,8 +401,7 @@ cmd_wait() {
     if hl_done "$role" "$id"; then echo "done; collect: harness report $role"; exit 0; fi
     if ! hl_alive "$role" && ! hl_starting "$role" "$id"; then
       # the runner may still be writing exit.json as its pid disappears: the same ~3 s grace as ask
-      g=0; while [ "$g" -lt 30 ] && ! hl_done "$role" "$id"; do sleep 0.1; g=$((g + 1)); done
-      if hl_done "$role" "$id"; then continue; fi
+      if hl_grace "$role" "$id"; then continue; fi
       echo "harness: $role's run is gone without a result (killed?); harness report $role explains" >&2
       exit 3
     fi
@@ -412,7 +419,7 @@ cmd_wait() {
 # id is the current ask, else exit.json's stream_log; a rotated stream is <raw>.gz
 hl_stream_of() {
   local a="$ASK_DIR/$1" raw cur
-  cur=$(awk 'NR == 1 { print $1 }' "$a.current" 2>/dev/null)
+  cur=$(hl_cur_id "$role")
   raw=$(awk -v i="$cur" 'NR == 1 && $1 == i { print $2 }' "$a.stream" 2>/dev/null)
   [ -n "$raw" ] || raw=$(jq -r '.stream_log // empty' "$a.exit.json" 2>/dev/null)
   [ -n "$raw" ] || raw=$(awk 'NR == 1 { print $2 }' "$a.stream" 2>/dev/null)
@@ -436,7 +443,7 @@ cmd_watch() {
   [ -t 1 ] || die "watch is for a human terminal; the conductor reads the report"
   hl_target watch "$t"
   role=$ASK_AGENT
-  id=$(awk 'NR == 1 { print $1 }' "$ASK_DIR/$role.current" 2>/dev/null)
+  id=$(hl_cur_id "$role")
   raw=$(hl_stream_of "$role"); i=0
   # a run that is still starting has not announced its stream yet: give it a few seconds
   while [ "$(hl_stream_id "$role")" != "$id" ] && [ "$i" -lt 100 ] && { hl_alive "$role" || hl_starting "$role" "$id"; }; do

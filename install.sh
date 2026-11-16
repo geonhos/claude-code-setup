@@ -128,29 +128,23 @@ jq -se 'length == 1 and (.[0] | type == "object")' "$SETTINGS" >/dev/null 2>&1 \
   || die "$SETTINGS is not a JSON object (or holds more than one value); fix it before installing"
 
 # 2. agents + skills + harness symlinks
-mkdir -p "$CLAUDE_DIR/agents" "$BIN_DIR"
-for f in "$REPO"/claude/agents/*.md; do
-  [ -e "$f" ] || continue
-  dest="$CLAUDE_DIR/agents/$(basename "$f")"
-  if { [ -e "$dest" ] || [ -L "$dest" ]; } && [ "$(readlink "$dest" || true)" != "$f" ]; then
-    abak="$dest.bak.$(date +%Y%m%d%H%M%S)"
-    mv "$dest" "$abak"
-    echo "warning: $dest existed and was backed up to $abak" >&2
+# link_item <src> <dest> <backup-prefix>: symlink; an existing different dest moves to <prefix>.<timestamp>
+link_item() {
+  local bak
+  if { [ -e "$2" ] || [ -L "$2" ]; } && [ "$(readlink "$2" || true)" != "$1" ]; then
+    mkdir -p "${3%/*}"; bak="$3.$(date +%Y%m%d%H%M%S)"
+    mv "$2" "$bak"
+    echo "warning: $2 existed and was backed up to $bak" >&2
   fi
-  ln -sfn "$f" "$dest"
+  ln -sfn "$1" "$2"
+}
+mkdir -p "$CLAUDE_DIR/agents" "$CLAUDE_DIR/skills" "$BIN_DIR"
+for f in "$REPO"/claude/agents/*.md; do
+  [ -e "$f" ] && link_item "$f" "$CLAUDE_DIR/agents/$(basename "$f")" "$CLAUDE_DIR/agents/$(basename "$f").bak"
 done
-mkdir -p "$CLAUDE_DIR/skills"
 for d in "$REPO"/claude/skills/*/; do
   d=${d%/}
-  [ -f "$d/SKILL.md" ] || continue
-  dest="$CLAUDE_DIR/skills/$(basename "$d")"
-  if { [ -e "$dest" ] || [ -L "$dest" ]; } && [ "$(readlink "$dest" || true)" != "$d" ]; then
-    mkdir -p "$CLAUDE_DIR/skills.bak"
-    sbak="$CLAUDE_DIR/skills.bak/$(basename "$d").$(date +%Y%m%d%H%M%S)"
-    mv "$dest" "$sbak"
-    echo "warning: $dest existed and was backed up to $sbak" >&2
-  fi
-  ln -sfn "$d" "$dest"
+  [ -f "$d/SKILL.md" ] && link_item "$d" "$CLAUDE_DIR/skills/$(basename "$d")" "$CLAUDE_DIR/skills.bak/$(basename "$d")"
 done
 # bin/* by glob; lib/ needs no link: the scripts resolve their symlink back into the repo
 for f in "$REPO"/bin/*; do
@@ -172,19 +166,15 @@ jq --arg gate "$GATE" --arg matcher "$MATCHER" --arg resume "$RESUME" --arg noti
   | .env //= {}
   | .env.BASH_DEFAULT_TIMEOUT_MS = "600000"
   | .env.BASH_MAX_TIMEOUT_MS = "7200000"
-  | .hooks //= {}
-  | .hooks.PreToolUse //= []
-  # strip our gate from every entry; drop entries left empty; re-append one canonical entry
-  | .hooks.PreToolUse |= map(if any(.hooks[]?; .command == $gate) then (.hooks |= map(select(.command != $gate))) | select((.hooks | length) > 0) else . end)
-  | .hooks.PreToolUse += [{matcher: $matcher, hooks: [{type: "command", command: $gate}]}]
-  # same for the SessionStart resume hook (other SessionStart hooks stay)
-  | .hooks.SessionStart //= []
-  | .hooks.SessionStart |= map(if any(.hooks[]?; .command == $resume) then (.hooks |= map(select(.command != $resume))) | select((.hooks | length) > 0) else . end)
-  | .hooks.SessionStart += [{matcher: "startup|clear|compact", hooks: [{type: "command", command: $resume}]}]
-  # same for the Notification hook (desktop notification when the conductor waits for the user)
-  | .hooks.Notification //= []
-  | .hooks.Notification |= map(if any(.hooks[]?; .command == $notify) then (.hooks |= map(select(.command != $notify))) | select((.hooks | length) > 0) else . end)
-  | .hooks.Notification += [{matcher: "permission_prompt|idle_prompt|elicitation_dialog|elicitation_url_dialog|agent_needs_input", hooks: [{type: "command", command: $notify}]}]
+  # strip our command from every entry of an event; drop entries left empty; re-append one canonical entry
+  | def hook($ev; $cmd; $m):
+      .hooks[$ev] = ((.hooks[$ev] // [])
+        | map(if any(.hooks[]?; .command == $cmd) then (.hooks |= map(select(.command != $cmd))) | select((.hooks | length) > 0) else . end)
+        + [{matcher: $m, hooks: [{type: "command", command: $cmd}]}]);
+  .hooks //= {}
+  | hook("PreToolUse"; $gate; $matcher)
+  | hook("SessionStart"; $resume; "startup|clear|compact")
+  | hook("Notification"; $notify; "permission_prompt|idle_prompt|elicitation_dialog|elicitation_url_dialog|agent_needs_input")
 ' "$SETTINGS" > "$tmp"
 cat "$tmp" > "$SETTINGS" || die "failed to write $SETTINGS; restore from $bak"
 

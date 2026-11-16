@@ -24,6 +24,7 @@ while [ -L "$src" ]; do
   case $src in /*) ;; *) src=$d/$src ;; esac
 done
 case $src in */*) d=${src%/*} ;; *) d=. ;; esac   # no dirname: PATH may be bare in hooks/tests
+HARNESS_BIN_DIR=$(CDPATH= cd -P "$d" 2>/dev/null && pwd)
 HARNESS_LIB=${HARNESS_LIB:-$(CDPATH= cd -P "$d/../lib" 2>/dev/null && pwd)}
 if ! . "$HARNESS_LIB/harness-defaults.sh" 2>/dev/null; then
   HARNESS_ROLES="analyst implementer reviewer"
@@ -169,13 +170,7 @@ EOF_PATHS
 
 # harness_bin -> path of the sibling `harness` (symlink-resolved), else PATH
 harness_bin() {
-  local s=${BASH_SOURCE[0]} d
-  while [ -h "$s" ]; do
-    d=$(cd "$(dirname "$s")" && pwd); s=$(readlink "$s")
-    case "$s" in /*) ;; *) s="$d/$s" ;; esac
-  done
-  d=$(cd "$(dirname "$s")" && pwd)
-  if [ -x "$d/harness" ]; then printf '%s\n' "$d/harness"; else command -v harness; fi
+  if [ -x "$HARNESS_BIN_DIR/harness" ]; then printf '%s\n' "$HARNESS_BIN_DIR/harness"; else command -v harness; fi
 }
 
 # quote_files -> stdin lines to one shell-quoted, space-separated string
