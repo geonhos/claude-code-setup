@@ -45,13 +45,24 @@ lane_find() {
   [ -n "$r" ] && printf '%s\n' "$r"
 }
 
+# lane_ls — one row per folder; the PR state counts only when the PR head equals the folder's HEAD (as lane rm checks)
 lane_ls() {
-  local p b n s w
-  lane_rows | while IFS="$(printf '\t')" read -r p b; do
+  local p b n s w info tab st oid num head pr
+  tab=$(printf '\t')
+  lane_rows | while IFS="$tab" read -r p b; do
     b=${b#refs/heads/}; n=${b#*/}; n=${n%%-*}
-    s=$(lane_pr "$b"); w=""
+    info=""; command -v gh >/dev/null 2>&1 \
+      && info=$(gh pr view "$b" --json state,headRefOid,number -q '[.state,.headRefOid,.number]|@tsv' 2>/dev/null)
+    IFS="$tab" read -r st oid num <<EOI
+$info
+EOI
+    head=$(git -C "$p" rev-parse HEAD 2>/dev/null)
+    if [ -n "$st" ] && [ -n "$oid" ] && [ "$head" = "$oid" ]; then pr="PR:$st"
+    elif [ -n "$st" ]; then pr="PR:- (old #$num $(printf '%s' "$st" | tr 'A-Z' 'a-z'))"
+    else pr="PR:-"; fi
+    w=""
     ! lane_running "$p" || w=" running"
-    printf '#%s  %s  %s  PR:%s%s\n' "$n" "$b" "$p" "${s:--}" "$w"
+    printf '#%s  %s  %s  %s%s\n' "$n" "$b" "$p" "$pr" "$w"
   done
 }
 
