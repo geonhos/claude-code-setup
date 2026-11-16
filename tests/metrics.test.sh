@@ -30,11 +30,10 @@ mkdir -p .harness
 cat > .harness/progress.jsonl <<'EOF'
 {"ts":"2026-10-02T10:00:00Z","agent":"analyst","exit":0,"dur_s":100,"status":"done"}
 {"ts":"2026-10-03T10:00:00Z","agent":"analyst","exit":4,"dur_s":600}
-{"ts":"2026-10-03T10:05:00Z","agent":"analyst","exit":null,"late":true,"status":"done"}
-{"ts":"2026-10-04T10:00:00Z","agent":"implementer","exit":0,"dur_s":300,"verify":"pass","verify_attempts":1,"clear":"ok"}
-{"ts":"2026-10-05T10:00:00Z","agent":"implementer","exit":5,"dur_s":900,"verify":"fail","verify_attempts":3,"clear":"retry"}
-{"ts":"2026-10-06T10:00:00Z","agent":"implementer","exit":0,"dur_s":500,"verify":"pass","verify_attempts":2,"clear":"respawn"}
-{"ts":"2026-10-07T10:00:00Z","agent":"implementer","exit":0,"dur_s":100,"clear":"none"}
+{"ts":"2026-10-04T10:00:00Z","agent":"implementer","exit":0,"dur_s":300,"verify":"pass","verify_attempts":1}
+{"ts":"2026-10-05T10:00:00Z","agent":"implementer","exit":5,"dur_s":900,"verify":"fail","verify_attempts":3}
+{"ts":"2026-10-06T10:00:00Z","agent":"implementer","exit":0,"dur_s":500,"verify":"pass","verify_attempts":2}
+{"ts":"2026-10-07T10:00:00Z","agent":"implementer","exit":0,"dur_s":100}
 {"ts":"2026-10-08T10:00:00Z","agent":"reviewer","exit":0,"dur_s":50}
 {"ts":"2026-10-09T10:00:00Z","agent":"reviewer","exit":5,"dur_s":150}
 {"ts":"2026-10-09T10:30:00Z","agent":"reviewer","exit":3,"dur_s":200}
@@ -54,13 +53,12 @@ jv() { printf '%s' "$J" | jq -r "$1"; }
 check "json: valid" jq -e . <<<"$J" >/dev/null
 check "json: window" [ "$(jv '.window.start + " " + .window.end + " " + (.window.days|tostring)')" = "2026-10-01 2026-10-29 28" ]
 check "json: previous window" [ "$(jv '.previous.start + " " + .previous.end')" = "2026-09-03 2026-10-01" ]
-check "json: asks total (late row excluded)" [ "$(jv .current.total.asks)" -eq 9 ]
-check "json: late" [ "$(jv .current.total.late)" -eq 1 ]
+check "json: asks total" [ "$(jv .current.total.asks)" -eq 9 ]
 check "json: asks per role" [ "$(jv '[.current.roles.analyst.asks,.current.roles.implementer.asks,.current.roles.reviewer.asks]|join(",")')" = "2,4,3" ]
-check "json: exit distribution" [ "$(jv '.current.total.exit|to_entries|map("\(.key)=\(.value)")|join(",")')" = "0=5,3=1,4=1,5=2,late=1" ]
-check "json: abnormal total" [ "$(jv .current.total.abnormal)" -eq 3 ]
-check "json: abnormal rate total (3/10)" [ "$(jv .current.total.abnormal_rate)" = 30 ]
-check "json: abnormal rate analyst (2/3)" [ "$(jv .current.roles.analyst.abnormal_rate)" = 66.7 ]
+check "json: exit distribution" [ "$(jv '.current.total.exit|to_entries|map("\(.key)=\(.value)")|join(",")')" = "0=5,3=1,4=1,5=2" ]
+check "json: abnormal total" [ "$(jv .current.total.abnormal)" -eq 2 ]
+check "json: abnormal rate total (2/9)" [ "$(jv .current.total.abnormal_rate)" = 22.2 ]
+check "json: abnormal rate analyst (1/2)" [ "$(jv .current.roles.analyst.abnormal_rate)" = 50 ]
 check "json: abnormal rate implementer" [ "$(jv .current.roles.implementer.abnormal_rate)" = 0 ]
 check "json: abnormal rate reviewer (1/3)" [ "$(jv .current.roles.reviewer.abnormal_rate)" = 33.3 ]
 check "json: implementer verify-failure rate (1/4)" [ "$(jv .current.roles.implementer.verify_failure_rate)" = 25 ]
@@ -69,10 +67,6 @@ check "json: reviewer FAIL rate (1/3)" [ "$(jv .current.roles.reviewer.fail_rate
 check "json: implementer median/p95" [ "$(jv '"\(.current.roles.implementer.duration_median_s)/\(.current.roles.implementer.duration_p95_s)"')" = "400/900" ]
 check "json: analyst median/p95 (600,100)" [ "$(jv '"\(.current.roles.analyst.duration_median_s)/\(.current.roles.analyst.duration_p95_s)"')" = "350/600" ]
 check "json: reviewer median/p95" [ "$(jv '"\(.current.roles.reviewer.duration_median_s)/\(.current.roles.reviewer.duration_p95_s)"')" = "150/200" ]
-check "json: clear counts" [ "$(jv '.current.clear | "\(.ok)/\(.retry)/\(.respawn)/\(.none)"')" = "1/1/1/1" ]
-check "json: clear retry rate (1/3)" [ "$(jv .current.clear.retry_rate)" = 33.3 ]
-check "json: clear respawn rate (1/3)" [ "$(jv .current.clear.respawn_rate)" = 33.3 ]
-check "json: clear rates null without data" [ "$(jv .prev.clear.retry_rate)" = null ]
 check "json: previous asks" [ "$(jv .prev.total.asks)" -eq 3 ]
 check "json: previous reviewer FAIL rate (2/2)" [ "$(jv .prev.roles.reviewer.fail_rate)" = 100 ]
 check "json: previous empty role is null" [ "$(jv .prev.roles.implementer.verify_failure_rate)" = null ]
@@ -83,10 +77,8 @@ run metrics
 check "text: rc 0" [ "$RC" -eq 0 ]
 check "text: header" grep -q '^harness metrics  2026-10-01 .. 2026-10-29 (28d)  vs  2026-09-03 .. 2026-10-01' <<<"$OUT"
 check "text: asks row" grep -Eq '^  asks +9 +3$' <<<"$OUT"
-check "text: abnormal row" grep -Eq 'abnormal rate .* +30% +' <<<"$OUT"
-check "text: clear retry row" grep -Eq '/clear retry rate +33.3% +-' <<<"$OUT"
-check "text: clear respawn row" grep -Eq '/clear respawn rate +33.3% +-' <<<"$OUT"
-check "text: exits line" grep -q 'exits current:  0:5 3:1 4:1 5:2 late:1' <<<"$OUT"
+check "text: abnormal row" grep -Eq 'abnormal rate .* +22.2% +' <<<"$OUT"
+check "text: exits line" grep -q 'exits current:  0:5 3:1 4:1 5:2' <<<"$OUT"
 check "text: no retro line" bash -c '! grep -q "^retro:" <<<"$1"' _ "$OUT"
 check "text: no wiki" grep -q '^wiki: none' <<<"$OUT"
 
@@ -128,8 +120,6 @@ check "wiki: SessionStart bytes = active lines only" [ "$(jv .wiki.session_start
 run metrics
 check "text: wiki pages line" grep -q '^wiki: pages active 2 · stale 1 · draft 1' <<<"$OUT"
 check "text: wiki index line" grep -q '^wiki: index 5 lines' <<<"$OUT"
-check "text: no inbox row" bash -c '! grep -q "wiki: inbox" <<<"$1"' _ "$OUT"
-check "json: no inbox fields" [ "$(jv '.wiki|has("inbox_items")')" = false ]
 
 echo "PASS $pass / FAIL $fail"
 [ "$fail" -eq 0 ]

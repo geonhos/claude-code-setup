@@ -27,7 +27,7 @@ EOF_LINKS
   while IFS= read -r f; do
     [ -n "$f" ] || continue
     rel=${f#"$dir"/}
-    case "$rel" in index.md|log.md|inbox/*) continue ;; esac
+    case "$rel" in index.md|log.md) continue ;; esac
     n=$(wc -l < "$f" | tr -d ' ')
     [ "$n" -le 150 ] || err "$f" "$n lines (max 150)"
     if [ "$(sed -n 1p "$f")" != "---" ]; then
@@ -62,7 +62,7 @@ EOF_PAGES
 # cmd_metrics [--since YYYY-MM-DD] [--json] — numbers from .harness/progress.jsonl (the
 # current window and the equal one before it) plus a snapshot of the wiki state.
 # Windows: [start, now] and [start - len, start). Default start = now - 28 days.
-# Abnormal = a late-report row or an ask whose exit is not 0/5; rate = abnormal / rows.
+# Abnormal = an ask whose exit is not 0/5; rate = abnormal / rows.
 cmd_metrics() {
   local since="" json=0 now top wiki="null" pages f st idxl=0 inj=0
   local act=0 stale=0 draft=0 sup=0 oth=0
@@ -84,7 +84,7 @@ cmd_metrics() {
   fi
   top=$(git rev-parse --show-toplevel 2>/dev/null) || top=$PWD
   if [ -d "$top/docs/wiki" ]; then
-    for f in $(find "$top/docs/wiki" -name '*.md' ! -path "$top/docs/wiki/inbox/*" ! -name index.md ! -name log.md 2>/dev/null); do
+    for f in $(find "$top/docs/wiki" -name '*.md' ! -name index.md ! -name log.md 2>/dev/null); do
       st=$(sed -n 's/^status: *//p' "$f" | head -n 1)
       case "$st" in
         active) act=$((act + 1)) ;; stale) stale=$((stale + 1)) ;;
@@ -107,35 +107,27 @@ cmd_metrics() {
     def day: strftime("%Y-%m-%d");
     def rows: split("\n") | map(fromjson? | select(type == "object" and .event != "close"))
       | map(. + {t: (try (.ts | fromdateiso8601) catch null)}) | map(select(.t != null));
-    def abn: .late == true or (.exit != null and .exit != 0 and .exit != 5);
+    def abn: .exit != null and .exit != 0 and .exit != 5;
     def role_stat($rs):
-      ($rs | map(select(.late != true))) as $a
-      | { asks: ($a | length), late: ($rs | map(select(.late == true)) | length),
+      { asks: ($rs | length),
           abnormal: ($rs | map(select(abn)) | length),
           abnormal_rate: pct($rs | map(select(abn)) | length; $rs | length),
-          exit: ($rs | map(if .late == true then "late" else (.exit | if . == null then "?" else tostring end) end)
+          exit: ($rs | map(.exit | if . == null then "?" else tostring end)
                  | group_by(.) | map({key: .[0], value: length}) | from_entries),
-          exit5: ($a | map(select(.exit == 5)) | length),
-          duration_median_s: ($a | map(.dur_s | select(type == "number")) | median),
-          duration_p95_s: ($a | map(.dur_s | select(type == "number")) | p95),
-          mean_verify_attempts: ($a | map(.verify_attempts | select(type == "number")) | if length == 0 then null else ((add / length * 10 | round) / 10) end) };
-    def clear_stat($rs):
-      ($rs | map(select(.late != true))) as $a
-      | ($a | map(select(.clear == "ok")) | length) as $ok
-      | ($a | map(select(.clear == "retry")) | length) as $rt
-      | ($a | map(select(.clear == "respawn")) | length) as $rs2
-      | { ok: $ok, retry: $rt, respawn: $rs2, none: ($a | map(select(.clear == "none")) | length),
-          retry_rate: pct($rt; $ok + $rt + $rs2), respawn_rate: pct($rs2; $ok + $rt + $rs2) };
+          exit5: ($rs | map(select(.exit == 5)) | length),
+          duration_median_s: ($rs | map(.dur_s | select(type == "number")) | median),
+          duration_p95_s: ($rs | map(.dur_s | select(type == "number")) | p95),
+          mean_verify_attempts: ($rs | map(.verify_attempts | select(type == "number")) | if length == 0 then null else ((add / length * 10 | round) / 10) end) };
     def stat($rs):
-      { total: role_stat($rs), clear: clear_stat($rs),
+      { total: role_stat($rs),
         roles: ($roles | map(. as $r | {key: $r, value: role_stat($rs | map(select(.agent == $r)))}) | from_entries) }
       | .roles.implementer.verify_failure_rate = pct(.roles.implementer.exit5; .roles.implementer.asks)
       | .roles.reviewer.fail_rate = pct(.roles.reviewer.exit5; .roles.reviewer.asks)
-      | .by_runner = ($rs | group_by("\(.agent)/\(.runner // "pane")")
-          | map({key: "\(.[0].agent)/\(.[0].runner // "pane")",
+      | .by_runner = ($rs | group_by("\(.agent)/\(.runner)")
+          | map({key: "\(.[0].agent)/\(.[0].runner)",
                  value: (role_stat(.) + {cost_usd_sum: (map(.cost_usd | select(type == "number")) | add // 0),
-                   cost_usd_median: (map(select(.late != true) | .cost_usd | select(type == "number")) | median),
-                   startup_s_median: (map(select(.late != true) | .startup_s | select(type == "number")) | median)})})
+                   cost_usd_median: (map(.cost_usd | select(type == "number")) | median),
+                   startup_s_median: (map(.startup_s | select(type == "number")) | median)})})
           | from_entries);
     (rows) as $all
     | (if $since == "" then $now - 28 * 86400 else ($since + "T00:00:00Z" | fromdateiso8601) end) as $start
@@ -159,13 +151,10 @@ cmd_metrics() {
           ("  " + ("" | pad(34)) + ("current" | lpad(22)) + ("previous" | lpad(22))),
           row("asks"; .current.total.asks; .prev.total.asks),
           ($roles[] as $r | row("  \($r)"; .current.roles[$r].asks; .prev.roles[$r].asks)),
-          row("late reports"; .current.total.late; .prev.total.late),
-          row("abnormal rate (exit not 0/5, late)"; (.current.total.abnormal_rate | pc); (.prev.total.abnormal_rate | pc)),
+          row("abnormal rate (exit not 0/5)"; (.current.total.abnormal_rate | pc); (.prev.total.abnormal_rate | pc)),
           ($roles[] as $r | row("  \($r)"; (.current.roles[$r].abnormal_rate | pc); (.prev.roles[$r].abnormal_rate | pc))),
           row("implementer verify-failure rate"; (.current.roles.implementer.verify_failure_rate | pc); (.prev.roles.implementer.verify_failure_rate | pc)),
           row("implementer mean verify attempts"; .current.roles.implementer.mean_verify_attempts; .prev.roles.implementer.mean_verify_attempts),
-          row("/clear retry rate"; (.current.clear.retry_rate | pc); (.prev.clear.retry_rate | pc)),
-          row("/clear respawn rate"; (.current.clear.respawn_rate | pc); (.prev.clear.respawn_rate | pc)),
           row("reviewer FAIL rate"; (.current.roles.reviewer.fail_rate | pc); (.prev.roles.reviewer.fail_rate | pc)),
           ($roles[] as $r | row("duration median / p95  \($r)"; (.current.roles[$r] | dur); (.prev.roles[$r] | dur))),
           "",

@@ -147,7 +147,7 @@ hsetup; export FAKE_CLAUDE_MODE=nostart
 hrun ask analyst "q"
 check "nostart: rc 1" [ "$RC" -eq 1 ]
 
-# 13. config: the removed pane keys are ignored with one note; env runner vars do nothing
+# 13. default config
 setup
 export FAKE_CLAUDE_MODE=success
 export FAKE_REPORT_CMD="mkdir -p $WORK/.harness/reports && printf '# analyst report\nstatus: done\n' > $WORK/.harness/reports/analyst.md"
@@ -155,12 +155,6 @@ hrun ask analyst "q"
 check "default: headless rc 0" [ "$RC" -eq 0 ]
 check "default: no agent start" not_logged "agent start"
 check "default: config has only _doc" jqt 'keys == ["_doc"]' .harness/config.json
-setup
-mkdir -p .harness; echo '{"runner":{"analyst":"pane"},"close_after_ask":{"analyst":"never"},"idle_ttl_minutes":30}' > .harness/config.json
-export FAKE_CLAUDE_MODE=success FAKE_REPORT_CMD="mkdir -p $WORK/.harness/reports && printf '# analyst report\nstatus: done\n' > $WORK/.harness/reports/analyst.md"
-hrun ask analyst "q"
-check "removed keys: ask still runs headless (rc 0)" [ "$RC" -eq 0 ]
-check "removed keys: config untouched" jqt 'has("runner")' .harness/config.json
 # 14. permission mode other than auto: warning; ## Run line in the ask log
 hsetup; export FAKE_PERM=default
 hrun ask analyst "q"
@@ -228,23 +222,6 @@ hrun ask analyst "after close" --keep
 check "keep close: no resume across a close" not_logged "--resume"
 check "keep close: says a close ended it" grep -q "closed" <<<"$OUT"
 check "keep close: runs fresh" grep -q "running fresh" <<<"$OUT"
-
-# 15b2. old rows: a row with an ask_id (removed --worktree asks) is never the session a plain --keep resumes
-hsetup
-hrun ask analyst "ok"
-rm -f .harness/asks/analyst.session
-printf '%s\n' '{"ts":"2026-10-28T00:00:00Z","agent":"analyst","runner":"headless","result":"success","session":"sess-wt","ask_id":"1-2-3","wt":"/x/wt","base":"b"}' >> .harness/progress.jsonl
-hrun ask analyst "keep" --keep
-check "keep leak: resumes the plain ask's session" logged "--resume sess-1"
-check "keep leak: never the old ask_id row's session" not_logged "--resume sess-wt"
-
-# 15b3. old rows: a close event with an ask_id is no boundary for the plain role session
-hsetup
-hrun ask analyst "ok"
-rm -f .harness/asks/analyst.session
-printf '%s\n' '{"ts":"2026-10-28T00:00:00Z","event":"close","role":"analyst","pane":"w1:p9","reason":"manual","runner":"headless","ask_id":"1-2-3"}' >> .harness/progress.jsonl
-hrun ask analyst "keep" --keep
-check "keep old close: plain session not marked closed" logged "--resume sess-1"
 
 # 15c. close ends the conversation: --keep after a close of a healthy idle worker runs fresh
 hsetup
@@ -390,14 +367,14 @@ hrun ask analyst "q"
 hrun status
 check "status: headless idle line" grep -Eq 'analyst +idle +hl' <<<"$OUT"
 
-# metrics: runner split (old lines without runner count as pane)
+# metrics: runner split (old lines without runner group under "null")
 setup
 mkdir -p .harness
 now=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 printf '%s\n' "{\"ts\":\"$now\",\"agent\":\"analyst\",\"exit\":0,\"dur_s\":5}" \
   "{\"ts\":\"$now\",\"agent\":\"analyst\",\"exit\":0,\"dur_s\":9,\"runner\":\"headless\",\"cost_usd\":0.5,\"startup_s\":2}" > .harness/progress.jsonl
 hrun metrics --json
-check "metrics: by_runner keys" jqt '.current.by_runner | keys == ["analyst/headless","analyst/pane"]' <<<"$OUT"
+check "metrics: by_runner keys" jqt '.current.by_runner | keys == ["analyst/headless","analyst/null"]' <<<"$OUT"
 check "metrics: headless cost" jqt '.current.by_runner["analyst/headless"].cost_usd_sum == 0.5' <<<"$OUT"
 hrun metrics
 check "metrics text: runner split shown" grep -q "analyst/headless" <<<"$OUT"

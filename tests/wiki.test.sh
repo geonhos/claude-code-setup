@@ -14,7 +14,7 @@ has() { printf '%s\n' "$OUT" | grep -qF -- "$1"; }
 # mk — fresh valid wiki in $W: one troubleshooting page, indexed
 mk() {
   W=$(mktemp -d); WORKS="$WORKS $W"
-  mkdir -p "$W/troubleshooting" "$W/inbox"
+  mkdir -p "$W/troubleshooting"
   printf -- '---\ntype: troubleshooting\nstatus: active\nupdated: 2026-10-21\nsources: [commit abc1234]\nverified_by: human\n---\n# A\nbody\n' > "$W/troubleshooting/a.md"
   printf '# Wiki index\n\n- [A](troubleshooting/a.md) — hook (active, 2026-10-21)\n' > "$W/index.md"
   printf '# log\n' > "$W/log.md"
@@ -79,11 +79,8 @@ check "index too long" has "index.md: 83 lines (max 80)"
 mk; i=0; while [ $i -lt 150 ]; do echo "x" >> "$W/troubleshooting/a.md"; i=$((i+1)); done; lint "$W"
 check "page too long" has "troubleshooting/a.md: 159 lines (max 150)"
 
-mk; printf 'nonsense\n' > "$W/inbox/x.md"; printf 'x\n' > "$W/log.md"; lint "$W"
-check "inbox/log/index need no frontmatter" [ "$RC" -eq 0 ]
-
-mk; printf 'old lesson\n' > "$W/inbox/old.md"; touch -t 202001010000 "$W/inbox/old.md"; lint "$W"
-check "old inbox file (old checkout) is silent" [ -z "$OUT" ]
+mk; printf 'x\n' > "$W/log.md"; lint "$W"
+check "log/index need no frontmatter" [ "$RC" -eq 0 ]
 
 mk; printf 'This works well.\n' >> "$W/troubleshooting/a.md"; lint "$W"
 check "fluff warns" has "troubleshooting/a.md: warning: fluff phrase"

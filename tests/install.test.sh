@@ -422,12 +422,6 @@ check "runner glob: hyphenated suite runs" grep -qx '=== x-y ===' "$D.out"
 check "runner glob: helper not run" not_grep helper-ran "$D.out"
 check "runner: no hardcoded suite list" not_grep 'names="gate' "$RUNNER"
 
-# a previous install's global agent=conductor is removed once; other keys stay
-printf '{"agent":"conductor","model":"keep"}\n' > "$CLAUDE_DIR/settings.json"
-run_install
-check "global agent=conductor removed" [ "$(jq -r '.agent // "none"' "$S")" = none ]
-check "removal keeps other keys" [ "$(jq -r .model "$S")" = keep ]
-check "removal prints a note" grep -q "removed the global agent=conductor" "$T/out.txt"
 printf '{"model":"keep"}\n' > "$CLAUDE_DIR/settings.json"
 run_install
 check "fresh install writes no agent key" [ "$(jq -r '.agent // "none"' "$S")" = none ]

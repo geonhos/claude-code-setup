@@ -434,29 +434,9 @@ check "no jq one stderr line" [ "$(printf '%s\n' "$OUT" | wc -l | tr -d ' ')" -e
 check "no jq mentions jq" grep -q jq <<<"$OUT"
 rm -rf "$JB"
 
-# --- no done marker any more (the headless runner's exit file is the completion signal) -------
-doneset() { mkdir -p "$R/.harness/asks"; echo "ask1 100" > "$R/.harness/asks/implementer.current"; echo "[no-report]" > "$R/.harness/asks/implementer.prompt"; }
-stopj() { jq -n -c --arg c "$R" --argjson a "$1" '{hook_event_name:"Stop",agent_type:"implementer",session_id:"S1",cwd:$c,stop_hook_active:$a}'; }
+# --- `done` is a no-op ---------------------------------------------------------------------
 hvw() { local j=$1; shift; OUT=$(cd "$R" && printf '%s' "$j" | HARNESS_ROLE=worker /bin/bash "$VERIFY" "$@" 2>/dev/null); RC=$?; }
-
-newrepo; doneset
-hvw "$(stopj false)" stop
-check "stop with nothing to verify: exit 0, no marker" bash -c '[ "$1" = 0 ] && [ ! -e "$2/.harness/done" ]' _ "$RC" "$R"
-
-newrepo; doneset
-lcfg '{"test":"exit 1","maxAttempts":2}'
-hv baseline implementer
-echo change > "$R/new.txt"
-hvw "$(stopj false)" stop
-check "blocking stop emits block" [ "$(printf '%s' "$OUT" | jq -r .decision)" = block ]
-hvw "$(stopj true)" stop
-hvw "$(stopj true)" stop
-check "verify gave up at the cap: no marker" [ ! -e "$R/.harness/done" ]
-
-newrepo; doneset
-echo "ask9 5" > "$R/.harness/asks/analyst.current"; echo "[no-report]" > "$R/.harness/asks/analyst.prompt"
-hvw '{"agent_type":"analyst","session_id":"S2","cwd":"'"$R"'"}' done analyst
-check "done analyst: exit 0, no marker" bash -c '[ "$1" = 0 ] && [ ! -e "$2/.harness/done" ]' _ "$RC" "$R"
+newrepo
 hvw '{"cwd":"'"$R"'"}' done bogus
 check "done: unknown role ignored" [ "$RC" -eq 0 ]
 

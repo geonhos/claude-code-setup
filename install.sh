@@ -1,16 +1,6 @@
 #!/bin/bash
-# install.sh — wire this repo into ~/.claude as the conductor setup:
-# agent and skill symlinks, the harness CLI, and settings.json (gate hook,
-# resume hook, cache TTLs, Bash timeouts). It no longer sets
-# the global `agent` key (a previous `agent: conductor` is removed once): the
-# conductor role is per repo, set by `harness init` in .claude/settings.json.
-# Idempotent. Re-run after pulling changes.
-#
-#   ./install.sh          install
-#   ./install.sh --test   run the test suites (in parallel) and exit
-#                         HARNESS_TEST_SERIAL=1 runs them one at a time;
-#                         HARNESS_TEST_TIMEOUT=N caps each suite (default 300 s)
-#
+# install.sh — symlink agents, skills and the harness CLI into ~/.claude and ~/.local/bin and merge
+# the hooks and env into settings.json. Idempotent. `--test` runs the suites in parallel and exits.
 # Overridable for tests: CLAUDE_DIR, BIN_DIR
 set -eu
 
@@ -27,12 +17,8 @@ die() { echo "install: $*" >&2; exit 1; }
 need() { command -v "$1" >/dev/null 2>&1 || die "$1 is required but not on PATH"; }
 
 if [ "${1:-}" = "--test" ]; then
-  # Suites run in parallel (each buffers to its own file; output is printed per
-  # suite in finish order). HARNESS_TEST_SERIAL=1 runs them one by one, still
-  # running every suite. Each suite has a wall-clock limit (HARNESS_TEST_TIMEOUT,
-  # seconds, default 300); a suite over it has its process tree killed and is
-  # reported as failed. HARNESS_TESTS_DIR points the runner at another directory
-  # of *.test.sh files (used by the runner's own tests; skips the wiki-lint step).
+  # parallel by default; HARNESS_TEST_SERIAL=1 one by one; HARNESS_TEST_TIMEOUT=N seconds per suite (default 300);
+  # HARNESS_TESTS_DIR points at another directory of *.test.sh files (skips the wiki-lint step)
   tests_dir=${HARNESS_TESTS_DIR:-$REPO/tests}
   limit=${HARNESS_TEST_TIMEOUT:-300}
   case "$limit" in ''|*[!0-9]*) limit=300 ;; esac
@@ -180,12 +166,8 @@ bak="$SETTINGS.bak.$(date +%Y%m%d%H%M%S)"
 cp "$SETTINGS" "$bak"
 tmp=$(mktemp)
 trap 'rm -f "$tmp"' EXIT
-if [ "$(jq -r '.agent // empty' "$SETTINGS")" = conductor ]; then
-  echo "note: removed the global agent=conductor from $SETTINGS; run 'harness init' in each repo that should use the conductor"
-fi
 jq --arg gate "$GATE" --arg matcher "$MATCHER" --arg resume "$RESUME" --arg notify "$NOTIFY" '
-  (if .agent == "conductor" then del(.agent) else . end)
-  | .promptCacheTtl = "1h"
+  .promptCacheTtl = "1h"
   | .subagentPromptCacheTtl = "1h"
   | .env //= {}
   | .env.BASH_DEFAULT_TIMEOUT_MS = "600000"
@@ -208,18 +190,9 @@ cat "$tmp" > "$SETTINGS" || die "failed to write $SETTINGS; restore from $bak"
 
 cat <<EOF
 installed:
-  gate hook      $GATE  (matcher: $MATCHER)
-  resume hook    $RESUME  (SessionStart: startup|clear|compact)
-  notify hook    $NOTIFY  (Notification: permission_prompt|idle_prompt|elicitation_dialog|elicitation_url_dialog|agent_needs_input)
-  agents         $CLAUDE_DIR/agents/ ($(cd "$REPO/claude/agents" && ls *.md | tr '\n' ' '))
-  skills         $CLAUDE_DIR/skills/ ($(cd "$REPO/claude/skills" && ls -d */ | tr -d / | tr '\n' ' '))
-  harness        $BIN_DIR/harness
-  harness-verify $BIN_DIR/harness-verify
-  harness-run    $BIN_DIR/harness-run
-  harness-view   $BIN_DIR/harness-view
-  settings       $SETTINGS (backup: $bak)
-  agent          not set globally; 'harness init' in a repo writes .claude/settings.json agent=conductor
-  cache TTL      promptCacheTtl=1h subagentPromptCacheTtl=1h
-  bash timeouts  env.BASH_DEFAULT_TIMEOUT_MS=600000 env.BASH_MAX_TIMEOUT_MS=7200000
+  hooks    gate, resume, notify -> $SETTINGS (backup: $bak)
+  agents   $CLAUDE_DIR/agents/ ($(cd "$REPO/claude/agents" && ls *.md | tr '\n' ' '))
+  skills   $CLAUDE_DIR/skills/ ($(cd "$REPO/claude/skills" && ls -d */ | tr -d / | tr '\n' ' '))
+  harness  $BIN_DIR/{harness,harness-verify,harness-run,harness-view}
 next: run "harness init" in a repo to opt it in, then start Claude there.
 EOF

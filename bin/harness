@@ -3,40 +3,8 @@
 # tool that rewrites this file in place cannot corrupt a run in progress (wiki: troubleshooting).
 {
 # harness — conductor-side wrapper for detached headless Claude workers (decision 0011).
-#
-#   harness ask    <agent> '<instruction>' [--timeout MS] [--keep]
-#     default --timeout = the role's headless run cap (a background ask returns when the run ends):
-#     implementer 5400000, analyst/reviewer 3600000
-#   harness report <agent>
-#   harness wait   <agent> [--timeout MS]   block until the run ends (0 done, 3 no ask/gone, 4 timeout); does not collect
-#   harness watch  <agent> [-n N]   human terminal only: follow a live run, or the last N lines of a finished one
-#   harness status
-#   harness [-C DIR] <command> ...   run as if started in DIR (a work folder)
-#   harness lane <issue#> [slug] [--type feat|fix|docs] | lane ls | lane rm <issue#|path> [--force]   per-issue work folders (git worktrees)
-#   harness init [--no-agent] [--shared]   make this repo a harness checkout (.harness/asks, config, agent=conductor in .claude/settings.local.json; --shared: settings.json)
-#   harness close  <agent> [--force]
-#   harness metrics [--since YYYY-MM-DD] [--json]   health numbers from progress.jsonl + the wiki
-#   harness wiki-lint [DIR]   check docs/wiki format and limits (0 = pass)
-#
-# Exit codes for `ask`: 0 report printed · 1 usage/setup error
-#                       2 the run was denied a tool call and wrote no report (re-ask with a changed brief)
-#                       3 worker finished without a report
-#                       4 run still going / unknown (a background ask returns when the run ends)
-#                       5 verification failed (implementer's checks gave up, or the
-#                         reviewer's last line is `VERDICT: FAIL`); the report is
-#                         still printed on stdout. A reviewer report without a
-#                         final VERDICT line counts as no valid report (3).
-# `report` prints .harness/reports/<agent>.md with the same exit codes as `ask`
-#   (0 · 3 no report/no VERDICT · 5 verification failed), plus 4 while the run is
-#   still going. It never sends a prompt.
-# Workers (HARNESS_ROLE=worker) may not ask: skills are user-global and would otherwise nest.
-# .harness/ lives in the checkout root: `harness init` creates it; ask refuses without it
-# and, run from a subdir of the checkout, continues at the root.
-# Every ask is logged to .harness/log/ and .harness/progress.jsonl, and
-# .harness/progress.md is regenerated (log errors only warn on stderr).
-# Config: .harness/config.json (optional `headless_max_minutes`). `harness close` refuses (exit 4) a
-#   running ask unless --force. Closes are logged to progress.jsonl.
-# Output of `ask`: stdout = report on exit 0 and 5; diagnostics on stderr.
+# Usage: see usage() below. Exit codes of `ask`/`report`: 0 report printed, 1 usage/setup, 2 denied tool call and no report,
+# 3 no report (or reviewer without VERDICT), 4 run still going/unknown, 5 verification failed (report still printed).
 set -u
 
 # lib/ is sourced eagerly, here, inside the brace group: bash 3.2 reads a sourced file whole,
@@ -104,26 +72,6 @@ fmt_ctx() {
     ''|*[!0-9]*) echo - ;;
     *) echo "$(($1 / 1000))k" ;;
   esac
-}
-
-# last_ask_record <agent> [--where JQ] [--field JQ]
-# The newest progress line of <agent> among the last 200 non-close lines that has no ask_id
-# (old rows: the removed --worktree asks logged `agent: <role>` plus an ask_id and must never
-# stand in for a plain ask) and matches the extra jq condition --where. Prints --field (default: the compact line); nothing = unknown.
-# --where/--field are jq source from the caller's own literals.
-last_ask_record() {
-  local agent=$1 where=true field=. prog
-  shift
-  while [ $# -gt 0 ]; do
-    case "$1" in
-      --where) where=$2; shift 2 ;;
-      --field) field=$2; shift 2 ;;
-      *) return 2 ;;
-    esac
-  done
-  prog="fromjson? | select(type == \"object\" and .agent == \$a and (.ask_id // \"\") == \"\") | select($where) | $field"
-  grep -v '"event":"close"' "$JSONL" 2>/dev/null | tail -n 200 \
-    | jq -R -r -c --arg a "$agent" "$prog" 2>/dev/null | tail -n 1
 }
 
 # --- progress log ----------------------------------------------------------------------
@@ -259,7 +207,7 @@ write_progress_md() {
     printf '# Progress — %s (%s)\n' "$(basename "$PWD")" "$branch"
     printf 'Goal: %s\n' "$goal"
     printf '## Recent asks (newest first, max 15)\n'
-    grep -v '"event":"close"' "$JSONL" 2>/dev/null | tail -n 15 | jq -r -R 'fromjson? | "- \(.ts) \(.agent) \(if .late then "late report" else "exit \(.exit)" end) verify \(.verify // "-") \(.head_before // "")..\(.head_after // "") — \(.summary // "")"' 2>/dev/null \
+    grep -v '"event":"close"' "$JSONL" 2>/dev/null | tail -n 15 | jq -r -R 'fromjson? | "- \(.ts) \(.agent) exit \(.exit) verify \(.verify // "-") \(.head_before // "")..\(.head_after // "") — \(.summary // "")"' 2>/dev/null \
       | awk '{ a[NR] = $0 } END { for (i = NR; i >= 1; i--) print a[i] }'
     q=$(grep '"event":"close"' "$JSONL" 2>/dev/null | tail -n 5 | jq -r -R 'fromjson? | "\(.ts) \(.role) (\(.reason // "?"))"' 2>/dev/null \
       | awk '{ a[NR] = $0 } END { for (i = NR; i >= 1; i--) printf "%s%s", (i == NR ? "" : "; "), a[i]; if (NR) print "" }')
@@ -308,7 +256,7 @@ learned_has_evidence() {
 }
 
 # queue_learned <agent> <report> — file each evidence-backed bullet of the report's
-# optional `## Notes` section (legacy `## Learned` is also accepted) as a GitHub
+# optional `## Notes` section as a GitHub
 # issue labelled `wiki` (title: first 70 chars; body: bullet + source line).
 # Indented continuation lines are joined to their bullet. An open `wiki` issue
 # with the same title is skipped. Bullets without evidence are dropped with a
@@ -318,7 +266,7 @@ queue_learned() {
   local agent=$1 report=$2 raw line kept="" n=0 dropped=0 askid date title body open made=0 skipped=0
   raw=$(awk '
     function flush() { if (cur != "") print cur; cur = "" }
-    /^## (Learned|Notes)[ \t]*$/ { on = 1; next }
+    /^## Notes[ \t]*$/ { on = 1; next }
     on && (/^## / || /^VERDICT:/) { flush(); on = 0 }
     on && /^[ \t]*[-*] / { flush(); cur = $0; sub(/^[ \t]*[-*] +/, "- ", cur); next }
     on && cur != "" && /^[ \t]+[^ \t]/ { t = $0; sub(/^[ \t]+/, "", t); cur = cur " " t; next }
@@ -607,7 +555,7 @@ settings_set_agent() {
 # cmd_init [--no-agent] [--shared] — make the current repo (git toplevel, else the cwd) a harness
 # checkout: .harness/asks/, the default config, "agent": "conductor" in .claude/settings.local.json
 # (per user, untracked; --shared: .claude/settings.json, committed, never excluded), and every
-# harness-made path (.harness/, settings.local.json(.bak), agent-memory, docs/superpowers; docs/wiki/inbox/ kept for old checkouts)
+# harness-made path (.harness/, settings.local.json(.bak), agent-memory, docs/superpowers)
 # in .git/info/exclude when git does not already ignore it. Idempotent.
 cmd_init() {
   [ "${HARNESS_ROLE:-}" != worker ] || die "harness init is for the conductor; a worker (HARNESS_ROLE=worker) does not set up checkouts"
@@ -626,7 +574,7 @@ cmd_init() {
   else echo "$target untouched (--no-agent)"; fi
   if git rev-parse --git-dir >/dev/null 2>&1; then
     ex=$(git rev-parse --git-path info/exclude 2>/dev/null)
-    for a in .harness/ .claude/settings.local.json .claude/settings.local.json.bak .claude/agent-memory/ docs/wiki/inbox/ docs/superpowers/; do
+    for a in .harness/ .claude/settings.local.json .claude/settings.local.json.bak .claude/agent-memory/ docs/superpowers/; do
       case "$a" in */) p=${a}x ;; *) p=$a ;; esac
       if git check-ignore -q "$p" 2>/dev/null; then echo "$a already ignored by git"
       elif [ -n "$ex" ] && mkdir -p "${ex%/*}" && printf '%s\n' "$a" >> "$ex"; then echo "added $a to $ex"

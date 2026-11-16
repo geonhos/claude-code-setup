@@ -1,17 +1,6 @@
 #!/bin/bash
-# conductor-gate.sh — PreToolUse hook for the Fable conductor.
-#
-# Role:   hook input agent_type -> conductor: gate; any other agent: allow
-#         (only when agent_id is absent; a subagent, agent_id set, uses the env rule)
-#         (workers run as analyst/implementer/reviewer/solo). Keying on the
-#         agent, not the env, closes the inherited-worker-env hole: a
-#         conductor hosted by a daemon that exported HARNESS_ROLE=worker is still
-#         gated. Without agent_type, HARNESS_ROLE=worker allows (older hosts).
-#         Harness checkout: the gate acts only where .harness/asks/ exists (nearest
-#                                 dir from the cwd up to the .git dir; decision 0010).
-#                                 Elsewhere it allows everything, before jq or parsing,
-#                                 so it never touches a repo that does not use the harness.
-#         otherwise            -> conductor rules below
+# conductor-gate.sh — PreToolUse hook: gates the conductor (agent_type conductor, no agent_id); any other agent is allowed.
+# Acts only in a harness checkout (.harness/asks/ above the cwd, decision 0010); elsewhere it allows before parsing.
 # Output: nothing (allow) or a PreToolUse deny JSON on stdout. Always exit 0.
 set -u
 
