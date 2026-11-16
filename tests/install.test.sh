@@ -420,6 +420,10 @@ check "runner glob: hyphenated suite runs" grep -qx '=== x-y ===' "$D.out"
 check "runner glob: helper not run" not_grep helper-ran "$D.out"
 check "runner: no hardcoded suite list" not_grep 'names="gate' "$RUNNER"
 
+# agent prompts: base-comparison worktrees are temporary and removed before the report (#92)
+check "reviewer prompt: base worktree via mktemp" grep -qF 'git worktree add "$(mktemp -d)/base"' "$REPO/claude/agents/reviewer.md"
+check "reviewer prompt: base worktree removed" grep -qF 'git worktree remove --force' "$REPO/claude/agents/reviewer.md"
+
 printf '{"model":"keep"}\n' > "$CLAUDE_DIR/settings.json"
 run_install
 check "fresh install writes no agent key" [ "$(jq -r '.agent // "none"' "$S")" = none ]

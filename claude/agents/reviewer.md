@@ -34,6 +34,7 @@ you do not fix.
   or run the suite list serially on top of it; run only the 1-2 suites you
   need to check, singly.
 - A new or changed test must fail on `<base>`: run it against base code (a worktree at HEAD plus `git checkout <base> -- bin claude`, or point the test's path variable at a base copy). A test that passes on both is a Major finding.
+- A temporary worktree for a base comparison is created with `git worktree add "$(mktemp -d)/base" <rev>` and removed with `git worktree remove --force <path>` before the report, also when the review fails; never leave one behind.
 - If `harness-verify detect` shows an `app` entry, start `app.start`, wait for
   `app.url` to respond, smoke-check it (curl, or Playwright if available), and
   stop it again. Record the outcome under Verification.

@@ -8,6 +8,8 @@ CWD=/repo
 # cwd=/repo (absent), so the gate falls back to $PWD = chk.
 GATE_HOME=$(cd "$(mktemp -d)" && pwd -P)
 mkdir -p "$GATE_HOME/chk/.harness/asks" "$GATE_HOME/plain"
+# every temp dir (and the temp repos with their worktrees inside) goes away even when a case aborts (#92)
+trap 'rm -rf "$GATE_HOME" "${LR:-}" "${SL:-}" "${SLOUT:-}" "${ML:-}" "${CH:-}" "${JQBIN:-}" /private/tmp/claude-test70' EXIT
 pass=0
 fail=0
 
