@@ -9,7 +9,7 @@ Read this first. Open a page only when it is relevant. Schema and promotion rule
 - [Docs-only skip scope](troubleshooting/docs-only-asks-skip-the-suite.md): Stop hook skips the suite only for `docs/`/`.harness/`; wiki runs wiki-lint only (active, 2026-10-27)
 
 ## Troubleshooting: workers and env
-- [AGENTS.md needs a CLAUDE.md import](troubleshooting/agents-md-ignored-when-claude-md-exists.md): CLAUDE.md must start with `@AGENTS.md`; no symlink (active, 2026-10-21)
+- [AGENTS.md is ignored when a CLAUDE.md exists](troubleshooting/agents-md-ignored-when-claude-md-exists.md): no CLAUDE.md on purpose; any CLAUDE.md hides AGENTS.md unless it imports it (active, 2026-11-17)
 - [Live gate edit](troubleshooting/live-gate-edit.md): a broken gate script denies everything; bash -n + suite before each save (active, 2026-10-28)
 - [In-place edit breaks running scripts](troubleshooting/in-place-edit-breaks-running-scripts.md): bin/ is live; bodies are brace-wrapped, edit via new inode; lib/ is safe while sourced eagerly (active, 2026-10-28)
 

@@ -52,3 +52,4 @@
 - 2026-11-13 · implementer · #72 shrink · deleted troubleshooting daemon-inherits-worker-env (a Claude daemon kept the env of the first shell that started it; herdr panes are gone) and test-wait-loops (wait_panes in the removed worktree suite); 0009 banner: auto-resume and --fresh removed
 - 2026-11-16 · implementer · wiki issue triage · new troubleshooting global-gitignore-masks-ignore-gaps (#78); merged #74 #75 #76 into transcript-forensics, #79 into harness-root-lookup, #81 #82 #83 into half-assertion-tests; closed #77 #80 #87 #95 (shipped or fixed)
 - 2026-11-16 · implementer · #124 #125 · new troubleshooting zsh-extendedglob-in-gate-revs; gate now denies ^ in all git show revs, ~N only with --stat
+- 2026-11-17 · implementer · #146 · CLAUDE.md folded into AGENTS.md and deleted; rewrote troubleshooting agents-md-ignored-when-claude-md-exists (inverted trap, probe evidence; slug kept)
