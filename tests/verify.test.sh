@@ -1,19 +1,11 @@
 #!/bin/bash
 # Tests for bin/harness-verify. Run: /bin/bash tests/verify.test.sh
 set -u
-HERE=$(cd "$(dirname "$0")" && pwd)
+. "$(dirname "$0")/harness-lib.sh"
 VERIFY="$HERE/../bin/harness-verify"
-pass=0
-fail=0
-
 ROOT=$(mktemp -d)
 trap 'rm -rf "$ROOT"' EXIT
 N=0
-
-check() { # check LABEL CONDITION...
-  local label=$1; shift
-  if "$@"; then pass=$((pass + 1)); else fail=$((fail + 1)); echo "FAIL [$label]: out=$OUT"; fi
-}
 
 # newrepo -> sets R to a fresh git repo with one commit (cwd stays put)
 newrepo() {
@@ -35,7 +27,6 @@ det() { hv detect; printf '%s' "$OUT" | jq -r "$1" 2>/dev/null; }
 stopjson() { jq -n -c --arg c "$R" '{hook_event_name:"Stop",agent_type:"implementer",cwd:$c,stop_hook_active:false}'; }
 postjson() { jq -n -c --arg c "$R" --arg t "$1" --arg f "$2" '{hook_event_name:"PostToolUse",agent_type:"implementer",cwd:$c,tool_name:$t,tool_input:{file_path:$f}}'; }
 not_cmp() { ! cmp -s "$@"; }
-not_grep() { ! grep "$@"; }
 not_out_has() { ! printf '%s' "$OUT" | grep -q -- "$1"; }
 reason_grep() { printf '%s' "$OUT" | jq -r .reason | grep "$@"; }
 not_reason_grep() { ! reason_grep "$@"; }

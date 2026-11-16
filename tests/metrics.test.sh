@@ -2,30 +2,14 @@
 # Tests for `harness metrics` (JSON/text output, windows, wiki block) against bin/harness.
 # Run: /bin/bash tests/metrics.test.sh
 set -u
-HERE=$(cd "$(dirname "$0")" && pwd)
-HARNESS="$HERE/../bin/harness"
-pass=0
-fail=0
-WORKS=""
-trap 'cd / && for d in $WORKS; do rm -rf "$d"; done' EXIT
-setup() {
-  WORK=$(mktemp -d)
-  WORKS="$WORKS $WORK"
-  unset HARNESS_LOG_KEEP HARNESS_LOG_DAYS HARNESS_NOW
-  cd "$WORK" || exit 1
-  env -u HARNESS_ROLE /bin/bash "$HARNESS" init --no-agent >/dev/null 2>&1
-}
+. "$(dirname "$0")/harness-lib.sh"
 GUARD="perl -e alarm(40);exec(@ARGV)"
-run() {
-  OUT=$($GUARD env -u HARNESS_ROLE /bin/bash "$HARNESS" "$@" 2>&1)
-  RC=$?
-}
-check() { local label=$1; shift; if "$@"; then pass=$((pass + 1)); else fail=$((fail + 1)); echo "FAIL [$label]: $OUT"; fi; }
+msetup() { setup; unset HARNESS_LOG_KEEP HARNESS_LOG_DAYS HARNESS_NOW; }
 
 # --- harness metrics ---
 # fixed clock: NOW = 2026-10-29T00:00:00Z -> current window 2026-10-01..2026-10-29, previous 2026-09-03..2026-10-01
 NOW=$(perl -MTime::Local -e 'print timegm(0,0,0,29,9,2026)')
-setup
+msetup
 mkdir -p .harness
 cat > .harness/progress.jsonl <<'EOF'
 {"ts":"2026-10-02T10:00:00Z","agent":"analyst","exit":0,"dur_s":100,"status":"done"}
@@ -95,7 +79,7 @@ run metrics --bogus
 check "metrics: bad flag rc 1" [ "$RC" -eq 1 ]
 
 # empty / missing progress.jsonl
-setup
+msetup
 run metrics --json
 check "metrics: no progress file rc 0" [ "$RC" -eq 0 ]
 check "metrics: no progress file zero asks" [ "$(printf '%s' "$OUT" | jq -r .current.total.asks)" -eq 0 ]
@@ -103,7 +87,7 @@ run metrics
 check "metrics: no data text rc 0" [ "$RC" -eq 0 ]
 
 # wiki block
-setup
+msetup
 unset HARNESS_NOW
 mkdir -p docs/wiki/troubleshooting
 printf -- '---\nstatus: active\n---\n# a\n' > docs/wiki/troubleshooting/a.md

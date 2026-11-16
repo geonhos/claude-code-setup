@@ -1,19 +1,13 @@
 #!/bin/bash
 # Structure of the bin/harness + lib/*.sh split. Run: /bin/bash tests/harness-split.test.sh
 set -u
-HERE=$(cd "$(dirname "$0")" && pwd)
+. "$(dirname "$0")/harness-lib.sh"
 ROOT=$HERE/..
-pass=0
-fail=0
-WORKS=""
-trap 'for d in $WORKS; do rm -rf "$d"; done' EXIT
 OUT=""
-check() { local label=$1; shift; if "$@"; then pass=$((pass + 1)); else fail=$((fail + 1)); echo "FAIL [$label]: $OUT"; fi; }
 
 # lib_named SCRIPT NAME — NAME is in SCRIPT's `for m in …` loader list
 lib_named() { [ -n "$2" ] && grep -E '^for m in ' "$1" | head -1 | grep -qw -- "$2"; }
 no_glob() { ! printf '%s' "$1" | grep -qE 'lib/\*|harness-\*'; }
-not() { ! "$@"; }
 # eager_ok SCRIPT — one `# end loader` marker, below the first function definition's line (so it cannot
 # sit at EOF or after a lazy function); >=1 harness-*.sh source line, all above the marker.
 # Limit: a textual check only; a source via a variable or eval is not detected.

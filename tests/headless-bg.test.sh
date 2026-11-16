@@ -2,27 +2,15 @@
 # Headless background runs: harness ask starts harness-run detached in the background. Run: /bin/bash tests/headless-bg.test.sh
 set -u
 . "$(dirname "$0")/harness-lib.sh"
-FAKE_CLAUDE="$HERE/fake-claude"
+HRUN_START_S=10
 RUNPIDS=$(mktemp)
-trap 'for p in $(cat "$RUNPIDS" 2>/dev/null); do kill "$p" 2>/dev/null; done; rm -f "$RUNPIDS"; cd / && for d in $WORKS; do rm -rf "$d"; done' EXIT
+trap 'killpids "$RUNPIDS"; rm -f "$RUNPIDS"; cd / && for d in $WORKS; do rm -rf "$d"; done' EXIT
 
-# nrun ARGS... -> OUT, RC
-nrun() {
-  OUT=$(env -u HARNESS_ROLE \
-    HARNESS_POLL_SEC=0.2 HARNESS_HL_START_S=10 \
-    PATH="$FAKE_CLAUDE:$HERE/../bin:$PATH" perl -e 'alarm($ENV{HRUN_ALARM_S} || 60);exec(@ARGV)' \
-    /bin/bash "$HARNESS" "$@" 2>&1)
-  RC=$?
-}
 bsetup() {
   setup
   export FAKE_CLAUDE_MODE=success
   export FAKE_REPORT_CMD="mkdir -p $WORK/.harness/reports && printf '# analyst report\nstatus: done\n' > $WORK/.harness/reports/analyst.md"
 }
-jqt() { jq -e "$@" >/dev/null; }
-# live_runs RID — pids whose command line carries this run id (empty RID matches nothing)
-live_runs() { [ -n "${1:-}" ] || return 0; pgrep -f "harness-run analyst $1 "; }
-wait_no_runs() { local i=0; while [ $i -lt "${2:-150}" ] && [ -n "$(live_runs "$1")" ]; do sleep 0.1; i=$((i + 1)); done; }
 # note_run — remember the runner of the current ask for the EXIT trap; sets RID RPID
 note_run() {
   local i=0
@@ -33,13 +21,13 @@ note_run() {
 
 # 1. bg success
 bsetup
-nrun ask analyst "q1"
+hrun ask analyst "q1"
 check "bg success: rc 0" [ "$RC" -eq 0 ]
 check "bg success: report printed" grep -q "analyst report" <<<"$OUT"
 check "bg success: .stream written" grep -q "^[^ ]* .*\.jsonl$" .harness/asks/analyst.stream
 check "bg success: exit.json rc 0" jqt '.rc == 0' .harness/asks/analyst.exit.json
 check "bg success: runner log kept under .harness" [ -e .harness/asks/analyst.runner.log ]
-nrun status
+hrun status
 check "status after a run: idle" grep -Eq "^analyst +idle +hl" <<<"$OUT"
 
 # 2. detachment + 3. environment
@@ -72,20 +60,20 @@ unset FAKE_ENV_DUMP
 # 6. status while running + 7. close refused / --force kills
 bsetup
 export FAKE_CLAUDE_MODE=hang
-HRUN_ALARM_S=8 nrun ask analyst "q6" --timeout 3000
+HRUN_ALARM_S=8 hrun ask analyst "q6" --timeout 3000
 check "hang: ask times out with exit 4" [ "$RC" -eq 4 ]
 note_run
-nrun status
+hrun status
 check "status while running" grep -Eq "^analyst +running +hl" <<<"$OUT"
-nrun close analyst
+hrun close analyst
 check "close without --force refused (4)" [ "$RC" -eq 4 ]
 check "close refused: run still alive" [ -n "$(live_runs "$RID")" ]
-nrun close analyst --force
+hrun close analyst --force
 check "close --force rc 0" [ "$RC" -eq 0 ]
 wait_no_runs "$RID"
 check "close --force: no run left" [ -z "$(live_runs "$RID")" ]
 check "close --force: exit.json killed signal" jqt '.killed == "signal"' .harness/asks/analyst.exit.json
-nrun status
+hrun status
 check "status after close: -" grep -Eq "^analyst +-$" <<<"$OUT"
 check "close --force logged" grep -q '"event":"close".*"reason":"force_kill"' .harness/progress.jsonl
 
@@ -100,7 +88,7 @@ kill -TERM "$ASKPID" 2>/dev/null; wait "$ASKPID" 2>/dev/null
 check "interrupted: the ask died before collecting" not_grep "analyst report" "$WORK/ask.out"
 check "interrupted: run survives the ask" [ -n "$(live_runs "$RID")" ]
 i=0; while [ $i -lt 100 ] && [ ! -f .harness/asks/analyst.exit.json ]; do sleep 0.1; i=$((i + 1)); done
-nrun report analyst
+hrun report analyst
 check "interrupted: report collects it" grep -q "analyst report" <<<"$OUT"
 check "interrupted: report rc 0" [ "$RC" -eq 0 ]
 
@@ -115,53 +103,53 @@ tty_run() {
 
 # no-perl fallback launcher still runs the ask
 bsetup
-HARNESS_HL_NO_PERL=1 nrun ask analyst "q12"
+HARNESS_HL_NO_PERL=1 hrun ask analyst "q12"
 check "no perl: rc 0" [ "$RC" -eq 0 ]
 check "no perl: report printed" grep -q "analyst report" <<<"$OUT"
 
 # 13. harness wait: 0 after completion, 4 on timeout, 3 when the runner is SIGKILLed; it never collects
 bsetup
-nrun ask analyst "q13a"
+hrun ask analyst "q13a"
 check "wait: setup ask ok" [ "$RC" -eq 0 ]
-nrun wait analyst
+hrun wait analyst
 check "wait done: rc 0" [ "$RC" -eq 0 ]
 check "wait done: one line, collect hint" bash -c '[ "$1" = "done; collect: harness report analyst" ]' _ "$OUT"
-nrun wait analyst
+hrun wait analyst
 check "wait is idempotent: rc 0 again" [ "$RC" -eq 0 ]
 check "wait does not collect (report untouched)" [ -f .harness/reports/analyst.md ]
-nrun wait nosuchthing
+hrun wait nosuchthing
 check "wait: unknown target rc 1" [ "$RC" -eq 1 ]
 bsetup
-nrun wait analyst
+hrun wait analyst
 check "wait: no ask rc 3" [ "$RC" -eq 3 ]
 export FAKE_CLAUDE_MODE=slow60
-nrun ask analyst "q13b" --timeout 1000
+hrun ask analyst "q13b" --timeout 1000
 check "wait: slow ask left running (4)" [ "$RC" -eq 4 ]
 note_run
-nrun wait analyst --timeout 500
+hrun wait analyst --timeout 500
 check "wait --timeout 500: rc 4 while running" [ "$RC" -eq 4 ]
 check "wait timeout names the way on" grep -q "still running" <<<"$OUT"
-nrun report analyst
+hrun report analyst
 check "report while running: exit 4, says how to wait" bash -c '[ "$1" = 4 ] && grep -q "still running (.*s); harness wait analyst blocks until done" <<<"$2"' _ "$RC" "$OUT"
-nrun wait analyst
+hrun wait analyst
 check "wait blocks until the run ends: rc 0" [ "$RC" -eq 0 ]
 wait_no_runs "$RID"
 bsetup
 export FAKE_CLAUDE_MODE=hang
-nrun ask analyst "q13c" --timeout 1000
+hrun ask analyst "q13c" --timeout 1000
 check "wait kill: hung ask left running (4)" [ "$RC" -eq 4 ]
 note_run
 kill -KILL "$RPID" 2>/dev/null
-nrun wait analyst --timeout 30000
+hrun wait analyst --timeout 30000
 check "wait after kill -KILL of the runner: rc 3" [ "$RC" -eq 3 ]
 wait_no_runs "$RID"
 for p in $(cat "$FAKE_DIR/claude.pids" 2>/dev/null); do kill "$p" 2>/dev/null; done
 
 # 14. harness watch: tty only; finished run -> last lines rendered; live run -> followed to the end
 bsetup
-nrun ask analyst "q14"
+hrun ask analyst "q14"
 check "watch: setup ask ok" [ "$RC" -eq 0 ]
-nrun watch analyst
+hrun watch analyst
 check "watch without a tty: refused rc 1" bash -c '[ "$1" = 1 ] && grep -q "human terminal" <<<"$2"' _ "$RC" "$OUT"
 HRUN_ALARM_S=4 tty_run watch analyst   # stays alive on the final frame: only the alarm ends it
 check "watch finished (tty): final dashboard frame, still alive until killed" bash -c '[ "$1" = 142 ] && grep -q "── Result ── ■ success" <<<"$2"' _ "$RC" "$OUT"
@@ -171,7 +159,7 @@ tty_run watch analyst -n 1
 check "watch -n 1: one line" bash -c '[ "$(grep -c "■ success" <<<"$1")" = 1 ] && ! grep -q "fake-model" <<<"$1" && grep -q "■ success" <<<"$1"' _ "$OUT"
 bsetup
 export FAKE_CLAUDE_MODE=slow40
-nrun ask analyst "q14b" --timeout 1000
+hrun ask analyst "q14b" --timeout 1000
 check "watch live: slow ask left running (4)" [ "$RC" -eq 4 ]
 note_run
 HRUN_ALARM_S=47 tty_run watch analyst   # the final frame stays alive: the alarm (142) ends it

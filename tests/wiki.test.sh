@@ -1,13 +1,7 @@
 #!/bin/bash
 # Tests for `harness wiki-lint` against fixture wiki dirs. Run: /bin/bash tests/wiki.test.sh
 set -u
-HERE=$(cd "$(dirname "$0")" && pwd)
-HARNESS="$HERE/../bin/harness"
-pass=0
-fail=0
-WORKS=""
-trap 'for d in $WORKS; do rm -rf "$d"; done' EXIT
-check() { local label=$1; shift; if "$@"; then pass=$((pass + 1)); else fail=$((fail + 1)); echo "FAIL [$label]: $OUT"; fi; }
+. "$(dirname "$0")/harness-lib.sh"
 lint() { OUT=$(env -u HARNESS_ROLE /bin/bash "$HARNESS" wiki-lint "$1" 2>&1); RC=$?; }
 has() { printf '%s\n' "$OUT" | grep -qF -- "$1"; }
 
