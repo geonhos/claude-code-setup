@@ -54,3 +54,6 @@
 - 2026-11-16 · implementer · #124 #125 · new troubleshooting zsh-extendedglob-in-gate-revs; gate now denies ^ in all git show revs, ~N only with --stat
 - 2026-11-17 · implementer · #146 · CLAUDE.md folded into AGENTS.md and deleted; rewrote troubleshooting agents-md-ignored-when-claude-md-exists (inverted trap, probe evidence; slug kept)
 - 2026-11-17 · implementer · #148 · install.test.sh now fails when CLAUDE.md exists at repo root; verified_by of agents-md-ignored-when-claude-md-exists updated
+- 2026-11-17 · implementer · #149 #156 · agents-md-ignored-when-claude-md-exists: three hiding names, user-level/managed/rules do not, debug-log check, limits; install.test.sh checks all three names
+- 2026-11-17 · implementer · #154 · live-gate-edit: only exit 2 denies, other failures fail open (probe P4, #141); index hook updated
+- 2026-11-17 · implementer · #151 · decision 0010: dated note that the gate no longer denies `harness watch` (883dcc1)

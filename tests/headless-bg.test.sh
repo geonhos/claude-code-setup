@@ -150,7 +150,7 @@ bsetup
 hrun ask analyst "q14"
 check "watch: setup ask ok" [ "$RC" -eq 0 ]
 hrun watch analyst
-check "watch without a tty: refused rc 1" bash -c '[ "$1" = 1 ] && grep -q "human terminal" <<<"$2"' _ "$RC" "$OUT"
+check "watch without a tty: refused rc 1" bash -c '[ "$1" = 1 ] && grep -q "human terminal" <<<"$2" && grep -q "harness open-watch" <<<"$2"' _ "$RC" "$OUT"
 HRUN_ALARM_S=4 tty_run watch analyst   # stays alive on the final frame: only the alarm ends it
 check "watch finished (tty): final dashboard frame, still alive until killed" bash -c '[ "$1" = 142 ] && grep -q "── Result ── ■ success" <<<"$2"' _ "$RC" "$OUT"
 tty_run watch analyst -n 100

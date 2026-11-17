@@ -1,7 +1,7 @@
 ---
 type: decision
 status: active
-updated: 2026-11-02
+updated: 2026-11-17
 sources: [.harness/herdr-optional-design.md, .harness/pr2-gate-design.md, PR #36, claude/hooks/conductor-gate.sh, bin/harness]
 verified_by: tests/gate.test.sh, tests/harness.test.sh, tests/install.test.sh
 ---
@@ -26,7 +26,7 @@ harness must never interfere with repos that do not use it.
    `install.sh` removes a previous `agent: conductor` once, `harness doctor --fix` too.
 5. `harness doctor [--fix]` lists and removes pollution of older versions (stray
    `.harness/` without `asks/`); it skips directories holding unknown files.
-6. `harness wait <role|ask-id>` blocks until the run ends (exit 0 done, 3 no ask / runner died, 4 timeout; never collects) and `harness watch` is a human-terminal viewer (refused without a tty and denied to the conductor by the gate). A background `harness ask` waits exactly the headless cap, so its Bash notification wakes the conductor; `harness report` while alive says `still running (<n>s); harness wait <role> blocks until done`. The Stop hook blocks a worker that stops without a fresh report (twice per ask, `[no-report]` opts out).
+6. `harness wait <role|ask-id>` blocks until the run ends (exit 0 done, 3 no ask / runner died, 4 timeout; never collects) and `harness watch` is a human-terminal viewer (refused without a tty and denied to the conductor by the gate; update 2026-11-17: since 883dcc1 (#138) the gate has no such rule, only the tty refusal in `lib/harness-headless.sh` remains). A background `harness ask` waits exactly the headless cap, so its Bash notification wakes the conductor; `harness report` while alive says `still running (<n>s); harness wait <role> blocks until done`. The Stop hook blocks a worker that stops without a fresh report (twice per ask, `[no-report]` opts out).
 
 **Status.** Active (PR 3, prune step 2).
 
