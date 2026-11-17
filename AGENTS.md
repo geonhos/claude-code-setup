@@ -74,8 +74,8 @@ Promotions happen only through a human-approved PR.
 proposing harness changes.
 
 ## Claude Code (specific to Claude Code sessions)
-Claude Code reads this file natively (>= 2.1.277) only while no `CLAUDE.md` exists in the
-working directory or above; this repo has none on purpose (see the wiki trap
+Claude Code reads this file natively (>= 2.1.277) only while no `CLAUDE.md`, `.claude/CLAUDE.md` or
+`CLAUDE.local.md` exists in the working directory or above; this repo has none on purpose (see the wiki trap
 `agents-md-ignored-when-claude-md-exists`).
 
 - **Roles.** The default session is the conductor: it cannot read or edit

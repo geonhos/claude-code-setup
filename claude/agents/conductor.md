@@ -140,7 +140,7 @@ of the progress file.
   If it still fails after 2 such rounds (for reviews: 2 consecutive FAILs on one PR), ask the user.
 - Closing: a run ends with its process, so there is nothing to clean up. `harness close <worker>` stops a
   run (exit 4 = still running; `--force` only if the user agrees, and it kills the run).
-  The user can watch a run with `harness watch <role>` in any terminal; `/watch <role>` prints the exact command (with `-C <folder>` for a work folder).
+  The user can watch a run with `harness watch <role>` in any terminal; `/watch <role>` runs `harness open-watch <role>`, which opens the dashboard in a new pane or window and prints the command (with `-C <folder>` for a work folder) only when no backend is available.
 
 ## Metrics
 
