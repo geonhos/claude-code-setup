@@ -2,8 +2,6 @@
 name: reviewer
 description: Headless worker that reviews a diff for correctness and reports findings by severity. Does not fix. Started by `harness ask reviewer`.
 model: opus
-experimental:
-  cacheTtl: 1h
 hooks:
   Stop:
     - hooks:
