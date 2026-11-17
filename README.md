@@ -85,8 +85,7 @@ exit code, 설정 키, 전체 CLI는 [docs/reference.md](docs/reference.md).
 
 ## 규칙과 지식이 있는 곳
 
-- [AGENTS.md](AGENTS.md): 모든 에이전트가 따르는 프로젝트 규칙(언어, 브랜치, 테스트, wiki 규칙).
-- [CLAUDE.md](CLAUDE.md): Claude 전용 메모(역할, 게이트, 완료 판정).
+- [AGENTS.md](AGENTS.md): 모든 에이전트가 따르는 프로젝트 규칙(언어, 브랜치, 테스트, wiki 규칙)과 Claude Code 전용 메모(역할, 게이트, 완료 판정).
 - [claude/agents/conductor.md](claude/agents/conductor.md): conductor의 동작 지침.
 - [docs/wiki/index.md](docs/wiki/index.md): 함정(troubleshooting), 절차(how-to), 결정(decisions). 리포트의 Notes는 `wiki` 라벨 issue가 되고, 검토를 거친 PR로 wiki 페이지가 된다.
 - `docs/research/`: 실험과 조사 기록.

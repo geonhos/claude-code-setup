@@ -72,3 +72,22 @@ Promotions happen only through a human-approved PR.
 
 `harness metrics` reports ask/exit/duration rates and wiki health; run it before
 proposing harness changes.
+
+## Claude Code (specific to Claude Code sessions)
+Claude Code reads this file natively (>= 2.1.277) only while no `CLAUDE.md` exists in the
+working directory or above; this repo has none on purpose (see the wiki trap
+`agents-md-ignored-when-claude-md-exists`).
+
+- **Roles.** The default session is the conductor: it cannot read or edit
+  source and delegates through `/analyze`, `/implement` and `/review` to
+  analyst / implementer / reviewer workers (detached headless Claude sessions,
+  `claude -p`), reading only their
+  reports. Workers run with `HARNESS_ROLE=worker` and full tools.
+- **Gate.** `conductor-gate` restricts the conductor's shell and file edits.
+- **Completion.** A headless worker is done when its process exits
+  (`.harness/asks/<role>.exit.json`); the implementer's Stop hook first runs
+  `harness-verify` lint/tests.
+- **Wiki injection.** The SessionStart hook `conductor-resume` injects
+  `.harness/progress.md` and the `(active,` lines of `docs/wiki/index.md` into
+  the conductor. Workers and non-Claude agents get no injection: they must
+  read `docs/wiki/index.md` themselves, as the Wiki section says.
