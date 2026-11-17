@@ -3,7 +3,7 @@ type: troubleshooting
 status: active
 updated: 2026-11-17
 sources: [https://code.claude.com/docs/en/memory#agents-md, "#146"]
-verified_by: probe 2026-11-17 on Claude Code 2.1.325 (commands under Evidence)
+verified_by: tests/install.test.sh "no CLAUDE.md at repo root"; probe 2026-11-17 on Claude Code 2.1.325 (commands under Evidence)
 ---
 # AGENTS.md is ignored when a CLAUDE.md exists
 

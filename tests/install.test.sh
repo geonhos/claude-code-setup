@@ -190,6 +190,8 @@ done
 check "analyst prompt forbids deleting files" grep -q "Never delete, move or rewrite files" "$REPO/claude/agents/analyst.md"
 check "skill analyze targets analyst" grep -q 'harness ask analyst' "$REPO/claude/skills/analyze/SKILL.md"
 check "skill implement targets implementer" grep -q 'ask implementer' "$REPO/claude/skills/implement/SKILL.md"
+# CLAUDE.md at the repo root hides AGENTS.md from Claude Code (wiki: troubleshooting/agents-md-ignored-when-claude-md-exists.md)
+check "no CLAUDE.md at repo root: it hides AGENTS.md, see docs/wiki/troubleshooting/agents-md-ignored-when-claude-md-exists.md" [ ! -e "$REPO/CLAUDE.md" ]
 check "skill review targets reviewer" grep -q 'harness ask reviewer' "$REPO/claude/skills/review/SKILL.md"
 check "skill review demands VERDICT" grep -q 'VERDICT' "$REPO/claude/skills/review/SKILL.md"
 

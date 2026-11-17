@@ -53,3 +53,4 @@
 - 2026-11-16 · implementer · wiki issue triage · new troubleshooting global-gitignore-masks-ignore-gaps (#78); merged #74 #75 #76 into transcript-forensics, #79 into harness-root-lookup, #81 #82 #83 into half-assertion-tests; closed #77 #80 #87 #95 (shipped or fixed)
 - 2026-11-16 · implementer · #124 #125 · new troubleshooting zsh-extendedglob-in-gate-revs; gate now denies ^ in all git show revs, ~N only with --stat
 - 2026-11-17 · implementer · #146 · CLAUDE.md folded into AGENTS.md and deleted; rewrote troubleshooting agents-md-ignored-when-claude-md-exists (inverted trap, probe evidence; slug kept)
+- 2026-11-17 · implementer · #148 · install.test.sh now fails when CLAUDE.md exists at repo root; verified_by of agents-md-ignored-when-claude-md-exists updated
