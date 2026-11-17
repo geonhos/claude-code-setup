@@ -36,7 +36,7 @@ conductor 세션의 PreToolUse 호출만 판정한다: `.harness/asks/`가 없�
 
 implementer의 frontmatter 훅이 `harness-verify`를 루프 안에서 돌린다. 설정은 키마다 먼저 맞는 쪽(`.harness/verify.local.json` → `.claude/harness.json`)이고, 감지는 없으며 null이거나 없는 키는 건너뛴다(`maxAttempts` 기본 3).
 
-- `PostToolUse`(Edit/Write/MultiEdit): 파일 포맷과 그 파일 lint. 실패하면 출력과 함께 block한다(편집은 이미 끝난 뒤의 피드백).
+- `PostToolUse`(Edit/Write): 파일 포맷과 그 파일 lint. 실패하면 출력과 함께 block한다(편집은 이미 끝난 뒤의 피드백).
 - `Stop`: 리포트가 없으면 먼저 막아 쓰게 한다(ask당 2번까지). git 저장소가 아니거나 state id가 baseline과 같으면 건너뛴다. 변경이 `docs/`나 `.harness/`뿐이면 건너뛰고, `docs/wiki`면 `wiki-lint`만 돈다. 그 밖에는 리포트를 `.pending`으로 숨기고 바뀐 파일에 lint, test를 돌린다. 통과하면 리포트를 복원하고, 실패하면 시도 횟수를 올려 끝 40줄과 함께 block한다. 상한에 닿으면 리포트를 복원하고 `result: fail`로 stop을 허용한다.
 - reviewer는 `harness-verify run all --base <ref>`(merge-base main, 없으면 master)를 돌리고 리포트 마지막 줄에 `VERDICT: PASS|FAIL`을 적는다.
 - `harness ask` 매핑: `verify/implementer.json`이 fail이거나 `VERDICT: FAIL`이면 exit 5, reviewer 리포트에 VERDICT 줄이 없으면 exit 3, 그 밖은 0.
