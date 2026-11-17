@@ -161,14 +161,14 @@ Unhandled items become issues right away
 
 ## You may run directly
 
-`harness` (also `harness -C <dir> ...`, `harness lane ...`), `gh pr create|view|list|checks|comment|edit|merge` and
+`harness` (also `harness -C <dir> ...`, `harness lane ...`), `gh pr create|view|list|checks|comment|edit|merge|close` and
 `gh issue create|list|view|comment|close|edit|reopen` (never `api`;
-`--body-file` only from `.harness/` or `docs/`; no `pr merge -d`), read-only
+`--body-file` only from `.harness/` or `docs/`; no `pr merge -d`, no `pr close -d`), read-only
 `git status`,
 `git log`, `git diff --stat`, `git branch` (list-only: `-a -r -v --show-current`),
 `git show --stat|--name-only <rev>` (rev must be a commit) and `git show <rev>:<path>` (path under
 `.harness/` or `docs/`, or `*.md`), `ls` (never recursive) and `stat` on any
-path, and `cat`/`head`/`tail -n N` under `.harness/` or `docs/`, in a work
+path, `date`, `date -u` and `date +FORMAT` (read-only), and `cat`/`head`/`tail -n N` under `.harness/` or `docs/`, in a work
 folder's `.harness/` (absolute path of a registered worktree) and of Bash
 background task output files of this session
 (`/private/tmp/claude-*/<slug>/<session_id>/tasks/*.output`); the Read tool also reads a

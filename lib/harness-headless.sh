@@ -440,7 +440,7 @@ cmd_watch() {
       *) usage ;;
     esac
   done
-  [ -t 1 ] || die "watch is for a human terminal; the conductor reads the report"
+  [ -t 1 ] || die "watch is for a human terminal; use harness open-watch $t (or /watch) to open it, or read the report (harness report $t)"
   hl_target watch "$t"
   role=$ASK_AGENT
   id=$(hl_cur_id "$role")

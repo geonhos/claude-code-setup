@@ -61,8 +61,7 @@ SESSION_ID=$(printf '%s' "$INPUT" | jq -r '.session_id // empty' 2>/dev/null)
 # Fixed strings: never interpolate per-call data (keeps the prompt cache stable).
 MSG_WRITE="Conductor cannot edit source. Delegate with the /implement skill (implementer worker). Direct writes are allowed only under docs/**/*.md, .harness/, and the .harness/ of a registered work folder (git worktree)."
 MSG_READ="Conductor does not read source. Delegate with the /analyze skill (analyst worker) and read its report. Direct reads are allowed only under .harness/, docs/, and *.md files."
-MSG_WATCH="harness watch is for a human terminal; the conductor reads the report (harness report <worker>, or harness wait <worker> to block until the run ends)."
-MSG_BASH="Conductor shell is limited to ONE command per call: harness (also harness -C <dir> ..., harness lane ...); gh pr create|view|list|checks|comment|edit|merge (no api, no merge -d); gh issue create|list|view|comment|close|edit|reopen; git status / log / diff --stat / branch (list); git show --stat|--name-only <rev> or git show <rev>:<path> (path under .harness/ or docs/, or *.md); ls (no -R) and stat on any path; cat, head, tail -n N under .harness/ and docs/, in a work folder's .harness/, and of this session's Bash task output files (/private/tmp/claude-*/<slug>/<session_id>/tasks/*.output). No ; & | redirects, backticks or \$(. Delegate command execution with the /implement skill (implementer worker)."
+MSG_BASH="Conductor shell is limited to ONE command per call: harness (also harness -C <dir> ..., harness lane ...); gh pr create|view|list|checks|comment|edit|merge|close (no api, no merge/close -d); gh issue create|list|view|comment|close|edit|reopen; git status / log / diff --stat / branch (list); git show --stat|--name-only <rev> or git show <rev>:<path> (path under .harness/ or docs/, or *.md); ls (no -R) and stat on any path; date, date -u, date +FORMAT (read-only); cat, head, tail -n N under .harness/ and docs/, in a work folder's .harness/, and of this session's Bash task output files (/private/tmp/claude-*/<slug>/<session_id>/tasks/*.output). No ; & | redirects, backticks or \$(. Delegate command execution with the /implement skill (implementer worker)."
 
 # --- Bash allow/deny lists ---------------------------------------------------
 # Each piece below is one alternative; they are joined with | into one regex.
@@ -77,11 +76,12 @@ BASH_ALLOW="$BASH_ALLOW|"'git branch( (-a|-r|-v|--show-current))*'  # list only
 BASH_ALLOW="$BASH_ALLOW|"'git show( .*)?'                         # git_show_ok narrows it: --stat/--name-only, or rev:path
 BASH_ALLOW="$BASH_ALLOW|"'(cat|head|tail)( [^ ]+)+'               # cat_ls_segment_ok checks the files
 BASH_ALLOW="$BASH_ALLOW|"'(ls|stat)( [^ ]+)*'                     # listing and metadata, any path, never recursive
+BASH_ALLOW="$BASH_ALLOW|"'date( -u)?( \+[A-Za-z0-9%._:/,+-]*)?'      # read-only clock: no -s, no positional set-time form
 BASH_ALLOW="^($BASH_ALLOW)\$"
 
 # gh "<group> <subcommand>" pairs the conductor may run. api, run, repo,
 # auth, browse, issue delete|transfer|pin, pr diff|checkout|status are not here.
-GH_ALLOW='pr (create|view|list|checks|comment|edit|merge)'
+GH_ALLOW='pr (create|view|list|checks|comment|edit|merge|close)'
 GH_ALLOW="$GH_ALLOW|"'issue (create|list|view|comment|close|edit|reopen)'
 
 # git long options that are denied anywhere in a git segment.
@@ -339,7 +339,7 @@ bodyfile_ok() {
 }
 
 # gh_segment_ok MASKED RAW -> 0 only for "gh pr|issue <sub>" with <sub> in GH_ALLOW
-# (merge without -d). Global flags -R/--repo/--hostname (and --x=y) may precede
+# (merge and close without -d). Global flags -R/--repo/--hostname (and --x=y) may precede
 # the group. Everything up to and including the subcommand is read from the
 # MASKED segment and must be plain unquoted tokens, so quoting cannot make this
 # parser disagree with gh. --body-file/-F values must be plain paths under
@@ -391,13 +391,13 @@ gh_segment_ok() {
   for tok in "$@"; do
     case "$tok" in
       --body-file|--body-file=*|--recover|--recover=*) nflag=$((nflag + 1)) ;;
-      --delete-branch|--delete-branch=*) [ "$group $sub" != 'pr merge' ] || return 1 ;;
+      --delete-branch|--delete-branch=*) [ "$group $sub" != 'pr merge' ] && [ "$group $sub" != 'pr close' ] || return 1 ;;
       --*) ;;
       -*F*) nflag=$((nflag + 1)) ;;
     esac
     case "$tok" in
       --*) ;;
-      -*d*) [ "$group $sub" != 'pr merge' ] || return 1 ;;
+      -*d*) [ "$group $sub" != 'pr merge' ] && [ "$group $sub" != 'pr close' ] || return 1 ;;
     esac
   done
   [ "$nflag" -le "$mflag" ] || return 1
@@ -613,7 +613,6 @@ case "$TOOL" in
     case "$CANON_PHYS" in .harness|.harness/*|docs|docs/*) ;; *) deny "$MSG_READ" ;; esac ;;
   Bash)
     BCMD=$(field command)
-    printf '%s' "$BCMD" | grep -Eq '^[[:space:]]*harness[[:space:]]+(-C[[:space:]]+("[^"]*"|'"'"'[^'"'"']*'"'"'|[^[:space:]]+)[[:space:]]+)?["'"'"']?watch["'"'"']?([[:space:]]|$)' && deny "$MSG_WATCH"
     bash_ok "$BCMD" || deny "$MSG_BASH" ;;
 esac
 
