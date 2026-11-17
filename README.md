@@ -13,7 +13,7 @@ Claude Code의 메인 세션을 **conductor(지휘 세션)** 로 쓰는 사용�
 
 ## 설치
 
-요구 사항: macOS의 `/bin/bash` 3.2, `jq`, `gh`, Claude Code(`claude`) ≥ 2.1.248, `PATH`에 `~/.local/bin`.
+요구 사항: macOS의 `/bin/bash` 3.2, `jq`, `gh`, Claude Code(`claude`) ≥ 2.1.277, `PATH`에 `~/.local/bin`.
 
 ```bash
 git clone https://github.com/geonhos/claude-code-setup ~/workspace/claude-code-setup
@@ -25,7 +25,6 @@ cd ~/workspace/claude-code-setup
 - `claude/agents/*.md`와 `claude/skills/*/`를 `~/.claude/`에 심링크한다.
 - `bin/*`(`harness`, `harness-verify`, `harness-run`, `harness-view`)를 `~/.local/bin`에 링크한다.
 - `~/.claude/settings.json`에 게이트·SessionStart·알림 훅과 환경변수를 병합한다(백업을 남긴다).
-- 전역 gitignore에 `.harness/`를 추가한다.
 
 ## 레포에 적용
 
@@ -85,7 +84,7 @@ exit code, 설정 키, 전체 CLI는 [docs/reference.md](docs/reference.md).
 
 ## 규칙과 지식이 있는 곳
 
-- [AGENTS.md](AGENTS.md): 모든 에이전트가 따르는 프로젝트 규칙(언어, 브랜치, 테스트, wiki 규칙)과 Claude Code 전용 메모(역할, 게이트, 완료 판정).
+- [AGENTS.md](AGENTS.md): 모든 에이전트가 따르는 프로젝트 규칙(언어, 브랜치, 테스트, wiki 규칙)과 Claude Code 전용 메모(역할, 게이트, 완료 판정). `CLAUDE.md`, `.claude/CLAUDE.md`, `CLAUDE.local.md`를 만들면 Claude Code가 `AGENTS.md`를 읽지 않으므로 만들지 않는다(`tests/install.test.sh`가 검사한다, [wiki](docs/wiki/troubleshooting/agents-md-ignored-when-claude-md-exists.md)).
 - [claude/agents/conductor.md](claude/agents/conductor.md): conductor의 동작 지침.
 - [docs/wiki/index.md](docs/wiki/index.md): 함정(troubleshooting), 절차(how-to), 결정(decisions). 리포트의 Notes는 `wiki` 라벨 issue가 되고, 검토를 거친 PR로 wiki 페이지가 된다.
 - `docs/research/`: 실험과 조사 기록.
