@@ -59,3 +59,4 @@
 - 2026-11-17 · implementer · #151 · decision 0010: dated note that the gate no longer denies `harness watch` (883dcc1)
 - 2026-11-19 · implementer · #167 · prompt cleanup: analyst writes only under .harness/; AGENTS.md Layout removed; worker boilerplate trimmed (no wiki page changed)
 - 2026-11-19 · implementer · #166 · decision 0009: note that all roles are pinned to auto (was implementer only)
+- 2026-11-19 · implementer · #165 · decision 0014: init writes worker deny rules to settings.local.json; ask warns when missing

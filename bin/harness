@@ -46,7 +46,7 @@ usage:
   harness status
   harness [-C DIR] <command> ...
   harness lane   <issue#> [slug] [--type feat|fix|docs] | ls | rm <issue#|path> [--force]
-  harness init   [--no-agent] [--shared]   (once per repo: makes it a harness checkout; ask refuses without it)
+  harness init   [--no-agent] [--shared]   (once per repo: makes it a harness checkout and writes the worker deny rules; ask refuses without it)
   harness close  <agent> [--force]
   harness wiki-lint [DIR]
   harness metrics [--since YYYY-MM-DD] [--json]
@@ -542,7 +542,27 @@ require_checkout() {
   local root
   root=$(harness_root "$PWD") || die "not a harness checkout (no .harness/asks); run 'harness init' here first"
   [ "$root" = "$(pwd -P)" ] || cd "$root" || die "cannot enter $root"
+  # one jq call: warn (never refuse) when this checkout's local settings lack a worker deny rule
+  jq -e --argjson d "$HARNESS_DENY_RULES" '($d - (.permissions.deny // [])) | length == 0' \
+    .claude/settings.local.json >/dev/null 2>&1 \
+    || echo "harness: warning: .claude/settings.local.json lacks the worker deny rules; run 'harness init' again in this checkout" >&2
+  return 0
 }
+
+# The worker deny set (#165, decision 0014), one rule per line; `harness init` adds the missing
+# ones to .claude/settings.local.json, `harness ask` warns when any is absent. The only place
+# that names the blocked commands (the implementer prompt does not).
+HARNESS_DENY_RULES='[
+  "Bash(git reset *--hard*)",
+  "Bash(git clean *)",
+  "Bash(git push *--force*)",
+  "Bash(git push -f*)",
+  "Bash(git push * -f*)",
+  "Read(.env)",
+  "Read(.env.*)",
+  "Read(~/.ssh/**)",
+  "Read(~/.aws/**)"
+]'
 
 # settings_commit TMP FILE — write TMP into FILE through the file (a symlinked FILE stays a
 # symlink, as install.sh does) after one .bak copy of the original (never overwritten)
@@ -552,28 +572,48 @@ settings_commit() {
   cat "$tmp" > "$f"
 }
 
-# settings_set_agent FILE — create FILE with {"agent":"conductor"}, or merge the key into it
-# (never clobbering other keys; .bak first); an existing different agent is kept and noted.
-settings_set_agent() {
-  local f=$1 cur tmp
+# settings_merge FILE WANT_AGENT WANT_DENY — one pass over FILE: set "agent": "conductor" (WANT_AGENT=1)
+# and append the missing HARNESS_DENY_RULES to .permissions.deny (WANT_DENY=1), never clobbering other
+# keys. The file is read once, written only when its content changes, backed up once (.bak, never
+# overwritten). An existing different agent is kept and noted; a non-object file or a non-array
+# .permissions.deny leaves the whole file alone, with a note.
+settings_merge() {
+  local f=$1 wa=$2 wd=$3 cur tmp n msgs=""
   if [ ! -e "$f" ]; then
     mkdir -p "${f%/*}" || { echo "harness init: cannot create ${f%/*}" >&2; return 0; }
-    jq -n '{agent: "conductor"}' > "$f" && echo "created $f (agent: conductor)"
+    jq -n --argjson wa "$wa" --argjson wd "$wd" --argjson d "$HARNESS_DENY_RULES" \
+      '(if $wa == 1 then {agent: "conductor"} else {} end) + (if $wd == 1 then {permissions: {deny: $d}} else {} end)' > "$f" || return 0
+    [ "$wa" != 1 ] || msgs="agent: conductor"
+    [ "$wd" != 1 ] || msgs="${msgs:+$msgs; }deny rules: $(jq -r 'join(", ")' <<<"$HARNESS_DENY_RULES")"
+    echo "created $f ($msgs)"
     return 0
   fi
   if ! jq -e 'type == "object"' "$f" >/dev/null 2>&1; then
-    echo "note: $f is not a JSON object; left alone (set \"agent\": \"conductor\" yourself)" >&2
+    echo "note: $f is not a JSON object; left alone (add \"agent\": \"conductor\" and the permissions.deny rules yourself)" >&2
     return 0
   fi
-  cur=$(jq -r '.agent // empty' "$f")
-  if [ "$cur" = conductor ]; then echo "$f: agent already conductor"; return 0; fi
-  if [ -n "$cur" ]; then
-    echo "note: $f sets agent \"$cur\"; kept (use --no-agent to silence this)"
+  if [ "$wd" = 1 ] && ! jq -e '(.permissions == null or (.permissions | type) == "object") and ((.permissions.deny // []) | type) == "array"' "$f" >/dev/null 2>&1; then
+    echo "note: $f has a permissions.deny that is not an array; left alone (add the worker deny rules and the agent key yourself)" >&2
     return 0
   fi
+  if [ "$wa" = 1 ]; then
+    cur=$(jq -r '.agent // empty' "$f")
+    if [ "$cur" = conductor ]; then echo "$f: agent already conductor"; wa=0
+    elif [ -n "$cur" ]; then echo "note: $f sets agent \"$cur\"; kept (use --no-agent to silence this)"; wa=0; fi
+  fi
+  if [ "$wd" = 1 ]; then
+    n=$(jq -r --argjson d "$HARNESS_DENY_RULES" '$d - (.permissions.deny // []) | join(", ")' "$f")
+    [ -n "$n" ] || { echo "$f: deny rules present"; wd=0; }
+  fi
+  [ "$wa" = 1 ] || [ "$wd" = 1 ] || return 0
   tmp=$(mktemp "${TMPDIR:-/tmp}/harness-settings.XXXXXX") || return 0
-  if jq '.agent = "conductor"' "$f" > "$tmp" && settings_commit "$tmp" "$f"; then
-    echo "updated $f (agent: conductor; backup $f.bak)"
+  [ "$wa" != 1 ] || msgs="agent: conductor"
+  [ "$wd" != 1 ] || msgs="${msgs:+$msgs; }added deny rules: $n"
+  if jq --argjson wa "$wa" --argjson wd "$wd" --argjson d "$HARNESS_DENY_RULES" \
+      '(if $wa == 1 then .agent = "conductor" else . end)
+       | if $wd == 1 then .permissions.deny = ((.permissions.deny // []) + ($d - (.permissions.deny // []))) else . end' "$f" > "$tmp" \
+     && settings_commit "$tmp" "$f"; then
+    echo "updated $f ($msgs; backup $f.bak)"
   else
     echo "harness init: could not update $f" >&2
   fi
@@ -582,7 +622,8 @@ settings_set_agent() {
 
 # cmd_init [--no-agent] [--shared] — make the current repo (git toplevel, else the cwd) a harness
 # checkout: .harness/asks/, the default config, "agent": "conductor" in .claude/settings.local.json
-# (per user, untracked; --shared: .claude/settings.json, committed, never excluded), and every
+# (per user, untracked; --shared: .claude/settings.json, committed, never excluded; --no-agent skips
+# the key), the worker deny rules (HARNESS_DENY_RULES) in .claude/settings.local.json always, and every
 # harness-made path (.harness/, settings.local.json(.bak), agent-memory, docs/superpowers)
 # in .git/info/exclude when git does not already ignore it. Idempotent.
 cmd_init() {
@@ -598,8 +639,11 @@ cmd_init() {
   else mkdir -p .harness/asks || die "cannot create .harness/asks"; echo "created .harness/asks"; fi
   if [ -e "$CONFIG_FILE" ]; then echo "$CONFIG_FILE exists"
   else ensure_config init; [ -e "$CONFIG_FILE" ] && echo "created $CONFIG_FILE"; fi
-  if [ "$agent" = 1 ]; then settings_set_agent "$target"
-  else echo "$target untouched (--no-agent)"; fi
+  if [ "$target" = .claude/settings.local.json ]; then settings_merge "$target" "$agent" 1
+  else
+    [ "$agent" = 0 ] || settings_merge "$target" 1 0
+    settings_merge .claude/settings.local.json 0 1
+  fi
   if git rev-parse --git-dir >/dev/null 2>&1; then
     ex=$(git rev-parse --git-path info/exclude 2>/dev/null)
     for a in .harness/ .claude/settings.local.json .claude/settings.local.json.bak .claude/agent-memory/ docs/superpowers/; do

@@ -43,4 +43,5 @@ Read this first. Open a page only when it is relevant. Schema and promotion rule
 - [0011 One runner: headless](decisions/0011-single-runner-headless.md): headless is the only runner; herdr viewer removed by 0013; prune plan steps 1-7 done (active, 2026-11-03)
 - [0012 Gate shrink](decisions/0012-gate-shrink.md): gate kept and trimmed to observed use (552 → 513 lines); permissions-rules and native-subagent options rejected (active, 2026-11-03)
 - [0013 Remove herdr](decisions/0013-remove-herdr.md): no herdr in code/gate/install; watch via `harness watch` in any terminal (active, 2026-11-13)
+- [0014 init writes deny rules](decisions/0014-init-writes-deny-rules.md): `harness init` adds nine worker deny rules to settings.local.json; ask warns when missing; seatbelt, not a sandbox (active, 2026-11-19)
 - [Per-issue work folders](how-to/work-folders.md): lane create/rm, -C parallel asks, lane_setup, risks (active, 2026-11-13)

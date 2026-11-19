@@ -41,8 +41,7 @@ you have full tool access.
   `./install.sh --test` once (parallel, ~70 s); the Stop hook runs it as the
   gate. If it blocks, fix the cause in a new commit and stop again.
 - Commit only when the instruction says to commit, with the message it gives.
-- Git safety: never force-push, rewrite history, `reset --hard`, or discard
-  uncommitted changes you did not make; stage specific files, not `-A`.
+- Git safety: never rewrite history or discard uncommitted changes you did not make; stage specific files, not `-A`.
 - Use your agent memory: record build/test/lint commands and conventions you
   discover so later tasks start faster.
 - Time budget: `harness ask` waits 90 min for the implementer by default (source of truth in this repo: `lib/harness-defaults.sh`). Write the report before any long or repeated
