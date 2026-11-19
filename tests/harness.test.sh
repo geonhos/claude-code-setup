@@ -195,6 +195,7 @@ check "_defaults: headless cap implementer 90 min, others 60" bash -c '[ "$1" = 
 check "README quotes the headless caps (60 / 90 min)" bash -c 'grep -q "headless_max_minutes" "$1" && grep -q "implementer 90" "$1"' _ "$HERE/../README.md"
 
 # --- harness init / checkout marker (decision 0010) ---
+DENY_JSON='["Bash(git reset *--hard*)","Bash(git clean *)","Bash(git push *--force*)","Bash(git push -f*)","Bash(git push * -f*)","Read(.env)","Read(.env.*)","Read(~/.ssh/**)","Read(~/.aws/**)"]'
 setup; rm -rf .harness
 run ask analyst "q"
 check "ask without marker: exit 1" [ "$RC" = 1 ]
@@ -217,17 +218,119 @@ check "init is idempotent" bash -c '[ "$1" = 0 ] && [ "$(jq -r .agent .claude/se
 run init --bogus
 check "init rejects unknown flag" [ "$RC" != 0 ]
 
+# worker deny rules (#165): the nine rules, written by every init into settings.local.json
+mtime() { stat -f %m "$1" 2>/dev/null || stat -c %Y "$1"; }
+setup; rm -rf .harness .claude
+run init
+check "init deny: settings.local.json has exactly the nine rules in order" [ "$(jq -c .permissions.deny .claude/settings.local.json)" = "$DENY_JSON" ]
+check "init deny: output lists the added rules" grep -qF 'Bash(git clean *)' <<<"$OUT"
+M1=$(mtime .claude/settings.local.json)
+sleep 1.1
+run init
+check "init deny re-run: still nine rules" [ "$(jq '.permissions.deny | length' .claude/settings.local.json)" = 9 ]
+check "init deny re-run: file not rewritten" [ "$(mtime .claude/settings.local.json)" = "$M1" ]
+check "init deny re-run: says the rules are present" grep -q "deny rules present" <<<"$OUT"
+check "init deny re-run: no .bak (nothing changed)" [ ! -e .claude/settings.local.json.bak ]
+
+setup; rm -rf .harness; mkdir -p .claude; SEED='{"permissions":{"deny":["Bash(curl *)"],"allow":["Bash(ls *)"]}}'; printf '%s\n' "$SEED" > .claude/settings.local.json
+run init
+check "init deny merge: existing deny entry first, nine rules after" [ "$(jq -c .permissions.deny .claude/settings.local.json)" = "$(jq -c '["Bash(curl *)"] + .' <<<"$DENY_JSON")" ]
+check "init deny merge: allow kept" [ "$(jq -c .permissions.allow .claude/settings.local.json)" = '["Bash(ls *)"]' ]
+check "init deny merge: .bak equals the seed" [ "$(jq -c . .claude/settings.local.json.bak)" = "$(jq -c . <<<"$SEED")" ]
+check "init deny merge: agent set too" [ "$(jq -r .agent .claude/settings.local.json)" = conductor ]
+
+setup; rm -rf .harness; mkdir -p .claude; printf '{"agent":"conductor","permissions":{"deny":["Bash(git clean *)","Read(.env)"]}}\n' > .claude/settings.local.json
+run init
+check "init deny partial: only missing rules appended, no duplicates" [ "$(jq -c '.permissions.deny | length' .claude/settings.local.json)" = 9 ]
+check "init deny partial: existing order kept" [ "$(jq -c '.permissions.deny[0:2]' .claude/settings.local.json)" = '["Bash(git clean *)","Read(.env)"]' ]
+
+# an unmergeable settings file fails init before anything is created (#165, user decision 2026-11-19)
+# odd_case LABEL CONTENT MSG — init exits non-zero, file byte-identical, no .bak, message names the file + MSG, nothing created
+odd_case() {
+  setup; rm -rf .harness; mkdir -p .claude; printf "$2" > .claude/settings.local.json; cp .claude/settings.local.json "$WORK/before.json"
+  run init
+  check "init odd ($1): exits non-zero" [ "$RC" != 0 ]
+  check "init odd ($1): file byte-identical" cmp -s "$WORK/before.json" .claude/settings.local.json
+  check "init odd ($1): no .bak" [ ! -e .claude/settings.local.json.bak ]
+  check "init odd ($1): message names the file and the problem" grep -qF -- ".claude/settings.local.json $3" <<<"$OUT"
+  check "init odd ($1): nothing created" [ ! -e .harness/asks ]
+}
+odd_case "invalid JSON" '{"a":' "is not valid JSON"
+odd_case "empty" '' "is empty"
+odd_case "whitespace only" ' \n\n' "is empty"
+odd_case "top level array" '[1]\n' "has a top level that is not an object"
+odd_case "permissions not object" '{"permissions":"x"}\n' "has a permissions that is not an object"
+odd_case "deny not array" '{"permissions":{"deny":"nope"},"model":"x"}\n' "has a permissions.deny that is not an array"
+check "init odd: deny message is not the permissions one" bash -c '! grep -qF "permissions that is not an object" <<<"$1"' _ "$OUT"
+ERR=$(PATH="$HERE/../bin:$PATH" env -u HARNESS_ROLE /bin/bash "$HARNESS" init 2>&1 >/dev/null)
+check "init odd: message on stderr" grep -q "permissions.deny" <<<"$ERR"
+
+setup; rm -rf .harness .claude; mkdir -p .claude; printf '[1]\n' > .claude/settings.json; cp .claude/settings.json "$WORK/before.json"
+run init --shared
+check "init --shared odd settings.json: exits non-zero" [ "$RC" != 0 ]
+check "init --shared odd settings.json: names settings.json" grep -qF ".claude/settings.json has a top level" <<<"$OUT"
+check "init --shared odd settings.json: file unchanged" cmp -s "$WORK/before.json" .claude/settings.json
+check "init --shared odd settings.json: settings.local.json not created, nothing else" bash -c '[ ! -e .claude/settings.local.json ] && [ ! -e .harness ]'
+setup; rm -rf .harness .claude; mkdir -p .claude; printf '{"a":1}\n' > .claude/settings.json; printf '{"permissions":[]}\n' > .claude/settings.local.json; cp .claude/settings.json "$WORK/b1"; cp .claude/settings.local.json "$WORK/b2"
+run init --shared
+check "init --shared odd local, good shared: fails, neither file changed" bash -c '[ "$1" != 0 ] && cmp -s "$2" .claude/settings.json && cmp -s "$3" .claude/settings.local.json && [ ! -e .harness ]' _ "$RC" "$WORK/b1" "$WORK/b2"
+setup; rm -rf .harness .claude; mkdir -p .claude; printf '[1]\n' > .claude/settings.json
+run init --shared --no-agent
+check "init --shared --no-agent: odd settings.json is not touched, so init works" [ "$RC" = 0 ]
+setup; rm -rf .harness .claude; mkdir -p .claude; printf '{"agent":"solo","permissions":{"deny":[]}}\n' > .claude/settings.local.json
+run init
+check "init: a different agent value is still not an error" [ "$RC" = 0 ]
+
+# symlinked settings.local.json: rules added, symlink survives, .bak written once
+setup; rm -rf .harness .claude; mkdir real .claude; printf '{"model":"x"}\n' > real/s.json; ln -s ../real/s.json .claude/settings.local.json
+run init
+check "init symlink: rules added through the link" [ "$(jq -c .permissions.deny real/s.json)" = "$DENY_JSON" ]
+check "init symlink: still a symlink" [ -L .claude/settings.local.json ]
+check "init symlink: .bak written" [ "$(jq -r .model .claude/settings.local.json.bak)" = x ]
+jq 'del(.permissions.deny[0])' real/s.json > real/t && cat real/t > real/s.json
+run init
+check "init symlink: second change adds the rule again" [ "$(jq '.permissions.deny | length' real/s.json)" = 9 ]
+check "init symlink: .bak not overwritten by the second change" [ "$(jq -c . .claude/settings.local.json.bak)" = '{"model":"x"}' ]
+
+# harness ask warns (never refuses) when the checkout lacks the deny rules (#165, D5)
+setup; export FAKE_CLAUDE_MODE=success; unset FAKE_CLAUDE_DENY; export FAKE_REPORT_CMD="$(REPORT_HOOK analyst)"
+rm -f .claude/settings.local.json
+hrun ask analyst "q"
+check "ask warns: settings.local.json missing" grep -q "lacks the worker deny rules; run 'harness init' again" <<<"$OUT"
+check "ask warns (missing): the ask still ran" [ -s "$FAKE_LOG" ]
+setup; export FAKE_REPORT_CMD="$(REPORT_HOOK analyst)"
+mkdir -p .claude; jq -n '{permissions:{deny:["Bash(git clean *)"]}}' > .claude/settings.local.json
+hrun ask analyst "q"
+check "ask warns: partial deny set" grep -q "lacks the worker deny rules" <<<"$OUT"
+check "ask warns (partial): the ask still ran" [ -s "$FAKE_LOG" ]
+setup; export FAKE_REPORT_CMD="$(REPORT_HOOK analyst)"
+hrun ask analyst "q"
+check "ask: no warning when the set is complete" not_grep "deny rules" <<<"$OUT"
+check "ask (complete): the ask ran" [ -s "$FAKE_LOG" ]
+# the warning names the checkout; under -C it is that checkout's own file that is checked
+setup; export FAKE_CLAUDE_MODE=success; export FAKE_REPORT_CMD="$(REPORT_HOOK analyst)"
+LANE="$WORK/lane1"; mkdir -p "$LANE/.harness/asks" "$LANE/.claude"
+hrun -C "$LANE" ask analyst "q"
+check "ask warns under -C: names the lane path" grep -qF "$(cd "$LANE" && pwd -P)" <<<"$(grep 'lacks the worker deny rules' <<<"$OUT")"
+check "ask warns under -C: still says run harness init" grep -q "harness init" <<<"$OUT"
+jq -n --argjson d "$DENY_JSON" '{permissions:{deny:$d}}' > "$LANE/.claude/settings.local.json"
+hrun -C "$LANE" ask analyst "q"
+check "ask under -C: lane file complete, no warning (the primary's file is not consulted)" not_grep "deny rules" <<<"$OUT"
+unset FAKE_CLAUDE_MODE FAKE_REPORT_CMD
+
 setup; rm -rf .harness
 INIT_OUT=$(PATH="$HERE/../bin:$PATH" env -u HARNESS_ROLE /bin/bash "$HARNESS" init 2>"$WORK/init.err")
 check "init: full watch hint" grep -qF "workers run as detached headless Claude sessions: watch a run with 'harness watch <role>'" <<<"$INIT_OUT"
 check "init: stderr is empty" [ ! -s "$WORK/init.err" ]
 
-setup; rm -rf .harness
+setup; rm -rf .harness .claude
 run init --shared
 check "init --shared: writes settings.json" [ "$(jq -r .agent .claude/settings.json)" = conductor ]
-check "init --shared: no settings.local.json" [ ! -e .claude/settings.local.json ]
+check "init --shared: deny rules are not committed to settings.json" jq -e 'has("permissions") | not' .claude/settings.json
+check "init --shared: deny rules go to settings.local.json" [ "$(jq -c .permissions.deny .claude/settings.local.json)" = "$DENY_JSON" ]
+check "init --shared: settings.local.json has no agent key" jq -e 'has("agent") | not' .claude/settings.local.json
 
-setup; rm -rf .harness; mkdir .claude; printf '{"model":"x","env":{"A":"1"}}\n' > .claude/settings.local.json
+setup; rm -rf .harness; mkdir -p .claude; printf '{"model":"x","env":{"A":"1"}}\n' > .claude/settings.local.json
 run init
 check "init merges: agent set" [ "$(jq -r .agent .claude/settings.local.json)" = conductor ]
 check "init merges: other keys kept" [ "$(jq -r '.model + .env.A' .claude/settings.local.json)" = x1 ]
@@ -237,7 +340,7 @@ jq 'del(.agent)' .claude/settings.local.json > .claude/s.tmp && cat .claude/s.tm
 run init
 check "init: an existing .bak is never overwritten" [ "$(jq -r .model .claude/settings.local.json.bak)" = changed ]
 
-setup; rm -rf .harness; mkdir .claude; printf '{"model":"x","env":{"A":"1"}}\n' > .claude/settings.json
+setup; rm -rf .harness; mkdir -p .claude; printf '{"model":"x","env":{"A":"1"}}\n' > .claude/settings.json
 run init --shared
 check "init --shared merges into settings.json" [ "$(jq -r '.agent + .model' .claude/settings.json)" = conductorx ]
 
@@ -246,15 +349,17 @@ run init
 check "init: symlinked settings stays a symlink" [ -L .claude/settings.local.json ]
 check "init: symlink target got the agent key" [ "$(jq -r '.agent + .model' real/s.json)" = conductorx ]
 
-setup; rm -rf .harness; mkdir .claude; printf '{"agent":"solo","model":"x"}\n' > .claude/settings.local.json
+setup; rm -rf .harness; mkdir -p .claude; printf '{"agent":"solo","model":"x"}\n' > .claude/settings.local.json
 run init
 check "init keeps a different agent" [ "$(jq -r .agent .claude/settings.local.json)" = solo ]
 check "init notes the kept agent" grep -q "kept" <<<"$OUT"
-check "init keeps a different agent: no .bak needed" [ ! -e .claude/settings.local.json.bak ]
+check "init keeps a different agent: deny rules still added" [ "$(jq -c .permissions.deny .claude/settings.local.json)" = "$DENY_JSON" ]
+check "init keeps a different agent: .bak is the seed" [ "$(jq -c . .claude/settings.local.json.bak)" = '{"agent":"solo","model":"x"}' ]
 
-setup; rm -rf .harness
+setup; rm -rf .harness .claude
 run init --no-agent
-check "init --no-agent: no settings written" bash -c '[ ! -e .claude/settings.json ] && [ ! -e .claude/settings.local.json ]'
+check "init --no-agent: no agent key anywhere, no settings.json" bash -c '[ ! -e .claude/settings.json ] && jq -e "has(\"agent\") | not" .claude/settings.local.json >/dev/null'
+check "init --no-agent: deny rules still written" [ "$(jq -c .permissions.deny .claude/settings.local.json)" = "$DENY_JSON" ]
 check "init --no-agent: asks created" [ -d .harness/asks ]
 
 setup; rm -rf .harness; git init -q .; export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 XDG_CONFIG_HOME=$WORK/xdg

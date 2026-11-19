@@ -45,6 +45,7 @@ check "lane: prints the folder path last" [ "$(printf '%s\n' "$OUT" | tail -n 1)
 check "lane: branch feat/12-my-slug" [ "$(git -C "$D" rev-parse --abbrev-ref HEAD)" = feat/12-my-slug ]
 check "lane: based on origin/main" [ "$(git -C "$D" rev-parse HEAD)" = "$(git rev-parse origin/main)" ]
 check "lane: harness init ran" test -d "$D/.harness/asks"
+check "lane: settings.local.json holds the deny rules" jq -e '.permissions.deny | length == 9' "$D/.claude/settings.local.json"
 check "lane: git status clean (exclude patterns)" [ -z "$(git -C "$D" status --porcelain)" ]
 check "lane: lane_setup ran in the folder" test -f "$D/.harness/lane-setup-ran"
 
