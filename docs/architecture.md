@@ -30,7 +30,7 @@ flowchart LR
 
 ## 3. conductor 게이트 판정 흐름 (conductor-gate.sh)
 
-conductor 세션의 PreToolUse 호출만 판정한다: `.harness/asks/`가 없는 저장소, 워커(`agent_type`이 conductor가 아님, 또는 `HARNESS_ROLE=worker`)는 통과시키고, jq가 없거나 입력을 파싱하지 못하면 거부한다(fail closed). 나머지는 도구별 허용 범위(쓰기는 `docs/**/*.md`와 `.harness/`, 읽기는 `docs/`, `.harness/`, `*.md`에서 `log/*.jsonl` 제외, Read 도구는 추가로 `~/.claude/guides/<name>.md` 한 단계(심링크를 따라가지 않고 경로 문자열로 판정), Bash는 허용 목록의 단순 명령 1개)에 맞지 않으면 고정 안내 문구와 함께 거부한다. 경로는 심볼릭 링크를 푼 뒤에도 같은 규칙을 통과해야 합니다(위 가이드 경로는 예외). Bash는 `scan_command`가 `; & | < > #` 백틱, `$(`를 거부하고, 남은 단일 명령을 허용 목록(`harness`, `gh pr ...`(`close` 포함, `-d` 없이), 읽기 전용 `git`, 읽기 전용 `date`, `.harness/`·`docs/` 아래 `cat`/`ls`)에 맞춰 본다. 결정은 0005, 0010, 0012.
+conductor 세션의 PreToolUse 호출만 판정한다: `.harness/asks/`가 없는 저장소, 워커(`agent_type`이 conductor가 아님, 또는 `HARNESS_ROLE=worker`)는 통과시키고, jq가 없거나 입력을 파싱하지 못하면 거부한다(fail closed). 나머지는 도구별 허용 범위(쓰기는 `docs/**/*.md`와 `.harness/`, 읽기는 `docs/`, `.harness/`, `*.md`에서 `log/*.jsonl` 제외, Bash는 허용 목록의 단순 명령 1개)에 맞지 않으면 고정 안내 문구와 함께 거부한다. 경로는 심볼릭 링크를 푼 뒤에도 같은 규칙을 통과해야 한다. Bash는 `scan_command`가 `; & | < > #` 백틱, `$(`를 거부하고, 남은 단일 명령을 허용 목록(`harness`, `gh pr ...`(`close` 포함, `-d` 없이), 읽기 전용 `git`, 읽기 전용 `date`, `.harness/`·`docs/` 아래 `cat`/`ls`)에 맞춰 본다. 결정은 0005, 0010, 0012.
 
 ## 4. 검증 루프
 

@@ -60,7 +60,7 @@ SESSION_ID=$(printf '%s' "$INPUT" | jq -r '.session_id // empty' 2>/dev/null)
 
 # Fixed strings: never interpolate per-call data (keeps the prompt cache stable).
 MSG_WRITE="Conductor cannot edit source. Delegate with the /implement skill (implementer worker). Direct writes are allowed only under docs/**/*.md, .harness/, and the .harness/ of a registered work folder (git worktree)."
-MSG_READ="Conductor does not read source. Delegate with the /analyze skill (analyst worker) and read its report. Direct reads are allowed only under .harness/, docs/, *.md files and ~/.claude/guides/*.md."
+MSG_READ="Conductor does not read source. Delegate with the /analyze skill (analyst worker) and read its report. Direct reads are allowed only under .harness/, docs/, and *.md files."
 MSG_BASH="Conductor shell is limited to ONE command per call: harness (also harness -C <dir> ..., harness lane ...); gh pr create|view|list|checks|comment|edit|merge|close (no api, no merge/close -d); gh issue create|list|view|comment|close|edit|reopen; git status / log / diff --stat / branch (list); git show --stat|--name-only <rev> or git show <rev>:<path> (path under .harness/ or docs/, or *.md); ls (no -R) and stat on any path; date, date -u, date +FORMAT (read-only); cat, head, tail -n N under .harness/ and docs/, in a work folder's .harness/, and of this session's Bash task output files (/private/tmp/claude-*/<slug>/<session_id>/tasks/*.output). No ; & | redirects, backticks or \$(. Delegate command execution with the /implement skill (implementer worker)."
 
 # --- Bash allow/deny lists ---------------------------------------------------
@@ -237,19 +237,6 @@ LANES
 # resolving symlinks)
 readable() {
   canon "$1" && readable_rel "$CANON_LEX" && readable_rel "$CANON_PHYS"
-}
-
-# guide_readable PATH -> 0 for exactly $HOME/.claude/guides/<name>.md (also with a leading ~/):
-# one lexical path segment after the directory, no '..', ending in .md. Symlinks are not
-# followed: install.sh links each guide into the repo, which canon() would reject.
-guide_readable() {
-  local p=$1 name
-  case "$p" in '~/'*) p=$HOME/${p#'~/'} ;; esac
-  case "$HOME" in /*) ;; *) return 1 ;; esac
-  case "$p" in "${HOME%/}"/.claude/guides/?*.md) ;; *) return 1 ;; esac
-  name=${p#"${HOME%/}"/.claude/guides/}
-  case "$name" in */*|..*) return 1 ;; esac
-  return 0
 }
 
 # readable_or_lane PATH -> readable, or under .harness/ of a registered work folder
@@ -597,7 +584,7 @@ case "$TOOL" in
   Edit|Write)
     writable "$(field file_path)" || deny "$MSG_WRITE" ;;
   Read)
-    guide_readable "$(field file_path)" || readable_or_lane "$(field file_path)" || deny "$MSG_READ" ;;
+    readable_or_lane "$(field file_path)" || deny "$MSG_READ" ;;
   Grep)
     GPATH=$(field path)
     readable "$GPATH" || deny "$MSG_READ"
