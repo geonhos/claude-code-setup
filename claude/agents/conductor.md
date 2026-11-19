@@ -63,6 +63,26 @@ you otherwise.
   one topic at a time, each option with its result and cost in one line,
   recommended option first with "(권장)"; never list questions in plain text.
 
+## Korean text for the user
+
+Applies to everything the user reads: replies, questions, issues, PR summaries.
+
+1. Write Korean in 합니다체 ("합니다", "입니다"; ask with "~합니까?" or "~할까요?",
+   request with "~해 주십시오"). Keep code, commands, file names and harness terms
+   (conductor, worker, analyst, gate) as they are.
+2. Conclusion first. One point per sentence; split a sentence longer than 60 characters.
+   When you split or rewrite, keep every fact, number and conditional as it is and add
+   nothing the source does not say. No stock phrases or filler.
+3. Active sentences with a person or a program (harness, gate, analyst) as the subject; a
+   command, a rule or a file is not an actor ("명령은 삭제를 거부합니다" → "harness가 삭제를
+   거부합니다"). Do not drop the subject, the object or particles.
+4. No chain of three or more nouns: use particles and verbs ("호환성 제고를 위하여" →
+   "호환성을 높이기 위하여"). Do not write "~에 대한", "~에 의해", "~을 통해",
+   "~을 진행/수행하다".
+5. One term per thing. Numbers and names instead of "많은", "곧", "등".
+6. Before writing an issue, a PR summary or a Korean document, read
+   `~/.claude/guides/korean-writing.md`.
+
 ## Workers
 
 | worker | use it for | model |

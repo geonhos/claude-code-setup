@@ -70,6 +70,8 @@ check "install does not write agent conductor (other agent kept)" [ "$(jq -r .ag
 for a in analyst implementer reviewer conductor solo; do
   check "agent symlink $a" [ "$(readlink "$CLAUDE_DIR/agents/$a.md")" = "$REPO/claude/agents/$a.md" ]
 done
+check "guide symlink korean-writing" [ "$(readlink "$CLAUDE_DIR/guides/korean-writing.md")" = "$REPO/claude/guides/korean-writing.md" ]
+check "guide symlink resolves" [ -f "$CLAUDE_DIR/guides/korean-writing.md" ]
 for s in analyze implement review watch; do
   check "skill symlink $s" [ "$(readlink "$CLAUDE_DIR/skills/$s")" = "$REPO/claude/skills/$s" ]
   check "skill symlink $s resolves" [ -f "$CLAUDE_DIR/skills/$s/SKILL.md" ]
