@@ -43,7 +43,7 @@ harness를 쓰려는 저장소에서 한 번 실행한다. `.harness/asks/`(체�
 
 워커는 항상 headless다: `harness-run`이 `claude -p`를 detached로 돌리고, 완료는 `.harness/asks/<role>.exit.json`(프로세스 종료)이다. 마감 시간에 run을 죽이지 않고 exit 4로 돌려준다. 한 번의 실행 상한은 `headless_max_minutes`(기본 60, implementer 90)이고, 이 키는 `.harness/config.json`에 두며 설정하면 implementer를 포함한 모든 역할에 적용되고 환경변수 `HARNESS_HL_MAX_S`(초)가 이를 덮어쓴다. `--keep`이 아니면 매번 새 세션이다. 원본 스트림 `.harness/log/*.jsonl`은 게이트가 conductor의 읽기를 막는다.
 
-implementer(결정 0009)는 `--permission-mode auto --permission-prompts none`으로 고정된다. 거부된 도구 호출은 `exit.json`의 `denied[]`에 남고, 리포트 없이 거부만 있으면 exit 2다. 워커 세션(`HARNESS_ROLE=worker`)에서는 `harness ask`가 exit 1로 거부된다(중첩 위임 방지).
+모든 역할(결정 0009, #166)의 러너는 `--permission-mode auto --permission-prompts none`으로 고정된다. 거부된 도구 호출은 `exit.json`의 `denied[]`에 남고, 리포트 없이 거부만 있으면 exit 2다. 워커 세션(`HARNESS_ROLE=worker`)에서는 `harness ask`가 exit 1로 거부된다(중첩 위임 방지).
 
 ## 설정
 

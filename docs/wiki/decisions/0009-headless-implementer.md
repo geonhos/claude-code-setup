@@ -1,11 +1,13 @@
 ---
 type: decision
 status: active
-updated: 2026-11-13
+updated: 2026-11-19
 sources: [.harness/implementer-headless-design.md, branch feat/v23-headless-implementer, tests/headless-implementer.test.sh]
 verified_by: tests/headless-implementer.test.sh
 ---
 # 0009: Headless implementer (0007 stage C)
+
+> Updated 2026-11-19 (#166): all roles are pinned to `--permission-mode auto --permission-prompts none`; at first only the implementer was. The "would wait for a host that never answers" rationale for `--permission-prompts none` did not reproduce on CC 2.1.328 (manual-mode workers are denied at once, not blocked); the flag is kept as a guard for the untested classifier-fallback path.
 
 > Removed 2026-11-13 (#72): auto-resume and `--fresh` are gone; every ask starts fresh unless `--keep` is given.
 
