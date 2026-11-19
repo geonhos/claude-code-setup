@@ -58,3 +58,4 @@
 - 2026-11-17 · implementer · #154 · live-gate-edit: only exit 2 denies, other failures fail open (probe P4, #141); index hook updated
 - 2026-11-17 · implementer · #151 · decision 0010: dated note that the gate no longer denies `harness watch` (883dcc1)
 - 2026-11-19 · implementer · #167 · prompt cleanup: analyst writes only under .harness/; AGENTS.md Layout removed; worker boilerplate trimmed (no wiki page changed)
+- 2026-11-19 · implementer · #166 · decision 0009: note that all roles are pinned to auto (was implementer only)

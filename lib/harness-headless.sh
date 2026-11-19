@@ -94,7 +94,7 @@ hl_collect() {
   sid=$(jq -r '(.session_id // "") | .[0:8]' <<<"$ejc" 2>/dev/null); tinit=$(jq -r '.t_init // empty' <<<"$ejc" 2>/dev/null)
   perm=$(jq -r '.perm // empty' <<<"$ejc" 2>/dev/null)
   if [ -n "$perm" ] && [ "$perm" != auto ]; then
-    echo "harness: warning: $role ran with permission mode '$perm', not auto; tools may have been denied (see harness watch)" >&2
+    echo "harness: warning: $role was launched with permission mode auto but ran in '$perm'; tools may have been denied (see harness watch)" >&2
   fi
   denied=$(jq -r '(.denied // [])[] | "  - \(.tool): \(.input)\(if (.reason // "") != "" then " (" + .reason + ")" else "" end)"' <<<"$ejc" 2>/dev/null)
   restore_interrupted "$role" "$report"

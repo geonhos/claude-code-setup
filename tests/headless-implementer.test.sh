@@ -21,8 +21,15 @@ check "pin: rc 0" [ "$RC" -eq 0 ]
 check "pin: implementer argv has --permission-mode auto" logged "--permission-mode auto"
 check "pin: implementer argv has --permission-prompts none" logged "--permission-prompts none"
 isetup
+export FAKE_REPORT_CMD="mkdir -p $WORK/.harness/reports && printf '# analyst report\nstatus: done\n' > $WORK/.harness/reports/analyst.md"
 hrun ask analyst "q"
-check "pin: analyst argv unchanged" not_logged "--permission-mode"
+check "pin: analyst argv has --permission-mode auto" logged "--permission-mode auto"
+check "pin: analyst argv has --permission-prompts none" logged "--permission-prompts none"
+isetup
+export FAKE_REPORT_CMD="mkdir -p $WORK/.harness/reports && printf '# reviewer report\nstatus: done\nVERDICT: PASS\n' > $WORK/.harness/reports/reviewer.md"
+hrun ask reviewer "q"
+check "pin: reviewer argv has --permission-mode auto" logged "--permission-mode auto"
+check "pin: reviewer argv has --permission-prompts none" logged "--permission-prompts none"
 
 isetup; export FAKE_CLAUDE_MODE=noreport FAKE_CLAUDE_DENY=1
 hrun ask implementer "q"
