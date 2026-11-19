@@ -811,5 +811,44 @@ expect deny  $C "canon git show dotdot"      "$(lb 'git show HEAD:docs/../bin/ha
 expect deny  $C "canon git show raw stream md" "$(lb 'git show HEAD:.harness/log/a.jsonl.md')"
 rm -rf "$LR" /private/tmp/claude-test70
 
+# --- conductor Read of ~/.claude/guides/<name>.md (#169) ------------------------
+FH=$GATE_HOME/fakehome
+mkdir -p "$FH/.claude/guides"
+# gread EXPECTED LABEL TOOL PATH -> run the gate with HOME=$FH
+gread() {
+  local got
+  got=$(tool "$3" "$(jq -n -c --arg p "$4" '{file_path:$p,content:"x",old_string:"a",new_string:"b"}')" \
+    | (cd "$GATE_HOME/chk" && HOME="$FH" HARNESS_ROLE=conductor /bin/bash "$GATE" 2>/dev/null) \
+    | { jq -r '.hookSpecificOutput.permissionDecision // empty'; })
+  [ -n "$got" ] || got=allow
+  if [ "$got" = "$1" ]; then report ok "$2" "$1" "$got" "{}"; else report bad "$2" "$1" "$got" "{}"; fi
+}
+gread allow "guide Read abs"             Read  "$FH/.claude/guides/korean-writing.md"
+gread allow "guide Read tilde"           Read  "~/.claude/guides/korean-writing.md"
+gread deny  "guide dir settings.json"    Read  "$FH/.claude/settings.json"
+gread deny  "guide agents md"            Read  "$FH/.claude/agents/conductor.md"
+gread deny  "guide hooks"                Read  "$FH/.claude/hooks/conductor-gate.sh"
+gread deny  "guide dotdot settings"      Read  "$FH/.claude/guides/../settings.json"
+gread deny  "guide dotdot md"            Read  "$FH/.claude/guides/../agents/conductor.md"
+gread deny  "guide subdir"               Read  "$FH/.claude/guides/sub/x.md"
+gread deny  "guide md dotdot"            Read  "$FH/.claude/guides/x.md/../../y"
+gread deny  "guide md dotdot md"         Read  "$FH/.claude/guides/x.md/../../y.md"
+gread deny  "guide non-md"               Read  "$FH/.claude/guides/x.txt"
+gread deny  "guide tilde dotdot"         Read  "~/.claude/guides/../settings.json"
+gread deny  "guide other home"           Read  "/Users/other/.claude/guides/korean-writing.md"
+gread deny  "guide Write"                Write "$FH/.claude/guides/korean-writing.md"
+gread deny  "guide Edit"                 Edit  "$FH/.claude/guides/korean-writing.md"
+gbash() {
+  local got
+  got=$(tool Bash "$(jq -n -c --arg c "$2" '{command:$c}')" \
+    | (cd "$GATE_HOME/chk" && HOME="$FH" HARNESS_ROLE=conductor /bin/bash "$GATE" 2>/dev/null) \
+    | { jq -r '.hookSpecificOutput.permissionDecision // empty'; })
+  [ -n "$got" ] || got=allow
+  if [ "$got" = "$1" ]; then report ok "$3" "$1" "$got" "{}"; else report bad "$3" "$1" "$got" "{}"; fi
+}
+gbash deny "guide cat" "cat $FH/.claude/guides/korean-writing.md" "guide Bash cat"
+gbash deny "guide head" "head -n 5 $FH/.claude/guides/korean-writing.md" "guide Bash head"
+expect_field $REASON '*~/.claude/guides/*.md*' "Read deny message names guide dir" "$(tool Read '{"file_path":"/repo/src/a.ts"}')"
+
 echo "PASS $pass / FAIL $fail"
 [ "$fail" -eq 0 ]

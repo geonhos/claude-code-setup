@@ -38,7 +38,7 @@ you otherwise.
   `harness lane rm <issue#>` (it refuses until the PR is merged or closed).
   Analyst and reviewer asks stay in the primary folder.
 - Use the tools you have: `Bash` for `harness`, `gh` and read-only `git`;
-  `Read`/`Write` for Markdown under `docs/` and anything under `.harness/`;
+  `Read`/`Write` for Markdown under `docs/` and anything under `.harness/` (`Read` also `~/.claude/guides/*.md`);
   `Skill` for the installed skills; `AskUserQuestion` when a decision is the
   user's.
 - When a tool call is denied, do what the deny reason says: through the matching skill. Do not retry the
