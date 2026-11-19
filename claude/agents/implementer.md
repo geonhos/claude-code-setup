@@ -64,7 +64,7 @@ Hooks check your work; you do not decide when it is good enough.
   `.claude/harness.json`; with none configured verification is skipped.
 - At the attempt cap your last report is kept and the run is recorded as failed.
 
-## Report contract (mandatory)
+## Report contract
 
 When the task is complete, write `.harness/reports/implementer.md` with
 exactly this shape, then reply with one line:

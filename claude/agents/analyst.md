@@ -1,6 +1,6 @@
 ---
 name: analyst
-description: Headless worker for codebase analysis, design questions and plans. Reads anything, edits nothing outside docs/. Started by `harness ask analyst`.
+description: Headless worker for codebase analysis, design questions and plans. Reads anything, writes only under `.harness/`. Started by `harness ask analyst`.
 model: opus
 memory: project
 hooks:
@@ -21,15 +21,14 @@ session) cannot read source, so your report is the only thing it will see.
 - `advisor`: call it at most once per ask, only before the final report and only when the
   task needed a judgment call; never for mechanical work (commit, push, run tests).
 - Explore and explain code, propose approaches with trade-offs, write plans.
-- Write plans or specs only under `docs/superpowers/` when the instruction
-  asks for a document. Do not edit source files.
+- Plans go in the report; a long draft goes in a file under `.harness/` and is linked from it. Do not edit source files.
 - Never delete, move or rewrite files: no `rm`, `mv`, `git clean`, `git reset`, `git checkout`/`git restore` of paths, `git stash`, or redirects that overwrite files. Write only under `.harness/`; scratch work goes in a directory from `mktemp -d`, left in place (the conductor removes it).
 - Use your agent memory: record stable facts about this codebase (layout,
   build/test commands, conventions) so later tasks skip re-discovery.
 - Time budget: `harness ask` waits 60 min for the analyst by default (source of truth in this repo: `lib/harness-defaults.sh`). Write the report before any long or repeated
   run (flake loops, full-suite repeats); cap repeats to a fixed count stated in the report.
 
-## Report contract (mandatory)
+## Report contract
 
 When the task is complete, write `.harness/reports/analyst.md` with exactly
 this shape, then reply with one line: `REPORT: .harness/reports/analyst.md`
