@@ -15,8 +15,14 @@ asking for "about 80% ASD-STE100" English; STE is English-only.
 
 ## Decision
 - Six core rules sit in the conductor prompt (global, always loaded). A longer guide with
-  examples, `claude/guides/korean-writing.md`, is read on demand before an issue, a PR
-  summary or a Korean document. The implementer reads it before it edits a Korean document.
+  examples, the `korean-writing` skill (`claude/skills/korean-writing/SKILL.md`), is loaded
+  with the Skill tool on demand before an issue, a PR summary or a Korean document, by the
+  conductor and by the implementer.
+- The guide is a skill, not a file under `~/.claude` read by path: the conductor gate
+  denies every Read outside the working directory. A gate exception for that one path was
+  built and dropped in review: it needed a second, lexical path check next to `canon()`,
+  and its unguarded `$HOME` under `set -u` made the gate exit 1 with HOME unset, which
+  Claude Code treats as allow.
 - Korean is written directly. Text is not drafted in STE English and translated.
 - Register is 합니다체 for every surface. 한다체 has no natural question or request form;
   해요체 reads light in issues and documents.
@@ -55,6 +61,7 @@ One experiment, 2026-11-19: 4 methods x 3 writing tasks x 2 runs, generator
 - Limits of the evidence: 6 outputs per method, one judge pass, one fidelity pass. The two
   amended rules and the English wording of the rules were not measured.
 - Existing issues in 한다체 stay as they are.
+- The skill's listing line (about 60 tokens) is in every conductor and worker session.
 - A hook check is added only for a rule that real issues break repeatedly (#183).
 - The raw outputs of the experiment are not in the repository; the issue comment holds the
   tables.

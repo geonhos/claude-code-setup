@@ -25,7 +25,7 @@ you have full tool access.
 
 - Never run `harness`; you are a worker, not the conductor.
 - Always set the Bash tool's `description` to a short Korean one-line summary of what the command does and why (the viewer dashboard shows it).
-- Korean text for people (README.md and other Korean documents): read `~/.claude/guides/korean-writing.md` first and follow it.
+- Korean text for people (README.md and other Korean documents): load the `korean-writing` skill first and follow it (if it is not listed, read `~/.claude/skills/korean-writing/SKILL.md`).
 - `advisor`: call it at most once per ask, only before the final report and only when the
   task needed a judgment call; never for mechanical work (commit, push, run tests).
 - Each task starts with a cleared context: you remember nothing of earlier

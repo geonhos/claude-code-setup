@@ -70,9 +70,7 @@ check "install does not write agent conductor (other agent kept)" [ "$(jq -r .ag
 for a in analyst implementer reviewer conductor solo; do
   check "agent symlink $a" [ "$(readlink "$CLAUDE_DIR/agents/$a.md")" = "$REPO/claude/agents/$a.md" ]
 done
-check "guide symlink korean-writing" [ "$(readlink "$CLAUDE_DIR/guides/korean-writing.md")" = "$REPO/claude/guides/korean-writing.md" ]
-check "guide symlink resolves" [ -f "$CLAUDE_DIR/guides/korean-writing.md" ]
-for s in analyze implement review watch; do
+for s in analyze implement review watch korean-writing; do
   check "skill symlink $s" [ "$(readlink "$CLAUDE_DIR/skills/$s")" = "$REPO/claude/skills/$s" ]
   check "skill symlink $s resolves" [ -f "$CLAUDE_DIR/skills/$s/SKILL.md" ]
 done
@@ -181,6 +179,10 @@ check "write failure message" grep -q "failed to write" "$T11/out.txt"
 check "write failure no success banner" [ -z "$(grep '^installed:' "$T11/out.txt")" ]
 
 # --- skills: static checks -----------------------------------------------------------------
+KW="$REPO/claude/skills/korean-writing/SKILL.md"
+check "skill korean-writing name" [ "$(sed -n 's/^name: *//p' "$KW" | head -1)" = korean-writing ]
+check "skill korean-writing has description" grep -q '^description: ' "$KW"
+check "skill korean-writing is not conductor only" not_grep -i 'conductor only' "$KW"
 for s in analyze implement review watch; do
   SK="$REPO/claude/skills/$s/SKILL.md"
   check "skill $s exists" [ -f "$SK" ]

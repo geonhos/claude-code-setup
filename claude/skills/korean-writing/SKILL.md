@@ -1,10 +1,16 @@
+---
+name: korean-writing
+description: Korean writing guide for text people read. Load before writing an issue, a PR summary for the user or a Korean document (README.md); not needed for code or English text.
+---
+
 # Korean writing guide
 
-Read this before you write an issue, a PR summary for the user or a Korean document
-(README.md and the like). The six core rules are in the conductor prompt; this file adds
-the detail and the examples. Sources: NIKL public-language guides (2014, 2019), Kakao
-Developers documentation guideline, Kakao Enterprise "테크니컬 라이팅 10계명", Microsoft
-Korean style guide, MOLEG 「알기 쉬운 법령 정비기준」; see wiki decision 0015.
+Use this before you write an issue, a PR summary for the user or a Korean document
+(README.md and the like). The six core rules are in the conductor prompt; this skill adds
+the detail and the examples. It applies to the conductor and to workers alike. Sources:
+NIKL public-language guides (2014, 2019), Kakao Developers documentation guideline, Kakao
+Enterprise "테크니컬 라이팅 10계명", Microsoft Korean style guide, MOLEG 「알기 쉬운 법령
+정비기준」; see wiki decision 0015.
 
 ## Register
 - 합니다체 everywhere: chat, questions, issues, PR summaries, documents. No 해요체, no 한다체.

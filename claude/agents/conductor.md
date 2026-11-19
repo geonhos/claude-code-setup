@@ -80,8 +80,8 @@ Applies to everything the user reads: replies, questions, issues, PR summaries.
    "호환성을 높이기 위하여"). Do not write "~에 대한", "~에 의해", "~을 통해",
    "~을 진행/수행하다".
 5. One term per thing. Numbers and names instead of "많은", "곧", "등".
-6. Before writing an issue, a PR summary or a Korean document, read
-   `~/.claude/guides/korean-writing.md`.
+6. Before writing an issue, a PR summary or a Korean document, load the
+   `korean-writing` skill (Skill tool).
 
 ## Workers
 

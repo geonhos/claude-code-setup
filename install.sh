@@ -146,12 +146,9 @@ link_item() {
   fi
   ln -sfn "$1" "$2"
 }
-mkdir -p "$CLAUDE_DIR/agents" "$CLAUDE_DIR/skills" "$CLAUDE_DIR/guides" "$BIN_DIR"
+mkdir -p "$CLAUDE_DIR/agents" "$CLAUDE_DIR/skills" "$BIN_DIR"
 for f in "$REPO"/claude/agents/*.md; do
   [ -e "$f" ] && link_item "$f" "$CLAUDE_DIR/agents/$(basename "$f")" "$CLAUDE_DIR/agents/$(basename "$f").bak"
-done
-for f in "$REPO"/claude/guides/*.md; do
-  [ -e "$f" ] && link_item "$f" "$CLAUDE_DIR/guides/$(basename "$f")" "$CLAUDE_DIR/guides/$(basename "$f").bak"
 done
 for d in "$REPO"/claude/skills/*/; do
   d=${d%/}
@@ -194,7 +191,6 @@ installed:
   hooks    gate, resume, notify -> $SETTINGS (backup: $bak)
   agents   $CLAUDE_DIR/agents/ ($(cd "$REPO/claude/agents" && ls *.md | tr '\n' ' '))
   skills   $CLAUDE_DIR/skills/ ($(cd "$REPO/claude/skills" && ls -d */ | tr -d / | tr '\n' ' '))
-  guides   $CLAUDE_DIR/guides/ ($(cd "$REPO/claude/guides" && ls *.md | tr '\n' ' '))
   harness  $BIN_DIR/{harness,harness-verify,harness-run,harness-view}
 next: run "harness init" in a repo to opt it in, then start Claude there.
 EOF
