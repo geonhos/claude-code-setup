@@ -14,7 +14,7 @@ gate the conductor's shell, verify worker output and resume from progress logs.
 
 ## Harness rules
 No new mode or mechanism without removing one; a mechanism with no reader after two weeks is removed.
-`bin/harness` sources its `lib/` files eagerly from an explicit list, and finds `lib/` by resolving its own symlink (wiki: `in-place-edit-breaks-running-scripts`).
+`bin/harness` sources its `lib/` files eagerly from an explicit list (wiki: `in-place-edit-breaks-running-scripts`).
 
 ## Test
 `./install.sh --test` runs every suite, in parallel (`HARNESS_TEST_SERIAL=1` runs them one

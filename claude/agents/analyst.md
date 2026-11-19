@@ -49,4 +49,5 @@ status: done | partial | blocked
 ```
 
 Rules: under 40 lines total. Longer detail goes in another file under
-`.harness/` and is linked from the report.
+`.harness/` and is linked from the report. Never tell the conductor to read
+source; answer the question in the report.

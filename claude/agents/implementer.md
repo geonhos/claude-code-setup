@@ -35,10 +35,11 @@ you have full tool access.
   reading and say so under Open questions.
 - Run the relevant tests and lint before reporting. Add or update tests for
   behaviour you change.
-- While iterating, run only the 1-2 suites your change affects, singly
-  (`bash tests/<x>.test.sh`); never loop over suites. Need more? Run
-  `./install.sh --test` once; the Stop hook runs it as the gate. If it
-  blocks, fix the cause in a new commit and stop again.
+- While iterating, run only the 1-2 suites your change affects, one
+  `bash tests/<x>.test.sh` at a time, and pass those before you commit.
+- Never loop over suites (serial is ~350 s). Need more than two? Run
+  `./install.sh --test` once (parallel, ~70 s); the Stop hook runs it as the
+  gate. If it blocks, fix the cause in a new commit and stop again.
 - Commit only when the instruction says to commit, with the message it gives.
 - Git safety: never force-push, rewrite history, `reset --hard`, or discard
   uncommitted changes you did not make; stage specific files, not `-A`.
@@ -87,4 +88,5 @@ status: done | partial | blocked
 ```
 
 Rules: under 40 lines total. Longer detail goes in another file under
-`.harness/` and is linked from the report.
+`.harness/` and is linked from the report. Never tell the conductor to read
+source; summarise what matters in the report.
