@@ -42,6 +42,26 @@ claude                  # 평소처럼 시작한다
 - init하지 않은 저장소에서는 게이트와 훅이 아무것도 하지 않고 `harness ask`는 거부된다.
 - 되돌리기: `.harness/asks/`를 지우고, `agent` 키를 지운다. 세션 하나만 끄려면 `HARNESS_ROLE=worker claude --agent solo`.
 
+## 최신화
+
+harness 체크아웃에서 한 번 실행한다.
+
+```bash
+cd ~/workspace/claude-code-setup
+git pull --ff-only
+./install.sh
+```
+
+agents, skills, bin, 훅은 이 체크아웃에서 심링크되고 기본값은 코드에 있으므로, 이 한 번의 갱신이 모든 저장소에 반영된다. `./install.sh`는 새로 추가된 파일과 settings 병합에 필요하며 반복 실행해도 안전하다.
+
+- 새 저장소는 `harness init`을 실행한다(위 "레포에 적용" 참고).
+- 기존 저장소는 `harness init`을 다시 실행하지 않아도 된다. 다시 실행해도 안전하다. 기존 `.harness/config.json`, 진행 기록, 리포트, 로그는 건드리지 않고, `agent`가 이미 `conductor`면 settings에 아무것도 쓰지 않는다.
+- 다시 실행하면 도움이 되는 경우는 둘이며 필수는 아니다.
+  - 2026-11-13 이전에 init한 저장소: git 제외 목록에 `.harness/`만 있다. 다시 실행하면 빠진 항목(`.claude/settings.local.json`, `.claude/settings.local.json.bak`, `.claude/agent-memory/`, `docs/superpowers/`)이 추가된다. 없으면 `git status`에 나타날 수 있다.
+  - settings 파일에 `"agent": "conductor"`가 없는 경우.
+- `harness lane`이 만든 작업 폴더는 할 일이 없다. 주 폴더의 제외 목록을 공유한다.
+- 열려 있는 conductor 세션은 시작할 때의 프롬프트를 유지한다. 갱신 후 `claude`를 다시 시작한다. worker가 도는 동안에는 갱신하지 않는다(`harness status`로 확인). 이유는 [실행 중 스크립트를 제자리에서 고치면 깨진다](docs/wiki/troubleshooting/in-place-edit-breaks-running-scripts.md)에 있다.
+
 ## 작업 흐름
 
 1. 사용자가 대화로 요청하면 conductor가 GitHub issue를 만들거나 연결한다.
