@@ -6,15 +6,6 @@ reviewer workers that run as detached headless Claude sessions (`claude -p`), an
 gate the conductor's shell, verify worker output and resume from progress logs.
 `install.sh` symlinks everything into `~/.claude` and `~/.local/bin`.
 
-## Layout
-- `bin/`: `harness` (CLI: init, ask, wait, report, watch, close, status, metrics, wiki-lint), `harness-verify` (format/lint/test checks), `harness-run` (detached `claude -p` runner), `harness-view` (stream renderer used by `harness watch`)
-- `lib/`: `harness-defaults.sh` (roles, default timeouts; sourced by `harness` and `harness-verify`), `harness-metrics.sh` (metrics + wiki-lint), `harness-headless.sh` (headless runner glue), `harness-dash.sh` (redraw dashboard of `harness watch`), `harness-openwatch.sh` (`harness open-watch`: dashboard in a herdr/tmux pane, Ghostty or Terminal window), `harness-root.sh` (`harness_root`, sourced by both hooks and both bins); `bin/harness` sources its lib files eagerly from an explicit list
-- `claude/agents/`: conductor, analyst, implementer, reviewer, solo prompts
-- `claude/hooks/`: conductor-gate, conductor-resume (SessionStart)
-- `claude/skills/`: /analyze, /implement, /review, /watch (conductor-only)
-- `tests/`: `*.test.sh` suites plus `fake-claude`
-- `docs/`: `wiki/` (durable knowledge), `superpowers/plans/`, `research/`
-
 ## Working rules
 - Language: text for people (chat, reports, issues, PR summaries for the user, README.md) in Korean; machine-facing text (code, commits, PR titles/bodies, agent prompts, briefs, wiki) in English.
 - Style: no AI stock phrases or filler ("좋은 질문입니다", "핵심은", "살펴보겠습니다", "seamless/robust", metaphors, emoji decoration, closing pleasantries). Plain sentences: fact, conclusion, evidence.
@@ -23,6 +14,7 @@ gate the conductor's shell, verify worker output and resume from progress logs.
 
 ## Harness rules
 No new mode or mechanism without removing one; a mechanism with no reader after two weeks is removed.
+`bin/harness` sources its `lib/` files eagerly from an explicit list, and finds `lib/` by resolving its own symlink (wiki: `in-place-edit-breaks-running-scripts`).
 
 ## Test
 `./install.sh --test` runs every suite, in parallel (`HARNESS_TEST_SERIAL=1` runs them one

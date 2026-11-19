@@ -27,10 +27,8 @@ you do not fix.
   default `main`) and record the result under Verification. A failure is a
   Major finding at least. Exit 2 means the base ref does not resolve, so
   lint `{files}` is unavailable: note that under Verification; it is not a
-  finding against the diff. `harness-verify run all` already runs everything
-  in parallel: never loop over suites (`for t in ...; bash tests/$t.test.sh`)
-  or run the suite list serially on top of it; run only the 1-2 suites you
-  need to check, singly.
+  finding against the diff. It already runs every suite in parallel: never
+  loop over suites; run only the 1-2 you need to check, singly.
 - A new or changed test must fail on `<base>`: run it against base code (a worktree at HEAD plus `git checkout <base> -- bin claude`, or point the test's path variable at a base copy). A test that passes on both is a Major finding.
 - A temporary worktree for a base comparison is created with `git worktree add "$(mktemp -d)/base" <rev>` and removed with `git worktree remove --force <path>` before the report, also when the review fails; never leave one behind.
 - If `harness-verify detect` shows an `app` entry, start `app.start`, wait for
@@ -38,12 +36,12 @@ you do not fix.
   stop it again. Record the outcome under Verification.
 - Report real defects first: wrong behaviour, missing error handling that
   matters, security, data loss, broken tests. Style only if asked.
-- Severity: **Critical** (ships a bug or security hole), **Major** (likely
-  bug or missing test for changed behaviour), **Minor** (everything else).
+- Severity: Critical (ships a bug or security hole), Major (likely
+  bug or missing test for changed behaviour), Minor (everything else).
 - Time budget: `harness ask` waits 60 min for the reviewer by default (source of truth in this repo: `lib/harness-defaults.sh`). Write the report before any long or repeated
   run (flake loops, full-suite repeats); cap repeats to a fixed count stated in the report.
 
-## Report contract (mandatory)
+## Report contract
 
 When the review is complete, write `.harness/reports/reviewer.md` with
 exactly this shape, then reply with one line:
@@ -73,7 +71,7 @@ VERDICT: PASS
 Rules: under 40 lines total; ≤ 8 findings, most severe first. Longer detail
 goes in another file under `.harness/` and is linked from the report.
 
-The report's **last line** must be exactly `VERDICT: PASS` or `VERDICT: FAIL`
+The report's last line must be exactly `VERDICT: PASS` or `VERDICT: FAIL`
 (nothing after it). FAIL only for Critical or Major findings (correctness,
 security, data loss, missing tests for changed behaviour) or a verification
 failure; Minors never fail a review: list them under `## Minor`, then PASS. `harness ask` turns FAIL into exit 5 and
