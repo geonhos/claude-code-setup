@@ -14,7 +14,7 @@ verified_by: tests/harness.test.sh, tests/lane.test.sh
 - D2: no opt-out flag; every init run re-adds any missing rule.
 - D3: the set, in order: `Bash(git reset *--hard*)`, `Bash(git clean *)`, `Bash(git push *--force*)`, `Bash(git push -f*)`, `Bash(git push * -f*)`, `Read(.env)`, `Read(.env.*)`, `Read(~/.ssh/**)`, `Read(~/.aws/**)`. One constant, `HARNESS_DENY_RULES` in `bin/harness`.
 - D4: the command names live only in the rules; the implementer prompt says "never rewrite history or discard uncommitted changes you did not make". The analyst prompt keeps its no-delete line (rm/mv/stash are covered by no rule).
-- D5: `require_checkout` (once per ask, one jq call) prints one stderr warning when the local file lacks any rule (missing file, no `permissions.deny`, partial set). The ask proceeds.
+- D5: `require_checkout` (once per ask, one jq call) prints one stderr warning naming the checkout path when the local file lacks any rule (missing file, no `permissions.deny`, partial set). The ask proceeds.
 - D6: one `.bak`, never overwritten; the added rules are printed. `settings_merge` replaced `settings_set_agent` (one read, one write only on change).
 
 **Why local only.** A committed rule would bind teammates who never ran init and would surprise them; a user-scope rule would reach every project. Local-only keeps the rule next to the opt-in that makes the checkout a harness checkout. A lane runs `cmd_init` in its worktree, so it gets its own copy.
@@ -28,6 +28,6 @@ verified_by: tests/harness.test.sh, tests/lane.test.sh
 - `Read(.env.*)` also blocks editing `.env.example` and `.env.sample`; a deny cannot be overridden by an allow.
 - One matching subcommand denies a whole `&&` chain.
 - Checkouts initialised before #165 have no rules until `harness init` runs again; `harness ask` warns meanwhile.
-- A denied call reaches the conductor through the existing exit.json `denied[]` path (exit 2 without a report).
+- A denied call is counted in exit.json `denials`, but `denied[]` is partial: with both a Bash and a Read denial in one run it lists only the Bash one (`bin/harness-run:144-149`, pre-existing, separate issue).
 - Rules apply to the conductor's own Bash and to `--agent solo` too.
-- A settings file that is not a JSON object, or whose `permissions.deny` is not an array, is left untouched with a note (no agent key either).
+- A settings file init must write that is unmergeable (invalid or empty JSON, top level not an object, `permissions` not an object, `permissions.deny` not an array) makes init fail (exit 1): checked first, nothing created, file untouched, no `.bak`. A different existing `agent` value is not an error. `harness lane` reports "harness init failed in <dir>" and carries on.

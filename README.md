@@ -38,11 +38,11 @@ claude                  # 평소처럼 시작한다
 ```
 
 - 기본은 `.claude/settings.local.json`(사용자별, 추적 안 됨)에 `"agent": "conductor"`를 쓴다. `--shared`는 `agent` 키만 커밋되는 `.claude/settings.json`에 쓴다. `--no-agent`는 `agent` 키를 쓰지 않는다.
-- worker deny 규칙 아홉 개(`git reset *--hard*`, `git clean *`, force push 세 형태, `.env`·`.env.*`·`~/.ssh/**`·`~/.aws/**` 읽기 차단. 목록은 [docs/reference.md](docs/reference.md))를 옵션과 상관없이 항상 `.claude/settings.local.json`에 추가한다. init을 실행한 체크아웃에만 생기고 끌 수 없다. 기존 `permissions` 항목은 유지하고 빠진 규칙만 덧붙인다.
+- worker deny 규칙 아홉 개(`git reset *--hard*`, `git clean *`, force push 세 형태, `.env`·`.env.*`·`~/.ssh/**`·`~/.aws/**` 읽기 차단. 목록은 [docs/reference.md](docs/reference.md))를 옵션과 상관없이 항상 `.claude/settings.local.json`에 추가한다. init을 실행한 체크아웃에만 생기고 끌 수 없다. 기존 `permissions` 항목은 유지하고 빠진 규칙만 덧붙인다. 쓸 파일이 JSON이 아니거나 비어 있거나 최상위·`permissions`가 객체가 아니거나 `permissions.deny`가 배열이 아니면 init은 아무것도 만들지 않고 파일을 그대로 둔 채 이유를 stderr에 출력하고 실패한다.
 - 이 규칙은 안전벨트이지 샌드박스가 아니다. `git -C`, `sh -c`, `+refspec` 푸시는 걸리지 않고 `git restore`·`git checkout -- <file>`도 막지 않는다. `Read(.env.*)`는 `.env.example` 편집도 막는다. `&&`로 이은 명령은 한 부분만 걸려도 통째로 거부된다.
 - `.harness/`(리포트, 로그, 진행 기록, 설정)는 git에 들어가지 않는다. `harness init`이 git 제외 목록에 추가한다.
 - init하지 않은 저장소에서는 게이트와 훅이 아무것도 하지 않고 `harness ask`는 거부된다.
-- 되돌리기: `.harness/asks/`를 지우고, `agent` 키를 지운다. 세션 하나만 끄려면 `HARNESS_ROLE=worker claude --agent solo`.
+- 되돌리기: `.harness/asks/`를 지우고, `agent` 키를 지운다. deny 규칙 아홉 개는 `.claude/settings.local.json`에 남으므로 직접 지운다. 이 규칙은 그 체크아웃에서 도는 모든 Claude Code 세션(conductor와 `--agent solo` 포함)에 적용된다. 세션 하나만 끄려면 `HARNESS_ROLE=worker claude --agent solo`.
 
 ## 최신화
 
@@ -62,7 +62,7 @@ agents, skills, bin, 훅은 이 체크아웃에서 심링크되고 기본값은 
   - 2026-11-13 이전에 init한 저장소: git 제외 목록에 `.harness/`만 있다. 다시 실행하면 빠진 항목(`.claude/settings.local.json`, `.claude/settings.local.json.bak`, `.claude/agent-memory/`, `docs/superpowers/`)이 추가된다. 없으면 `git status`에 나타날 수 있다.
   - settings 파일에 `"agent": "conductor"`가 없는 경우.
   - #165 이전에 init한 저장소: deny 규칙이 없다. 다시 실행하면 추가되고, 그 전에는 `harness ask`가 경고한다.
-- `harness lane`이 만든 작업 폴더는 할 일이 없다. 주 폴더의 제외 목록을 공유한다.
+- `harness lane`이 만든 작업 폴더는 주 폴더의 제외 목록을 공유하고 새로 만들 때 `harness init`이 함께 돈다. #165 이전에 만든 작업 폴더는 `harness -C <lane> ask`가 그 폴더 자신의 `settings.local.json`을 확인하므로 그 폴더에서 `harness init`을 실행할 때까지 경고한다(주 폴더에서 다시 실행해도 소용없다).
 - 열려 있는 conductor 세션은 시작할 때의 프롬프트를 유지한다. 갱신 후 `claude`를 다시 시작한다. worker가 도는 동안에는 갱신하지 않는다(`harness status`로 확인). 이유는 [실행 중 스크립트를 제자리에서 고치면 깨진다](docs/wiki/troubleshooting/in-place-edit-breaks-running-scripts.md)에 있다.
 
 ## 작업 흐름

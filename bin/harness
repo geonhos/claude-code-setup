@@ -542,10 +542,11 @@ require_checkout() {
   local root
   root=$(harness_root "$PWD") || die "not a harness checkout (no .harness/asks); run 'harness init' here first"
   [ "$root" = "$(pwd -P)" ] || cd "$root" || die "cannot enter $root"
+  root=$(pwd -P)
   # one jq call: warn (never refuse) when this checkout's local settings lack a worker deny rule
   jq -e --argjson d "$HARNESS_DENY_RULES" '($d - (.permissions.deny // [])) | length == 0' \
     .claude/settings.local.json >/dev/null 2>&1 \
-    || echo "harness: warning: .claude/settings.local.json lacks the worker deny rules; run 'harness init' again in this checkout" >&2
+    || echo "harness: warning: $root/.claude/settings.local.json lacks the worker deny rules; run 'harness init' again in $root" >&2
   return 0
 }
 
@@ -572,11 +573,26 @@ settings_commit() {
   cat "$tmp" > "$f"
 }
 
+# settings_problem FILE WANT_DENY — print what makes an existing FILE unmergeable (one distinct message
+# per case, with the fix) and return 0; return 1 when FILE is absent or mergeable. WANT_DENY=1 also
+# checks .permissions (object) and .permissions.deny (array); null counts as absent.
+settings_problem() {
+  local f=$1 wd=$2 fix="fix or remove the file, then run 'harness init' again"
+  [ -e "$f" ] || return 1
+  if [ -z "$(tr -d '[:space:]' < "$f" 2>/dev/null)" ]; then echo "$f is empty (not valid JSON); $fix"
+  elif ! jq empty "$f" >/dev/null 2>&1; then echo "$f is not valid JSON; $fix"
+  elif ! jq -e 'type == "object"' "$f" >/dev/null 2>&1; then echo "$f has a top level that is not an object; $fix"
+  elif [ "$wd" = 1 ] && ! jq -e '(.permissions | type) as $t | $t == "null" or $t == "object"' "$f" >/dev/null 2>&1; then
+    echo "$f has a permissions that is not an object; make it an object (or remove it), then run 'harness init' again"
+  elif [ "$wd" = 1 ] && ! jq -e '(.permissions.deny | type) as $t | $t == "null" or $t == "array"' "$f" >/dev/null 2>&1; then
+    echo "$f has a permissions.deny that is not an array; make it an array (or remove it), then run 'harness init' again"
+  else return 1; fi
+}
+
 # settings_merge FILE WANT_AGENT WANT_DENY — one pass over FILE: set "agent": "conductor" (WANT_AGENT=1)
 # and append the missing HARNESS_DENY_RULES to .permissions.deny (WANT_DENY=1), never clobbering other
 # keys. The file is read once, written only when its content changes, backed up once (.bak, never
-# overwritten). An existing different agent is kept and noted; a non-object file or a non-array
-# .permissions.deny leaves the whole file alone, with a note.
+# overwritten). An existing different agent is kept and noted. FILE must pass settings_problem (cmd_init checks first).
 settings_merge() {
   local f=$1 wa=$2 wd=$3 cur tmp n msgs=""
   if [ ! -e "$f" ]; then
@@ -586,14 +602,6 @@ settings_merge() {
     [ "$wa" != 1 ] || msgs="agent: conductor"
     [ "$wd" != 1 ] || msgs="${msgs:+$msgs; }deny rules: $(jq -r 'join(", ")' <<<"$HARNESS_DENY_RULES")"
     echo "created $f ($msgs)"
-    return 0
-  fi
-  if ! jq -e 'type == "object"' "$f" >/dev/null 2>&1; then
-    echo "note: $f is not a JSON object; left alone (add \"agent\": \"conductor\" and the permissions.deny rules yourself)" >&2
-    return 0
-  fi
-  if [ "$wd" = 1 ] && ! jq -e '(.permissions == null or (.permissions | type) == "object") and ((.permissions.deny // []) | type) == "array"' "$f" >/dev/null 2>&1; then
-    echo "note: $f has a permissions.deny that is not an array; left alone (add the worker deny rules and the agent key yourself)" >&2
     return 0
   fi
   if [ "$wa" = 1 ]; then
@@ -625,7 +633,8 @@ settings_merge() {
 # (per user, untracked; --shared: .claude/settings.json, committed, never excluded; --no-agent skips
 # the key), the worker deny rules (HARNESS_DENY_RULES) in .claude/settings.local.json always, and every
 # harness-made path (.harness/, settings.local.json(.bak), agent-memory, docs/superpowers)
-# in .git/info/exclude when git does not already ignore it. Idempotent.
+# in .git/info/exclude when git does not already ignore it. Idempotent. Fails (exit 1, nothing created or
+# changed) when a settings file it must write is unmergeable (settings_problem).
 cmd_init() {
   [ "${HARNESS_ROLE:-}" != worker ] || die "harness init is for the conductor; a worker (HARNESS_ROLE=worker) does not set up checkouts"
   local agent=1 a p top ex target=.claude/settings.local.json
@@ -634,6 +643,19 @@ cmd_init() {
   done
   top=$(git rev-parse --show-toplevel 2>/dev/null) || top=$PWD
   cd "$top" || die "cannot enter $top"
+  # check every settings file init must write before creating anything: an unmergeable one fails init
+  local bad="" m
+  if [ "$target" = .claude/settings.local.json ]; then m=$(settings_problem "$target" 1) && bad=$m
+  else
+    if [ "$agent" = 1 ] && m=$(settings_problem "$target" 0); then bad=$m; fi
+    if m=$(settings_problem .claude/settings.local.json 1); then bad="${bad:+$bad
+}$m"; fi
+  fi
+  if [ -n "$bad" ]; then
+    echo "harness init: $top: nothing changed" >&2
+    printf 'harness init: %s\n' "$bad" >&2
+    return 1
+  fi
   echo "harness init: $top"
   if [ -d .harness/asks ]; then echo ".harness/asks exists"
   else mkdir -p .harness/asks || die "cannot create .harness/asks"; echo "created .harness/asks"; fi

@@ -25,10 +25,10 @@ harness를 쓰려는 저장소에서 한 번 실행한다. `.harness/asks/`(체�
 - `--shared`: `agent` 키를 커밋되는 `.claude/settings.json`에 쓴다(deny 규칙은 아래대로 로컬에 남는다). 이미 다른 `agent`가 있으면 그대로 두고 알린다. 기존 파일은 `.bak`을 한 번 남기고 심링크는 유지한다.
 - `--no-agent`: `agent` 키를 쓰지 않는다. deny 규칙은 그래도 쓴다.
 - worker deny 규칙(결정 0014, #165). 항상 `.claude/settings.local.json`의 `permissions.deny`에 쓰고 `--shared`여도 커밋하지 않는다. 끄는 플래그는 없고 init을 실행할 때마다 빠진 규칙을 다시 채운다. 순서대로: `Bash(git reset *--hard*)`, `Bash(git clean *)`, `Bash(git push *--force*)`, `Bash(git push -f*)`, `Bash(git push * -f*)`, `Read(.env)`, `Read(.env.*)`, `Read(~/.ssh/**)`, `Read(~/.aws/**)`. `rm -rf` 규칙은 `/tmp` 정리를 막으므로 없다. 상수는 `bin/harness`의 `HARNESS_DENY_RULES` 하나다.
-- 병합: 기존 `permissions.deny`·`allow` 항목은 유지하고 빠진 규칙만 덧붙인다. 바꿀 것이 없으면 쓰지 않고 "deny rules present"만 출력한다. 쓸 때는 `.bak`을 한 번만 남긴다. JSON 객체가 아닌 파일이나 배열이 아닌 `permissions.deny`는 건드리지 않고 알린다.
-- `harness ask`는 `.claude/settings.local.json`에 규칙이 하나라도 없으면 stderr에 한 줄 경고하고 계속 진행한다(`harness init`을 다시 실행하라는 안내). 규칙은 접두사 매칭이라 우회할 수 있다(`git -C`, `sh -c`, `+refspec`).
+- 병합: 기존 `permissions.deny`·`allow` 항목은 유지하고 빠진 규칙만 덧붙인다. 바꿀 것이 없으면 쓰지 않고 "deny rules present"만 출력한다. 쓸 때는 `.bak`을 한 번만 남긴다. 쓸 파일이 병합 불가(JSON이 아님, 비어 있음, 최상위가 객체가 아님, `permissions`가 객체가 아님, `permissions.deny`가 배열이 아님)이면 init은 아무것도 만들지 않고 파일을 그대로 둔 채(`.bak` 없음) 파일 이름과 원인을 stderr에 출력하고 exit 1로 실패한다. `--shared`면 두 파일을 모두 먼저 검사한다. 다른 `agent` 값은 오류가 아니다(그대로 두고 알린다).
+- `harness ask`는 `.claude/settings.local.json`에 규칙이 하나라도 없으면 stderr에 한 줄 경고하고 계속 진행한다(`harness init`을 다시 실행하라는 안내, 경고에 체크아웃 경로가 들어간다. `-C <lane>`이면 그 폴더의 파일을 본다). 규칙은 접두사 매칭이라 우회할 수 있다(`git -C`, `sh -c`, `+refspec`).
 - init하지 않은 저장소에서는 게이트·resume 훅이 아무것도 하지 않고 `harness ask`는 거부된다.
-- 되돌리기: `.harness/asks/`를 지우고, `agent` 키를 만든 settings 파일에서 지운다. 세션 하나만 끄려면 `HARNESS_ROLE=worker claude --agent solo`.
+- 되돌리기: `.harness/asks/`를 지우고, `agent` 키를 만든 settings 파일에서 지운다. deny 규칙 아홉 개는 `.claude/settings.local.json`에 남으므로 직접 지운다. 이 규칙은 그 체크아웃의 모든 Claude Code 세션(conductor와 `--agent solo` 포함)에 적용된다. 세션 하나만 끄려면 `HARNESS_ROLE=worker claude --agent solo`.
 
 ## conductor 루프
 
