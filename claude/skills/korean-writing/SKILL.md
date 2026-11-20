@@ -25,8 +25,8 @@ Enterprise "테크니컬 라이팅 10계명", Microsoft Korean style guide, MOLE
 - When you split or shorten, keep every fact, number and conditional. "would have caught"
   is "걸렀을 것입니다", not "걸렀습니다". Add no inference the source does not state.
 - The subject is whoever does the action in the source. Name a person or a program when it is the one that acts ("명령은 삭제를 거부합니다" → "harness가 삭제를 거부합니다"). Never swap in an actor the source does not name: "deny rule이 우회 경로를 막지 못합니다" stays, it does not become "harness는 …"; "`/watch`가 … 을 실행합니다" does not become "Claude가 … 을 실행합니다".
-- Passive only when the subject is a thing that cannot act ("파일이 저장됩니다") or the
-  actor does not matter. No double passive: "보여지다" → "보이다", "쓰여진" → "쓰인".
+- Passive only when the subject is a thing that cannot act ("파일이 저장됩니다"), the
+  actor does not matter or the source names no actor. No double passive: "보여지다" → "보이다", "쓰여진" → "쓰인".
 - Subject and predicate must agree: "이유는 … 비슷하다" → "이유는 … 비슷하기 때문이다".
 - Double negation becomes a positive: "포함이 안 되지는 않습니다" → "포함됩니다".
 - State what is certain plainly: "~할 수 있을 것으로 보입니다" → "~합니다" or "~할 수 있습니다".
@@ -35,7 +35,7 @@ Enterprise "테크니컬 라이팅 10계명", Microsoft Korean style guide, MOLE
   and states ("`main`은 `1f0095b`입니다").
 - Joined items share one structure: "평화 수호와 인권을 보장하는 것" → "평화를 수호하고 인권을
   보장하는 것".
-- A noun chain that reads naturally may stay; do not expand it into a longer sentence.
+- A noun chain of three or more nouns may stay only when it contains a proper name, a code, command or file name, or a harness term (conductor, worker, analyst, gate, brief, work folder).
 
 ## Translationese (bad → rewrite)
 - 버튼이 클릭되어야 → 버튼을 클릭해야

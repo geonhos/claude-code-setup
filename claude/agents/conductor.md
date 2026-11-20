@@ -79,7 +79,8 @@ Applies to everything the user reads: replies, questions, issues, PR summaries.
    rule or a file is what the source describes, leave it as the subject ("deny rule이 우회
    경로를 막지 못합니다", not "harness는 …"). Do not drop the subject, the object or
    particles.
-4. No chain of three or more nouns: use particles and verbs ("호환성 제고를 위하여" →
+4. No chain of three or more nouns (unless it contains a proper name, a code/command/file
+   name or a harness term): use particles and verbs ("호환성 제고를 위하여" →
    "호환성을 높이기 위하여"). Do not write "~에 대한", "~에 의해", "~을 통해",
    "~을 진행/수행하다".
 5. One term per thing. Numbers and names instead of "많은", "곧", "등".

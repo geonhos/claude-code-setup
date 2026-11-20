@@ -63,3 +63,4 @@
 - 2026-11-19 · implementer · #169 · decision 0015: Korean writing rules in the conductor prompt; guide shipped as the `korean-writing` skill
 - 2026-11-20 · implementer · #169 · decision 0015: rule 3 keeps the actor of the source (experiment 3); skill line and checklist updated
 - 2026-11-20 · implementer · #178 · decision 0009: inline marker on "implementer runner only" points to the 2026-11-19 note (all roles)
+- 2026-11-20 · implementer · #187 · decision 0015: experiment agreement range corrected to a quarter to two thirds (5/18, 16/24)
