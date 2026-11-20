@@ -4,7 +4,7 @@ Claude Code의 메인 세션을 **conductor(지휘 세션)** 로 쓰는 사용�
 
 ## 무엇인가
 
-- **conductor**: 사용자와 대화하고 issue·PR을 다룬다. 게이트(PreToolUse 훅)가 소스 읽기·수정을 막아서 워커 리포트만 읽을 수 있습니다.
+- **conductor**: 사용자와 대화하고 issue·PR을 다룹니다. 게이트(PreToolUse 훅)가 소스 읽기·수정을 막아서 워커 리포트만 읽을 수 있습니다.
 - **워커**: `analyst`(조사·계획, opus), `implementer`(구현·테스트·커밋, sonnet), `reviewer`(diff 검토, opus). 각각 detached headless 세션(`claude -p`)이고, `/analyze` `/implement` `/review` 스킬이 `harness ask`로 띄웁니다.
 - **검증**: implementer가 끝내려 하면 Stop 훅이 `harness-verify`(format, lint, test)를 돌리고, 실패하면 되돌려 보냅니다. reviewer는 리포트를 `VERDICT: PASS|FAIL`로 끝냅니다.
 - **이유**: conductor 컨텍스트에 소스가 올라가지 않아 긴 세션에서도 토큰과 맥락이 유지되고, 구현한 쪽과 검토하는 쪽이 다른 세션이라 리뷰가 독립적입니다.
