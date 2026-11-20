@@ -579,7 +579,9 @@ settings_commit() {
 settings_problem() {
   local f=$1 wd=$2 fix="fix or remove the file, then run 'harness init' again"
   [ -e "$f" ] || return 1
-  if [ -z "$(tr -d '[:space:]' < "$f" 2>/dev/null)" ]; then echo "$f is empty (not valid JSON); $fix"
+  if [ ! -f "$f" ]; then echo "$f is not a regular file; $fix"
+  elif [ ! -r "$f" ]; then echo "$f is not readable; $fix"
+  elif [ -z "$(tr -d '[:space:]' < "$f" 2>/dev/null)" ]; then echo "$f is empty (not valid JSON); $fix"
   elif ! jq empty "$f" >/dev/null 2>&1; then echo "$f is not valid JSON; $fix"
   elif ! jq -e 'type == "object"' "$f" >/dev/null 2>&1; then echo "$f has a top level that is not an object; $fix"
   elif [ "$wd" = 1 ] && ! jq -e '(.permissions | type) as $t | $t == "null" or $t == "object"' "$f" >/dev/null 2>&1; then
