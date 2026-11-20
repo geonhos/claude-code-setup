@@ -27,7 +27,7 @@ you do not fix.
   default `main`) and record the result under Verification. A failure is a
   Major finding at least. Exit 2 means the base ref does not resolve, so
   lint `{files}` is unavailable: note that under Verification; it is not a
-  finding against the diff. It already runs every suite in parallel: never
+  finding against the diff. `harness-verify run all` already runs every suite in parallel: never
   loop over suites; run only the 1-2 you need to check, singly.
 - A new or changed test must fail on `<base>`: run it against base code (a worktree at HEAD plus `git checkout <base> -- bin claude`, or point the test's path variable at a base copy). A test that passes on both is a Major finding.
 - A temporary worktree for a base comparison is created with `git worktree add "$(mktemp -d)/base" <rev>` and removed with `git worktree remove --force <path>` before the report, also when the review fails; never leave one behind.

@@ -246,14 +246,18 @@ check "init deny partial: existing order kept" [ "$(jq -c '.permissions.deny[0:2
 
 # an unmergeable settings file fails init before anything is created (#165, user decision 2026-11-19)
 # odd_case LABEL CONTENT MSG — init exits non-zero, file byte-identical, no .bak, message names the file + MSG, nothing created
+# nothing_created LABEL — init left no trace: no .harness/asks, no config.json, no ignore line in .git/info/exclude
+nothing_created() {
+  check "init odd ($1): nothing created" bash -c '[ ! -e .harness/asks ] && [ ! -e .harness/config.json ] && ! grep -qs . .git/info/exclude' _
+}
 odd_case() {
-  setup; rm -rf .harness; mkdir -p .claude; printf "$2" > .claude/settings.local.json; cp .claude/settings.local.json "$WORK/before.json"
+  setup; git init -q; rm -rf .harness; mkdir -p .claude; printf "$2" > .claude/settings.local.json; cp .claude/settings.local.json "$WORK/before.json"
   run init
   check "init odd ($1): exits non-zero" [ "$RC" != 0 ]
   check "init odd ($1): file byte-identical" cmp -s "$WORK/before.json" .claude/settings.local.json
   check "init odd ($1): no .bak" [ ! -e .claude/settings.local.json.bak ]
   check "init odd ($1): message names the file and the problem" grep -qF -- ".claude/settings.local.json $3" <<<"$OUT"
-  check "init odd ($1): nothing created" [ ! -e .harness/asks ]
+  nothing_created "$1"
 }
 odd_case "invalid JSON" '{"a":' "is not valid JSON"
 odd_case "empty" '' "is empty"
@@ -264,6 +268,32 @@ odd_case "deny not array" '{"permissions":{"deny":"nope"},"model":"x"}\n' "has a
 check "init odd: deny message is not the permissions one" bash -c '! grep -qF "permissions that is not an object" <<<"$1"' _ "$OUT"
 ERR=$(PATH="$HERE/../bin:$PATH" env -u HARNESS_ROLE /bin/bash "$HARNESS" init 2>&1 >/dev/null)
 check "init odd: message on stderr" grep -q "permissions.deny" <<<"$ERR"
+# a settings path that is a directory or an unreadable file: its own message, no raw error leaked, nothing changed
+setup; git init -q; rm -rf .harness .claude; mkdir -p .claude/settings.local.json
+run init
+check "init odd (directory): exits non-zero" [ "$RC" != 0 ]
+check "init odd (directory): own message" grep -qF ".claude/settings.local.json is not a regular file" <<<"$OUT"
+check "init odd (directory): not reported as empty or invalid JSON" bash -c '! grep -qE "empty|not valid JSON" <<<"$1"' _ "$OUT"
+nothing_created "directory"
+if [ "$(id -u)" = 0 ]; then echo "skip: init odd (unreadable file) — root reads mode 000 files"
+else
+  setup; git init -q; rm -rf .harness; mkdir -p .claude; printf '{"a":1}\n' > .claude/settings.local.json; chmod 000 .claude/settings.local.json
+  run init
+  chmod 644 .claude/settings.local.json
+  check "init odd (unreadable): exits non-zero" [ "$RC" != 0 ]
+  check "init odd (unreadable): own message" grep -qF ".claude/settings.local.json is not readable" <<<"$OUT"
+  check "init odd (unreadable): no raw error leaked, not called empty" bash -c '! grep -qiE "permission denied|empty|not valid JSON" <<<"$1"' _ "$OUT"
+  chmod 000 .claude/settings.local.json
+  nothing_created "unreadable"
+  chmod 644 .claude/settings.local.json
+fi
+# null counts as absent: the deny rules are merged in, other keys kept
+setup; rm -rf .harness; mkdir -p .claude; printf '{"permissions":null,"model":"x"}\n' > .claude/settings.local.json
+run init
+check "init null permissions: rc 0, nine rules merged, model kept" bash -c '[ "$1" = 0 ] && [ "$(jq -c .permissions.deny .claude/settings.local.json)" = "$2" ] && [ "$(jq -r .model .claude/settings.local.json)" = x ]' _ "$RC" "$DENY_JSON"
+setup; rm -rf .harness; mkdir -p .claude; printf '{"permissions":{"deny":null,"allow":["Bash(ls *)"]}}\n' > .claude/settings.local.json
+run init
+check "init null deny: rc 0, nine rules merged, allow kept" bash -c '[ "$1" = 0 ] && [ "$(jq -c .permissions.deny .claude/settings.local.json)" = "$2" ] && [ "$(jq -c .permissions.allow .claude/settings.local.json)" = "[\"Bash(ls *)\"]" ]' _ "$RC" "$DENY_JSON"
 
 setup; rm -rf .harness .claude; mkdir -p .claude; printf '[1]\n' > .claude/settings.json; cp .claude/settings.json "$WORK/before.json"
 run init --shared
