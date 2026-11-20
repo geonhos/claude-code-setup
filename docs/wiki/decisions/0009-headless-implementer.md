@@ -1,7 +1,7 @@
 ---
 type: decision
 status: active
-updated: 2026-11-19
+updated: 2026-11-20
 sources: [.harness/implementer-headless-design.md, branch feat/v23-headless-implementer, tests/headless-implementer.test.sh]
 verified_by: tests/headless-implementer.test.sh
 ---
@@ -16,7 +16,7 @@ verified_by: tests/headless-implementer.test.sh
 **Context.** [0007](0007-headless-runner-pilot.md) piloted `claude -p` for analyst and reviewer: 18 headless asks, 3 abnormal, against 70 pane asks with 29 abnormal. The implementer is still a pane (98 asks, 25 abnormal, p95 1706 s); its failures are the same completion races. It differs in that its Stop hook runs lint and tests (`harness-verify`) and can block the stop.
 
 **Decision.** `runner.implementer: headless` uses the 0007 machinery with these additions.
-- Flags: `--permission-mode auto --permission-prompts none` for the implementer runner only; no allowedTools, no bypass. `system/permission_denied` events (fallback `result.permission_denials`) go to `exit.json.denied[]`.
+- Flags: `--permission-mode auto --permission-prompts none` for the implementer runner only (superseded by the 2026-11-19 note above: all roles); no allowedTools, no bypass. `system/permission_denied` events (fallback `result.permission_denials`) go to `exit.json.denied[]`.
 - Exit 2 (all headless roles): no report and denied[] non-empty. The denied tool and reason are printed; nothing to answer, re-ask with a changed brief. A report plus denials is a normal exit (denials noted on stderr).
 - Exit map: report + verify pass 0; verify FAIL at the attempt cap 5 `verify: FAIL (<step>, <n> attempts)`; only `<report>.pending` (killed mid-verify) 5 INTERRUPTED; deadline while `.pending` exists 4 "still verifying (Stop hook running)"; no report and no denial 3.
 - Auto-resume (amends 0007 D6): if the implementer's last logged exit is non-zero, the next ask uses `--resume <last sid>` and records `resumed:true`. `--fresh` overrides; other roles still need `--keep`.
