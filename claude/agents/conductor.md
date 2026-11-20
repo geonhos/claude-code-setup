@@ -73,9 +73,12 @@ Applies to everything the user reads: replies, questions, issues, PR summaries.
 2. Conclusion first. One point per sentence; split a sentence longer than 60 characters.
    When you split or rewrite, keep every fact, number and conditional as it is and add
    nothing the source does not say. No stock phrases or filler.
-3. Active sentences with a person or a program (harness, gate, analyst) as the subject; a
-   command, a rule or a file is not an actor ("명령은 삭제를 거부합니다" → "harness가 삭제를
-   거부합니다"). Do not drop the subject, the object or particles.
+3. Active sentences. The subject is whoever does the action in the source; never put in
+   an actor the source does not name. When a person or a program (harness, gate, analyst)
+   does it, name it ("명령은 삭제를 거부합니다" → "harness가 삭제를 거부합니다"); when a
+   rule or a file is what the source describes, leave it as the subject ("deny rule이 우회
+   경로를 막지 못합니다", not "harness는 …"). Do not drop the subject, the object or
+   particles.
 4. No chain of three or more nouns: use particles and verbs ("호환성 제고를 위하여" →
    "호환성을 높이기 위하여"). Do not write "~에 대한", "~에 의해", "~을 통해",
    "~을 진행/수행하다".

@@ -1,7 +1,7 @@
 ---
 type: decision
 status: active
-updated: 2026-11-19
+updated: 2026-11-20
 sources: [issue #169, issue #183, https://github.com/geonhos/claude-code-setup/issues/169#issuecomment-7001880191]
 verified_by: human
 ---
@@ -50,16 +50,36 @@ One experiment, 2026-11-19: 4 methods x 3 writing tasks x 2 runs, generator
 - Rules raised fact errors (5 → 15): splitting sentences turned a conditional into a past
   fact and added inferences. Core rule 2 therefore says to keep facts, numbers and
   conditionals. Rules also raised inanimate subjects (2 → 8, "명령은 거부합니다"); core
-  rule 3 therefore names people and programs as subjects.
+  rule 3 therefore names people and programs as subjects (amended again after experiment 3, below).
 - The banned phrases ("~에 대한", "~에 의해") appeared at most twice per output even
   without rules, and no output broke the register. A script check would mostly fire on
   sentence length, where paths and commands cause false positives.
 - No guide gives a numeric sentence-length limit. 60 characters is our own number, taken
   from STE's 25 words.
 
+Two follow-up experiments (2026-11-19 and 11-20), same generator, two blind fidelity
+auditors (sonnet / opus):
+
+- Experiment 2, same inputs. Fact errors, sums over 6 outputs: no rules 6/7, first rule
+  text 13/15, rules 2 and 3 amended (Korean wording, old guide) 13/17, the shipped English
+  text with the skill body 8/7. The first finding held under re-audit. The skill quotes two
+  sentences of those inputs, so part of the last gain may be copied.
+- Experiment 3, fresh inputs. Chat (core rules only, 4 outputs): fact errors no rules 2/1,
+  shipped rule 3 1/5, amended rule 3 4/4; the excess of the amended case is the report's
+  status and topic line, dropped. Document (core rules + skill, 2 outputs): no rules 2/5,
+  shipped 2/4, amended 0/2.
+- Sentences that name a doer the source does not name (non-blind tally): chat 13 with the
+  shipped rule 3, 0 with the amended one; document 4 and 0. Rule 3 therefore says the
+  subject is whoever acts in the source, and a rule or a file stays the subject when it is
+  what the source describes.
+- Chat judge score 3.64 (shipped) and 3.25 (amended), inside the run spread of 0.57, one
+  judge pass.
+
 ## Consequences
-- Limits of the evidence: 6 outputs per method, one judge pass, one fidelity pass. The two
-  amended rules and the English wording of the rules were not measured.
+- Limits of the evidence: 2 to 6 outputs per case, one judge pass, auditors agree fully on
+  about a third to two thirds of the outputs. Core rules alone did not bring chat fact
+  errors below "no rules"; in chat about a third of the sentences still pass 60 characters
+  and the report's status line tends to be dropped.
 - Existing issues in 한다체 stay as they are.
 - The skill's listing line (about 60 tokens) is in every conductor and worker session.
 - A hook check is added only for a rule that real issues break repeatedly (#183).
