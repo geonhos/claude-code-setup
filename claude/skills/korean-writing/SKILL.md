@@ -1,11 +1,11 @@
 ---
 name: korean-writing
-description: Korean writing guide for text people read. Load before writing an issue, a PR summary for the user or a Korean document (README.md); not needed for code or English text.
+description: Korean writing guide for text people read. Load before writing an issue, a PR body or a Korean document (README.md); not needed for code or English text.
 ---
 
 # Korean writing guide
 
-Use this before you write an issue, a PR summary for the user or a Korean document
+Use this before you write an issue, a PR body or a Korean document
 (README.md and the like). The six core rules are in the conductor prompt; this skill adds
 the detail and the examples. It applies to the conductor and to workers alike. Sources:
 NIKL public-language guides (2014, 2019), Kakao Developers documentation guideline, Kakao
@@ -13,10 +13,11 @@ Enterprise "테크니컬 라이팅 10계명", Microsoft Korean style guide, MOLE
 정비기준」; see wiki decision 0015.
 
 ## Register
-- 합니다체 everywhere: chat, questions, issues, PR summaries, documents. No 해요체, no 한다체.
+- 합니다체 everywhere: chat, questions, issues, PR bodies, documents. No 해요체, no 한다체.
 - Questions: "~합니까?", "~할까요?". Requests: "~해 주십시오". Instructions in a document:
   "~해야 합니다", not "~하세요" / "~하십시오".
 - Fragments without a verb ending are fine inside tables and lists.
+- In a PR body these stay English: the headings `## Summary` and `## Test plan` and the `Fixes #N` line (GitHub parses `Fixes`). The PR title and commit messages are English too.
 - Do not rewrite existing issues or documents only to change the register.
 
 ## Sentences
