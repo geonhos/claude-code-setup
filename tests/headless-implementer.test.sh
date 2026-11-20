@@ -50,6 +50,21 @@ isetup; export FAKE_CLAUDE_MODE=noreport FAKE_CLAUDE_DENY=1
 hrun ask analyst "q"
 check "denied, no report: analyst (all headless roles) rc 2" [ "$RC" -eq 2 ]
 
+# denied[] is the union of system events and result.permission_denials, de-duplicated (#181)
+isetup; export FAKE_CLAUDE_DENY=2
+hrun ask implementer "q"
+check "denied union: Bash event + Read result-only gives 2 entries" jqt '(.denied | length) == 2 and .denied[0].tool == "Bash" and .denied[1].tool == "Read" and .denied[1].input == ".env" and .denials == 2' .harness/asks/implementer.exit.json
+check "denied union: the Bash entry keeps the event reason" jqt '.denied[0].reason == "safetyCheck"' .harness/asks/implementer.exit.json
+isetup; export FAKE_CLAUDE_DENY=3
+hrun ask implementer "q"
+check "denied events only: unchanged" jqt '(.denied | length) == 1 and .denied[0].tool == "Bash" and .denied[0].reason == "safetyCheck" and .denials == 0' .harness/asks/implementer.exit.json
+isetup; export FAKE_CLAUDE_DENY=4
+hrun ask implementer "q"
+check "denied result only: unchanged" jqt '.denied == [{"tool":"Read","input":".env","reason":""}] and .denials == 1' .harness/asks/implementer.exit.json
+isetup
+hrun ask implementer "q"
+check "denied neither: empty" jqt '.denied == [] and .denials == 0' .harness/asks/implementer.exit.json
+
 isetup; export FAKE_CLAUDE_MODE=noreport
 hrun ask implementer "q"
 check "no denial, no report: still rc 3" [ "$RC" -eq 3 ]
