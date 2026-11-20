@@ -144,10 +144,9 @@ jq -R -n -c --arg id "$id" --argjson rc "$rc" --arg killed "$killed" --arg raw "
   | ([$e[] | select(.type == "system" and .subtype == "permission_denied")] | map(
         {tool: (.tool_name // "?"), input: ((.tool_input.command? // .tool_input.file_path? // .message // "") | tostring | split("\n")[0] | .[0:120]),
          reason: (.decision_reason // .message // "")})) as $dev
-  | (if ($dev | length) > 0 then $dev
-     else ((($r.permission_denials // []) | map(
-        {tool: (.tool_name // "?"), input: ((.tool_input.command? // .tool_input.file_path? // "") | tostring | split("\n")[0] | .[0:120]), reason: ""})))
-     end) as $den
+  | (($r.permission_denials // []) | map(
+        {tool: (.tool_name // "?"), input: ((.tool_input.command? // .tool_input.file_path? // "") | tostring | split("\n")[0] | .[0:120]), reason: ""})) as $rden
+  | (reduce ($dev + $rden)[] as $d ([]; if any(.[]; .tool == $d.tool and .input == $d.input) then . else . + [$d] end)) as $den
   | {ask_id: $id, rc: $rc,
      result: ($r.subtype // null), is_error: ($r.is_error // null),
      num_turns: ($r.num_turns // null), cost_usd: ($r.total_cost_usd // null),

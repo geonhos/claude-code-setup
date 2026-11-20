@@ -2,6 +2,7 @@
 # Fake `claude -p` for tests/headless.test.sh. Not a real client.
 # $FAKE_CLAUDE_MODE: success|noreport|error|maxturns|slow<N>|hang|hangterm|hangpre|nostart|junk
 # $FAKE_CLAUDE_DENY=1 emits a permission_denied event + result denial (default none).
+#   2 = Bash event + result {same Bash, Read(.env)}; 3 = Bash event only; 4 = result Read(.env) only.
 # $FAKE_CLAUDE_RESUME_MISSING=1: a --resume run fails like an unknown session (no init, rc 1).
 # $FAKE_PERM sets init permissionMode (default auto). hangpre sleeps before any output.
 #   success   init + tool_use + result success; writes the report via $FAKE_REPORT_CMD
@@ -42,6 +43,12 @@ result() { # subtype is_error — FAKE_CLAUDE_DENY=1 adds one permission_denied 
     den='[{"tool_name":"Bash","tool_input":{"command":"rm -rf /tmp/x\nsecond line"}}]'
     ev '{"type":"system","subtype":"permission_denied","tool_name":"Bash","tool_input":{"command":"rm -rf /tmp/x\nsecond line"},"decision_reason":"safetyCheck","message":"denied by safety check","session_id":"'"$sid"'"}'
   fi
+  case "${FAKE_CLAUDE_DENY:-}" in
+    2) den='[{"tool_name":"Bash","tool_input":{"command":"rm -rf /tmp/x"}},{"tool_name":"Read","tool_input":{"file_path":".env"}}]'
+       ev '{"type":"system","subtype":"permission_denied","tool_name":"Bash","tool_input":{"command":"rm -rf /tmp/x"},"decision_reason":"safetyCheck","message":"m"}' ;;
+    3) ev '{"type":"system","subtype":"permission_denied","tool_name":"Bash","tool_input":{"command":"rm -rf /tmp/x"},"decision_reason":"safetyCheck","message":"m"}' ;;
+    4) den='[{"tool_name":"Read","tool_input":{"file_path":".env"}}]' ;;
+  esac
   ev '{"type":"result","subtype":"'"$1"'","is_error":'"$2"',"num_turns":3,"duration_ms":1500,"total_cost_usd":0.0123,"session_id":"'"$sid"'","permission_denials":'"$den"'}'
 }
 case "$mode" in
