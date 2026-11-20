@@ -60,3 +60,5 @@
 - 2026-11-19 · implementer · #167 · prompt cleanup: analyst writes only under .harness/; AGENTS.md Layout removed; worker boilerplate trimmed (no wiki page changed)
 - 2026-11-19 · implementer · #166 · decision 0009: note that all roles are pinned to auto (was implementer only)
 - 2026-11-19 · implementer · #165 · decision 0014: init writes worker deny rules to settings.local.json; ask warns when missing
+- 2026-11-19 · implementer · #169 · decision 0015: Korean writing rules in the conductor prompt; guide shipped as the `korean-writing` skill
+- 2026-11-20 · implementer · #169 · decision 0015: rule 3 keeps the actor of the source (experiment 3); skill line and checklist updated

@@ -22,7 +22,7 @@ cd ~/workspace/claude-code-setup
 ```
 
 `install.sh`가 하는 일:
-- `claude/agents/*.md`와 `claude/skills/*/`를 `~/.claude/`에 심링크한다.
+- `claude/agents/*.md`와 `claude/skills/*/`(한국어 작성 스킬 `korean-writing` 포함)를 `~/.claude/`에 심링크합니다.
 - `bin/*`(`harness`, `harness-verify`, `harness-run`, `harness-view`)를 `~/.local/bin`에 링크한다.
 - `~/.claude/settings.json`에 게이트·SessionStart·알림 훅과 환경변수를 병합한다(백업을 남긴다).
 

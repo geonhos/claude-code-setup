@@ -15,6 +15,7 @@ cd ~/workspace/claude-code-setup
 `install.sh`는 여러 번 실행해도 결과가 같다.
 
 - `claude/agents/*.md`를 `~/.claude/agents/`에, `claude/skills/*/`를 `~/.claude/skills/`에 심링크한다(이미 있던 다른 스킬은 `~/.claude/skills.bak/`으로 옮긴다).
+- `claude/skills/korean-writing/`은 conductor와 워커가 모두 쓰는 한국어 작성 스킬입니다(결정 0015). 나머지 스킬 넷은 conductor 전용입니다.
 - `bin/*`(`harness`, `harness-verify`, `harness-run`, `harness-view`)를 `~/.local/bin`에 링크한다. `lib/`는 링크 없이 실제 경로로 찾는다.
 - `~/.claude/settings.json`에 PreToolUse 게이트 훅, SessionStart 훅(`conductor-resume.sh`), `env.BASH_DEFAULT_TIMEOUT_MS`/`BASH_MAX_TIMEOUT_MS`, `promptCacheTtl`/`subagentPromptCacheTtl: 1h`를 병합한다(백업을 남긴다). 전역 `agent` 키는 쓰지 않는다. 이전 설치가 남긴 `agent: conductor`는 한 번 제거한다.
 

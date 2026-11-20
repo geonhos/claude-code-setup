@@ -7,8 +7,7 @@ gate the conductor's shell, verify worker output and resume from progress logs.
 `install.sh` symlinks everything into `~/.claude` and `~/.local/bin`.
 
 ## Working rules
-- Language: text for people (chat, reports, issues, PR summaries for the user, README.md) in Korean; machine-facing text (code, commits, PR titles/bodies, agent prompts, briefs, wiki) in English.
-- Style: no AI stock phrases or filler ("좋은 질문입니다", "핵심은", "살펴보겠습니다", "seamless/robust", metaphors, emoji decoration, closing pleasantries). Plain sentences: fact, conclusion, evidence.
+- Language and style: text for people (chat, issues, PR summaries for the user, README.md) in Korean, 합니다체, following `claude/skills/korean-writing/SKILL.md` (its six core rules are in the conductor prompt); machine-facing text (code, commits, PR titles/bodies, agent prompts, briefs, worker reports, wiki) in English. No AI stock phrases or filler; plain sentences: fact, conclusion, evidence.
 - Every task is tracked by a GitHub issue; unhandled items (review Minors, follow-ups, open questions) become issues at once.
 - Branch `feat|fix|docs/<issue#>-<slug>`; conventional commits in English with the Co-Authored-By trailer; PR body Summary / Test plan / `Fixes #N`; squash merge; the user merges.
 
