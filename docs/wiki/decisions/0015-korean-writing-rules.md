@@ -77,7 +77,7 @@ auditors (sonnet / opus):
 
 ## Consequences
 - Limits of the evidence: 2 to 6 outputs per case, one judge pass, auditors agree fully on
-  about a third to two thirds of the outputs. Core rules alone did not bring chat fact
+  about a quarter to two thirds of the outputs. Core rules alone did not bring chat fact
   errors below "no rules"; in chat about a third of the sentences still pass 60 characters
   and the report's status line tends to be dropped.
 - Existing issues in 한다체 stay as they are.

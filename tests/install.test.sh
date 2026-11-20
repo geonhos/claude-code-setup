@@ -182,6 +182,7 @@ check "write failure no success banner" [ -z "$(grep '^installed:' "$T11/out.txt
 KW="$REPO/claude/skills/korean-writing/SKILL.md"
 check "skill korean-writing name" [ "$(sed -n 's/^name: *//p' "$KW" | head -1)" = korean-writing ]
 check "skill korean-writing has description" grep -q '^description: ' "$KW"
+check "skill korean-writing exists" [ -f "$KW" ]
 check "skill korean-writing is not conductor only" not_grep -i 'conductor only' "$KW"
 for s in analyze implement review watch; do
   SK="$REPO/claude/skills/$s/SKILL.md"
