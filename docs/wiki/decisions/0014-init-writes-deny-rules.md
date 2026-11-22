@@ -1,8 +1,8 @@
 ---
 type: decision
 status: active
-updated: 2026-11-19
-sources: [issue #165, issue #162, issue #166, commit feat/165-init-deny-rules, bin/harness:settings_merge]
+updated: 2026-11-22
+sources: ["#177", issue #165, issue #162, issue #166, commit feat/165-init-deny-rules, bin/harness:settings_merge]
 verified_by: tests/harness.test.sh, tests/lane.test.sh
 ---
 # 0014: `harness init` writes worker deny rules; `harness ask` warns when they are missing
@@ -26,7 +26,7 @@ verified_by: tests/harness.test.sh, tests/lane.test.sh
 **Consequences.**
 - The rules are a seatbelt, not a sandbox: `git -C . reset --hard`, `sh -c '...'`, absolute `git` paths and `git push origin +HEAD:main` are not matched; `git restore` and `git checkout -- <file>` are not blocked.
 - `Read(.env.*)` also blocks editing `.env.example` and `.env.sample`; a deny cannot be overridden by an allow.
-- One matching subcommand denies a whole `&&` chain.
+- One matching subcommand denies the whole compound call (`;` too: `head -50; git clean -nd` was denied), and the model sees only "Permission to use Bash with command <whole chain> has been denied.", no rule name (runs a-T3-2/b-T3-2, .harness/deny-bypass-experiment-detail.md:7). A harmless command chained to a denied one is blocked with it (`git commit --amend && git push --force-with-lease`).
 - Checkouts initialised before #165 have no rules until `harness init` runs again; `harness ask` warns meanwhile.
 - A denied call is counted in exit.json `denials`, but `denied[]` is partial: with both a Bash and a Read denial in one run it lists only the Bash one (`bin/harness-run:144-149`, pre-existing, separate issue).
 - Rules apply to the conductor's own Bash and to `--agent solo` too.

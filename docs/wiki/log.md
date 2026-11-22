@@ -65,3 +65,9 @@
 - 2026-11-20 · implementer · #178 · decision 0009: inline marker on "implementer runner only" points to the 2026-11-19 note (all roles)
 - 2026-11-20 · implementer · #187 · decision 0015: experiment agreement range corrected to a quarter to two thirds (5/18, 16/24)
 - 2026-11-20 · implementer · #201 · decision 0015: PR bodies Korean; titles, commits, heading lines and Fixes #N English
+- 2026-11-22 · implementer · #180 #186 · new troubleshooting page base-worktree-during-suite: reviewer base worktree during the suite fails worktree-guard
+- 2026-11-22 · implementer · #164 #182 · new how-to headless-probes: neutral --agents probes, clean claude -p generation call, cost
+- 2026-11-22 · implementer · #170 · serial-suite-loop: keep "pass before you commit"; Stop gate runs after commit and push
+- 2026-11-22 · implementer · #172 · transcript-forensics: recover pre-log reports from session jsonl
+- 2026-11-22 · implementer · #177 · decision 0014: deny of one subcommand blocks the whole compound call, no rule name shown
+- 2026-11-22 · implementer · #188 · live-gate-edit: reference env vars as ${VAR:-} under set -u
