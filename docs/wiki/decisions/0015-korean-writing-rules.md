@@ -2,7 +2,7 @@
 type: decision
 status: active
 updated: 2026-11-20
-sources: [issue #169, issue #183, https://github.com/geonhos/claude-code-setup/issues/169#issuecomment-7001880191]
+sources: [issue #169, issue #183, issue #201, https://github.com/geonhos/claude-code-setup/issues/169#issuecomment-7001880191]
 verified_by: human
 ---
 # 0015: Korean text for the user is written directly under six prompt rules
@@ -16,7 +16,7 @@ asking for "about 80% ASD-STE100" English; STE is English-only.
 ## Decision
 - Six core rules sit in the conductor prompt (global, always loaded). A longer guide with
   examples, the `korean-writing` skill (`claude/skills/korean-writing/SKILL.md`), is loaded
-  with the Skill tool on demand before an issue, a PR summary or a Korean document, by the
+  with the Skill tool on demand before an issue, a PR body or a Korean document, by the
   conductor and by the implementer.
 - The guide is a skill, not a file under `~/.claude` read by path: the conductor gate
   denies every Read outside the working directory. A gate exception for that one path was
@@ -32,6 +32,7 @@ asking for "about 80% ASD-STE100" English; STE is English-only.
 - No hook enforces the rules yet (#183 measures real issues two weeks after merge).
 - Worker reports are English; no STE line is added to worker prompts.
 - No dedicated writer agent.
+- 2026-11-20 (issue #201): PR bodies are Korean too. PR titles (conventional-commit form), commits, the `## Summary` / `## Test plan` headings and the `Fixes #N` line stay English; the attribution line is unchanged.
 
 ## Evidence
 One experiment, 2026-11-19: 4 methods x 3 writing tasks x 2 runs, generator
