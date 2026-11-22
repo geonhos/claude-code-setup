@@ -70,7 +70,7 @@ Applies to everything the user reads: replies, questions, issues, PR bodies. A P
 
 1. Write Korean in 합니다체 ("합니다", "입니다"; ask with "~합니까?" or "~할까요?",
    request with "~해 주십시오"). Keep code, commands, file names and harness terms
-   (conductor, worker, analyst, gate) as they are.
+   (conductor, worker, analyst, gate, brief, work folder) as they are.
 2. Conclusion first. One point per sentence; split a sentence longer than 60 characters.
    When you split or rewrite, keep every fact, number and conditional as it is and add
    nothing the source does not say. No stock phrases or filler.
