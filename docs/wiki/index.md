@@ -4,13 +4,13 @@ Read this first. Open a page only when it is relevant. Schema and promotion rule
 
 ## Troubleshooting: ask completion and timeouts
 - [ask --timeout is ms](troubleshooting/ask-timeout-is-milliseconds.md): `--timeout 1200` = 1.2s; defaults are role-aware (active, 2026-10-27)
-- [Serial suite loop](troubleshooting/serial-suite-loop.md): workers looping over suites cost 5x the parallel run; run singly or `./install.sh --test` once (active, 2026-10-29)
+- [Serial suite loop](troubleshooting/serial-suite-loop.md): workers looping over suites cost 5x the parallel run; run singly or `./install.sh --test` once (active, 2026-11-22)
 - [.harness root lookup](troubleshooting/harness-root-lookup.md): hook finds root by nearest `.harness/asks/`; one definition in lib/harness-root.sh; probe the gate from a checkout (active, 2026-11-16)
 - [Docs-only skip scope](troubleshooting/docs-only-asks-skip-the-suite.md): Stop hook skips the suite only for `docs/`/`.harness/`; wiki runs wiki-lint only (active, 2026-10-27)
 
 ## Troubleshooting: workers and env
 - [AGENTS.md is ignored when a CLAUDE.md exists](troubleshooting/agents-md-ignored-when-claude-md-exists.md): no CLAUDE.md on purpose; CLAUDE.md, .claude/CLAUDE.md or CLAUDE.local.md hides AGENTS.md unless it imports it (active, 2026-11-17)
-- [Live gate edit](troubleshooting/live-gate-edit.md): a syntax error denies everything, other gate failures fail open silently; bash -n + suite before each save (active, 2026-11-17)
+- [Live gate edit](troubleshooting/live-gate-edit.md): a syntax error denies everything, other gate failures fail open silently; bash -n + suite before each save (active, 2026-11-22)
 - [In-place edit breaks running scripts](troubleshooting/in-place-edit-breaks-running-scripts.md): bin/ is live; bodies are brace-wrapped, edit via new inode; lib/ is safe while sourced eagerly (active, 2026-10-28)
 
 ## Troubleshooting: conductor
@@ -21,13 +21,15 @@ Read this first. Open a page only when it is relevant. Schema and promotion rule
 - [GNU stat -f](troubleshooting/gnu-stat-f.md): use `-nt`/`-ot` or `stat -c %Y` first (active, 2026-10-21)
 - [bash signals and job control](troubleshooting/bash-signals-job-control.md): bg jobs ignore INT; `set -m` hands tty signals to children (active, 2026-10-27)
 - [Global gitignore masks ignore gaps](troubleshooting/global-gitignore-masks-ignore-gaps.md): this machine's ~/.config/git/ignore hides missing excludes; check with core.excludesFile=/dev/null (active, 2026-11-16)
+- [Base worktree during the suite](troubleshooting/base-worktree-during-suite.md): a reviewer base worktree made while the suite runs fails worktree-guard; compare base before or after (active, 2026-11-22)
 - [Tests inherit worker env](troubleshooting/tests-inherit-worker-env.md): suites run by a worker see `HARNESS_ROLE=worker`; unset it (active, 2026-10-27)
 - [Half-assertion tests](troubleshooting/half-assertion-tests.md): `check [ a ] && [ b ]` asserts only a; prove fixes with a mutant; take expected values and inputs from outside the code under test (active, 2026-11-16)
 - [wiki-lint dangling sources](troubleshooting/wiki-lint-dangling-sources.md): lint checks only non-empty `sources`; grep the slug before deleting a suite or page (active, 2026-11-03)
 - [No-edits brief skips report](troubleshooting/no-edits-brief-skips-report.md): say "no source edits (report still required)" or the implementer exits 3 (active, 2026-11-03)
 
 ## How-to
-- [Transcript forensics](how-to/transcript-forensics.md): real Stop-hook time, did /clear run, what a worker was given, known model noise (active, 2026-11-16)
+- [Transcript forensics](how-to/transcript-forensics.md): real Stop-hook time, did /clear run, what a worker was given, known model noise (active, 2026-11-22)
+- [Headless probes](how-to/headless-probes.md): neutral --agents agent for permission probes; clean, cheap claude -p generation call (active, 2026-11-22)
 
 ## Decisions
 - [0001 Keep herdr panes](decisions/0001-keep-herdr-panes-despite-subagent-model.md): subagent model works; panes kept; superseded by 0011 (superseded, 2026-11-01)
@@ -43,6 +45,6 @@ Read this first. Open a page only when it is relevant. Schema and promotion rule
 - [0011 One runner: headless](decisions/0011-single-runner-headless.md): headless is the only runner; herdr viewer removed by 0013; prune plan steps 1-7 done (active, 2026-11-03)
 - [0012 Gate shrink](decisions/0012-gate-shrink.md): gate kept and trimmed to observed use (552 → 513 lines); permissions-rules and native-subagent options rejected (active, 2026-11-03)
 - [0013 Remove herdr](decisions/0013-remove-herdr.md): no herdr in code/gate/install; watch via `harness watch` in any terminal (active, 2026-11-13)
-- [0014 init writes deny rules](decisions/0014-init-writes-deny-rules.md): `harness init` adds nine worker deny rules to settings.local.json; ask warns when missing; seatbelt, not a sandbox (active, 2026-11-19)
+- [0014 init writes deny rules](decisions/0014-init-writes-deny-rules.md): `harness init` adds nine worker deny rules to settings.local.json; ask warns when missing; seatbelt, not a sandbox (active, 2026-11-22)
 - [0015 Korean writing rules](decisions/0015-korean-writing-rules.md): Korean for the user written directly under six conductor-prompt rules plus the on-demand `korean-writing` skill; no STE-style drafting (active, 2026-11-20)
 - [Per-issue work folders](how-to/work-folders.md): lane create/rm, -C parallel asks, lane_setup, risks (active, 2026-11-13)
