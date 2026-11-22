@@ -57,7 +57,7 @@ Enterprise "테크니컬 라이팅 10계명", Microsoft Korean style guide, MOLE
 ## Words
 - Plain words: 제고 → 높이기, 향후 → 앞으로, 금년 → 올해, 실시하다 → 하다.
 - Product, language and harness names stay in English (Android, Java, conductor, worker,
-  analyst, gate, brief). Do not translate them ("분석가" is wrong for analyst).
+  analyst, gate, brief, work folder). Do not translate them ("분석가" is wrong for analyst).
 - Other English terms: Korean with the original once at first mention, "메서드(Method)",
   then the Korean form only.
 - Loanword spelling: 애플리케이션, 콘텐츠, 디렉터리, 메시지, 메서드, 릴리스, 라이선스.
