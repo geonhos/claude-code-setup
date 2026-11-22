@@ -142,11 +142,19 @@ jq -R -n -c --arg id "$id" --argjson rc "$rc" --arg killed "$killed" --arg raw "
   | ([$e[] | select(.type == "result")] | last) as $r
   | ([$e[] | select(.type == "assistant") | .message.usage?] | map(select(. != null)) | last) as $u
   | ([$e[] | select(.type == "system" and .subtype == "permission_denied")] | map(
-        {tool: (.tool_name // "?"), input: ((.tool_input.command? // .tool_input.file_path? // .message // "") | tostring | split("\n")[0] | .[0:120]),
-         reason: (.decision_reason // .message // "")})) as $dev
+        ((.tool_input.command? // .tool_input.file_path? // "") | tostring | split("\n")[0] | .[0:120]) as $in
+        | {tool: (.tool_name // "?"), input: ($in | if . == "" then null else . end),
+           reason: (.decision_reason // .message // ""), msg: (.message // "")})) as $dev
   | (($r.permission_denials // []) | map(
         {tool: (.tool_name // "?"), input: ((.tool_input.command? // .tool_input.file_path? // "") | tostring | split("\n")[0] | .[0:120]), reason: ""})) as $rden
-  | (reduce ($dev + $rden)[] as $d ([]; if any(.[]; .tool == $d.tool and .input == $d.input) then . else . + [$d] end)) as $den
+  # results first (same tool+input collapses); an event then fills the reason of the matching entry. The real CLI
+  # emits events without tool_input, so those match by tool name alone (first entry of that tool with no reason yet).
+  | (reduce $rden[] as $d ([]; if any(.[]; .tool == $d.tool and .input == $d.input) then . else . + [$d] end)) as $base
+  | (reduce $dev[] as $d ($base;
+        (if $d.input == null then (map(.tool == $d.tool and .reason == "") | index(true))
+         else (map(.tool == $d.tool and .input == $d.input) | index(true)) end) as $i
+        | if $i != null then (if .[$i].reason == "" then .[$i].reason = $d.reason else . end)
+          else . + [{tool: $d.tool, input: ($d.input // $d.msg), reason: $d.reason}] end)) as $den
   | {ask_id: $id, rc: $rc,
      result: ($r.subtype // null), is_error: ($r.is_error // null),
      num_turns: ($r.num_turns // null), cost_usd: ($r.total_cost_usd // null),

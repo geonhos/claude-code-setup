@@ -61,6 +61,15 @@ check "denied events only: unchanged" jqt '(.denied | length) == 1 and .denied[0
 isetup; export FAKE_CLAUDE_DENY=4
 hrun ask implementer "q"
 check "denied result only: unchanged" jqt '.denied == [{"tool":"Read","input":".env","reason":""}] and .denials == 1' .harness/asks/implementer.exit.json
+isetup; export FAKE_CLAUDE_DENY=5
+hrun ask implementer "q"
+check "denied event without tool_input + result with input: one entry" jqt '(.denied | length) == 1 and .denied[0].input == "rm -rf /tmp/x" and .denied[0].reason == "safetyCheck" and .denials == 1' .harness/asks/implementer.exit.json
+isetup; export FAKE_CLAUDE_DENY=6
+hrun ask implementer "q"
+check "denied event without tool_input + result with empty input: one entry" jqt '(.denied | length) == 1 and .denied[0].tool == "Bash" and .denied[0].reason == "safetyCheck" and .denials == 1' .harness/asks/implementer.exit.json
+isetup; export FAKE_CLAUDE_DENY=7
+hrun ask implementer "q"
+check "denied same tool+input twice in result: one entry, denials 2" jqt '(.denied | length) == 1 and .denials == 2' .harness/asks/implementer.exit.json
 isetup
 hrun ask implementer "q"
 check "denied neither: empty" jqt '.denied == [] and .denials == 0' .harness/asks/implementer.exit.json
