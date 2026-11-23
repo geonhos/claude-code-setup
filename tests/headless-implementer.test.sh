@@ -61,6 +61,23 @@ check "denied events only: unchanged" jqt '(.denied | length) == 1 and .denied[0
 isetup; export FAKE_CLAUDE_DENY=4
 hrun ask implementer "q"
 check "denied result only: unchanged" jqt '.denied == [{"tool":"Read","input":".env","reason":""}] and .denials == 1' .harness/asks/implementer.exit.json
+isetup; export FAKE_CLAUDE_DENY=5
+hrun ask implementer "q"
+check "denied event without tool_input + result with input: one entry" jqt '(.denied | length) == 1 and .denied[0].input == "rm -rf /tmp/x" and .denied[0].reason == "safetyCheck" and .denials == 1' .harness/asks/implementer.exit.json
+isetup; export FAKE_CLAUDE_DENY=6
+hrun ask implementer "q"
+check "denied event without tool_input + result with empty input: one entry" jqt '(.denied | length) == 1 and .denied[0].tool == "Bash" and .denied[0].reason == "safetyCheck" and .denials == 1' .harness/asks/implementer.exit.json
+check "denied empty input: \"\" not null in denied[]" jqt '.denied[0].input == ""' .harness/asks/implementer.exit.json
+check "denied empty input: printed line has no null" not_grep 'null' <(printf '%s' "$OUT")
+isetup; export FAKE_CLAUDE_DENY=8
+hrun ask implementer "q"
+check "denied 2 input-less events + 2 identical results: one entry, denials 2" jqt '(.denied | length) == 1 and .denied[0].input == "a" and .denied[0].reason == "safetyCheck" and .denials == 2' .harness/asks/implementer.exit.json
+isetup; export FAKE_CLAUDE_DENY=9
+hrun ask implementer "q"
+check "denied 2 input-less events + 1 result: one entry" jqt '(.denied | length) == 1 and .denied[0].input == "a" and .denials == 1' .harness/asks/implementer.exit.json
+isetup; export FAKE_CLAUDE_DENY=10
+hrun ask implementer "q"
+check "denied tool_use_id pairs reasons despite reversed order" jqt '(.denied | length) == 2 and (.denied | map(select(.input == "a"))[0].reason) == "reasonA" and (.denied | map(select(.input == "b"))[0].reason) == "reasonB"' .harness/asks/implementer.exit.json
 isetup
 hrun ask implementer "q"
 check "denied neither: empty" jqt '.denied == [] and .denials == 0' .harness/asks/implementer.exit.json

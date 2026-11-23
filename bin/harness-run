@@ -142,11 +142,25 @@ jq -R -n -c --arg id "$id" --argjson rc "$rc" --arg killed "$killed" --arg raw "
   | ([$e[] | select(.type == "result")] | last) as $r
   | ([$e[] | select(.type == "assistant") | .message.usage?] | map(select(. != null)) | last) as $u
   | ([$e[] | select(.type == "system" and .subtype == "permission_denied")] | map(
-        {tool: (.tool_name // "?"), input: ((.tool_input.command? // .tool_input.file_path? // .message // "") | tostring | split("\n")[0] | .[0:120]),
-         reason: (.decision_reason // .message // "")})) as $dev
+        ((.tool_input.command? // .tool_input.file_path? // "") | tostring | (split("\n")[0] // "") | .[0:120]) as $in
+        | {tool: (.tool_name // "?"), input: ($in | if . == "" then null else . end), id: (.tool_use_id // null),
+           reason: (.decision_reason // .message // ""), msg: (.message // "")})) as $dev
   | (($r.permission_denials // []) | map(
-        {tool: (.tool_name // "?"), input: ((.tool_input.command? // .tool_input.file_path? // "") | tostring | split("\n")[0] | .[0:120]), reason: ""})) as $rden
-  | (reduce ($dev + $rden)[] as $d ([]; if any(.[]; .tool == $d.tool and .input == $d.input) then . else . + [$d] end)) as $den
+        {tool: (.tool_name // "?"), input: ((.tool_input.command? // .tool_input.file_path? // "") | tostring | (split("\n")[0] // "") | .[0:120]),
+         ids: [.tool_use_id // empty], reason: "", used: false})) as $rden
+  # results first (same tool+input collapses, ids merged). Each event then fills the reason of one entry: the entry
+  # sharing its tool_use_id, else (no tool_input: the real CLI omits it) the first unused same-tool entry, else any
+  # same-tool entry (a retried denial). Only a tool with no entry at all is appended (event-only denial).
+  | (reduce $rden[] as $d ([]; (map(.tool == $d.tool and .input == $d.input) | index(true)) as $i
+        | if $i != null then .[$i].ids += $d.ids else . + [$d] end)) as $base
+  | (reduce $dev[] as $d ($base;
+        (if $d.id != null then (map(.ids | index($d.id) != null) | index(true)) else null end) as $byid
+        | (if $d.input == null then (map(.tool == $d.tool and (.used | not)) | index(true)) // (map(.tool == $d.tool) | index(true))
+           else (map(.tool == $d.tool and .input == $d.input) | index(true)) end) as $byk
+        | ($byid // $byk) as $i
+        | if $i != null then .[$i] |= ((if .reason == "" then .reason = $d.reason else . end) | .used = true)
+          else . + [{tool: $d.tool, input: ($d.input // $d.msg), ids: [], reason: $d.reason, used: true}] end)
+     | map({tool, input, reason})) as $den
   | {ask_id: $id, rc: $rc,
      result: ($r.subtype // null), is_error: ($r.is_error // null),
      num_turns: ($r.num_turns // null), cost_usd: ($r.total_cost_usd // null),
