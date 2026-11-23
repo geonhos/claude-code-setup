@@ -54,7 +54,7 @@ hl_progress_obj() {
   [ -z "$(sed -n 's/^resume=//p' "$ASK_DIR/$role.run" 2>/dev/null | head -n 1)" ] || resume=true
   if [ -f "$ej" ] && { [ -z "$id" ] || hl_done "$role" "$id"; }; then
     jq -c --argjson resume "$resume" --argjson t0 "$(num_or_null "$t0")" '
-      {runner: "headless", cost_usd: (.cost_usd // null), turns: (.num_turns // null), result: (.result // null),
+      {runner: "headless", ask_id: (.ask_id // null), cost_usd: (.cost_usd // null), turns: (.num_turns // null), result: (.result // null),
        denials: (.denials // null), stream_log: (.stream_log // null), resume: $resume,
        startup_s: (if (.t_init | type) == "number" and $t0 != null then (.t_init - $t0) else null end),
        session: (.session_id // ""), ctx_after: (.ctx // "")}' "$ej" 2>/dev/null && return 0
