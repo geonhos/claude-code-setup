@@ -71,7 +71,7 @@ agents, skills, bin, 훅은 이 체크아웃에서 심링크되고 기본값은 
 2. 큰 작업(동작·설계 변경, 보안·권한·훅 같은 위험 영역, 예상 비용 $5 이상)은 `/analyze`로 계획을 세워 issue에 올리고 사용자 승인을 기다립니다. 작은 작업은 승인 없이 진행합니다.
 3. `harness lane <issue#>`가 작업 폴더를 만듭니다. 저장소 옆 `../<repo>-<issue#>`의 git worktree이고 브랜치는 `feat|fix|docs/<issue#>-<slug>`입니다. 코드 변경은 항상 여기서 합니다. 기본 폴더에서 `harness ask implementer`는 거부됩니다.
 4. `harness -C <폴더> ask implementer '...'`로 구현합니다. lint·test를 통과해야 리포트가 나옵니다.
-5. 큰 작업만 `/review`를 거칩니다. Critical/Major가 있으면 FAIL이고, Minor는 issue로 남깁니다.
+5. 큰 작업(agent 프롬프트·스킬 변경인 `claude/agents/`, `claude/skills/`, `AGENTS.md` 포함)만 `/review`를 거칩니다. Critical/Major가 있으면 FAIL이고, Minor는 issue로 남깁니다. FAIL을 고친 뒤에는 `/review`를 다시 하고, 마지막 리뷰가 FAIL인 PR은 사용자가 달리 정하지 않는 한 열지 않습니다.
 6. conductor가 PR을 만듭니다(본문에 `Fixes #N`). merge는 사용자가 합니다.
 7. merge 뒤 `harness lane rm <issue#>`가 폴더와 브랜치를 지웁니다. PR이 merge 또는 close되고 미푸시 커밋이 없을 때만 지워집니다.
 

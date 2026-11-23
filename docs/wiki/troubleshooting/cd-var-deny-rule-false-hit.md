@@ -2,7 +2,7 @@
 type: troubleshooting
 status: active
 updated: 2026-11-23
-sources: ["#203", .harness/log/20261120-133705-reviewer.md, claude/agents/reviewer.md:33]
+sources: ["#203", session 2cc6a9e8, claude/agents/reviewer.md:33]
 verified_by: headless probe (5 haiku runs, 2026-11-23)
 ---
 # `cd "$VAR" && cmd file` denied citing `~/.ssh/**`

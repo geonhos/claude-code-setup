@@ -22,7 +22,7 @@ Read this first. Open a page only when it is relevant. Schema and promotion rule
 - [GNU stat -f](troubleshooting/gnu-stat-f.md): use `-nt`/`-ot` or `stat -c %Y` first (active, 2026-10-21)
 - [bash signals and job control](troubleshooting/bash-signals-job-control.md): bg jobs ignore INT; `set -m` hands tty signals to children (active, 2026-10-27)
 - [Global gitignore masks ignore gaps](troubleshooting/global-gitignore-masks-ignore-gaps.md): this machine's ~/.config/git/ignore hides missing excludes; check with core.excludesFile=/dev/null (active, 2026-11-16)
-- [Base worktree during the suite](troubleshooting/base-worktree-during-suite.md): a reviewer base worktree made while the suite runs fails worktree-guard; compare base before or after (active, 2026-11-23)
+- [Base worktree during the suite](troubleshooting/base-worktree-during-suite.md): a reviewer base worktree made while the suite runs fails worktree-guard; create it only after the suite; verify the head in a worktree, never an in-place checkout (active, 2026-11-23)
 - [Tests inherit worker env](troubleshooting/tests-inherit-worker-env.md): suites run by a worker see `HARNESS_ROLE=worker`; unset it (active, 2026-10-27)
 - [Half-assertion tests](troubleshooting/half-assertion-tests.md): `check [ a ] && [ b ]` asserts only a; prove fixes with a mutant; take expected values and inputs from outside the code under test (active, 2026-11-16)
 - [wiki-lint dangling sources](troubleshooting/wiki-lint-dangling-sources.md): lint checks only non-empty `sources`; grep the slug before deleting a suite or page (active, 2026-11-03)

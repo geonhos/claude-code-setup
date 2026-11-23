@@ -75,3 +75,4 @@
 - 2026-11-23 · implementer · #173 #205 · reviewer.md: base-fail only for changed behaviour, doc opinions Minor, base worktree after the suite
 - 2026-11-23 · implementer · #203 · cd-var-deny-rule-false-hit: Claude Code checks relative reads after an unresolved cd against Read deny rules
 - 2026-11-23 · implementer · #176 · AGENTS.md compressed 84 → 47 lines; serial-suite-loop pointer updated
+- 2026-11-23 · implementer · #213 #225 · base-worktree-during-suite: only after the suite, exemption removed, head verified in a worktree; cd-var page source now a session id

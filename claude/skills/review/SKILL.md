@@ -37,7 +37,7 @@ diff yourself (`harness ask` refuses to run in a worker session anyway).
    To review a work folder's uncommitted tree, run it as `harness -C <folder> ask reviewer ...`; a pushed branch or PR can be reviewed from the primary folder.
 
 3. Exit codes: `0` = PASS. `5` = `VERDICT: FAIL`: hand the findings to
-   `/implement`, then `/review` again before the PR is opened; after 2 consecutive FAILs on one PR, ask
+   `/implement`, then `/review` again before the PR is opened or called mergeable; after 2 consecutive FAILs on one change, ask
    the user (interview format). Only Critical/Major findings fail a review. `3` = no
    final VERDICT line, ask it to rewrite the report ending with one. Others
    as in conductor.md.
