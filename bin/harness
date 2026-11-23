@@ -133,7 +133,7 @@ record_progress() {
     fi
     if [ "$hl" != '{}' ]; then
       printf '\n## Run\n\n'
-      printf '%s' "$hl" | jq -r '"result \(.result // "-"), turns \(.turns // "-"), cost $\(.cost_usd // "-"), stream \(.stream_log // "-")"' 2>/dev/null
+      printf '%s' "$hl" | jq -r '"ask \(.ask_id // "-"), result \(.result // "-"), turns \(.turns // "-"), cost $\(.cost_usd // "-"), stream \(.stream_log // "-")"' 2>/dev/null
     fi
   } > "$logf" || return 1
 

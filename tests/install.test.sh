@@ -435,6 +435,9 @@ check "runner: no hardcoded suite list" not_grep 'names="gate' "$RUNNER"
 # agent prompts: base-comparison worktrees are temporary and removed before the report (#92)
 check "reviewer prompt: base worktree via mktemp" grep -qF 'git worktree add "$(mktemp -d)/base"' "$REPO/claude/agents/reviewer.md"
 check "reviewer prompt: base worktree removed" grep -qF 'git worktree remove --force' "$REPO/claude/agents/reviewer.md"
+check "reviewer prompt: base worktree only after the suite" grep -qF 'never while a suite runs' "$REPO/claude/agents/reviewer.md"
+check "reviewer prompt: base-fail only for changed behaviour" grep -qF 'A test for behaviour the diff changes must fail on' "$REPO/claude/agents/reviewer.md"
+check "reviewer prompt: document opinions are Minor" grep -qF 'what a document should add or say better' "$REPO/claude/agents/reviewer.md"
 
 printf '{"model":"keep"}\n' > "$CLAUDE_DIR/settings.json"
 run_install

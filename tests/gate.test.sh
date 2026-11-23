@@ -524,9 +524,11 @@ expect deny  $W "worker garbage input"    'not json at all'
 # --- the gate acts only in a harness checkout (decision 0010) -----------------
 # gate_at DIR ENVSPEC JSON -> allow|deny; runs the gate with cwd DIR, ENVSPEC passed to env
 gate_at() {
-  local out
+  local out rc
   out=$(printf '%s' "$3" | (cd "$1" && env $2 /bin/bash "$GATE" 2>/dev/null))
-  if [ -z "$out" ]; then echo allow; else printf '%s' "$out" | jq -r '.hookSpecificOutput.permissionDecision'; fi
+  rc=$?
+  if [ "$rc" -ne 0 ]; then echo "exit=$rc"
+  elif [ -z "$out" ]; then echo allow; else printf '%s' "$out" | jq -r '.hookSpecificOutput.permissionDecision'; fi
 }
 gchk() {  # WANT DIR ENVSPEC JSON LABEL
   local got
@@ -810,6 +812,28 @@ expect deny  $C "canon body-file file symlink" "$(lb 'gh pr comment 1 --body-fil
 expect deny  $C "canon git show dotdot"      "$(lb 'git show HEAD:docs/../bin/harness')"
 expect deny  $C "canon git show raw stream md" "$(lb 'git show HEAD:.harness/log/a.jsonl.md')"
 rm -rf "$LR" /private/tmp/claude-test70
+
+# --- bare environment (#205, wiki live-gate-edit) -----------------------------
+# Under set -u an unguarded $VAR ends the gate with exit 1 and no output, which Claude Code
+# treats as allow. env -i keeps only PATH (for jq); the gate must still exit 0 with a decision.
+bare() {  # WANT LABEL JSON
+  local out rc got
+  out=$(printf '%s' "$3" | (cd "$GATE_HOME/chk" && env -i PATH="$PATH" /bin/bash "$GATE" 2>/dev/null))
+  rc=$?
+  if [ "$rc" -ne 0 ]; then got="exit=$rc"
+  elif [ -z "$out" ]; then got=allow
+  else got=$(printf '%s' "$out" | jq -r '.hookSpecificOutput.permissionDecision'); fi
+  if [ "$got" = "$1" ]; then report ok "$2" "$1" "$got" "$3"; else report bad "$2" "$1" "$got" "$3"; fi
+}
+bare deny  "env -i: Edit src"              "$EDIT_SRC"
+bare deny  "env -i: Read src"              "$(tool Read '{"file_path":"/repo/src/a.ts"}')"
+bare deny  "env -i: Bash git push"         "$(bcmd 'git push')"
+bare deny  "env -i: Bash two commands"     "$(bcmd 'ls; ls')"
+bare allow "env -i: harness status"        "$(bcmd 'harness status')"
+bare allow "env -i: cat under .harness"    "$(bcmd 'cat .harness/progress.md')"
+bare allow "env -i: Write docs md"         "$(tool Write '{"file_path":"/repo/docs/a.md","content":"x"}')"
+bare deny  "env -i: other-session task output" "$(bcmd 'cat /private/tmp/claude-501/x/other/tasks/a.output')"
+bare deny  "env -i: garbage input"         'not json at all'
 
 echo "PASS $pass / FAIL $fail"
 [ "$fail" -eq 0 ]
