@@ -360,16 +360,20 @@ dash_size() { cat .harness/log/size; }
 ASK_DIR=.harness/asks
 dash_watch implementer "$RAW" ask-1
 EOH
+# wait_until <tenths> CMD... — poll CMD every 0.1 s until it succeeds or the cap passes (the check after it decides)
+wait_until() { local i=0 n=$1; shift; while [ $i -lt "$n" ] && ! "$@"; do sleep 0.1; i=$((i + 1)); done; return 0; }
+nframes_is() { [ "$(nframes "$1")" = "$2" ]; }
+dead() { ! kill -0 "$1" 2>/dev/null; }
 hold_start() {   # hold_start <name> -> HP; output in .harness/log/<name>.out
   echo "30 40" > .harness/log/size; rm -f .harness/log/$1.out
   LIB="$LIB" HERE="$HERE" DO_SRC="$DO_SRC" RAW="$RAW" PATH="$HERE/../bin:$PATH" HARNESS_DASH_IDLE_SEC=${2:-30} \
     perl -e '$SIG{INT} = "DEFAULT"; exec @ARGV' /bin/bash .harness/log/hold.sh > .harness/log/$1.out 2>&1 </dev/null & HP=$!   # perl: a background job inherits SIGINT ignored, which no trap can undo
-  sleep 1.5
+  wait_until 100 grep -q "── Result" .harness/log/$1.out   # first frame drawn (cold start can exceed a fixed sleep under load, #232)
 }
 nframes() { grep -c "── Result" .harness/log/$1.out; }
 hold_start winch 30
 check "hold: final frame drawn, still alive" bash -c 'kill -0 "$1" && [ "$(grep -c "── Result" "$2")" = 1 ]' _ "$HP" .harness/log/winch.out
-echo "30 90" > .harness/log/size; kill -WINCH $HP; sleep 1
+echo "30 90" > .harness/log/size; kill -WINCH $HP; wait_until 100 nframes_is winch 2
 check "hold: WINCH redraws at once (idle poll is 30 s)" [ "$(nframes winch)" = 2 ]
 kill -WINCH $HP; sleep 0.7
 check "hold: WINCH with an unchanged size does not repaint" [ "$(nframes winch)" = 2 ]
@@ -391,17 +395,17 @@ for sg in HUP:129 INT:130 TERM:130; do
   rm -f .harness/log/live-$n.out
   LIB="$LIB" DO_SRC="$DO_SRC" RAW="$RAW" HARNESS_DASH_SEC=30 \
     perl -e '$SIG{INT} = "DEFAULT"; exec @ARGV' /bin/bash .harness/log/live.sh > .harness/log/live-$n.out 2>&1 </dev/null & HP=$!
-  sleep 1
+  wait_until 100 grep -qF "live frame" .harness/log/live-$n.out   # traps are set before the first paint
   kill -$n $HP; wait $HP 2>/dev/null; HRC=$?
   check "live loop: $n exits $want, output ends with autowrap on + cursor shown + newline" bash -c '[ "$1" = "$2" ] && grep -qF "live frame" "$3" && [ "$(tail -c 20 "$3" | od -An -c | tr -d " \n" | grep -oF "$4" | wc -l | tr -d " ")" = 1 ] && tail -c 20 "$3" | od -An -c | tr -d " \n" | grep -qF "$4"' _ "$HRC" "$want" .harness/log/live-$n.out '033[?7h033[?25h\n'
 done
 hold_start poll 1
-echo "30 90" > .harness/log/size; sleep 2.5
+echo "30 90" > .harness/log/size; wait_until 100 nframes_is poll 2
 check "hold: size change picked up by the idle poll (no signal)" [ "$(nframes poll)" = 2 ]
 kill -INT $HP; wait $HP 2>/dev/null; HRC=$?
 check "hold: INT exits 130" [ "$HRC" = 130 ]
 hold_start gone 1
-cp $ASK_DIR/implementer.current .harness/log/cur.bak; rm -f $ASK_DIR/implementer.current; sleep 2.5
+cp $ASK_DIR/implementer.current .harness/log/cur.bak; rm -f $ASK_DIR/implementer.current; wait_until 100 dead $HP
 check "hold: exits when the ask is removed, terminal restored" bash -c '! kill -0 "$1" 2>/dev/null && tail -c 20 "$2" | od -An -c | tr -d " \n" | grep -qF "$3"' _ "$HP" .harness/log/gone.out '033[?7h033[?25h\n'
 cp .harness/log/cur.bak $ASK_DIR/implementer.current
 
