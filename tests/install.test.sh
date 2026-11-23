@@ -308,7 +308,10 @@ check "reviewer FAIL only for Critical/Major" grep -q 'Minor.*never FAIL\|FAIL o
 check "implement skill: review big tasks only" grep -qi 'big task' "$REPO/claude/skills/implement/SKILL.md"
 check "review skill: big task scope" grep -q 'big task' "$REPO/claude/skills/review/SKILL.md"
 check "conductor files Minors as issues before the PR" grep -q 'Minors with `gh issue create` before the PR' "$REPO/claude/agents/conductor.md"
-check "conductor: no PR on a FAIL review" grep -qF 'a PR whose last review is FAIL is never opened' "$REPO/claude/agents/conductor.md"
+check "conductor: no PR on a FAIL review" grep -qF 'is never opened or called mergeable unless the user decides otherwise' "$REPO/claude/agents/conductor.md"
+check "review skill: no PR before a passing re-review" grep -qF 'before the PR is opened or called mergeable' "$REPO/claude/skills/review/SKILL.md"
+check "conductor: FAIL rounds counted per change" grep -qF 'two consecutive review FAILs on one change' "$REPO/claude/agents/conductor.md"
+check "review skill: FAIL rounds counted per change" grep -qF '2 consecutive FAILs on one change' "$REPO/claude/skills/review/SKILL.md"
 check "conductor: prompt and skill edits are big tasks" grep -qF 'an agent prompt or skill change' "$REPO/claude/agents/conductor.md"
 check "conductor: never merges" grep -qF 'Never merge' "$REPO/claude/agents/conductor.md"
 
@@ -432,10 +435,15 @@ check "runner glob: hyphenated suite runs" grep -qx '=== x-y ===' "$D.out"
 check "runner glob: helper not run" not_grep helper-ran "$D.out"
 check "runner: no hardcoded suite list" not_grep 'names="gate' "$RUNNER"
 
-# agent prompts: base-comparison worktrees are temporary and removed before the report (#92)
-check "reviewer prompt: base worktree via mktemp" grep -qF 'git worktree add "$(mktemp -d)/base"' "$REPO/claude/agents/reviewer.md"
-check "reviewer prompt: base worktree removed" grep -qF 'git worktree remove --force' "$REPO/claude/agents/reviewer.md"
-check "reviewer prompt: base worktree only after the suite" grep -qF 'never while a suite runs' "$REPO/claude/agents/reviewer.md"
+# agent prompts: review worktrees are non-temp siblings, removed before the report (#92, #207)
+check "reviewer prompt: review worktree is a non-temp sibling" grep -qF 'git worktree add ../<repo>-review-<short-sha> <rev>' "$REPO/claude/agents/reviewer.md"
+check "reviewer prompt: base worktree is a non-temp sibling" grep -qF '../<repo>-review-base-<short-sha>' "$REPO/claude/agents/reviewer.md"
+check "reviewer prompt: no worktree under a temp dir" grep -qF 'Never put a worktree under a temp directory' "$REPO/claude/agents/reviewer.md"
+check "reviewer prompt: worktrees removed, only own" grep -qF 'Remove every worktree you created before the report' "$REPO/claude/agents/reviewer.md"
+check "reviewer prompt: no in-place checkout" grep -qF 'Never check out another revision in the checkout you were started in' "$REPO/claude/agents/reviewer.md"
+check "reviewer prompt: no timing clause" bash -c '! grep -qF "never while a suite runs" "$1"' _ "$REPO/claude/agents/reviewer.md"
+check "reviewer prompt: changed behaviour needs a test failing on base" grep -qF 'and such a diff needs at least one' "$REPO/claude/agents/reviewer.md"
+check "reviewer prompt: cd deny wording" grep -qF 'can be denied by the Read deny rules' "$REPO/claude/agents/reviewer.md"
 check "reviewer prompt: base-fail only for changed behaviour" grep -qF 'A test for behaviour the diff changes must fail on' "$REPO/claude/agents/reviewer.md"
 check "reviewer prompt: document opinions are Minor" grep -qF 'what a document should add or say better' "$REPO/claude/agents/reviewer.md"
 

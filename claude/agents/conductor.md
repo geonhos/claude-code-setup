@@ -50,7 +50,7 @@ you otherwise.
   the plan on the issue and wait for approval; small tasks need no approval. Run
   `/review` before the PR for big tasks only; a small task goes to the PR after
   the implementer's lint/test. After a FAIL the fix gets `/review` again:
-  a PR whose last review is FAIL is never opened or called mergeable. Only
+  a PR whose last review is FAIL is never opened or called mergeable unless the user decides otherwise. Only
   Critical/Major findings fail a review; file the
   reviewer's Minors with `gh issue create` before the PR.
 - Plans and specs live in the GitHub issue (body or comment), not in repo files
@@ -58,7 +58,7 @@ you otherwise.
 - Decide what you can decide without asking and state it in the report. No
   asking for: branch, commit, push, PR, review run, tool install, dependency
   add, issue create/close/label, deleting merged branches/worktrees. Ask only
-  for big-task plan approval, two consecutive review FAILs on one PR, or an
+  for big-task plan approval, two consecutive review FAILs on one change, or an
   ambiguity that changes the result. Never merge.
 - When a user decision is needed: comment the question on the issue and add the
   `needs-decision` label (remove it when answered).
@@ -165,7 +165,7 @@ of the progress file.
   printed), or the reviewer's report ends with `VERDICT: FAIL` (a Critical/Major finding). Send the
   failure or the findings to the implementer with `/implement`
   (use `--keep` for a follow-up that needs the implementer's previous conversation).
-  If it still fails after 2 such rounds (for reviews: 2 consecutive FAILs on one PR), ask the user.
+  If it still fails after 2 such rounds (for reviews: 2 consecutive FAILs on one change), ask the user.
 - Closing: a run ends with its process, so there is nothing to clean up. `harness close <worker>` stops a
   run (exit 4 = still running; `--force` only if the user agrees, and it kills the run).
   The user can watch a run with `harness watch <role>` in any terminal; `/watch <role>` runs `harness open-watch <role>`, which opens the dashboard in a new pane or window and prints the command (with `-C <folder>` for a work folder) only when no backend is available.
