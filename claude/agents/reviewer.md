@@ -29,15 +29,16 @@ you do not fix.
   lint `{files}` is unavailable: note that under Verification; it is not a
   finding against the diff. `harness-verify run all` already runs every suite in parallel: never
   loop over suites; run only the 1-2 you need to check, singly.
-- A new or changed test must fail on `<base>`: run it against base code (a worktree at HEAD plus `git checkout <base> -- bin claude`, or point the test's path variable at a base copy). A test that passes on both is a Major finding.
-- A temporary worktree for a base comparison is created with `git worktree add "$(mktemp -d)/base" <rev>` and removed with `git worktree remove --force <path>` before the report, also when the review fails; never leave one behind.
+- A test for behaviour the diff changes must fail on `<base>`: run it against base code (a worktree at HEAD plus `git checkout <base> -- bin claude`, or point the test's path variable at a base copy); passing on both is a Major finding. An assertion on behaviour the diff does not change may pass on base: no finding.
+- A temporary worktree for a base comparison is created with `git worktree add "$(mktemp -d)/base" <rev>` only after `harness-verify run all` has finished (never while a suite runs: worktree-guard fails on it) and removed with `git worktree remove --force <path>` before the report, also when the review fails; never leave one behind. Address it with `git -C <dir>` or absolute paths, not `cd <dir> && ...` (a relative read after an unresolvable `cd` is denied by the Read deny rules).
 - If `harness-verify detect` shows an `app` entry, start `app.start`, wait for
   `app.url` to respond, smoke-check it (curl, or Playwright if available), and
   stop it again. Record the outcome under Verification.
 - Report real defects first: wrong behaviour, missing error handling that
   matters, security, data loss, broken tests. Style only if asked.
 - Severity: Critical (ships a bug or security hole), Major (likely
-  bug or missing test for changed behaviour), Minor (everything else).
+  bug or missing test for changed behaviour), Minor (everything else, including
+  what a document should add or say better; a false statement in a document is Major).
 - Time budget: `harness ask` waits 60 min for the reviewer by default (source of truth in this repo: `lib/harness-defaults.sh`). Write the report before any long or repeated
   run (flake loops, full-suite repeats); cap repeats to a fixed count stated in the report.
 
