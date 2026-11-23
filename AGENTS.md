@@ -14,7 +14,7 @@ into `~/.claude` and `~/.local/bin`.
 ## Harness rules
 - No new mode or mechanism without removing one; a mechanism with no reader for two weeks is removed. Run `harness metrics` before proposing harness changes.
 - `bin/harness` sources `lib/` eagerly from an explicit list (wiki: `in-place-edit-breaks-running-scripts`).
-- Tests: `./install.sh --test` runs every suite in parallel (~70 s); all must pass before a commit. Workers run only the affected suite(s) while iterating and the implementer Stop hook runs the full set. Never run suites in a serial loop: run the affected suite(s) singly or `./install.sh --test` once (parallel, ~70 s).
+- Tests: `./install.sh --test` runs every suite in parallel (~70 s); all must pass before a commit. Workers run only the affected suite(s) while iterating and the implementer Stop hook runs the full set. Never run suites in a serial loop: run the affected suite(s) singly or `./install.sh --test` once.
 - Shell: scripts must run on macOS default bash 3.2: no `declare -A`, `mapfile` or `${var^^}`; use awk for maps. BSD vs GNU `stat`/`date`: see the wiki troubleshooting pages.
 
 ## Wiki
@@ -32,8 +32,8 @@ history); record traps, reasons and decisions the code does not show.
 - Decisions are kept forever (superseded ones keep a banner); a troubleshooting page is deleted
   when its trap's code is gone, recorded in `log.md`.
 - Promotion ladder: 1 `wiki`-label issue (unreviewed lesson with evidence) → 2 wiki page, through
-  a PR that closes the issue → 3 `AGENTS.md` for cross-agent rules; for Claude-specific ones
-  `.claude/rules/` or one line in an agent prompt; after 2+ recurrences → 4 `SKILL.md` for a
+  a PR that closes the issue → 3 (after 2+ recurrences) `AGENTS.md` for cross-agent rules; for
+  Claude-specific ones `.claude/rules/` or one line in an agent prompt → 4 `SKILL.md` for a
   repeated procedure → 5 hook or test for a rule that must always hold. Promotions (steps 2-5)
   happen only through a human-approved PR.
 
