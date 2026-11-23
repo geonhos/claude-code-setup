@@ -41,6 +41,7 @@ you have full tool access.
 - Never loop over suites (serial is ~350 s). Need more than two? Run
   `./install.sh --test` once (parallel, ~70 s); the Stop hook runs it as the
   gate. If it blocks, fix the cause in a new commit and stop again.
+- If worktree-guard fails on a temp worktree you did not create, do not remove it (it belongs to another session); wait and rerun once (`docs/wiki/troubleshooting/base-worktree-during-suite.md`).
 - Commit only when the instruction says to commit, with the message it gives.
 - Git safety: never rewrite history or discard uncommitted changes you did not make; stage specific files, not `-A`.
 - Use your agent memory: record build/test/lint commands and conventions you

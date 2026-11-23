@@ -11,7 +11,8 @@ cat > "$GH_BIN/gh" <<'EOG'
 #!/bin/bash
 case "$1 $2" in
   "issue view") echo "${FAKE_GH_TITLE:-}" ;;
-  "pr view") f=$GH_DIR/${3//\//_}; [ -f "$f" ] || exit 1
+  "pr view") [ -z "${GH_LOG:-}" ] || printf 'pr view [%s]\n' "$3" >> "$GH_LOG"
+    f=$GH_DIR/${3//\//_}; [ -f "$f" ] || exit 1
     q=""; while [ $# -gt 0 ]; do [ "$1" = -q ] && q=$2; shift; done
     jq -r "${q:-.}" "$f" ;;
 esac
@@ -239,6 +240,16 @@ hrun -C "$BASE/repo" lane rm "$D" --force
 check "detached --force: counts the folder's own commits" grep -q "2 commit(s)" <<<"$OUT"
 check "detached --force: folder gone" test ! -d "$D"
 cd "$BASE/repo" || exit 1
+
+# 12b. lane ls on a detached worktree: no PR lookup with an empty branch, the row still prints
+lsetup
+hrun lane 62 j; D="$BASE/repo-62"
+git -C "$D" checkout -q --detach
+GH_LOG=$(mktemp); WORKS="$WORKS $GH_LOG"; export GH_LOG
+hrun lane ls
+LOG=$GH_LOG; unset GH_LOG
+check "ls detached: row still prints with PR:-" grep -q "$D  PR:-" <<<"$OUT"
+check "ls detached: no gh pr view with an empty branch" not_grep 'pr view \[\]' "$LOG"
 
 # 13. ignored files on remove
 lsetup
