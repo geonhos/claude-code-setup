@@ -24,6 +24,9 @@ check "success: progress runner" jqt '.runner == "headless" and .exit == 0 and .
 sl=$(lastprog | jq -r '.stream_log // empty')
 check "success: stream_log exists" test -f "${sl:-/nonexistent}"
 check "success: exit.json for the ask" grep -q "\"ask_id\":\"$(cut -d' ' -f1 .harness/asks/analyst.current)\"" .harness/asks/analyst.exit.json
+aid=$(cut -d' ' -f1 .harness/asks/analyst.current)
+check "success: progress row carries the ask_id" jqt ".ask_id == \"$aid\"" <<<"$(lastprog)"
+check "success: archived log names the ask_id" grep -qF "ask $aid," "$(ls -t .harness/log/*-analyst.md | head -n 1)"
 
 # 2. reviewer verdicts
 hsetup

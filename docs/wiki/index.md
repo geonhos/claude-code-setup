@@ -28,7 +28,7 @@ Read this first. Open a page only when it is relevant. Schema and promotion rule
 - [No-edits brief skips report](troubleshooting/no-edits-brief-skips-report.md): say "no source edits (report still required)" or the implementer exits 3 (active, 2026-11-03)
 
 ## How-to
-- [Transcript forensics](how-to/transcript-forensics.md): real Stop-hook time, did /clear run, what a worker was given, known model noise (active, 2026-11-22)
+- [Transcript forensics](how-to/transcript-forensics.md): real Stop-hook time, did /clear run, what a worker was given, known model noise (active, 2026-11-23)
 - [Headless probes](how-to/headless-probes.md): neutral --agents agent for permission probes; clean, cheap claude -p generation call (active, 2026-11-22)
 
 ## Decisions
