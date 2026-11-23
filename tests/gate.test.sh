@@ -523,12 +523,16 @@ expect deny  $W "worker garbage input"    'not json at all'
 
 # --- the gate acts only in a harness checkout (decision 0010) -----------------
 # gate_at DIR ENVSPEC JSON -> allow|deny; runs the gate with cwd DIR, ENVSPEC passed to env
+# gate_decision RC OUT -> exit=<rc>|allow|<permissionDecision>; the one rc/empty/jq mapping (bare() uses it too)
+gate_decision() {
+  if [ "$1" -ne 0 ]; then echo "exit=$1"
+  elif [ -z "$2" ]; then echo allow; else printf '%s' "$2" | jq -r '.hookSpecificOutput.permissionDecision'; fi
+}
 gate_at() {
   local out rc
   out=$(printf '%s' "$3" | (cd "$1" && env $2 /bin/bash "$GATE" 2>/dev/null))
   rc=$?
-  if [ "$rc" -ne 0 ]; then echo "exit=$rc"
-  elif [ -z "$out" ]; then echo allow; else printf '%s' "$out" | jq -r '.hookSpecificOutput.permissionDecision'; fi
+  gate_decision "$rc" "$out"
 }
 gchk() {  # WANT DIR ENVSPEC JSON LABEL
   local got
@@ -591,7 +595,7 @@ ENTER=$(fn_body "$HERE/../bin/harness-verify" enter_root)
 agree() {  # LABEL DIR WANT(gated|free) — enter_root must land on the marker iff the gate is gated
   local d=$2 gate ver
   gate=$(gate_at "$d" "HARNESS_ROLE=conductor" "$EDIT_SRC")
-  [ "$gate" = deny ] && gate=gated || gate=free
+  case $gate in deny) gate=gated ;; exit=*) ;; *) gate=free ;; esac   # exit=<rc> (gate crash) stays as is and fails
   ver=$(cd "$d" && /bin/bash -c ". \"$HERE/../lib/harness-root.sh\"; $ENTER"'; IS_GIT=0; ROOT=$PWD; enter_root; [ -d "$ROOT/.harness/asks" ] && echo gated || echo free' 2>/dev/null)
   if [ "$gate" = "$3" ] && [ "$ver" = "$3" ]; then report ok "agree: $1" "$3" "$gate/$ver" x
   else report bad "agree: $1" "$3" "gate=$gate verify=$ver" x; fi
@@ -820,9 +824,7 @@ bare() {  # WANT LABEL JSON
   local out rc got
   out=$(printf '%s' "$3" | (cd "$GATE_HOME/chk" && env -i PATH="$PATH" /bin/bash "$GATE" 2>/dev/null))
   rc=$?
-  if [ "$rc" -ne 0 ]; then got="exit=$rc"
-  elif [ -z "$out" ]; then got=allow
-  else got=$(printf '%s' "$out" | jq -r '.hookSpecificOutput.permissionDecision'); fi
+  got=$(gate_decision "$rc" "$out")
   if [ "$got" = "$1" ]; then report ok "$2" "$1" "$got" "$3"; else report bad "$2" "$1" "$got" "$3"; fi
 }
 bare deny  "env -i: Edit src"              "$EDIT_SRC"
