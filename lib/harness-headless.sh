@@ -96,7 +96,7 @@ hl_collect() {
   if [ -n "$perm" ] && [ "$perm" != auto ]; then
     echo "harness: warning: $role was launched with permission mode auto but ran in '$perm'; tools may have been denied (see harness watch)" >&2
   fi
-  denied=$(jq -r '(.denied // [])[] | "  - \(.tool): \(.input)\(if (.reason // "") != "" then " (" + .reason + ")" else "" end)"' <<<"$ejc" 2>/dev/null)
+  denied=$(jq -r '(.denied // [])[] | "  - \(.tool):\(if .input == "" then "" else " " + .input end)\(if (.reason // "") != "" then " (" + .reason + ")" else "" end)"' <<<"$ejc" 2>/dev/null)
   restore_interrupted "$role" "$report"
   if [ -f "$report" ] && { [ ! -f "$cur" ] || [ ! "$report" -ot "$cur" ]; }; then
     [ -z "$denied" ] || printf 'harness: note: %s denied tool call(s):\n%s\n' "$(grep -c . <<<"$denied")" "$denied" >&2
