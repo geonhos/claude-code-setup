@@ -72,3 +72,5 @@
 - 2026-11-22 · implementer · #177 · decision 0014: deny of one subcommand blocks the whole compound call, no rule name shown
 - 2026-11-22 · implementer · #188 · live-gate-edit: reference env vars as ${VAR:-} under set -u
 - 2026-11-23 · implementer · #198 · transcript-forensics: ask-id to log/progress lookup; progress rows and archive carry ask_id
+- 2026-11-23 · implementer · #173 #205 · reviewer.md: base-fail only for changed behaviour, doc opinions Minor, base worktree after the suite
+- 2026-11-23 · implementer · #203 · cd-var-deny-rule-false-hit: Claude Code checks relative reads after an unresolved cd against Read deny rules
