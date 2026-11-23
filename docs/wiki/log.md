@@ -81,3 +81,4 @@
 - 2026-11-23 · implementer · #212 #222 · doc-rewrite-moves-scope: new page, a compressed list's shared qualifier and a moved citation
 - 2026-11-23 · implementer · #206 · half-assertion-tests: shape 7, a dedupe keyed on a field one source lacks
 - 2026-11-23 · implementer · #230 · base-worktree-during-suite: a dead reviewer's sibling worktree is removed by hand (git worktree remove / harness lane rm --force)
+- 2026-11-23 · implementer · #236 · how-to/release: new page, semver from v3.0.0, tag as the only version, Korean release notes

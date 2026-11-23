@@ -32,6 +32,7 @@ Read this first. Open a page only when it is relevant. Schema and promotion rule
 ## How-to
 - [Transcript forensics](how-to/transcript-forensics.md): real Stop-hook time, did /clear run, what a worker was given, known model noise (active, 2026-11-23)
 - [Headless probes](how-to/headless-probes.md): neutral --agents agent for permission probes; clean, cheap claude -p generation call (active, 2026-11-22)
+- [Release](how-to/release.md): semver from v3.0.0, tag is the version, Korean release note, who runs git tag / gh release (active, 2026-11-23)
 
 ## Decisions
 - [0001 Keep herdr panes](decisions/0001-keep-herdr-panes-despite-subagent-model.md): subagent model works; panes kept; superseded by 0011 (superseded, 2026-11-01)
