@@ -51,7 +51,7 @@ lane_ls() {
   tab=$(printf '\t')
   lane_rows | while IFS="$tab" read -r p b; do
     b=${b#refs/heads/}; n=${b#*/}; n=${n%%-*}
-    info=""; command -v gh >/dev/null 2>&1 \
+    info=""; [ -n "$b" ] && command -v gh >/dev/null 2>&1 \
       && info=$(gh pr view "$b" --json state,headRefOid,number -q '[.state,.headRefOid,.number]|@tsv' 2>/dev/null)
     IFS="$tab" read -r st oid num <<EOI
 $info

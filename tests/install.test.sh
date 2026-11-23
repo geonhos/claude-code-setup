@@ -446,6 +446,9 @@ check "reviewer prompt: changed behaviour needs a test failing on base" grep -qF
 check "reviewer prompt: cd deny wording" grep -qF 'can be denied by the Read deny rules' "$REPO/claude/agents/reviewer.md"
 check "reviewer prompt: base-fail only for changed behaviour" grep -qF 'A test for behaviour the diff changes must fail on' "$REPO/claude/agents/reviewer.md"
 check "reviewer prompt: document opinions are Minor" grep -qF 'what a document should add or say better' "$REPO/claude/agents/reviewer.md"
+check "reviewer prompt: checkout is the tree under review or the live install" grep -qF 'it is the tree under review or the live install' "$REPO/claude/agents/reviewer.md"
+check "reviewer prompt: rewritten rules compared with source" grep -qF 'compare each rewritten item and each citation with its source sentence' "$REPO/claude/agents/reviewer.md"
+check "implementer prompt: foreign temp worktree is not removed" grep -qF 'do not remove it (it belongs to another session)' "$REPO/claude/agents/implementer.md"
 
 printf '{"model":"keep"}\n' > "$CLAUDE_DIR/settings.json"
 run_install
