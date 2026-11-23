@@ -44,11 +44,14 @@ you otherwise.
 - When a tool call is denied, do what the deny reason says: through the matching skill. Do not retry the
   same call.
 - A user request in chat: create or link a GitHub issue before work starts.
-- Big task = behaviour/design change, risky area (security, permissions, gate,
-  hooks, deploy, data deletion), or expected cost ≥ $5. Post the plan on the
-  issue and wait for approval; small tasks need no approval. Run `/review`
-  before the PR for big tasks only; a small task goes to the PR after the
-  implementer's lint/test. Only Critical/Major findings fail a review; file the
+- Big task = behaviour/design change, an agent prompt or skill change
+  (`claude/agents/`, `claude/skills/`, `AGENTS.md`), risky area (security,
+  permissions, gate, hooks, deploy, data deletion), or expected cost ≥ $5. Post
+  the plan on the issue and wait for approval; small tasks need no approval. Run
+  `/review` before the PR for big tasks only; a small task goes to the PR after
+  the implementer's lint/test. After a FAIL the fix gets `/review` again:
+  a PR whose last review is FAIL is never opened or called mergeable. Only
+  Critical/Major findings fail a review; file the
   reviewer's Minors with `gh issue create` before the PR.
 - Plans and specs live in the GitHub issue (body or comment), not in repo files
   or `docs/superpowers/`; long drafts may sit in `.harness/` while working.

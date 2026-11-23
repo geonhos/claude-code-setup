@@ -308,6 +308,9 @@ check "reviewer FAIL only for Critical/Major" grep -q 'Minor.*never FAIL\|FAIL o
 check "implement skill: review big tasks only" grep -qi 'big task' "$REPO/claude/skills/implement/SKILL.md"
 check "review skill: big task scope" grep -q 'big task' "$REPO/claude/skills/review/SKILL.md"
 check "conductor files Minors as issues before the PR" grep -q 'Minors with `gh issue create` before the PR' "$REPO/claude/agents/conductor.md"
+check "conductor: no PR on a FAIL review" grep -qF 'a PR whose last review is FAIL is never opened' "$REPO/claude/agents/conductor.md"
+check "conductor: prompt and skill edits are big tasks" grep -qF 'an agent prompt or skill change' "$REPO/claude/agents/conductor.md"
+check "conductor: never merges" grep -qF 'Never merge' "$REPO/claude/agents/conductor.md"
 
 # --- test runner (install.sh --test) against scratch suites -----------------
 # INSTALL_SH can point at another copy of the script (used to show the tests red).
