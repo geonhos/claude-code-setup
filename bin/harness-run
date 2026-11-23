@@ -142,11 +142,11 @@ jq -R -n -c --arg id "$id" --argjson rc "$rc" --arg killed "$killed" --arg raw "
   | ([$e[] | select(.type == "result")] | last) as $r
   | ([$e[] | select(.type == "assistant") | .message.usage?] | map(select(. != null)) | last) as $u
   | ([$e[] | select(.type == "system" and .subtype == "permission_denied")] | map(
-        ((.tool_input.command? // .tool_input.file_path? // "") | tostring | split("\n")[0] | .[0:120]) as $in
+        ((.tool_input.command? // .tool_input.file_path? // "") | tostring | (split("\n")[0] // "") | .[0:120]) as $in
         | {tool: (.tool_name // "?"), input: ($in | if . == "" then null else . end), id: (.tool_use_id // null),
            reason: (.decision_reason // .message // ""), msg: (.message // "")})) as $dev
   | (($r.permission_denials // []) | map(
-        {tool: (.tool_name // "?"), input: ((.tool_input.command? // .tool_input.file_path? // "") | tostring | split("\n")[0] | .[0:120]),
+        {tool: (.tool_name // "?"), input: ((.tool_input.command? // .tool_input.file_path? // "") | tostring | (split("\n")[0] // "") | .[0:120]),
          ids: [.tool_use_id // empty], reason: "", used: false})) as $rden
   # results first (same tool+input collapses, ids merged). Each event then fills the reason of one entry: the entry
   # sharing its tool_use_id, else (no tool_input: the real CLI omits it) the first unused same-tool entry, else any
