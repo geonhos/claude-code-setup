@@ -76,3 +76,4 @@
 - 2026-11-23 · implementer · #203 · cd-var-deny-rule-false-hit: Claude Code checks relative reads after an unresolved cd against Read deny rules
 - 2026-11-23 · implementer · #176 · AGENTS.md compressed 84 → 47 lines; serial-suite-loop pointer updated
 - 2026-11-23 · implementer · #213 #225 · base-worktree-during-suite: only after the suite, exemption removed, head verified in a worktree; cd-var page source now a session id
+- 2026-11-23 · implementer · #213 #225 #207 · base-worktree-during-suite: any session's temp worktree trips the per-repo guard; review worktrees in non-temp siblings, timing clause dropped
