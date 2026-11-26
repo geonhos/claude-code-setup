@@ -113,7 +113,14 @@ hrun -C "$D" ask implementer "q"
 check "-C ask: rc 0" [ "$RC" -eq 0 ]
 check "-C ask: state in the folder" test -s "$D/.harness/progress.jsonl"
 check "-C ask: report in the folder" test -s "$D/.harness/reports/implementer.md"
-check "-C ask: none in the primary for the implementer" not_grep '"agent":"implementer"' .harness/progress.jsonl
+check "-C ask: the primary has exactly one implementer row, lane 20" [ "$(jq -s -r '[.[] | select(.agent == "implementer" and .lane == "20")] | length' .harness/progress.jsonl)" = 1 ]
+check "-C ask: the primary has no implementer row without lane" [ "$(jq -s -r '[.[] | select(.agent == "implementer" and (.lane | not))] | length' .harness/progress.jsonl)" = 0 ]
+check "-C ask: the folder row has no lane" [ "$(jq -s -r '[.[] | select(.agent == "implementer")] | map(has("lane")) | join(",")' "$D/.harness/progress.jsonl")" = false ]
+check "-C ask: primary progress.md marks the lane row" grep -q '\[#20\] implementer' .harness/progress.md
+hrun -C "$D" close implementer
+check "-C close: rc 0" [ "$RC" -eq 0 ]
+check "-C close: the primary has a close row with lane 20" jq -e 'select(.event == "close" and .role == "implementer" and .lane == "20")' .harness/progress.jsonl
+check "-C close: progress.md marks the close" grep -q '\[#20\] .*implementer' <(grep '^Recent closes' .harness/progress.md)
 hrun -C "$D" status
 check "-C status: implementer line" grep -q "^implementer" <<<"$OUT"
 hrun -C "$D" report implementer
@@ -123,6 +130,21 @@ check "-C: bad dir fails" [ "$RC" -ne 0 ]
 hrun ask implementer "q" --no-lane
 check "--no-lane: allowed in the primary" [ "$RC" -eq 0 ]
 check "--no-lane: logged in progress.jsonl" jq -e 'select(.agent == "implementer" and .no_lane == true)' .harness/progress.jsonl
+check "--no-lane: primary row has no lane" jq -e 'select(.agent == "implementer" and .no_lane == true and (.lane | not))' .harness/progress.jsonl
+
+# 6b. mirror failures never fail the ask; a primary without .harness/asks gets nothing
+chmod 444 .harness/progress.jsonl
+hrun -C "$D" ask implementer "q2"
+check "mirror: unwritable primary file: ask rc 0" [ "$RC" -eq 0 ]
+check "mirror: unwritable primary file: warning" grep -q "could not copy the progress row" <<<"$OUT"
+check "mirror: unwritable primary file: folder row kept" [ "$(jq -s '[.[] | select(.agent == "implementer")] | length' "$D/.harness/progress.jsonl")" -ge 2 ]
+chmod 644 .harness/progress.jsonl
+mv .harness/asks .harness/asks.off
+hrun -C "$D" ask implementer "q3"
+check "mirror: uninitialised primary: ask rc 0" [ "$RC" -eq 0 ]
+check "mirror: uninitialised primary: no warning" not_grep "could not copy" <<<"$OUT"
+mv .harness/asks.off .harness/asks
+check "mirror: uninitialised primary: no new lane row" [ "$(jq -s '[.[] | select(.lane == "20")] | length' .harness/progress.jsonl)" = 2 ]
 
 # 7. two implementers in two folders at the same time
 hrun lane 21 y

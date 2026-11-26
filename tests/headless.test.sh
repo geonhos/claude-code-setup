@@ -209,6 +209,18 @@ check "keep close: no resume across a close" not_logged "--resume"
 check "keep close: says a close ended it" grep -q "closed" <<<"$OUT"
 check "keep close: runs fresh" grep -q "running fresh" <<<"$OUT"
 
+# 15b2. lane rows (mirrored from work folders) are not this checkout's sessions: --keep skips them
+hsetup
+cat > .harness/progress.jsonl <<'EOF2'
+{"ts":"2026-11-01T10:00:00Z","agent":"analyst","runner":"headless","result":"success","session":"PRIM-1","exit":0}
+{"ts":"2026-11-01T11:00:00Z","agent":"analyst","runner":"headless","result":"success","session":"LANE-9","exit":0,"lane":"9"}
+{"ts":"2026-11-01T12:00:00Z","event":"close","role":"analyst","reason":"after_ask","lane":"9"}
+EOF2
+hrun ask analyst "keep" --keep
+check "keep lane rows: resumes the primary session" logged "--resume PRIM-1"
+check "keep lane rows: never a lane session" not_logged "--resume LANE-9"
+check "keep lane rows: a lane close is not a boundary" not_grep "closed" <<<"$OUT"
+
 # 15c. close ends the conversation: --keep after a close of a healthy idle worker runs fresh
 hsetup
 hrun ask analyst "ok"

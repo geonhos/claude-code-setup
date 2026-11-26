@@ -4,6 +4,25 @@
 # lane_primary — path of the primary worktree (first entry of git's list), from any folder
 lane_primary() { git worktree list --porcelain 2>/dev/null | sed -n '1s/^worktree //p'; }
 
+# lane_mirror <json-line> — in a work folder, append the row just written to ./.harness/progress.jsonl
+# also to the primary's file with "lane":"<issue#>" and refresh the primary's progress.md (#246 C), so
+# `harness metrics` and the conductor see lane work after `harness lane rm`. Never fails the caller.
+lane_mirror() {
+  local prim b id
+  lane_in_primary && return 0
+  prim=$(lane_primary)
+  [ -n "$prim" ] && [ -d "$prim/.harness/asks" ] || return 0
+  b=$(git rev-parse --abbrev-ref HEAD 2>/dev/null)
+  case "$b" in
+    feat/[0-9]*-*|fix/[0-9]*-*|docs/[0-9]*-*) id=${b#*/}; id=${id%%-*} ;;
+    *) id=$(basename "$PWD") ;;
+  esac
+  { printf '%s\n' "$1" | jq -c --arg l "$id" '. + {lane: $l}' >> "$prim/.harness/progress.jsonl"; } 2>/dev/null \
+    || { echo "harness: could not copy the progress row to $prim (folder row kept)" >&2; return 0; }
+  ( cd "$prim" && write_progress_md ) 2>/dev/null
+  return 0
+}
+
 # lane_in_primary — 0 when the cwd is the primary worktree of a git repo
 lane_in_primary() {
   local g c

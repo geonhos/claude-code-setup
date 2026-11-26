@@ -24,7 +24,7 @@ hl_alive() {
 # line with result "success" and a session). A close event of the role is a boundary: when one came after the last such run, print "closed" instead (no session id looks like that).
 hl_last_session() {
   [ -f "$JSONL" ] || return 1
-  tail -n 200 "$JSONL" 2>/dev/null \
+  grep -v '"lane":' "$JSONL" 2>/dev/null | tail -n 200 \
     | jq -R -n -r --arg r "$1" '
         reduce (inputs | fromjson? | select(type == "object")) as $e ({sid: "", closed: false};
           if $e.event == "close" then (if $e.role == $r then {sid: "", closed: true} else . end)
