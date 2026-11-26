@@ -4,7 +4,7 @@ Read this first. Open a page only when it is relevant. Schema and promotion rule
 
 ## Troubleshooting: ask completion and timeouts
 - [ask --timeout is ms](troubleshooting/ask-timeout-is-milliseconds.md): `--timeout 1200` = 1.2s; defaults are role-aware (active, 2026-10-27)
-- [Serial suite loop](troubleshooting/serial-suite-loop.md): workers looping over suites cost 5x the parallel run; run singly or `./install.sh --test` once (active, 2026-11-23)
+- [Serial suite loop](troubleshooting/serial-suite-loop.md): workers looping over suites cost 5x the parallel run; run singly or `./install.sh --test` once (active, 2026-11-26)
 - [.harness root lookup](troubleshooting/harness-root-lookup.md): hook finds root by nearest `.harness/asks/`; one definition in lib/harness-root.sh; probe the gate from a checkout (active, 2026-11-16)
 - [Docs-only skip scope](troubleshooting/docs-only-asks-skip-the-suite.md): Stop hook skips the suite only for `docs/`/`.harness/`; wiki runs wiki-lint only (active, 2026-11-03)
 
