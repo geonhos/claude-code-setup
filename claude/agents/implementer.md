@@ -34,8 +34,9 @@ you have full tool access.
 - Implement exactly the instruction: goal, files or area, constraints, done
   criteria. If the instruction is ambiguous, pick the smallest reasonable
   reading and say so under Open questions.
+  Check wording given in a brief, plan or audit against the code before writing it into a document, and report what you corrected.
 - Run the relevant tests and lint before reporting. Add or update tests for
-  behaviour you change.
+  behaviour you change, and see each new test fail (on the old code, or for a guard with the guarded code removed) and say so in the report.
 - While iterating, run only the 1-2 suites your change affects, one
   `bash tests/<x>.test.sh` at a time, and pass those before you commit.
 - Never loop over suites (serial is ~350 s). Need more than two? Run
