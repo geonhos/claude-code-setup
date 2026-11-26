@@ -1,0 +1,5 @@
+run,arm,round,cost_usd,duration_ms,runner_wall_s,turns,input_tokens,output_tokens,cache_creation,cache_read,main_tool_use,inner_tool_use,subagent_tool_use,agent_spawns,denials
+A1,A,1,2.906,339271,340,44,80,20723,214869,3066047,42,0,0,0,0
+B1,B,1,5.025,254272,256,32,38,14215,200415,1215895,206,206,38,2,0
+A2,A,2,5.901,414638,477,43,86,20250,213789,3301235,40,0,28,1,0
+B2,B,2,6.186,490139,492,34,42,18720,206111,1423425,339,339,70,2,0
