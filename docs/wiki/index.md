@@ -13,7 +13,7 @@ Read this first. Open a page only when it is relevant. Schema and promotion rule
 - [Live gate edit](troubleshooting/live-gate-edit.md): a syntax error denies everything, other gate failures fail open silently; bash -n + suite before each save (active, 2026-11-22)
 - [In-place edit breaks running scripts](troubleshooting/in-place-edit-breaks-running-scripts.md): bin/ is live; bodies are brace-wrapped, edit via new inode; lib/ is safe while sourced eagerly (active, 2026-11-03)
 - [cd "$VAR" deny false hit](troubleshooting/cd-var-deny-rule-false-hit.md): after an unresolvable cd, Claude Code tests relative reads against ~/.ssh/** rules; use absolute paths or git -C (active, 2026-11-23)
-- [Doc rewrite moves scope](troubleshooting/doc-rewrite-moves-scope.md): a compressed list's shared qualifier or a moved citation attaches to items the source never covered; check each item against the source (active, 2026-11-23)
+- [Doc rewrite moves scope](troubleshooting/doc-rewrite-moves-scope.md): a compressed list's shared qualifier, a moved citation or an audit's copied suggestion states what the source never said; check each sentence against code or decision log (active, 2026-11-26)
 
 ## Troubleshooting: conductor
 - [zsh extendedglob in gate revs](troubleshooting/zsh-extendedglob-in-gate-revs.md): `^` in a git show rev globs to file names; gate denies `^`, allows only `~N` with --stat (active, 2026-11-16)
@@ -25,7 +25,7 @@ Read this first. Open a page only when it is relevant. Schema and promotion rule
 - [Global gitignore masks ignore gaps](troubleshooting/global-gitignore-masks-ignore-gaps.md): this machine's ~/.config/git/ignore hides missing excludes; check with core.excludesFile=/dev/null (active, 2026-11-26)
 - [Temp worktree fails worktree-guard](troubleshooting/base-worktree-during-suite.md): the guard is per repo, so any session's temp worktree (not only your own base) fails every running suite; remove only yours, else wait and rerun once (active, 2026-11-26)
 - [Tests inherit worker env](troubleshooting/tests-inherit-worker-env.md): suites run by a worker see `HARNESS_ROLE=worker`; unset it (active, 2026-11-26)
-- [Half-assertion tests](troubleshooting/half-assertion-tests.md): `check [ a ] && [ b ]` asserts only a; prove fixes with a mutant; take expected values and inputs from outside the code under test; repeat items in every source a dedupe merges (active, 2026-11-26)
+- [Half-assertion tests](troubleshooting/half-assertion-tests.md): `check [ a ] && [ b ]` asserts only a; prove fixes with a mutant; take expected values and inputs from outside the code under test; repeat items in every source a dedupe merges; count rows, not the tail row (active, 2026-11-26)
 - [wiki-lint dangling sources](troubleshooting/wiki-lint-dangling-sources.md): lint checks only non-empty `sources`; grep the slug before deleting a suite or page (active, 2026-11-26)
 - [No-edits brief skips report](troubleshooting/no-edits-brief-skips-report.md): say "no source edits (report still required)" or the implementer exits 3 (active, 2026-11-26)
 
