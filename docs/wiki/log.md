@@ -104,6 +104,9 @@
 - 2026-11-26 · implementer · #258 · doc-rewrite-moves-scope: shape 3 (audit wording copied unchecked); H1 and index hook widened
 - 2026-11-26 · implementer · #254 · work-folders how-to: two limits (last-writer-wins progress.md render, mirror never rotates the primary jsonl)
 - 2026-11-26 · implementer · #262 · half-assertion-tests: shape 3 guard-test example in past tense (the vacuous check was removed)
+- 2026-11-26 · implementer · #268 · half-assertion-tests: guard-test mutant rule promoted to reviewer.md and implementer.md
+- 2026-11-26 · implementer · #268 · doc-rewrite-moves-scope: audit/plan wording check promoted to reviewer.md and implementer.md
+- 2026-11-26 · implementer · #268 · serial-suite-loop, no-edits-brief-skips-report: implementer.md line citations :40→:41, :70→:71 (one line added to the prompt)
 - 2026-11-26 · implementer · #257 · gnu-stat-f: verified_by now "human (read file_mtime)"; the fake-stat test went with the removed `_mtime` subcommand
 - 2026-11-26 · implementer · #257 · decisions/0013-remove-herdr.md: dated amendment: open-watch may use a herdr pane (user decision)
 - 2026-11-26 · implementer · #257 · decisions/0014-init-writes-deny-rules.md: denied[] partial-list note marked resolved (#181, bin/harness-run:144-163)

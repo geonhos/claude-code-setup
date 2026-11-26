@@ -29,17 +29,17 @@ you do not fix.
   lint `{files}` is unavailable: note that under Verification; it is not a
   finding against the diff. `harness-verify run all` already runs every suite in parallel: never
   loop over suites; run only the 1-2 you need to check, singly.
-- A test for behaviour the diff changes must fail on `<base>`, and such a diff needs at least one: run it against base code (a worktree at HEAD plus `git checkout <base> -- bin claude`, or point the test's path variable at a base copy); passing on both is a Major finding. An assertion on behaviour the diff does not change may pass on base: no finding.
+- A test for behaviour the diff changes must fail on `<base>`, and such a diff needs at least one: run it against base code (a worktree at HEAD plus `git checkout <base> -- bin claude`, or point the test's path variable at a base copy); passing on both is a Major finding. An assertion on behaviour the diff does not change may pass on base, but show it can fail: remove or invert the code it guards (a mutant, in a review worktree you create as in the next line, removed afterwards); a new or changed check that still passes without the guarded code is a finding, rated as in the severity list (`docs/wiki/troubleshooting/half-assertion-tests.md`).
 - Never check out another revision in the checkout you were started in: it is the tree under review or the live install. Verify the head in the work folder that has it, else in a sibling worktree `git worktree add ../<repo>-review-<short-sha> <rev>`; a base comparison likewise in `../<repo>-review-base-<short-sha>`. Never put a worktree under a temp directory (`mktemp -d`, /tmp): worktree-guard is per repository, so it fails every suite running in any checkout of it. Remove every worktree you created before the report, also when the review fails, and none you did not. Address it with `git -C <dir>` or absolute paths, not `cd <dir> && ...` (a relative read after an unresolvable `cd` can be denied by the Read deny rules).
-- When a diff rewrites or compresses rules in a document or prompt, compare each rewritten item and each citation with its source sentence; a qualifier, condition or citation that now covers more or fewer items than before is a Major finding (`docs/wiki/troubleshooting/doc-rewrite-moves-scope.md`).
+- When a diff rewrites or compresses rules in a document or prompt, compare each rewritten item and each citation with its source sentence; a qualifier, condition or citation that now covers more or fewer items than before is a Major finding (`docs/wiki/troubleshooting/doc-rewrite-moves-scope.md`). Check likewise every statement the diff adds about what the code or a decision does against the code or the decision log, wherever its wording came from (audit, plan, brief).
 - If `harness-verify detect` shows an `app` entry, start `app.start`, wait for
   `app.url` to respond, smoke-check it (curl, or Playwright if available), and
   stop it again. Record the outcome under Verification.
 - Report real defects first: wrong behaviour, missing error handling that
   matters, security, data loss, broken tests. Style only if asked.
 - Severity: Critical (ships a bug or security hole), Major (likely
-  bug or missing test for changed behaviour), Minor (everything else, including
-  what a document should add or say better; a false statement in a document is Major).
+  bug or missing test for changed behaviour; a check that cannot fail where removing its guarded code would be a likely bug that no other test catches; a false statement in a document, prompt or comment), Minor (everything else, including
+  what a document should add or say better; a check that cannot fail where removing its guarded code would be no likely bug, or one another test catches).
 - Time budget: `harness ask` waits 60 min for the reviewer by default (source of truth in this repo: `lib/harness-defaults.sh`). Write the report before any long or repeated
   run (flake loops, full-suite repeats); cap repeats to a fixed count stated in the report.
 
