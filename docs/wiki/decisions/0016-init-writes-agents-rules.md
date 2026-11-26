@@ -2,7 +2,7 @@
 type: decision
 status: active
 updated: 2026-11-26
-sources: ["#243", commit feat/243-init-agents-rules, bin/harness:rules_apply, claude/templates/agents-rules.md]
+sources: ["#243", bin/harness:rules_apply, claude/templates/agents-rules.md]
 verified_by: tests/harness.test.sh, tests/lane.test.sh, tests/install.test.sh
 ---
 # 0016: `harness init` writes the harness rules block into AGENTS.md
@@ -11,7 +11,7 @@ verified_by: tests/harness.test.sh, tests/lane.test.sh, tests/install.test.sh
 
 **Decision.** (user, 2026-11-26)
 - `harness init` creates or updates a block in `AGENTS.md` between `<!-- harness:rules begin -->` and `<!-- harness:rules end -->`, text from `claude/templates/agents-rules.md` (one source; this repo's own block is tested equal to it).
-- Text outside the markers is never changed. A broken block (begin without end, end first, 2+ begins) fails init with nothing changed.
+- Text outside the markers is never changed. A broken block (a begin without an end, an end without a begin, an end before the begin, two or more begins, two or more ends) fails init with nothing changed.
 - A file init creates is added to `.git/info/exclude` unless `--shared`; an existing file is never excluded. A tracked file gets the block uncommitted, with a note.
 - Work folder rule: in a lane init never leaves a git-visible change. It writes only a file git already ignores (local mode recreates it from the template); a tracked or not-ignored case prints a note and changes nothing. `lane_ignored_diff` skips `AGENTS.md`.
 - `CLAUDE.md`, `.claude/CLAUDE.md`, `CLAUDE.local.md` are never edited; init warns to add `@AGENTS.md` (see troubleshooting/agents-md-ignored-when-claude-md-exists).
