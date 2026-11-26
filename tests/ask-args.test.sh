@@ -97,6 +97,20 @@ hrun ask analyst --timeout 007 "leading zeros"
 check "--timeout 007: still accepted (rc 0)" [ "$RC" -eq 0 ]
 unset FAKE_CLAUDE_MODE
 
+# #257: a leading zero is decimal (08 used to fail in $(( )) after the worker launched; 010 meant 8 ms)
+asetup; export FAKE_CLAUDE_MODE=slow30
+hrun ask analyst --timeout 08 "leading zero 08"
+check "--timeout 08: the ask deadline, not an octal error (rc 4)" [ "$RC" -eq 4 ]
+check "--timeout 08: no arithmetic error" bash -c '! grep -q "value too great" <<<"$1"' _ "$OUT"
+killpids "$FAKE_DIR/claude.pid"
+asetup; export FAKE_CLAUDE_MODE=slow100
+t0=$(date +%s)
+hrun ask analyst --timeout 03001 "leading zero 03001"
+t1=$(date +%s)
+check "--timeout 03001 is 3001 ms (octal 1537 would end after 2 s): rc 4, at least 4 s" bash -c '[ "$1" = 4 ] && [ "$2" -ge 4 ]' _ "$RC" "$((t1 - t0))"
+killpids "$FAKE_DIR/claude.pid"
+unset FAKE_CLAUDE_MODE
+
 # a usage error after an ordinary ask leaves exactly that ask's row (no copy of its cost or session)
 asetup
 hrun ask analyst "ok"

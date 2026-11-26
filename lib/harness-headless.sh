@@ -196,9 +196,9 @@ hl_resume_missing() {
 # hl_max_s <role> — the role's headless run cap in seconds: env, then config headless_max_minutes, then the default
 hl_max_s() {
   local m=${HARNESS_HL_MAX_S:-}
-  digits_only "$m" && { echo "$m"; return 0; }
+  digits_only "$m" && { echo $((10#$m)); return 0; }
   m=$(jq -r '.headless_max_minutes // empty' "$CONFIG_FILE" 2>/dev/null)
-  digits_only "$m" && { echo $((m * 60)); return 0; }
+  digits_only "$m" && { echo $((10#$m * 60)); return 0; }
   if [ "$1" = implementer ]; then echo "$HARNESS_HL_MAX_S_IMPLEMENTER_DEFAULT"; else echo "$HARNESS_HL_MAX_S_DEFAULT"; fi
 }
 
@@ -387,7 +387,11 @@ cmd_wait() {
   shift
   while [ $# -gt 0 ]; do
     case "$1" in
-      --timeout) case "${2:-}" in ''|*[!0-9]*|0) die "--timeout needs a number of milliseconds" ;; esac; timeout=$2; shift 2 ;;
+      --timeout) case "${2:-}" in
+                   ''|*[!0-9]*) die "--timeout needs a number of milliseconds above zero" ;;
+                   *[!0]*) timeout=$((10#$2)); shift 2 ;;   # 10#: 08 is 8, not an octal error
+                   *) die "--timeout needs a number of milliseconds above zero" ;;   # 0, 00
+                 esac ;;
       *) usage ;;
     esac
   done

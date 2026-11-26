@@ -120,6 +120,13 @@ check "wait does not collect (report untouched)" [ -f .harness/reports/analyst.m
 hrun wait nosuchthing
 check "wait: unknown target rc 1" [ "$RC" -eq 1 ]
 bsetup
+for tv in 0 00 000; do
+  hrun wait analyst --timeout $tv
+  check "wait --timeout $tv: rejected (rc 1), says it needs a number" bash -c '[ "$1" = 1 ] && grep -q "needs a" <<<"$2"' _ "$RC" "$OUT"
+done
+hrun wait analyst --timeout 08
+check "wait --timeout 08: accepted (no ask: rc 3, not a usage error)" [ "$RC" -eq 3 ]
+bsetup
 hrun wait analyst
 check "wait: no ask rc 3" [ "$RC" -eq 3 ]
 export FAKE_CLAUDE_MODE=slow60

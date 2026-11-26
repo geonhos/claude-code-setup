@@ -178,7 +178,7 @@ ask_parse_args() {
         --timeout)
           case "${2:-}" in
             ''|*[!0-9]*) ASK_BAD=1; shift ;;     # missing/invalid value: usage
-            *[!0]*) ASK_TIMEOUT=$2; ASK_TIMEOUT_SET=1; shift 2 ;;
+            *[!0]*) ASK_TIMEOUT=$((10#$2)); ASK_TIMEOUT_SET=1; shift 2 ;;   # 10#: 08 is 8, not an octal error
             *) ASK_BAD=1; shift ;;               # zero (0, 00): usage
           esac
           continue ;;
