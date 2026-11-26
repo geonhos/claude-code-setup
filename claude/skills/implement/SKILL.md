@@ -34,9 +34,9 @@ change yourself (`harness ask` refuses to run in a worker session anyway).
    The default wait is the implementer run cap (5400000 ms; analyst/reviewer 3600000). After a restart or compaction use `harness -C <path> wait implementer`, then `harness report implementer`. Use `--keep` only for a follow-up that needs its previous conversation.
 3. Handle the exit code as conductor.md's "Exit codes from `harness ask`"
    section says. In particular `5` means its lint/test checks failed after
-   retries: send the printed failure back with another `/implement` (its
-   context is kept automatically after a 5). After 2 failed rounds, ask the
-   user.
+   retries: send the printed failure back with another `/implement`. After a 5
+   a new ask starts a fresh session; add `--keep` when the fix needs the
+   implementer's previous conversation. After 2 failed rounds, ask the user.
 4. Big task (as conductor.md defines it): follow with `/review` before the PR.
    Small task: open the PR after the implementer's lint/test pass.
 5. Relay the substance of the report, not the report verbatim.

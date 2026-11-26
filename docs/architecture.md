@@ -20,7 +20,9 @@ flowchart LR
   log -- "SessionStart 훅이 progress.md 주입" --> cond
 ```
 
-설정은 `install.sh`가 `~/.claude/settings.json`에 훅을 쓰고, `agents/`, `skills/`, `bin/`을 `~/.claude`와 `~/.local/bin`에 심볼릭 링크하는 것이 전부다. 저장소마다 `harness init`이 `.harness/asks/`와 `agent = conductor`를 만든다. 훅은 `lib/harness-root.sh`의 `harness_root`로 체크아웃 루트를 찾고, 없으면 아무것도 하지 않는다.
+설정은 `install.sh`가 `~/.claude/settings.json`에 훅을 쓰고, `agents/`, `skills/`, `bin/`을 `~/.claude`와 `~/.local/bin`에 심볼릭 링크하는 것이 전부다. 저장소마다 `harness init`이 `.harness/asks/`와 `agent = conductor`를 만들고, deny 규칙 9개를 설정에 넣고, `AGENTS.md`에 harness 규칙 블록을 만들거나 덧붙이고, `.harness/` 등을 `.git/info/exclude`에 넣는다. 훅은 `lib/harness-root.sh`의 `harness_root`로 체크아웃 루트를 찾고, 없으면 아무것도 하지 않는다.
+
+`harness lane new|rm|ls`는 이슈마다 작업 폴더를 관리한다. 작업 폴더는 저장소 옆 `../<repo>-<이슈 번호>`에 만드는 git worktree이고, 만들 때 `harness init`과 `lane_setup`이 함께 돈다(`lib/harness-lane.sh`).
 
 ## 2. harness ask 수명
 
@@ -30,7 +32,7 @@ flowchart LR
 
 ## 3. conductor 게이트 판정 흐름 (conductor-gate.sh)
 
-conductor 세션의 PreToolUse 호출만 판정한다: `.harness/asks/`가 없는 저장소, 워커(`agent_type`이 conductor가 아님, 또는 `HARNESS_ROLE=worker`)는 통과시키고, jq가 없거나 입력을 파싱하지 못하면 거부한다(fail closed). 나머지는 도구별 허용 범위(쓰기는 `docs/**/*.md`와 `.harness/`, 읽기는 `docs/`, `.harness/`, `*.md`에서 `log/*.jsonl` 제외, Bash는 허용 목록의 단순 명령 1개)에 맞지 않으면 고정 안내 문구와 함께 거부한다. 경로는 심볼릭 링크를 푼 뒤에도 같은 규칙을 통과해야 한다. Bash는 `scan_command`가 `; & | < > #` 백틱, `$(`를 거부하고, 남은 단일 명령을 허용 목록(`harness`, `gh pr ...`(`close` 포함, `-d` 없이), 읽기 전용 `git`, 읽기 전용 `date`, `.harness/`·`docs/` 아래 `cat`/`ls`)에 맞춰 본다. 결정은 0005, 0010, 0012.
+conductor 세션의 PreToolUse 호출만 판정한다: `.harness/asks/`가 없는 저장소, 워커(`agent_type`이 conductor가 아님, 또는 `HARNESS_ROLE=worker`)는 통과시키고, jq가 없거나 입력을 파싱하지 못하면 거부한다(fail closed). 나머지는 도구별 허용 범위(쓰기는 `docs/**/*.md`와 `.harness/`, 읽기는 `docs/`, `.harness/`, `*.md`에서 `log/*.jsonl` 제외, Bash는 허용 목록의 단순 명령 1개)에 맞지 않으면 고정 안내 문구와 함께 거부한다. 경로는 심볼릭 링크를 푼 뒤에도 같은 규칙을 통과해야 한다. Bash는 `scan_command`가 `; & | < > #` 백틱, `$(`를 거부하고, 남은 단일 명령을 허용 목록(`harness`, `gh pr ...`(`close` 포함, `-d` 없이), 읽기 전용 `git`, 읽기 전용 `date`, `gh issue …` 하위 명령, `ls`/`stat`는 어디서나, `cat`/`head`/`tail`은 `.harness/`와 `docs/` 아래에서만)에 맞춰 본다. 결정은 0005, 0010, 0012.
 
 ## 4. 검증 루프
 
@@ -45,7 +47,7 @@ implementer의 frontmatter 훅이 `harness-verify`를 루프 안에서 돌린다
 
 ## 5. 진행 로그
 
-`harness ask`는 exit code와 관계없이 `.harness/log/<ts>-<agent>.md`와 `progress.jsonl` 한 줄을 쓰고 `progress.md`(60줄 이하: goal, 최근 ask, 미해결 질문, 워커 상태)를 다시 만든다. 로그 작업이 실패해도 stderr 경고만 찍고 ask 결과는 바꾸지 않는다.
+`harness ask`는 인자 오류를 빼면 exit code와 관계없이 `.harness/log/<ts>-<agent>.md`와 `progress.jsonl` 한 줄을 쓰고 `progress.md`(60줄 이하: goal, 최근 ask, 미해결 질문, 워커 상태)를 다시 만든다. 작업 폴더의 ask는 같은 줄을 `lane` 필드와 함께 원래 저장소의 `progress.jsonl`에도 쓰고, `progress.md`에는 `[#N]`이 붙는다. 로그 작업이 실패해도 stderr 경고만 찍고 ask 결과는 바꾸지 않는다.
 
 `SessionStart` 훅(`claude/hooks/conductor-resume.sh`, matcher `startup|clear|compact`)이 `progress.md`를 conductor 컨텍스트에 넣는다. 워커 세션에서는 아무것도 출력하지 않는다. 로그 정리 기준은 [reference.md](reference.md)의 설정에 있다.
 
