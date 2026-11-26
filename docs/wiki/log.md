@@ -84,3 +84,18 @@
 - 2026-11-23 · implementer · #236 · how-to/release: new page, semver from v3.0.0, tag as the only version, Korean release notes
 - 2026-11-26 · implementer · #243 · decisions/0016-init-writes-agents-rules: new page; `harness init` writes the rules block into AGENTS.md; lane_copy removed
 - 2026-11-26 · implementer · #246 · how-to/work-folders: lane rows mirrored to the primary progress.jsonl
+- 2026-11-26 · implementer · #256 · index: 0010 and conductor-shell-one-command dates, 0009 and 0013 hooks, work-folders line moved under How-to with a new hook
+- 2026-11-26 · implementer · #256 · decisions/0005: gate-check cite now conductor-gate.sh:28-53
+- 2026-11-26 · implementer · #256 · decisions/0007: inline marker, retro removed in prune step 4
+- 2026-11-26 · implementer · #256 · decisions/0009: inline markers for auto-resume/--fresh (removed #72) and the runner key (0011)
+- 2026-11-26 · implementer · #256 · decisions/0010: inline markers for spawn, route hooks, doctor, --worktree; `harness wait <role>` only
+- 2026-11-26 · implementer · #256 · decisions/0012: agent_id fallback cite now conductor-gate.sh:44-53
+- 2026-11-26 · implementer · #256 · decisions/0013: dated note that /watch exists and open-watch may open a herdr pane
+- 2026-11-26 · implementer · #256 · no-edits-brief-skips-report: cites now bin/harness-verify:357-358, lib/harness-headless.sh:132
+- 2026-11-26 · implementer · #256 · wiki-lint-dangling-sources: lint does check index.md links (lib/harness-metrics.sh:18-25)
+- 2026-11-26 · implementer · #256 · base-worktree-during-suite: worktree-add test line numbers refreshed
+- 2026-11-26 · implementer · #256 · global-gitignore-masks-ignore-gaps: cites now tests/harness.test.sh:507-511 and :507-518
+- 2026-11-26 · implementer · #256 · half-assertion-tests: three test pointers refreshed (headless 176-200, dash 268-279, lane 250-257)
+- 2026-11-26 · implementer · #256 · bash-signals-job-control: bin/harness-run cite now :42,69
+- 2026-11-26 · implementer · #256 · tests-inherit-worker-env: tests/harness-lib.sh cite now :10,31,41
+- 2026-11-26 · implementer · #256 · how-to/transcript-forensics: ask-id, log-retention and `## Instruction`/`## Brief` cites corrected
