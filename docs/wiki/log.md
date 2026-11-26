@@ -100,3 +100,5 @@
 - 2026-11-26 · implementer · #256 · tests-inherit-worker-env: tests/harness-lib.sh cite now :10,31,41
 - 2026-11-26 · implementer · #256 · how-to/transcript-forensics: ask-id, log-retention and `## Instruction`/`## Brief` cites corrected
 - 2026-11-26 · implementer · #244 · Notes are not filed as wiki issues in a repo without docs/wiki/index.md (queue_learned); no wiki page covers the Notes flow
+- 2026-11-26 · implementer · #252 #253 · half-assertion-tests: shape 3 guard-test example (needs a mutant), new shape 8 (count rows, not the tail)
+- 2026-11-26 · implementer · #258 · doc-rewrite-moves-scope: shape 3 (audit wording copied unchecked); H1 and index hook widened
