@@ -15,6 +15,7 @@ verified_by: tests/harness.test.sh, tests/lane.test.sh, tests/install.test.sh
 - A file init creates is added to `.git/info/exclude` unless `--shared`; an existing file is never excluded. A tracked file gets the block uncommitted, with a note.
 - Work folder rule: in a lane init never leaves a git-visible change. It writes only a file git already ignores (local mode recreates it from the template); a tracked or not-ignored case prints a note and changes nothing. `lane_ignored_diff` skips `AGENTS.md`.
 - `CLAUDE.md`, `.claude/CLAUDE.md`, `CLAUDE.local.md` are never edited; init warns to add `@AGENTS.md` (see troubleshooting/agents-md-ignored-when-claude-md-exists).
+- Line endings (checked in a scratch repo, #257): in a CRLF `AGENTS.md` that has a block, init writes the block body with LF and leaves the marker lines and all text outside them as they are (CRLF), so the file ends up mixed. A block appended to a CRLF file without one is all LF, markers included; the existing text keeps CRLF. A file converted wholesale to CRLF gets one "updated the harness rules block" run (the body goes back to LF) and "up to date" after that.
 - No opt-out flag. `lane_copy` was removed in exchange (no reader since #63; `"lane_setup": "cp ../<repo>/.env ."` covers the `.env` case).
 
 **Status.** Active.

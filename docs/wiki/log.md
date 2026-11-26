@@ -105,3 +105,8 @@
 - 2026-11-26 · implementer · #254 · work-folders how-to: two limits (last-writer-wins progress.md render, mirror never rotates the primary jsonl)
 - 2026-11-26 · implementer · #262 · half-assertion-tests: shape 3 guard-test example in past tense (the vacuous check was removed)
 - 2026-11-26 · implementer · #257 · gnu-stat-f: verified_by now "human (read file_mtime)"; the fake-stat test went with the removed `_mtime` subcommand
+- 2026-11-26 · implementer · #257 · decisions/0013-remove-herdr.md: dated amendment: open-watch may use a herdr pane (user decision)
+- 2026-11-26 · implementer · #257 · decisions/0014-init-writes-deny-rules.md: denied[] partial-list note marked resolved (#181, bin/harness-run:144-163)
+- 2026-11-26 · implementer · #257 · decisions/0016-init-writes-agents-rules.md: line-ending behaviour of the rules block
+- 2026-11-26 · implementer · #257 · decisions/0010-herdr-optional-gate-by-checkout.md: cite issue #107 with commit 350118e (PR #114)
+- 2026-11-26 · implementer · #257 · how-to/transcript-forensics.md: progress fields kept for forensics

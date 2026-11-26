@@ -16,6 +16,9 @@ Transcripts: `~/.claude/projects/<cwd-slug>/<session>.jsonl`.
 - **What was the worker given?** `harness` copies the instruction into `.harness/log/<stamp>-<role>.md` under `## Instruction`, and a referenced `.harness/task-*.md` under `## Brief (<path>)`, also for asks with no stream jsonl. The full system prompt and starting context are in the transcript's `prompt_snapshot` entry. Transcripts are pruned over time (session 8aec12d1, cited 2026-11-06, was gone by 2026-11-16).
 - **Lost report?** Asks before 2026-11-05 have no `.harness/log` copy. Take the session id from `.harness/progress.jsonl` `.session`, open `<session>.jsonl` and copy the input of the Write/Bash tool call that writes `.harness/reports/<role>.md` (sessions 9a862e52, c96587fc). Later reports are in `.harness/log/<stamp>-<role>.md`.
 
+## Progress fields kept for reading
+`instr`, `ctx_before`, `ctx_after` and `report_sha` are written to every `.harness/progress.jsonl` row but no code reads them back; they are kept for forensics (the #246 investigation used `instr` and the ctx values), so the "no reader for two weeks" rule does not apply to them (user decision 2026-11-26, #257).
+
 ## Known noise (not a bug)
 - sonnet-5-5 workers call a lowercase `bash` tool ~1.6% of the time (9/564) and recover at once; opus 0/987. Do not chase it as a config bug.
 - Headless workers have no TodoWrite tool (init `tools`, CLI 2.1.318–2.1.325; 0 calls in 93 streams). Do not build viewer features on it.

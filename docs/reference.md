@@ -62,6 +62,16 @@ harness를 쓰려는 저장소에서 한 번 실행합니다. `.harness/asks/`(�
   "app": { "start": "npm run dev", "url": "http://localhost:3000" }, "maxAttempts": 3 }
 ```
 
+코드가 읽는 키는 아래가 전부입니다.
+
+| 키 | 파일 | 읽는 곳 | 기본값 |
+|---|---|---|---|
+| `format`, `lint`, `test` | `.harness/verify.local.json` > `.claude/harness.json` | `harness-verify`(`resolve_step`) | 없음: 그 단계를 건너뜁니다. `null` 같은 문자열이 아닌 값은 그 단계를 끕니다. |
+| `maxAttempts` | 위와 같음 | `harness-verify`(`max_attempts`) | 3 (양의 정수가 아니면 3) |
+| `app` | 위와 같음 | `harness-verify detect`가 출력만 하고, 다른 단계는 읽지 않습니다. | `null` |
+| `lane_setup` | `.claude/harness.json`만 | `harness lane`이 새 work folder에서 `sh -c`로 실행합니다(`lib/harness-lane.sh`). | 없음: 실행하지 않습니다. |
+| `headless_max_minutes` | `.harness/config.json` | `hl_max_s`(`lib/harness-headless.sh`) | implementer 90분, 나머지 60분. 환경변수 `HARNESS_HL_MAX_S`(초)가 먼저입니다. |
+
 ## conductor가 직접 할 수 있는 일, 한계
 
 허용 목록(쓰기는 `docs/**/*.md`와 `.harness/`, Bash는 호출마다 단순 명령 하나)은 [architecture.md](architecture.md) §3과 `claude/agents/conductor.md`의 "You may run directly"에 있습니다.
