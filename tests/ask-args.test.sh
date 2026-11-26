@@ -72,6 +72,8 @@ ERRS=(
   "--timeout abc|analyst q --timeout abc"
   "--timeout 00|analyst --timeout 00 q"
   "--timeout 000|analyst q --timeout 000"
+  "--timeout 13 digits|analyst --timeout 9999999999999 q"
+  "--timeout 2^63|analyst q --timeout 9223372036854775808"
   "empty instruction|analyst ''"
 )
 for e in "${ERRS[@]}"; do
@@ -132,6 +134,11 @@ hrun ask implementer "q" --no-lane
 check "--no-lane after the text: allowed" [ "$RC" -eq 0 ]
 hrun ask --no-lane implementer "q" 2>/dev/null
 check "--no-lane before the agent: rc 1 (agent comes first)" [ "$RC" -eq 1 ]
+
+# #257: 12 significant digits are accepted (leading zeros do not count); 13 are a usage error (see ERRS)
+asetup
+hrun ask analyst --timeout 0999999999999 "twelve digits"
+check "--timeout of 12 digits after leading zeros: accepted (rc 0)" [ "$RC" -eq 0 ]
 
 echo "PASS $pass / FAIL $fail"
 [ "$fail" -eq 0 ]

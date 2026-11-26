@@ -178,7 +178,9 @@ ask_parse_args() {
         --timeout)
           case "${2:-}" in
             ''|*[!0-9]*) ASK_BAD=1; shift ;;     # missing/invalid value: usage
-            *[!0]*) ASK_TIMEOUT=$((10#$2)); ASK_TIMEOUT_SET=1; shift 2 ;;   # 10#: 08 is 8, not an octal error
+            *[!0]*) if digits_cap "$2"; then   # 10#: 08 is 8, not an octal error
+                      ASK_TIMEOUT=$((10#$2)); ASK_TIMEOUT_SET=1; shift 2
+                    else ASK_BAD=1; shift; fi ;;   # more than 12 digits: usage
             *) ASK_BAD=1; shift ;;               # zero (0, 00): usage
           esac
           continue ;;
@@ -474,6 +476,14 @@ ask_inner() {
 # digits_only <string> — succeed only for a non-empty all-digit string
 digits_only() {
   case "$1" in ''|*[!0-9]*) return 1 ;; esac
+}
+
+# digits_cap <string> — digits_only, and at most 12 digits after the leading zeros: a longer number
+# wraps in $(( )) (2^63) and gives a wrong or negative timeout
+digits_cap() {
+  digits_only "$1" || return 1
+  local s=${1#"${1%%[!0]*}"}
+  [ "${#s}" -le 12 ]
 }
 
 # file_mtime <file> — epoch seconds. GNU `stat -c %Y` first (BSD/macOS stat has no

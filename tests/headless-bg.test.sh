@@ -136,6 +136,12 @@ note_run
 hrun wait analyst --timeout 500
 check "wait --timeout 500: rc 4 while running" [ "$RC" -eq 4 ]
 check "wait timeout names the way on" grep -q "still running" <<<"$OUT"
+hrun wait analyst --timeout 08
+check "wait --timeout 08 on a live run: timeout rc 4, no octal error (#257)" bash -c '[ "$1" = 4 ] && grep -q "still running" <<<"$2" && ! grep -q "value too great" <<<"$2"' _ "$RC" "$OUT"
+hrun wait analyst --timeout 9999999999999
+check "wait --timeout 13 digits: rejected (rc 1)" bash -c '[ "$1" = 1 ] && grep -q "needs a" <<<"$2"' _ "$RC" "$OUT"
+hrun wait analyst --timeout 000000000000500
+check "wait --timeout 500 with leading zeros past 12 characters: accepted (rc 4)" [ "$RC" -eq 4 ]
 hrun report analyst
 check "report while running: exit 4, says how to wait" bash -c '[ "$1" = 4 ] && grep -q "still running (.*s); harness wait analyst blocks until done" <<<"$2"' _ "$RC" "$OUT"
 hrun wait analyst
