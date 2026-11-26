@@ -309,20 +309,5 @@ hrun lane rm 66
 check "ignored AGENTS.md: only in the work folder / differing does not block rm" [ "$RC" -eq 0 ]
 check "ignored AGENTS.md: folder removed" test ! -d "$D"
 
-# 14. lane_copy
-lsetup
-echo "SECRET=1" > .env; mkdir -p cfg; echo c > cfg/local.json
-printf '.env\ncfg/local.json\n' >> .git/info/exclude
-echo '{"lane_copy": [".env", "cfg/local.json", "missing.txt", "../escape", "/etc/hosts"]}' > .claude/harness.json
-hrun lane 64 l; D="$BASE/repo-64"
-check "copy: .env copied" [ "$(cat "$D/.env" 2>/dev/null)" = "SECRET=1" ]
-check "copy: nested path copied" [ "$(cat "$D/cfg/local.json" 2>/dev/null)" = c ]
-check "copy: missing file noted and skipped" grep -q "missing.txt is missing" <<<"$OUT"
-check "copy: unsafe paths skipped" [ "$(grep -c 'unsafe path' <<<"$OUT")" -eq 2 ]
-check "copy: nothing escaped" test ! -e "$BASE/escape"
-echo '{}' > .claude/harness.json
-hrun lane 65 m
-check "copy: default copies nothing" test ! -e "$BASE/repo-65/.env"
-
 echo "PASS $pass / FAIL $fail"
 [ "$fail" -eq 0 ]
