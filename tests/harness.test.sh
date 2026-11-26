@@ -63,6 +63,7 @@ notes_case() {
   setup
   : > "$FAKE_GH_LOG"; unset FAKE_GH_OPEN FAKE_GH_FAIL
   mkdir -p .harness/reports .harness/asks docs/wiki
+  [ -n "${NOWIKI:-}" ] || : > docs/wiki/index.md
   printf '1700000000-123-456 1700000000\n' > .harness/asks/analyst.current
   printf '# analyst report\nstatus: done\n## Notes\n%b## Open questions\n- none\n' "$1" > .harness/reports/analyst.md
   fin analyst; ghrun report analyst
@@ -103,7 +104,7 @@ check "notes same title twice: counts skip" grep -q '^wiki: 1 issue filed with l
 
 # closed duplicate -> skipped; list asks for all states
 setup; : > "$FAKE_GH_LOG"
-mkdir -p .harness/reports .harness/asks docs/wiki; printf '1700000000-1-1 1700000000\n' > .harness/asks/analyst.current
+mkdir -p .harness/reports .harness/asks docs/wiki; : > docs/wiki/index.md; printf '1700000000-1-1 1700000000\n' > .harness/asks/analyst.current
 printf '# analyst report\nstatus: done\n## Notes\n- seen in bin/harness:1\n' > .harness/reports/analyst.md
 fin analyst; FAKE_GH_CLOSED='seen in bin/harness:1' ghrun report analyst
 check "notes closed dup: not filed" [ "$(creates)" -eq 0 ]
@@ -111,7 +112,7 @@ check "notes closed dup: list covers all states" grep -q '^issue list --label wi
 
 # duplicate: same title already open with label wiki
 setup; : > "$FAKE_GH_LOG"
-mkdir -p .harness/reports .harness/asks docs/wiki; printf '1700000000-1-1 1700000000\n' > .harness/asks/analyst.current
+mkdir -p .harness/reports .harness/asks docs/wiki; : > docs/wiki/index.md; printf '1700000000-1-1 1700000000\n' > .harness/asks/analyst.current
 printf '# analyst report\nstatus: done\n## Notes\n- seen in bin/harness:1\n- other in bin/harness:2\n' > .harness/reports/analyst.md
 fin analyst; FAKE_GH_OPEN='seen in bin/harness:1' ghrun report analyst
 check "notes dup: only the new bullet filed" [ "$(creates)" -eq 1 ]
@@ -124,12 +125,29 @@ fin analyst; FAKE_GH_FAIL=1 ghrun report analyst
 check "notes gh fail: rc 0" [ "$RC" -eq 0 ]
 check "notes gh fail: warns once" [ "$(grep -c 'harness: wiki: gh' <<<"$OUT")" -eq 1 ]
 check "notes gh fail: report still printed" grep -q '^# analyst report' <<<"$OUT"
+# no docs/wiki/index.md: no gh call, one line, Notes stay in the archived report
+NOWIKI=1 notes_case '- seen in bin/harness:1\n- also in bin/harness:2\n- vague claim\n'
+check "notes no wiki: rc 0" [ "$RC" -eq 0 ]
+check "notes no wiki: gh not called" [ ! -s "$FAKE_GH_LOG" ]
+check "notes no wiki: prints the line" grep -qx 'wiki: no docs/wiki here; 2 Notes bullet(s) left in the report' <<<"$OUT"
+check "notes no wiki: report still printed" grep -q '^# analyst report' <<<"$OUT"
+check "notes no wiki: Notes stay in report" grep -q 'also in bin/harness:2' .harness/reports/analyst.md
+# docs/wiki/index.md, gh failing: the warning names the count, rc unchanged
+notes_case '- seen in bin/harness:1\n- also in bin/harness:2\n'; : > "$FAKE_GH_LOG"
+fin analyst; FAKE_GH_FAIL=1 ghrun report analyst
+check "notes wiki gh fail: warning names the count" grep -q 'harness: wiki: .*2 Notes bullet(s) not filed.*remain in the report' <<<"$OUT"
+check "notes wiki gh fail: rc 0" [ "$RC" -eq 0 ]
+# docs/wiki/index.md, working gh: filed as before
+notes_case '- seen in bin/harness:1\n- also in bin/harness:2\n'
+check "notes wiki: two issues filed" [ "$(creates)" -eq 2 ]
+check "notes wiki: no-wiki line absent" not grep -q 'no docs/wiki here' <<<"$OUT"
+
 # gh missing: PATH holds only the tools harness needs, no gh
 setup; mkdir -p nogh
 for t in bash sh awk sed cut grep date git jq mkdir cat printf ls wc tr head tail sort rm find stat perl env dirname basename uname mktemp; do
   p=$(command -v "$t" 2>/dev/null) && [ -x "$p" ] && ln -sf "$p" "nogh/$t"
 done
-mkdir -p .harness/reports .harness/asks docs/wiki; printf '1700000000-1-1 1700000000\n' > .harness/asks/analyst.current
+mkdir -p .harness/reports .harness/asks docs/wiki; : > docs/wiki/index.md; printf '1700000000-1-1 1700000000\n' > .harness/asks/analyst.current
 printf '# analyst report\nstatus: done\n## Notes\n- seen in bin/harness:1\n' > .harness/reports/analyst.md
 fin analyst; OUT=$(PATH="$WORK/nogh" /bin/bash "$HARNESS" report analyst 2>&1); RC=$?
 check "notes gh missing: rc 0" [ "$RC" -eq 0 ]
@@ -146,7 +164,7 @@ check "empty Notes: gh not called" [ ! -s "$FAKE_GH_LOG" ]
 
 # reviewer: Notes before VERDICT
 setup; : > "$FAKE_GH_LOG"
-mkdir -p .harness/reports .harness/asks
+mkdir -p .harness/reports .harness/asks docs/wiki; : > docs/wiki/index.md
 printf '1700000001-1-2 1700000001\n' > .harness/asks/reviewer.current
 printf '# reviewer report\nstatus: done\n## Notes\n- race seen in .harness/progress.jsonl\nVERDICT: PASS\n' > .harness/reports/reviewer.md
 fin reviewer; ghrun report reviewer
