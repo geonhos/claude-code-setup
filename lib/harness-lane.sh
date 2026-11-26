@@ -48,9 +48,6 @@ lane_running() {
   return 1
 }
 
-# lane_pr <branch> — PR state (OPEN|MERGED|CLOSED) or empty (no PR, no gh)
-lane_pr() { command -v gh >/dev/null 2>&1 && gh pr view "$1" --json state -q .state 2>/dev/null; }
-
 # lane_prinfo <branch> — "STATE<TAB>headRefOid" of the branch's PR, or empty (no PR, no gh)
 lane_prinfo() {
   command -v gh >/dev/null 2>&1 && gh pr view "$1" --json state,headRefOid -q '[.state,.headRefOid]|@tsv' 2>/dev/null

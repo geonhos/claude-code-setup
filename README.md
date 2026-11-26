@@ -13,7 +13,7 @@ Claude Code의 메인 세션을 **conductor(지휘 세션)** 로 쓰는 사용�
 
 ## 설치
 
-요구 사항: macOS의 `/bin/bash` 3.2, `jq`, `gh`, Claude Code(`claude`) ≥ 2.1.277, `PATH`에 `~/.local/bin`.
+요구 사항: macOS의 `/bin/bash` 3.2, `jq`, `gh`, Claude Code(`claude`) ≥ 2.1.277, `PATH`에 `~/.local/bin`. `install.sh`는 `jq`만 확인합니다. Claude Code 버전과 `gh`는 직접 확인하세요.
 
 ```bash
 git clone https://github.com/geonhos/claude-code-setup ~/workspace/claude-code-setup
@@ -63,7 +63,7 @@ agents, skills, bin, 훅은 이 체크아웃에서 심링크되고 기본값은 
   - 2026-11-13 이전에 init한 저장소: git 제외 목록에 `.harness/`만 있습니다. 다시 실행하면 빠진 항목(`.claude/settings.local.json`, `.claude/settings.local.json.bak`, `.claude/agent-memory/`, `docs/superpowers/`)이 추가됩니다. 없으면 `git status`에 나타날 수 있습니다.
   - settings 파일에 `"agent": "conductor"`가 없는 경우.
   - #165 이전에 init한 저장소: deny 규칙이 없습니다. 다시 실행하면 추가되고, 그 전에는 `harness ask`가 경고합니다.
-  - #243 이전에 init한 저장소: `AGENTS.md`가 없습니다. 다시 실행하면 생깁니다.
+  - #243 이전에 init한 저장소: `AGENTS.md`에 harness 규칙 블록이 없습니다. `harness init`을 다시 실행하면 만들거나 덧붙입니다.
 - `harness lane`이 만든 작업 폴더는 주 폴더의 제외 목록을 공유하고 새로 만들 때 `harness init`이 함께 돕니다. #165 이전에 만든 작업 폴더는 `harness -C <lane> ask`가 그 폴더 자신의 `settings.local.json`을 확인하므로 그 폴더에서 `harness init`을 실행할 때까지 경고합니다(주 폴더에서 다시 실행해도 소용없습니다).
 - 열려 있는 conductor 세션은 시작할 때의 프롬프트를 유지합니다. 갱신 후 `claude`를 다시 시작합니다. worker가 도는 동안에는 갱신하지 않습니다(`harness status`로 확인). 이유는 [실행 중 스크립트를 제자리에서 고치면 깨진다](docs/wiki/troubleshooting/in-place-edit-breaks-running-scripts.md)에 있습니다.
 
@@ -75,7 +75,7 @@ agents, skills, bin, 훅은 이 체크아웃에서 심링크되고 기본값은 
 4. `harness -C <폴더> ask implementer '...'`로 구현합니다. lint·test를 통과해야 리포트가 나옵니다.
 5. 큰 작업(agent 프롬프트·스킬 변경인 `claude/agents/`, `claude/skills/`, `AGENTS.md` 포함)만 `/review`를 거칩니다. Critical/Major가 있으면 FAIL이고, Minor는 issue로 남깁니다. FAIL을 고친 뒤에는 `/review`를 다시 하고, 마지막 리뷰가 FAIL인 PR은 사용자가 달리 정하지 않는 한 열지 않습니다.
 6. conductor가 PR을 만듭니다(본문에 `Fixes #N`). merge는 사용자가 합니다.
-7. merge 뒤 `harness lane rm <issue#>`가 폴더와 브랜치를 지웁니다. PR이 merge 또는 close되고 미푸시 커밋이 없을 때만 지워집니다. 진행 기록은 주 폴더의 `progress.jsonl`에 이미 있으므로 지워지지 않습니다.
+7. merge 뒤 `harness lane rm <issue#>`가 폴더와 브랜치를 지웁니다. PR이 merge 또는 close되고 미푸시 커밋이 없을 때만 지워집니다. ignored 파일이 사라질 때도 거부합니다. PR이 merge됐으면 원격 브랜치도 지웁니다. 진행 기록은 주 폴더의 `progress.jsonl`에 이미 있으므로 지워지지 않습니다.
 
 겹치지 않는 파일을 건드리는 작업은 폴더를 나눠 병렬로 돌립니다. 상태(`.harness/`)가 폴더마다 따로라 implementer 여럿이 동시에 돕니다. 자세한 규칙은 [docs/wiki/how-to/work-folders.md](docs/wiki/how-to/work-folders.md).
 
@@ -100,7 +100,7 @@ agents, skills, bin, 훅은 이 체크아웃에서 심링크되고 기본값은 
 | `harness lane <issue#> [slug]`, `lane ls`, `lane rm` | 작업 폴더 생성·목록·삭제 |
 | `harness open-watch <agent>` | 대시보드를 새 패널·창에 엽니다 |
 | `harness watch <agent>` | 실행 스트림을 터미널에서 봅니다 |
-| `harness close <agent>` | 실행을 멈춥니다(`--force`) |
+| `harness close <agent>` | 끝난 슬롯을 비웁니다. 실행 중이면 exit 4로 거부하고, `--force`를 주면 멈춥니다 |
 | `harness metrics` | ask·종료·소요 시간 통계와 wiki 상태 |
 | `harness wiki-lint` | wiki 형식 검사 |
 | `harness -C <폴더> <명령>` | 다른 작업 폴더에서 실행합니다 |

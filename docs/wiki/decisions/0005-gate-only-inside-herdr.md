@@ -1,8 +1,8 @@
 ---
 type: decision
 status: active
-updated: 2026-11-03
-sources: [plan commit 9e09485 (gate opt-in), .harness/review-critique-detail.md §1.4-1.5, claude/hooks/conductor-gate.sh:10-30, ask 1793150496-56689-6967, commit d2e4bcb]
+updated: 2026-11-26
+sources: [plan commit 9e09485 (gate opt-in), .harness/review-critique-detail.md §1.4-1.5, claude/hooks/conductor-gate.sh:28-53, ask 1793150496-56689-6967, commit d2e4bcb]
 verified_by: tests/gate.test.sh
 ---
 # 0005: Gate only inside herdr, fail closed on bad input

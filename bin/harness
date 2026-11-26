@@ -43,6 +43,7 @@ usage:
   harness report <agent>
   harness wait   <agent> [--timeout MS]
   harness watch  <agent> [-n N]   (human terminal only)
+  harness open-watch <agent>   (open the watch dashboard in a new pane/window)
   harness status
   harness [-C DIR] <command> ...
   harness lane   <issue#> [slug] [--type feat|fix|docs] | ls | rm <issue#|path> [--force]

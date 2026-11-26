@@ -1,10 +1,11 @@
 # harness 레퍼런스
 
-설치가 바꾸는 것, `harness init`, CLI 전체, 워커 상한, 설정 키, 검증 루프, conductor 게이트, 테스트, 디렉터리 구성. 개요와 빠른 시작은 [README](../README.md), 구조는 [architecture.md](architecture.md), 함정과 결정은 [wiki/index.md](wiki/index.md).
+설치가 바꾸는 것, `harness init`, CLI 전체, 워커 상한, 설정 키, conductor 게이트. 개요와 빠른 시작은 [README](../README.md), 구조는 [architecture.md](architecture.md), 함정과 결정은 [wiki/index.md](wiki/index.md).
 
 ## 요구 사항과 설치
 
-- macOS, `/bin/bash` 3.2면 충분 · `jq` · Claude Code ≥ 2.1.277 · `PATH`에 `~/.local/bin`
+- macOS, `/bin/bash` 3.2면 충분 · `jq` · `gh` · Claude Code ≥ 2.1.277 · `PATH`에 `~/.local/bin`
+- `install.sh`는 `jq`만 확인합니다. Claude Code 버전과 `gh`는 직접 확인하세요.
 
 ```bash
 git clone https://github.com/geonhos/claude-code-setup ~/workspace/claude-code-setup
@@ -17,7 +18,7 @@ cd ~/workspace/claude-code-setup
 - `claude/agents/*.md`를 `~/.claude/agents/`에, `claude/skills/*/`를 `~/.claude/skills/`에 심링크합니다(이미 있던 다른 스킬은 `~/.claude/skills.bak/`으로 옮깁니다).
 - `claude/skills/korean-writing/`은 conductor와 워커가 모두 쓰는 한국어 작성 스킬입니다(결정 0015). 나머지 스킬 넷은 conductor 전용입니다.
 - `bin/*`(`harness`, `harness-verify`, `harness-run`, `harness-view`)를 `~/.local/bin`에 링크합니다. `lib/`는 링크 없이 실제 경로로 찾습니다.
-- `~/.claude/settings.json`에 PreToolUse 게이트 훅, SessionStart 훅(`conductor-resume.sh`), `env.BASH_DEFAULT_TIMEOUT_MS`/`BASH_MAX_TIMEOUT_MS`, `promptCacheTtl`/`subagentPromptCacheTtl: 1h`를 병합합니다(백업을 남깁니다). 전역 `agent` 키는 쓰지 않습니다. 이전 설치가 남긴 `agent: conductor`는 한 번 제거합니다.
+- `~/.claude/settings.json`에 PreToolUse 게이트 훅, SessionStart 훅(`conductor-resume.sh`), Notification 훅(`notify-decision.sh`), `env.BASH_DEFAULT_TIMEOUT_MS`/`BASH_MAX_TIMEOUT_MS`, `promptCacheTtl`/`subagentPromptCacheTtl: 1h`를 병합합니다(백업을 남깁니다). 전역 `agent` 키는 쓰지 않습니다.
 
 ## 저장소마다 `harness init`
 
@@ -38,7 +39,7 @@ harness를 쓰려는 저장소에서 한 번 실행합니다. `.harness/asks/`(�
 2. 일반 질문은 conductor가 바로 답합니다. 소스를 읽거나 고치려 하면 게이트가 호출을 거부하고(사유에 쓸 스킬 이름이 있습니다), conductor가 `/analyze` 조사 · `/implement` 변경 · `/review` 검토를 호출합니다. 직접 `/implement …`처럼 쳐도 됩니다.
 3. 스킬이 `harness ask <worker> '<instruction>'`을 백그라운드(`run_in_background: true`)로 `timeout: 7200000`과 함께 돌립니다. Bash 기본 제한이 10분이라 이 값을 주지 않으면 끊깁니다. 기본 대기 시간이 워커의 실행 상한과 같아서 run이 끝나는 순간 ask가 돌아오고 완료 알림이 conductor를 깨웁니다. 리포트(`.harness/reports/<worker>.md`, 40줄 이하)가 출력됩니다.
 4. 재시작·compaction 뒤에는 `harness wait <worker>`로 다시 붙습니다. Stop hook의 리포트 강제와 검증 루프는 [architecture.md](architecture.md) §4. 노트북 절전으로 시계가 크게 건너뛰면 마감도 그만큼 늦춥니다.
-5. 진행은 `harness status`로 봅니다. 매 ask는 `.harness/log/`와 `progress.jsonl`에 기록되고, SessionStart 훅이 `progress.md`를 conductor 컨텍스트에 넣습니다. goal 줄은 한 문단짜리 `.harness/goal.md`로 정합니다.
+5. 진행은 `harness status`로 봅니다. 인자 오류를 빼면 매 ask는 `.harness/log/`와 `progress.jsonl`에 기록되고, SessionStart 훅이 `progress.md`를 conductor 컨텍스트에 넣습니다. goal 줄은 한 문단짜리 `.harness/goal.md`로 정합니다.
 
 ## CLI
 
