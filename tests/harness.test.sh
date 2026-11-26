@@ -131,12 +131,16 @@ check "notes no wiki: rc 0" [ "$RC" -eq 0 ]
 check "notes no wiki: gh not called" [ ! -s "$FAKE_GH_LOG" ]
 check "notes no wiki: prints the line" grep -qx 'wiki: no docs/wiki here; 2 Notes bullet(s) left in the report' <<<"$OUT"
 check "notes no wiki: report still printed" grep -q '^# analyst report' <<<"$OUT"
-check "notes no wiki: Notes stay in report" grep -q 'also in bin/harness:2' .harness/reports/analyst.md
 # docs/wiki/index.md, gh failing: the warning names the count, rc unchanged
 notes_case '- seen in bin/harness:1\n- also in bin/harness:2\n'; : > "$FAKE_GH_LOG"
 fin analyst; FAKE_GH_FAIL=1 ghrun report analyst
 check "notes wiki gh fail: warning names the count" grep -q 'harness: wiki: .*2 Notes bullet(s) not filed.*remain in the report' <<<"$OUT"
 check "notes wiki gh fail: rc 0" [ "$RC" -eq 0 ]
+# create fails after one success: K = n - made - skipped (4 bullets, 1 made, 1 duplicate -> 2 left); the loop stops
+FAKE_GH_CREATE_OK=1 notes_case '- seen in bin/harness:1\n- seen in bin/harness:1\n- second in bin/harness:2\n- third in bin/harness:3\n'
+check "notes create fails: warning counts the bullets left (2)" grep -q 'gh issue create failed; 2 Notes bullet(s) not filed' <<<"$OUT"
+check "notes create fails: no create after the failed one (2 attempts)" [ "$(creates)" -eq 2 ]
+check "notes create fails: rc 0" [ "$RC" -eq 0 ]
 # docs/wiki/index.md, working gh: filed as before
 notes_case '- seen in bin/harness:1\n- also in bin/harness:2\n'
 check "notes wiki: two issues filed" [ "$(creates)" -eq 2 ]
@@ -364,9 +368,8 @@ check "ask warns under -C: still says run harness init" grep -q "harness init" <
 jq -n --argjson d "$DENY_JSON" '{permissions:{deny:$d}}' > "$LANE/.claude/settings.local.json"
 hrun -C "$LANE" ask analyst "q"
 check "ask under -C: lane file complete, no warning (the primary's file is not consulted)" not_grep "deny rules" <<<"$OUT"
-# a nested -C dir that is not a work folder (not a worktree) must not mirror into the enclosing checkout
-check "ask under -C (not a worktree): no row in the enclosing checkout" [ "$(cat .harness/progress.jsonl 2>/dev/null | grep -c '"lane":')" = 0 ]
-check "ask under -C (not a worktree): its own row is in the folder" [ "$(jq -s 'length' "$LANE/.harness/progress.jsonl")" -ge 1 ]
+# (the no-mirror guard for a nested non-worktree -C dir is tested inside git in tests/lane.test.sh, #252)
+check "ask under -C: its own row is in the folder" [ "$(jq -s 'length' "$LANE/.harness/progress.jsonl")" -ge 1 ]
 unset FAKE_CLAUDE_MODE FAKE_REPORT_CMD
 
 # --- init writes the harness rules block into AGENTS.md (#243, decision 0016) ---
@@ -469,6 +472,31 @@ OUT=$(PATH="$SCR/bin:$PATH" env -u HARNESS_ROLE /bin/bash "$SCR/bin/harness" ini
 check "rules 11: template missing: rc 0" [ "$RC" = 0 ]
 check "rules 11: template missing: note on stderr" grep -qF "note: harness rules template not found ($(cd "$SCR/lib" && pwd -P)/../claude/templates/agents-rules.md); AGENTS.md skipped" <<<"$ERR"
 check "rules 11: template missing: no AGENTS.md, rest of init ran" bash -c '[ ! -e AGENTS.md ] && [ -d .harness/asks ]'
+
+# 12 (#247): CRLF marker lines are recognised; the file stays CRLF outside the block; marker lines keep
+# their CR, the template text between them is written with LF; a second init is a no-op
+rsetup; printf 'a\r\nb\r\n<!-- harness:rules begin -->\r\nold\r\n<!-- harness:rules end -->\r\ntail\r\n' > AGENTS.md
+irun init
+{ printf 'a\r\nb\r\n<!-- harness:rules begin -->\r\n'; cat "$RTPL"; printf '<!-- harness:rules end -->\r\ntail\r\n'; } > "$WORK/want"
+check "rules 12: CRLF block replaced, outside bytes and marker CRs kept" cmp -s "$WORK/want" AGENTS.md
+check "rules 12: CRLF: says updated" grep -qF "AGENTS.md: updated the harness rules block" <<<"$OUT"
+irun init
+check "rules 12: CRLF rerun: up to date, file unchanged" bash -c 'grep -qF "AGENTS.md: harness rules up to date" <<<"$1" && cmp -s "$2" AGENTS.md' _ "$OUT" "$WORK/want"
+check "rules 12: CRLF rerun: exactly one block" [ "$(grep -c 'harness:rules begin' AGENTS.md)" = 1 ]
+rsetup; printf 'a\r\n<!-- harness:rules begin -->\r\n' > AGENTS.md; cp AGENTS.md "$WORK/before.md"
+irun init
+check "rules 12: CRLF begin without end: still a broken block" bash -c '[ "$1" = 1 ] && cmp -s "$2" AGENTS.md' _ "$RC" "$WORK/before.md"
+
+# 13 (#247): a dangling AGENTS.md symlink is skipped like any non-regular file: nothing written through it
+rsetup; ln -s nowhere.md AGENTS.md
+irun init
+check "rules 13: dangling symlink: rc 0, note, nothing created" bash -c '[ "$1" = 0 ] && grep -qF "note: AGENTS.md is not a regular file; rules block skipped" <<<"$2" && [ ! -e nowhere.md ] && [ -L AGENTS.md ] && ! grep -qxF AGENTS.md .git/info/exclude' _ "$RC" "$ERR"
+
+# 14 (#247): a read-only AGENTS.md gives the note only, no raw bash error
+rsetup; printf '# Mine\n' > AGENTS.md; chmod 444 AGENTS.md
+irun init
+check "rules 14: read-only: rc 0, one note line on stderr, no raw error" bash -c '[ "$1" = 0 ] && [ "$2" = "note: could not write AGENTS.md" ]' _ "$RC" "$ERR"
+chmod 644 AGENTS.md
 
 
 setup; rm -rf .harness

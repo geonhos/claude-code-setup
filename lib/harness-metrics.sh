@@ -107,13 +107,16 @@ cmd_metrics() {
     def day: strftime("%Y-%m-%d");
     def parsed: split("\n") | map(fromjson? | select(type == "object"))
       | map(. + {t: (try (.ts | fromdateiso8601) catch null)}) | map(select(.t != null));
-    # stopped = a failed ask row written within 10 s after a `close --force` row (reason force_kill) of its
-    # role (and the same lane, or both none): an intended stop, not a failure (the close row carries no ask_id,
-    # so the time is the join)
+    # stopped = the first failed ask row written within 10 s after a `close --force` row (reason force_kill) of its
+    # role (and the same lane, or both none): an intended stop, not a failure. One close stops one row, so an
+    # unrelated ask that fails in the same window stays abnormal (the close row carries no ask_id: the time is the join)
     def rows: parsed as $p
+      | ($p | map(select(.event != "close"))) as $a
       | ($p | map(select(.event == "close" and .reason == "force_kill"))) as $k
-      | $p | map(select(.event != "close"))
-      | map(. as $r | . + {stopped: ($r.exit != 0 and ($k | any(.role == $r.agent and (.lane // "") == ($r.lane // "") and ($r.t - .t) >= 0 and ($r.t - .t) <= 10)))});
+      | ($k | map(. as $c | [$a | to_entries[]
+            | select(.value.exit != 0 and .value.agent == $c.role and (.value.lane // "") == ($c.lane // "")
+                     and (.value.t - $c.t) >= 0 and (.value.t - $c.t) <= 10) | .key] | first // empty)) as $stop
+      | $a | to_entries | map(.key as $i | .value + {stopped: ($stop | any(. == $i))});
     def abn: .exit != null and .exit != 0 and .exit != 5 and (.stopped | not);
     # old usage-error rows (before #246) copied the exit.json of the previous run: duration 0, negative startup_s
     def copied: .dur_s == 0 and (.startup_s | type == "number" and . < 0);

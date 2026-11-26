@@ -2,7 +2,7 @@
 type: how-to
 status: active
 updated: 2026-11-26
-sources: [commit 41b679b, "#63", "#59", "#246", tests/lane.test.sh]
+sources: [commit 41b679b, "#63", "#59", "#246", "#254", bin/harness:142, tests/lane.test.sh]
 verified_by: tests/lane.test.sh
 ---
 # Per-issue work folders (git worktrees)
@@ -15,4 +15,4 @@ Code changes happen in `../<repo>-<issue#>` on branch `<feat|fix|docs>/<issue#>-
 - **Remove.** `harness lane rm <issue#|path> [--force]` only when the PR is MERGED or CLOSED **and** the local HEAD equals the PR's `headRefOid` (`gh pr view`); otherwise it refuses, so unpushed commits are never lost. Also refuses while a worker runs there, with uncommitted changes, on a detached HEAD, and when an ignored file (not `.harness/`, `.claude/settings.local.json`, `AGENTS.md`, `node_modules/`, `dist/`, `build/`, `.venv/`, `target/`, `.next/`, `coverage/`, `__pycache__/`) is missing in or differs from the primary folder (an identical copy such as `.env` is fine). Removes the folder and local branch (`-D`); for MERGED it deletes the remote branch with `--force-with-lease=<branch>:<headRefOid>` (later pushes keep it), a CLOSED PR keeps it. `--force` prints how many commits are lost first.
 - **Progress rows.** Every ask and close row written in a work folder is also appended to the primary's `.harness/progress.jsonl` (only when the primary has `.harness/asks`) with a `lane` key: the issue number on a `feat|fix|docs/<n>-*` branch, else the folder's basename (detached HEAD, other branch names; `feat/12abc-x` gives `12abc`), so `harness metrics` and progress.md see lane work and `lane rm` loses nothing but the folder's `.harness/log` and reports (`stream_log` paths of lane rows dangle). `--keep` in the primary ignores lane rows.
 
-**Risks.** Dependencies are installed per folder (use `lane_setup`). The editor still shows the primary folder. Parallel folders share ports and databases. Parallel PRs touching the same files conflict on merge.
+**Risks.** Dependencies are installed per folder (use `lane_setup`). The editor still shows the primary folder. Parallel folders share ports and databases. Parallel PRs touching the same files conflict on merge. Concurrent asks in different folders each re-render the primary's `progress.md` (`write_progress_md` writes a temp file and renames it): the last writer wins, so one render can omit a just-mirrored row until the next write; `progress.jsonl` is unaffected and the next write re-renders. The mirror only appends to the primary's `progress.jsonl` and never rotates it: the primary's own next ask rotates it past `HARNESS_JSONL_MAX` (default 1 MiB), so lane rows can push it over the limit until then.
