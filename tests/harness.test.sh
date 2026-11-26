@@ -248,10 +248,10 @@ check "init deny partial: existing order kept" [ "$(jq -c '.permissions.deny[0:2
 # odd_case LABEL CONTENT MSG — init exits non-zero, file byte-identical, no .bak, message names the file + MSG, nothing created
 # nothing_created LABEL — init left no trace: no .harness/asks, no config.json, no ignore line in .git/info/exclude
 nothing_created() {
-  check "init odd ($1): nothing created" bash -c '[ ! -e .harness/asks ] && [ ! -e .harness/config.json ] && ! grep -qs . .git/info/exclude' _
+  check "init odd ($1): nothing created" bash -c '[ ! -e .harness/asks ] && [ ! -e .harness/config.json ] && ! grep -qs . .git/info/exclude && [ ! -e AGENTS.md ]' _
 }
 odd_case() {
-  setup; git init -q; rm -rf .harness; mkdir -p .claude; printf "$2" > .claude/settings.local.json; cp .claude/settings.local.json "$WORK/before.json"
+  setup; git init -q; rm -rf .harness AGENTS.md; mkdir -p .claude; printf "$2" > .claude/settings.local.json; cp .claude/settings.local.json "$WORK/before.json"
   run init
   check "init odd ($1): exits non-zero" [ "$RC" != 0 ]
   check "init odd ($1): file byte-identical" cmp -s "$WORK/before.json" .claude/settings.local.json
@@ -269,7 +269,7 @@ check "init odd: deny message is not the permissions one" bash -c '! grep -qF "p
 ERR=$(PATH="$HERE/../bin:$PATH" env -u HARNESS_ROLE /bin/bash "$HARNESS" init 2>&1 >/dev/null)
 check "init odd: message on stderr" grep -q "permissions.deny" <<<"$ERR"
 # a settings path that is a directory or an unreadable file: its own message, no raw error leaked, nothing changed
-setup; git init -q; rm -rf .harness .claude; mkdir -p .claude/settings.local.json
+setup; git init -q; rm -rf .harness .claude AGENTS.md; mkdir -p .claude/settings.local.json
 run init
 check "init odd (directory): exits non-zero" [ "$RC" != 0 ]
 check "init odd (directory): own message" grep -qF ".claude/settings.local.json is not a regular file" <<<"$OUT"
@@ -277,7 +277,7 @@ check "init odd (directory): not reported as empty or invalid JSON" bash -c '! g
 nothing_created "directory"
 if [ "$(id -u)" = 0 ]; then echo "skip: init odd (unreadable file) — root reads mode 000 files"
 else
-  setup; git init -q; rm -rf .harness; mkdir -p .claude; printf '{"a":1}\n' > .claude/settings.local.json; chmod 000 .claude/settings.local.json
+  setup; git init -q; rm -rf .harness AGENTS.md; mkdir -p .claude; printf '{"a":1}\n' > .claude/settings.local.json; chmod 000 .claude/settings.local.json
   run init
   chmod 644 .claude/settings.local.json
   check "init odd (unreadable): exits non-zero" [ "$RC" != 0 ]
@@ -347,6 +347,108 @@ jq -n --argjson d "$DENY_JSON" '{permissions:{deny:$d}}' > "$LANE/.claude/settin
 hrun -C "$LANE" ask analyst "q"
 check "ask under -C: lane file complete, no warning (the primary's file is not consulted)" not_grep "deny rules" <<<"$OUT"
 unset FAKE_CLAUDE_MODE FAKE_REPORT_CMD
+
+# --- init writes the harness rules block into AGENTS.md (#243, decision 0016) ---
+# Expected text is built from the template file and literal markers, not from init's code.
+RB='<!-- harness:rules begin -->'; RE='<!-- harness:rules end -->'
+RTPL="$HERE/../claude/templates/agents-rules.md"
+rules_expected() { printf '%s\n' "$RB"; cat "$RTPL"; printf '%s\n' "$RE"; }
+# irun ARGS... -> OUT (stdout), ERR (stderr), RC; no alarm needed, init is file work
+irun() { OUT=$(PATH="$HERE/../bin:$PATH" env -u HARNESS_ROLE /bin/bash "$HARNESS" "$@" 2>"$WORK/err"); RC=$?; ERR=$(cat "$WORK/err"); }
+# rsetup — fresh git checkout with no harness state and no AGENTS.md
+rsetup() { setup; git init -q; rm -rf .harness .claude AGENTS.md; }
+excl_count() { grep -cxF AGENTS.md .git/info/exclude; }
+
+rsetup
+irun init
+rules_expected > "$WORK/want"
+check "rules 1: AGENTS.md is begin + template + end" cmp -s "$WORK/want" AGENTS.md
+check "rules 1: rc 0" [ "$RC" = 0 ]
+check "rules 1: AGENTS.md excluded once" [ "$(excl_count)" = 1 ]
+check "rules 1: output says created and excluded" bash -c 'grep -qF "created AGENTS.md (harness rules)" <<<"$1" && grep -qF "added AGENTS.md to" <<<"$1"' _ "$OUT"
+check "rules 1: git does not list AGENTS.md" [ -z "$(git status --porcelain AGENTS.md)" ]
+
+M1=$(mtime AGENTS.md); sleep 1.1
+irun init
+check "rules 2: rerun leaves the file byte-identical" cmp -s "$WORK/want" AGENTS.md
+check "rules 2: rerun does not rewrite (mtime)" [ "$(mtime AGENTS.md)" = "$M1" ]
+check "rules 2: rerun says up to date" grep -qF "AGENTS.md: harness rules up to date" <<<"$OUT"
+check "rules 2: exclude line still once" [ "$(excl_count)" = 1 ]
+
+rsetup; printf '# Mine\ntext' > AGENTS.md
+irun init
+printf '# Mine\ntext\n\n' > "$WORK/want"; rules_expected >> "$WORK/want"
+check "rules 3: no trailing newline: text kept, blank line, block" cmp -s "$WORK/want" AGENTS.md
+check "rules 3: output says appended" grep -qF "AGENTS.md: appended the harness rules block" <<<"$OUT"
+check "rules 3: a file init did not create is not excluded" [ "$(excl_count)" = 0 ]
+rsetup; printf '# Mine\n\ntext\n\n' > AGENTS.md
+irun init
+printf '# Mine\n\ntext\n\n' > "$WORK/want"; rules_expected >> "$WORK/want"
+check "rules 3: blank last line: no extra blank line" cmp -s "$WORK/want" AGENTS.md
+
+rsetup; printf 'before\r\n  keep  \n%s\nSTALE\n%s\nafter no newline' "$RB" "$RE" > AGENTS.md
+irun init
+printf 'before\r\n  keep  \n' > "$WORK/want"; rules_expected >> "$WORK/want"; printf 'after no newline' >> "$WORK/want"
+check "rules 4: stale block replaced, prefix and suffix byte-identical" cmp -s "$WORK/want" AGENTS.md
+check "rules 4: output says updated" grep -qF "AGENTS.md: updated the harness rules block" <<<"$OUT"
+
+for kind in "begin only" "end before begin" "two begins"; do
+  rsetup
+  case "$kind" in
+    "begin only") printf 'a\n%s\nb\n' "$RB" ;;
+    "end before begin") printf 'a\n%s\nb\n%s\nc\n' "$RE" "$RB" ;;
+    "two begins") printf '%s\nx\n%s\ny\n%s\n' "$RB" "$RB" "$RE" ;;
+  esac > AGENTS.md
+  cp AGENTS.md "$WORK/before.md"
+  irun init
+  check "rules 5 ($kind): exits 1" [ "$RC" = 1 ]
+  check "rules 5 ($kind): file byte-identical" cmp -s "$WORK/before.md" AGENTS.md
+  check "rules 5 ($kind): nothing else created" bash -c '[ ! -e .harness/asks ] && [ ! -e .claude ]'
+  check "rules 5 ($kind): stderr says what to do" grep -qF "AGENTS.md has a broken harness:rules block; fix or remove the markers, then run 'harness init' again" <<<"$ERR"
+done
+
+rsetup; printf '# Tracked\n' > AGENTS.md; git add AGENTS.md; git -c user.name=t -c user.email=t@t commit -q -m a
+irun init
+printf '# Tracked\n\n' > "$WORK/want"; rules_expected >> "$WORK/want"
+check "rules 6: tracked file gets the block" cmp -s "$WORK/want" AGENTS.md
+check "rules 6: prints the uncommitted note" grep -qF "note: AGENTS.md is tracked; the rules change is uncommitted" <<<"$OUT"
+check "rules 6: tracked file is never excluded" [ "$(excl_count)" = 0 ]
+
+for f in CLAUDE.md .claude/CLAUDE.md CLAUDE.local.md; do
+  rsetup; mkdir -p .claude; printf 'mine\n' > "$f"; cp "$f" "$WORK/before.md"
+  irun init
+  check "rules 7 ($f): AGENTS.md written" grep -qF "$RB" AGENTS.md
+  check "rules 7 ($f): stderr names the file and @AGENTS.md" bash -c 'grep -qF "warning: $1 exists, so Claude Code does not read AGENTS.md here; add this line to $1: @AGENTS.md" <<<"$2"' _ "$f" "$ERR"
+  check "rules 7 ($f): the file is not touched" cmp -s "$WORK/before.md" "$f"
+  printf '@AGENTS.md\n' >> "$f"
+  irun init
+  check "rules 7 ($f): with an @AGENTS.md line there is no warning" not_grep "does not read AGENTS.md" <<<"$ERR"
+done
+
+WORK=$(mktemp -d); WORKS="$WORKS $WORK"; cd "$WORK" || exit 1
+irun init
+check "rules 8: no git: rc 0" [ "$RC" = 0 ]
+check "rules 8: no git: AGENTS.md created in the cwd" cmp -s <(rules_expected) AGENTS.md
+check "rules 8: no git: stderr empty" [ -z "$ERR" ]
+
+rsetup
+irun init --shared
+check "rules 9: --shared creates the file" cmp -s <(rules_expected) AGENTS.md
+check "rules 9: --shared does not exclude it" [ "$(excl_count)" = 0 ]
+check "rules 9: --shared says commit it" grep -qF "created AGENTS.md (harness rules); commit it to share it" <<<"$OUT"
+
+rsetup
+irun init --no-agent
+check "rules 10: --no-agent still creates it" cmp -s <(rules_expected) AGENTS.md
+
+# 11: template missing (broken install): note on stderr, the rest of init runs
+SCR=$(mktemp -d); WORKS="$WORKS $SCR"; cp -R "$HERE/../bin" "$HERE/../lib" "$SCR/"
+rsetup
+OUT=$(PATH="$SCR/bin:$PATH" env -u HARNESS_ROLE /bin/bash "$SCR/bin/harness" init 2>"$WORK/err"); RC=$?; ERR=$(cat "$WORK/err")
+check "rules 11: template missing: rc 0" [ "$RC" = 0 ]
+check "rules 11: template missing: note on stderr" grep -qF "note: harness rules template not found ($(cd "$SCR/lib" && pwd -P)/../claude/templates/agents-rules.md); AGENTS.md skipped" <<<"$ERR"
+check "rules 11: template missing: no AGENTS.md, rest of init ran" bash -c '[ ! -e AGENTS.md ] && [ -d .harness/asks ]'
+
 
 setup; rm -rf .harness
 INIT_OUT=$(PATH="$HERE/../bin:$PATH" env -u HARNESS_ROLE /bin/bash "$HARNESS" init 2>"$WORK/init.err")

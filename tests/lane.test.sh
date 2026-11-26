@@ -274,6 +274,32 @@ hrun lane rm 63 --force
 check "ignored: --force removes" [ "$RC" -eq 0 ]
 check "ignored: --force folder gone" test ! -d "$D"
 
+# 13b. AGENTS.md rules block in a work folder (#243): init never leaves a git-visible change there
+noagents_exclude() { grep -vxF AGENTS.md .git/info/exclude > .git/info/ex.t; cat .git/info/ex.t > .git/info/exclude; rm -f .git/info/ex.t; }
+lsetup
+hrun lane 70 r1; D="$BASE/repo-70"
+check "lane rules: local mode: the work folder gets the primary's AGENTS.md" cmp -s AGENTS.md "$D/AGENTS.md"
+check "lane rules: local mode: AGENTS.md has the block" grep -qxF '<!-- harness:rules begin -->' "$D/AGENTS.md"
+check "lane rules: local mode: git status clean" [ -z "$(git -C "$D" status --porcelain)" ]
+
+lsetup
+rm -f AGENTS.md; noagents_exclude; printf '# Tracked\n' > AGENTS.md; git add AGENTS.md; git commit -q -m agents; git push -q origin main 2>/dev/null
+hrun lane 71 r2; D="$BASE/repo-71"
+check "lane rules: tracked without block: lane file unchanged" [ "$(cat "$D/AGENTS.md")" = "# Tracked" ]
+check "lane rules: tracked without block: note printed" grep -qF "note: AGENTS.md is tracked; not changed in a work folder" <<<"$OUT"
+check "lane rules: tracked without block: git status clean" [ -z "$(git -C "$D" status --porcelain)" ]
+
+lsetup
+rm -f AGENTS.md; noagents_exclude; printf '{"agent":"conductor"}\n' > .claude/settings.json; git add .claude/settings.json; git commit -q -m shared; git push -q origin main 2>/dev/null
+hrun lane 72 r3; D="$BASE/repo-72"
+check "lane rules: shared primary without AGENTS.md: the work folder has none" [ ! -e "$D/AGENTS.md" ]
+check "lane rules: shared primary: note says run init in the primary" grep -qF "note: AGENTS.md not created in a work folder; run 'harness init' in the primary folder" <<<"$OUT"
+check "lane rules: shared primary: git status clean" [ -z "$(git -C "$D" status --porcelain)" ]
+lsetup
+rm -f AGENTS.md; noagents_exclude
+hrun lane 73 r4; D="$BASE/repo-73"
+check "lane rules: local primary init'ed before #243: no AGENTS.md, note, clean" bash -c '[ ! -e "$1/AGENTS.md" ] && grep -qF "run '"'"'harness init'"'"' in the primary folder" <<<"$2" && [ -z "$(git -C "$1" status --porcelain)" ]' _ "$D" "$OUT"
+
 # 14. lane_copy
 lsetup
 echo "SECRET=1" > .env; mkdir -p cfg; echo c > cfg/local.json
