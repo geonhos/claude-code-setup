@@ -134,12 +134,12 @@ check "rotate: jsonl gz exists" [ "$(ls .harness/progress.jsonl.*.gz 2>/dev/null
 check "rotate: gz has old lines" [ "$(gzip -dc .harness/progress.jsonl.*.gz | wc -l | tr -d ' ')" -eq 10 ]
 check "rotate: new jsonl has only new line" [ "$(nlines .harness/progress.jsonl)" -eq 1 ]
 
-# --- usage errors inside the ask are logged (exit 1) ---------------------------------------
+# --- usage errors start nothing and write no progress row (#246) ---------------------------------------
 for bad in "--fresh" "--timeout abc" "--timeout 0" "--bogus" "--worktree" "--base x" "--via x"; do
   psetup
   hrun ask analyst "q" $bad
   check "usage ($bad): rc 1" [ "$RC" -eq 1 ]
-  check "usage ($bad): progress line exit 1" [ "$(jl .exit)" = 1 ]
+  check "usage ($bad): no progress row" [ ! -s .harness/progress.jsonl ]
   check "usage ($bad): nothing sent" not_logged "claude: "
 done
 # --- signals: the ask wrapper ends with the real signal exit, logs it; the detached run survives (lib/harness-headless.sh hl_spawn_bg) -------------------------

@@ -91,7 +91,7 @@ agents, skills, bin, 훅은 이 체크아웃에서 심링크되고 기본값은 
 
 | 명령 | 용도 |
 |------|------|
-| `harness ask <agent> '<instruction>'` | 워커에게 맡깁니다(보통 스킬이 호출). `--timeout MS`, `--keep` |
+| `harness ask <agent> '<instruction>'` | 워커에게 맡깁니다(보통 스킬이 호출). `--timeout MS`, `--keep`, `--no-lane`은 지시문 앞뒤 어디에나 둘 수 있고, `--`로 옵션을 끝냅니다 |
 | `harness wait <agent>` | 실행 중인 워커가 끝날 때까지 기다립니다 |
 | `harness report <agent>` | 리포트를 다시 봅니다 |
 | `harness status` | 워커 상태 |

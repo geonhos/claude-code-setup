@@ -34,12 +34,12 @@ DEFAULT_TIMEOUT=$HARNESS_DEFAULT_TIMEOUT_MS
 IMPLEMENTER_TIMEOUT=$HARNESS_IMPLEMENTER_TIMEOUT_MS
 ASK_DIR=".harness/asks"
 # parsed once by ask_parse_args (cmd_ask); ask_inner only reads them
-ASK_TIMEOUT=$DEFAULT_TIMEOUT; ASK_TIMEOUT_SET=0; ASK_KEEP=0; ASK_BAD=0; ASK_NOLANE=0
+ASK_TIMEOUT=$DEFAULT_TIMEOUT; ASK_TIMEOUT_SET=0; ASK_KEEP=0; ASK_BAD=0; ASK_NOLANE=0; ASK_INSTR=
 
 usage() {
   cat >&2 <<EOF
 usage:
-  harness ask    <agent> '<instruction>' [--timeout MS (default: implementer $IMPLEMENTER_TIMEOUT, others $DEFAULT_TIMEOUT)] [--keep]
+  harness ask    <agent> [--timeout MS (default: implementer $IMPLEMENTER_TIMEOUT, others $DEFAULT_TIMEOUT)] [--keep] [--no-lane] [--] '<instruction>'   (options may also follow the instruction)
   harness report <agent>
   harness wait   <agent> [--timeout MS]
   harness watch  <agent> [-n N]   (human terminal only)
@@ -157,28 +157,35 @@ record_progress() {
   return 0
 }
 
-# ask_parse_args <agent> <text> [opts...] — the one walk over an ask's options (called by cmd_ask
-# after the agent and text checks). Sets ASK_TIMEOUT/KEEP.
-# The instruction text is positional, so an option-looking word inside it is never an option. A bad option,
-# --timeout value only sets ASK_BAD: ask_inner turns that into the usage
-# error inside the logged subshell (exit 1 is recorded in progress).
+# ask_parse_args <agent> [args...] — the one walk over an ask's arguments (called by cmd_ask). Options
+# (--keep, --no-lane, --timeout MS) may stand before or after the instruction, in any order; `--` ends the
+# options (an instruction that starts with `--` follows it). Exactly one other argument is the instruction.
+# Sets ASK_INSTR, ASK_TIMEOUT/KEEP/NOLANE and ASK_BAD=1 for an unknown option, a --timeout without a
+# positive integer, or an instruction count other than one; cmd_ask turns ASK_BAD into the usage error.
 ask_parse_args() {
-  local agent=$1
-  shift 2
-  ASK_KEEP=0; ASK_BAD=0
+  local agent=$1 ninstr=0 endopts=0
+  shift
+  ASK_KEEP=0; ASK_BAD=0; ASK_NOLANE=0; ASK_INSTR=
   ASK_TIMEOUT=$DEFAULT_TIMEOUT; ASK_TIMEOUT_SET=0
   [ "$agent" != implementer ] || ASK_TIMEOUT=$IMPLEMENTER_TIMEOUT
   while [ $# -gt 0 ]; do
-    case "$1" in
-      --timeout)
-        case "${2:-}" in
-          ''|*[!0-9]*|0) ASK_BAD=1; shift ;;     # missing/invalid value: usage (logged)
-          *) ASK_TIMEOUT=$2; ASK_TIMEOUT_SET=1; shift 2 ;;
-        esac ;;
-      --keep) ASK_KEEP=1; shift ;;
-      *) ASK_BAD=1; shift ;;
-    esac
+    if [ "$endopts" = 0 ]; then
+      case "$1" in
+        --) endopts=1; shift; continue ;;
+        --timeout)
+          case "${2:-}" in
+            ''|*[!0-9]*|0) ASK_BAD=1; shift ;;     # missing/invalid value: usage
+            *) ASK_TIMEOUT=$2; ASK_TIMEOUT_SET=1; shift 2 ;;
+          esac
+          continue ;;
+        --keep) ASK_KEEP=1; shift; continue ;;
+        --no-lane) ASK_NOLANE=1; shift; continue ;;
+        --*) ASK_BAD=1; shift; continue ;;
+      esac
+    fi
+    ninstr=$((ninstr + 1)); ASK_INSTR=$1; shift
   done
+  [ "$ninstr" = 1 ] || ASK_BAD=1
 }
 
 # rotate_logs <current-log> — newest N logs kept, older than D days deleted; raw headless
@@ -415,19 +422,16 @@ ask_finish() {
 # ones; logging problems only warn on stderr.
 cmd_ask() {
   [ "${HARNESS_ROLE:-}" != worker ] || die "harness ask is for the conductor; a worker (HARNESS_ROLE=worker) does its task itself"
-  # --no-lane (option position only, never inside the instruction): allow the implementer in the primary worktree
-  local n=$# i=0 x
-  ASK_NOLANE=0
-  while [ "$i" -lt "$n" ]; do
-    x=$1; shift; i=$((i + 1))
-    if [ "$i" -gt 2 ] && [ "$x" = --no-lane ]; then ASK_NOLANE=1; else set -- "$@" "$x"; fi
-  done
-  [ "${1:-}" != implementer ] || [ "$ASK_NOLANE" = 1 ] || ! lane_in_primary \
+  # a usage error starts nothing and writes no progress row (no run to record)
+  local agent=${1:-}
+  [ $# -eq 0 ] || shift
+  ask_parse_args "$agent" "$@"
+  local text=$ASK_INSTR
+  case " $AGENTS " in *" $agent "*) ;; *) ask_inner "$agent" "$text" ;; esac
+  { [ "$ASK_BAD" = 0 ] && [ -n "$text" ]; } || usage
+  [ "$agent" != implementer ] || [ "$ASK_NOLANE" = 1 ] || ! lane_in_primary \
     || die "refusing to run the implementer in the primary worktree: create a work folder with 'harness lane <issue#>' and use 'harness -C <folder> ask implementer ...' (--no-lane: only for tasks that do not change this repo)"
-  local agent=${1:-} text=${2:-}
-  case " $AGENTS " in *" $agent "*) ;; *) ask_inner "$@" ;; esac
-  [ -n "$text" ] || ask_inner "$@"
-  ask_parse_args "$@"
+  set -- "$agent" "$text"
   ASK_TMP=$(mktemp "${TMPDIR:-/tmp}/harness-ask.XXXXXX") || ask_inner "$@"
   ASK_AGENT=$agent ASK_TEXT=$text ASK_DONE=0 ASK_PID=""
   ASK_T0=$(date +%s); ASK_HB=$(git_head)
@@ -446,7 +450,6 @@ ask_inner() {
   local agent=${1:-} text=${2:-} timeout=$ASK_TIMEOUT keep=$ASK_KEEP
   [ -n "$agent" ] && [ -n "$text" ] || usage
   valid_agent "$agent"
-  [ "$ASK_BAD" = 0 ] || usage      # a bad option found by ask_parse_args: usage error, logged
 
   if [ "$agent" = implementer ] && ! command -v harness-verify >/dev/null 2>&1; then
     die "harness-verify not found on PATH; run ./install.sh (the implementer's checks would silently not run)"
