@@ -105,5 +105,60 @@ run metrics
 check "text: wiki pages line" grep -q '^wiki: pages active 2 · stale 1 · draft 1' <<<"$OUT"
 check "text: wiki index line" grep -q '^wiki: index 5 lines' <<<"$OUT"
 
+# --- forced stops are not failures (#246) ---
+# fixture: close --force then the waiting ask's row 1-2 s later; unrelated failures stay abnormal
+msetup
+mkdir -p .harness
+cat > .harness/progress.jsonl <<'EOF'
+{"ts":"2026-10-10T10:00:00Z","event":"close","role":"analyst","reason":"force_kill"}
+{"ts":"2026-10-10T10:00:01Z","agent":"analyst","exit":3,"dur_s":200}
+{"ts":"2026-10-11T10:00:00Z","event":"close","role":"implementer","reason":"force_kill"}
+{"ts":"2026-10-11T10:00:02Z","agent":"implementer","exit":5,"dur_s":300,"verify":"interrupted"}
+{"ts":"2026-10-12T10:00:00Z","agent":"analyst","exit":3,"dur_s":50}
+{"ts":"2026-10-13T10:00:00Z","event":"close","role":"analyst","reason":"force_kill"}
+{"ts":"2026-10-13T10:00:11Z","agent":"analyst","exit":3,"dur_s":60}
+{"ts":"2026-10-14T10:00:00Z","event":"close","role":"reviewer","reason":"force_kill"}
+{"ts":"2026-10-14T10:00:02Z","agent":"analyst","exit":3,"dur_s":70}
+{"ts":"2026-10-15T10:00:00Z","event":"close","role":"analyst","reason":"after_ask"}
+{"ts":"2026-10-15T10:00:01Z","agent":"analyst","exit":3,"dur_s":80}
+{"ts":"2026-10-16T10:00:00Z","agent":"implementer","exit":5,"dur_s":300,"verify":"fail"}
+{"ts":"2026-10-17T10:00:00Z","event":"close","role":"analyst","reason":"force_kill"}
+{"ts":"2026-10-17T10:00:03Z","agent":"analyst","exit":0,"dur_s":9}
+EOF
+export HARNESS_NOW=$NOW
+run metrics --json
+J=$OUT
+check "forced stop: close + exit 3 one second later is stopped (analyst stopped 1)" [ "$(jv '.current.roles.analyst.stopped')" -eq 1 ]
+check "forced stop: unrelated exit 3 rows stay abnormal (no close, 11 s, other role, after_ask)" [ "$(jv '.current.roles.analyst.abnormal')" -eq 4 ]
+check "forced stop: analyst exit-3 rows are all still counted in exits" [ "$(jv '.current.roles.analyst.exit["3"]')" -eq 5 ]
+check "forced stop: a reviewer close does not excuse an analyst row" [ "$(jv '.current.roles.reviewer.stopped')" -eq 0 ]
+check "forced stop: exit 5 interrupted is no verify failure; plain fail stays (1 of 2)" [ "$(jv '.current.roles.implementer | "\(.stopped)/\(.exit5)/\(.verify_failure_rate)"')" = "1/1/50" ]
+check "forced stop: an exit 0 row after a close is not stopped" [ "$(jv '.current.total.stopped')" -eq 2 ]
+check "forced stop: abnormal total counts only real failures (4/8)" [ "$(jv '.current.total.abnormal')/$(jv '.current.total.asks')" = "4/8" ]
+run metrics
+check "forced stop: text line" grep -Eq '^  stopped by close --force +2 +0$' <<<"$OUT"
+
+# interrupted exit 5 without a close row (the close row may be rotated away) is still no verify failure
+msetup
+mkdir -p .harness
+cat > .harness/progress.jsonl <<'EOF'
+{"ts":"2026-10-10T10:00:00Z","agent":"implementer","exit":5,"dur_s":5,"verify":"interrupted"}
+{"ts":"2026-10-11T10:00:00Z","agent":"implementer","exit":0,"dur_s":5}
+EOF
+export HARNESS_NOW=$NOW
+run metrics --json
+check "interrupted exit 5 without a close row: verify-failure 0" [ "$(printf '%s' "$OUT" | jq -r '.current.roles.implementer.verify_failure_rate')" = 0 ]
+
+# old usage-error rows copied the previous run's cost: duration 0 and a negative startup_s stay out of the cost sums
+msetup
+mkdir -p .harness
+cat > .harness/progress.jsonl <<'EOF'
+{"ts":"2026-10-10T10:00:00Z","agent":"analyst","exit":0,"dur_s":90,"runner":"headless","cost_usd":1.5,"startup_s":3}
+{"ts":"2026-10-10T10:01:00Z","agent":"analyst","exit":1,"dur_s":0,"runner":"headless","cost_usd":4.34,"startup_s":-781}
+EOF
+export HARNESS_NOW=$NOW
+run metrics --json
+check "cost sum ignores a copied usage-error row" [ "$(printf '%s' "$OUT" | jq -r '.current.by_runner["analyst/headless"].cost_usd_sum')" = 1.5 ]
+
 echo "PASS $pass / FAIL $fail"
 [ "$fail" -eq 0 ]
