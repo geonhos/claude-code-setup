@@ -111,7 +111,7 @@ exit code, 설정 키, 전체 CLI는 [docs/reference.md](docs/reference.md).
 
 - [AGENTS.md](AGENTS.md): 모든 에이전트가 따르는 프로젝트 규칙(언어, 브랜치, 테스트, wiki 규칙)과 Claude Code 전용 메모(역할, 게이트, 완료 판정). `CLAUDE.md`, `.claude/CLAUDE.md`, `CLAUDE.local.md`를 만들면 Claude Code가 `AGENTS.md`를 읽지 않으므로 만들지 않습니다(`tests/install.test.sh`가 검사합니다, [wiki](docs/wiki/troubleshooting/agents-md-ignored-when-claude-md-exists.md)).
 - [claude/agents/conductor.md](claude/agents/conductor.md): conductor의 동작 지침.
-- [docs/wiki/index.md](docs/wiki/index.md): 함정(troubleshooting), 절차(how-to), 결정(decisions). 리포트의 Notes는 `wiki` 라벨 issue가 되고, 검토를 거친 PR로 wiki 페이지가 됩니다.
+- [docs/wiki/index.md](docs/wiki/index.md): 함정(troubleshooting), 절차(how-to), 결정(decisions). 리포트의 Notes는 `docs/wiki/index.md`가 있는 리포에서만 `wiki` 라벨 issue가 되고(없으면 Notes는 리포트에 그대로 남습니다), 검토를 거친 PR로 wiki 페이지가 됩니다.
 - `docs/research/`: 실험과 조사 기록.
 
 ## 테스트

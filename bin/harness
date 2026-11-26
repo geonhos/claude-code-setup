@@ -296,7 +296,8 @@ learned_title() {
 # Indented continuation lines are joined to their bullet. An open `wiki` issue
 # or closed `wiki` issue with the same title (or one filed earlier in this run) is skipped.
 # Status-only bullets (commit/push/PR info) and bullets without evidence are dropped with a
-# one-line stderr warning. Never fails the caller: no gh, a failing gh or no
+# one-line stderr warning. Without docs/wiki/index.md under the cwd (the checkout root) nothing is
+# filed: one stdout line, the Notes stay in the report. Never fails the caller: no gh, a failing gh or no
 # ask-id print one warning and continue.
 queue_learned() {
   local agent=$1 report=$2 raw line kept="" n=0 dropped=0 askid date title body open made=0 skipped=0
@@ -326,6 +327,10 @@ $raw
 EOF_LEARNED
   [ "$dropped" -eq 0 ] || echo "harness: wiki: dropped $dropped Notes bullet(s) without evidence or only task status (need a lesson plus ask-id, commit, file:line or log)" >&2
   [ -n "$kept" ] || return 0
+  if [ ! -f docs/wiki/index.md ]; then
+    echo "wiki: no docs/wiki here; $n Notes bullet(s) left in the report"
+    return 0
+  fi
   askid=$(awk 'NR == 1 { print $1 }' "$ASK_DIR/$agent.current" 2>/dev/null)
   if [ -z "$askid" ]; then
     echo "harness: wiki: no ask-id for $agent; Notes bullets not filed" >&2
@@ -337,7 +342,7 @@ EOF_LEARNED
   fi
   date=$(date +%Y-%m-%d)
   open=$(gh issue list --label wiki --state all --limit 500 --json title --jq '.[].title' 2>/dev/null) || {
-    echo "harness: wiki: gh issue list failed; Notes bullets not filed as issues" >&2
+    echo "harness: wiki: gh issue list failed; $n Notes bullet(s) not filed as issues, they remain in the report" >&2
     return 0
   }
   while IFS= read -r line; do
@@ -356,7 +361,7 @@ Source: $agent ask $askid, $date"
       open="$open
 $title"
     else
-      echo "harness: wiki: gh issue create failed; remaining Notes bullets not filed" >&2
+      echo "harness: wiki: gh issue create failed; $((n - made - skipped)) Notes bullet(s) not filed, they remain in the report" >&2
       break
     fi
   done <<EOF_KEPT
