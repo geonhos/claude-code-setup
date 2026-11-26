@@ -6,10 +6,12 @@ analyst / implementer / reviewer workers, detached headless sessions (`claude -p
 `HARNESS_ROLE=worker`, full tools), and reads only their reports. `install.sh` symlinks everything
 into `~/.claude` and `~/.local/bin`.
 
+<!-- harness:rules begin -->
 ## Working rules
-- Language and style: text for people (chat, issues, PR bodies, README.md) in Korean, 합니다체, following `claude/skills/korean-writing/SKILL.md` (its six core rules are in the conductor prompt); machine-facing text (code, commits, PR titles in conventional-commit form, agent prompts, briefs, worker reports, wiki) in English. In a PR body, `## Summary`, `## Test plan` and `Fixes #N` stay English. No AI stock phrases or filler; plain sentences: fact, conclusion, evidence.
+- Language and style: text for people (chat, issues, PR bodies, README.md) in Korean, 합니다체, following the `korean-writing` skill (`~/.claude/skills/korean-writing/SKILL.md`); machine-facing text (code, commits, PR titles in conventional-commit form, agent prompts, briefs, worker reports, wiki) in English. In a PR body, `## Summary`, `## Test plan` and `Fixes #N` stay English. No AI stock phrases or filler; plain sentences: fact, conclusion, evidence.
 - Every task has a GitHub issue; unhandled items (review Minors, follow-ups, open questions) become issues at once.
 - Branch `feat|fix|docs/<issue#>-<slug>`; conventional commits with the Co-Authored-By trailer; PR body Summary / Test plan / `Fixes #N`; squash merge; the user merges.
+<!-- harness:rules end -->
 
 ## Harness rules
 - No new mode or mechanism without removing one; a mechanism with no reader for two weeks is removed. Run `harness metrics` before proposing harness changes.
@@ -40,6 +42,7 @@ history); record traps, reasons and decisions the code does not show.
 ## Claude Code
 Claude Code (>= 2.1.277) reads this file only while no `CLAUDE.md`, `.claude/CLAUDE.md` or
 `CLAUDE.local.md` exists here or above; do not create one (wiki: `agents-md-ignored-when-claude-md-exists`).
+- The six core `korean-writing` rules are also in the conductor prompt (`claude/agents/conductor.md`).
 - `conductor-gate` restricts the conductor's shell and edits; the SessionStart hook
   `conductor-resume` injects `.harness/progress.md` and the active wiki lines into the conductor
   only. Workers and non-Claude agents get no injection: they must read `docs/wiki/index.md` themselves.

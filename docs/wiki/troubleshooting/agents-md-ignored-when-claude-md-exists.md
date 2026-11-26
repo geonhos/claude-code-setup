@@ -1,7 +1,7 @@
 ---
 type: troubleshooting
 status: active
-updated: 2026-11-17
+updated: 2026-11-26
 sources: [https://code.claude.com/docs/en/memory#agents-md, "#146", "#149", "#156"]
 verified_by: tests/install.test.sh "no CLAUDE.md in the repo" (three names); probes 2026-11-17 on Claude Code 2.1.325 and 2.1.326 (under Evidence)
 ---
@@ -12,6 +12,8 @@ verified_by: tests/install.test.sh "no CLAUDE.md in the repo" (three names); pro
 **Cause.** Claude Code (>= v2.1.277) reads `AGENTS.md` natively only when no `CLAUDE.md` exists in the working directory or above it. Any `CLAUDE.md`, `.claude/CLAUDE.md` or `CLAUDE.local.md` in the working directory or above hides `AGENTS.md`, even a one-line neutral one; the user-level `~/.claude/CLAUDE.md`, managed `CLAUDE.md` and `.claude/rules/` do not (probe 2026-11-17, Claude Code 2.1.326).
 
 **Fix.** This repo has no `CLAUDE.md` on purpose; `AGENTS.md` holds everything, including the `## Claude Code` section. Do not create `CLAUDE.md`, `.claude/CLAUDE.md` or `CLAUDE.local.md` (for example with `/init`). The repo test sees only files present in the checkout it runs in, so an untracked `CLAUDE.local.md` on another machine is not caught. If one is needed, its first line must be `@AGENTS.md` (the import never double-loads). Do not symlink one to the other: Edit/Write refuse to write through it and Windows breaks it.
+
+**Init warns (#243).** `harness init` writes the rules block into `AGENTS.md` and prints `warning: <file> exists, so Claude Code does not read AGENTS.md here; add this line to <file>: @AGENTS.md` when a CLAUDE.md-type file exists without that line. It never edits those files (decision 0016).
 
 **Evidence.** Probe from a work folder with no `CLAUDE.md` in any parent and no `~/.claude/CLAUDE.md`: a unique `Probe marker: PROBE-263bf5c2` line was appended to `AGENTS.md`, then `claude -p "Reply with the probe marker from your project instructions, or NONE"` (env stripped as in `lib/harness-headless.sh`):
 - no agent: marker returned
