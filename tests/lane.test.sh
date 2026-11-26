@@ -146,6 +146,31 @@ check "mirror: uninitialised primary: no warning" not_grep "could not copy" <<<"
 mv .harness/asks.off .harness/asks
 check "mirror: uninitialised primary: no new lane row" [ "$(jq -s '[.[] | select(.lane == "20")] | length' .harness/progress.jsonl)" = 2 ]
 
+# 6c. in the primary nothing is mirrored: one row per ask / close, never a lane key
+nrows() { jq -s 'length' .harness/progress.jsonl; }
+SAVED_REPORT_CMD=$FAKE_REPORT_CMD
+export FAKE_REPORT_CMD="mkdir -p .harness/reports && printf '# analyst report\nstatus: done\n' > .harness/reports/analyst.md"
+b0=$(nrows)
+hrun ask analyst "q"
+check "primary ask: rc 0" [ "$RC" -eq 0 ]
+check "primary ask: exactly one new row" [ "$(( $(nrows) - b0 ))" -eq 1 ]
+check "primary ask: the new row has no lane key" [ "$(tail -n 1 .harness/progress.jsonl | jq 'has("lane")')" = false ]
+b0=$(nrows)
+hrun close analyst
+check "primary close: rc 0" [ "$RC" -eq 0 ]
+check "primary close: exactly one new row" [ "$(( $(nrows) - b0 ))" -eq 1 ]
+check "primary close: the new row is a close row" [ "$(tail -n 1 .harness/progress.jsonl | jq -r .event)" = close ]
+check "primary close: the new row has no lane key" [ "$(tail -n 1 .harness/progress.jsonl | jq 'has("lane")')" = false ]
+# a nested dir inside the checkout with its own .harness/asks is not a registered worktree: no mirror
+NEST="$BASE/repo/nested"; mkdir -p "$NEST/.harness/asks" "$NEST/.claude"
+b0=$(nrows)
+hrun -C "$NEST" ask analyst "q"
+check "nested dir in a git checkout: ask rc 0" [ "$RC" -eq 0 ]
+check "nested dir in a git checkout: its own row is written" [ "$(jq -s 'length' "$NEST/.harness/progress.jsonl")" -eq 1 ]
+check "nested dir in a git checkout: nothing mirrored into the checkout's file" [ "$(( $(nrows) - b0 ))" -eq 0 ]
+rm -rf "$NEST"
+export FAKE_REPORT_CMD=$SAVED_REPORT_CMD
+
 # 7. two implementers in two folders at the same time
 hrun lane 21 y
 D2="$BASE/repo-21"
