@@ -6,12 +6,12 @@ Read this first. Open a page only when it is relevant. Schema and promotion rule
 - [ask --timeout is ms](troubleshooting/ask-timeout-is-milliseconds.md): `--timeout 1200` = 1.2s; defaults are role-aware (active, 2026-10-27)
 - [Serial suite loop](troubleshooting/serial-suite-loop.md): workers looping over suites cost 5x the parallel run; run singly or `./install.sh --test` once (active, 2026-11-23)
 - [.harness root lookup](troubleshooting/harness-root-lookup.md): hook finds root by nearest `.harness/asks/`; one definition in lib/harness-root.sh; probe the gate from a checkout (active, 2026-11-16)
-- [Docs-only skip scope](troubleshooting/docs-only-asks-skip-the-suite.md): Stop hook skips the suite only for `docs/`/`.harness/`; wiki runs wiki-lint only (active, 2026-10-27)
+- [Docs-only skip scope](troubleshooting/docs-only-asks-skip-the-suite.md): Stop hook skips the suite only for `docs/`/`.harness/`; wiki runs wiki-lint only (active, 2026-11-03)
 
 ## Troubleshooting: workers and env
 - [AGENTS.md is ignored when a CLAUDE.md exists](troubleshooting/agents-md-ignored-when-claude-md-exists.md): no CLAUDE.md on purpose; CLAUDE.md, .claude/CLAUDE.md or CLAUDE.local.md hides AGENTS.md unless it imports it; init warns (active, 2026-11-26)
 - [Live gate edit](troubleshooting/live-gate-edit.md): a syntax error denies everything, other gate failures fail open silently; bash -n + suite before each save (active, 2026-11-22)
-- [In-place edit breaks running scripts](troubleshooting/in-place-edit-breaks-running-scripts.md): bin/ is live; bodies are brace-wrapped, edit via new inode; lib/ is safe while sourced eagerly (active, 2026-10-28)
+- [In-place edit breaks running scripts](troubleshooting/in-place-edit-breaks-running-scripts.md): bin/ is live; bodies are brace-wrapped, edit via new inode; lib/ is safe while sourced eagerly (active, 2026-11-03)
 - [cd "$VAR" deny false hit](troubleshooting/cd-var-deny-rule-false-hit.md): after an unresolvable cd, Claude Code tests relative reads against ~/.ssh/** rules; use absolute paths or git -C (active, 2026-11-23)
 - [Doc rewrite moves scope](troubleshooting/doc-rewrite-moves-scope.md): a compressed list's shared qualifier or a moved citation attaches to items the source never covered; check each item against the source (active, 2026-11-23)
 
@@ -33,7 +33,7 @@ Read this first. Open a page only when it is relevant. Schema and promotion rule
 - [Transcript forensics](how-to/transcript-forensics.md): real Stop-hook time, did /clear run, what a worker was given, known model noise (active, 2026-11-26)
 - [Headless probes](how-to/headless-probes.md): neutral --agents agent for permission probes; clean, cheap claude -p generation call (active, 2026-11-22)
 - [Release](how-to/release.md): semver from v3.0.0, tag is the version, Korean release note, who runs git tag / gh release (active, 2026-11-23)
-- [Per-issue work folders](how-to/work-folders.md): lane new/ls/rm, -C parallel asks, lane_setup, progress mirroring, risks (active, 2026-11-26)
+- [Per-issue work folders](how-to/work-folders.md): lane <issue#>/ls/rm, -C parallel asks, lane_setup, progress mirroring, risks (active, 2026-11-26)
 
 ## Decisions
 - [0001 Keep herdr panes](decisions/0001-keep-herdr-panes-despite-subagent-model.md): subagent model works; panes kept; superseded by 0011 (superseded, 2026-11-01)

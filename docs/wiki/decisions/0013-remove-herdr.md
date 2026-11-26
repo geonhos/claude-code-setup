@@ -14,7 +14,7 @@ verified_by: tests/headless.test.sh, tests/gate.test.sh, tests/install.test.sh
 **Status.** Active. Supersedes the viewer parts of [0007](0007-headless-runner-pilot.md) and [0011](0011-single-runner-headless.md) ("herdr is a viewer").
 
 **Consequences.**
-- The user watches a run with `harness watch <role>` in any terminal; a future `/watch` skill will print that command. (2026-11: `/watch` exists; `harness open-watch` opens a herdr/tmux/Ghostty pane or a Terminal window.)
+- The user watches a run with `harness watch <role>` in any terminal; a future `/watch` skill will print that command. (2026-11: `/watch` exists; `harness open-watch` opens a herdr/tmux pane or a Ghostty/Terminal window.)
 - `.harness/config.json` keeps only `headless_max_minutes`; a leftover `viewer` key is ignored.
 - Old `progress.jsonl` close lines with a `pane` field are still read by metrics (`by_runner` maps a missing runner to "pane").
 - Decisions 0001-0011 keep their herdr wording as history.

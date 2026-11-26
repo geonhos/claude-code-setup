@@ -22,7 +22,7 @@ flowchart LR
 
 설정은 `install.sh`가 `~/.claude/settings.json`에 훅을 쓰고, `agents/`, `skills/`, `bin/`을 `~/.claude`와 `~/.local/bin`에 심볼릭 링크하는 것이 전부다. 저장소마다 `harness init`이 `.harness/asks/`와 `agent = conductor`를 만들고, deny 규칙 9개를 설정에 넣고, `AGENTS.md`에 harness 규칙 블록을 만들거나 덧붙이고, `.harness/` 등을 `.git/info/exclude`에 넣는다. 훅은 `lib/harness-root.sh`의 `harness_root`로 체크아웃 루트를 찾고, 없으면 아무것도 하지 않는다.
 
-`harness lane new|rm|ls`는 이슈마다 작업 폴더를 관리한다. 작업 폴더는 저장소 옆 `../<repo>-<이슈 번호>`에 만드는 git worktree이고, 만들 때 `harness init`과 `lane_setup`이 함께 돈다(`lib/harness-lane.sh`).
+`harness lane <이슈 번호> [slug]`, `harness lane ls`, `harness lane rm <이슈 번호>`는 이슈마다 작업 폴더를 만들고, 보여 주고, 지운다. 작업 폴더는 저장소 옆 `../<repo>-<이슈 번호>`에 만드는 git worktree이고, 만들 때 그 폴더에서 `harness init`이 돌고 `.claude/harness.json`에 `lane_setup`이 있으면 그 명령도 돈다(`lib/harness-lane.sh`).
 
 ## 2. harness ask 수명
 

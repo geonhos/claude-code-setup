@@ -16,17 +16,17 @@ harness must never interfere with repos that do not use it.
 1. herdr is optional for headless runs (PR 1, #36, done). The pane runner still needs herdr.
 2. A *harness checkout* is the nearest dir with `.harness/asks/`, from the cwd up to the dir
    holding `.git` (outside git: the cwd only); the same rule as harness-verify `enter_root`.
-   `harness init` creates it; `ask` and `spawn` refuse without it (spawn removed in prune step 4).
+   `harness init` creates it; `ask` and `spawn` refuse without it (spawn removed in prune step 3, 2026-11-02).
 3. The gate, route (route hooks removed in prune step 4) and resume hooks are no-ops outside a harness checkout, checked before
    jq and parsing. Inside one, the gate keys on agent_type / agent_id / HARNESS_ROLE (0005
    steps 2-4; steps 2-3 now apply only inside a checkout). No env switch: `HERDR_ENV` is ignored.
 4. The conductor agent is set per repo by `harness init` (`.claude/settings.local.json`,
    per user and untracked; `--shared` writes `.claude/settings.json`; `"agent": "conductor"`;
    `--no-agent` skips it; a symlinked file stays a symlink, a `.bak` is made once). The global `agent` key is gone:
-   `install.sh` removes a previous `agent: conductor` once, `harness doctor --fix` too.
+   `install.sh` removes a previous `agent: conductor` once, `harness doctor --fix` too. (the `install.sh` part removed in #114, 350118e; doctor in prune step 4)
 5. `harness doctor [--fix]` (removed in prune step 4, see the line "Prune step 4" below) lists and removes pollution of older versions (stray
    `.harness/` without `asks/`); it skips directories holding unknown files.
-6. `harness wait <role>` (ask-id form dropped) blocks until the run ends (exit 0 done, 3 no ask / runner died, 4 timeout; never collects) and `harness watch` is a human-terminal viewer (refused without a tty and denied to the conductor by the gate; update 2026-11-17: since 883dcc1 (#138) the gate has no such rule, only the tty refusal in `lib/harness-headless.sh` remains). A background `harness ask` waits exactly the headless cap, so its Bash notification wakes the conductor; `harness report` while alive says `still running (<n>s); harness wait <role> blocks until done`. The Stop hook blocks a worker that stops without a fresh report (twice per ask, `[no-report]` opts out).
+6. `harness wait <role|ask-id>` (ask-id form dropped) blocks until the run ends (exit 0 done, 3 no ask / runner died, 4 timeout; never collects) and `harness watch` is a human-terminal viewer (refused without a tty and denied to the conductor by the gate; update 2026-11-17: since 883dcc1 (#138) the gate has no such rule, only the tty refusal in `lib/harness-headless.sh` remains). A background `harness ask` waits exactly the headless cap, so its Bash notification wakes the conductor; `harness report` while alive says `still running (<n>s); harness wait <role> blocks until done`. The Stop hook blocks a worker that stops without a fresh report (twice per ask, `[no-report]` opts out).
 
 **Status.** Active (PR 3, prune step 2).
 
