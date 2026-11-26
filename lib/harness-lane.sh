@@ -80,9 +80,10 @@ lane_copy() {
 }
 
 # lane_ignored_diff <primary> <dir> — ignored files of the work folder that differ from (or are missing in) the primary
+# (AGENTS.md is skipped: init regenerates the ignored copy it made, #243)
 lane_ignored_diff() {
   git -C "$2" ls-files --others --ignored --exclude-standard \
-    | grep -Ev '^\.harness/|^\.claude/settings\.local\.json$|(^|/)(node_modules|dist|build|\.venv|target|\.next|coverage|__pycache__)/' \
+    | grep -Ev '^\.harness/|^\.claude/settings\.local\.json$|^AGENTS\.md$|(^|/)(node_modules|dist|build|\.venv|target|\.next|coverage|__pycache__)/' \
     | while IFS= read -r f; do
         if [ ! -e "$1/$f" ]; then echo "$f only in the work folder"
         elif ! cmp -s "$1/$f" "$2/$f"; then echo "$f differs from the original folder"; fi
