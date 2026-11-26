@@ -70,6 +70,8 @@ ERRS=(
   "--timeout eats no instruction|analyst --timeout q"
   "--timeout 0|analyst --timeout 0 q"
   "--timeout abc|analyst q --timeout abc"
+  "--timeout 00|analyst --timeout 00 q"
+  "--timeout 000|analyst q --timeout 000"
   "empty instruction|analyst ''"
 )
 for e in "${ERRS[@]}"; do
@@ -81,6 +83,19 @@ for e in "${ERRS[@]}"; do
   check "error ($label): nothing started" not_logged "claude: "
   check "error ($label): no progress row" [ "$(nrows)" -eq 0 ]
 done
+
+# #250: an unknown --option that contains whitespace is an instruction that forgot the bare --: say so
+HINT="harness ask: an instruction that starts with -- must follow a bare --"
+asetup
+hrun ask analyst '--fix the bug'
+check "--instruction with spaces: rc 1, hint line first, then usage" bash -c '[ "$1" = 1 ] && [ "$(grep -n -F "$3" <<<"$2" | cut -d: -f1)" = 1 ] && [ "$(grep -n "^usage:" <<<"$2" | head -1 | cut -d: -f1)" = 2 ]' _ "$RC" "$OUT" "$HINT"
+check "--instruction with spaces: no row" [ "$(nrows)" -eq 0 ]
+hrun ask analyst --bogus q
+check "plain unknown option: no hint" not_grep -F "$HINT" <<<"$OUT"
+asetup; export FAKE_CLAUDE_MODE=success
+hrun ask analyst --timeout 007 "leading zeros"
+check "--timeout 007: still accepted (rc 0)" [ "$RC" -eq 0 ]
+unset FAKE_CLAUDE_MODE
 
 # a usage error after an ordinary ask leaves exactly that ask's row (no copy of its cost or session)
 asetup
