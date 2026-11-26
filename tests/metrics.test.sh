@@ -138,6 +138,20 @@ check "forced stop: abnormal total counts only real failures (4/8)" [ "$(jv '.cu
 run metrics
 check "forced stop: text line" grep -Eq '^  stopped by close --force +2 +0$' <<<"$OUT"
 
+# one close stops one row: a second failed row of the role in the same 10 s window stays abnormal (#250)
+msetup
+mkdir -p .harness
+cat > .harness/progress.jsonl <<'EOF'
+{"ts":"2026-10-10T10:00:00Z","event":"close","role":"analyst","reason":"force_kill"}
+{"ts":"2026-10-10T10:00:01Z","agent":"analyst","exit":3,"dur_s":200}
+{"ts":"2026-10-10T10:00:02Z","agent":"analyst","exit":3,"dur_s":5}
+{"ts":"2026-10-10T10:00:03Z","agent":"analyst","exit":0,"dur_s":5}
+EOF
+export HARNESS_NOW=$NOW
+run metrics --json
+J=$OUT
+check "one close, two failures in the window: the first is stopped, the second abnormal (1/1 of 3 rows)" [ "$(jv '.current.roles.analyst | "\(.stopped)/\(.abnormal)/\(.asks)"')" = "1/1/3" ]
+
 # --- work-folder rows (mirrored with "lane", #246) are counted; the stopped join respects the lane ---
 msetup
 mkdir -p .harness

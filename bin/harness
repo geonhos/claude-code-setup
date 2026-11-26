@@ -34,7 +34,7 @@ DEFAULT_TIMEOUT=$HARNESS_DEFAULT_TIMEOUT_MS
 IMPLEMENTER_TIMEOUT=$HARNESS_IMPLEMENTER_TIMEOUT_MS
 ASK_DIR=".harness/asks"
 # parsed once by ask_parse_args (cmd_ask); ask_inner only reads them
-ASK_TIMEOUT=$DEFAULT_TIMEOUT; ASK_TIMEOUT_SET=0; ASK_KEEP=0; ASK_BAD=0; ASK_NOLANE=0; ASK_INSTR=
+ASK_TIMEOUT=$DEFAULT_TIMEOUT; ASK_TIMEOUT_SET=0; ASK_KEEP=0; ASK_BAD=0; ASK_NOLANE=0; ASK_HINT=0; ASK_INSTR=
 
 usage() {
   cat >&2 <<EOF
@@ -164,11 +164,11 @@ record_progress() {
 # (--keep, --no-lane, --timeout MS) may stand before or after the instruction, in any order; `--` ends the
 # options (an instruction that starts with `--` follows it). Exactly one other argument is the instruction.
 # Sets ASK_INSTR, ASK_TIMEOUT/KEEP/NOLANE and ASK_BAD=1 for an unknown option, a --timeout without a
-# positive integer, or an instruction count other than one; cmd_ask turns ASK_BAD into the usage error.
+# positive integer (zero included), or an instruction count other than one; cmd_ask turns ASK_BAD into the usage error.
 ask_parse_args() {
   local agent=$1 ninstr=0 endopts=0
   shift
-  ASK_KEEP=0; ASK_BAD=0; ASK_NOLANE=0; ASK_INSTR=
+  ASK_KEEP=0; ASK_BAD=0; ASK_NOLANE=0; ASK_HINT=0; ASK_INSTR=
   ASK_TIMEOUT=$DEFAULT_TIMEOUT; ASK_TIMEOUT_SET=0
   [ "$agent" != implementer ] || ASK_TIMEOUT=$IMPLEMENTER_TIMEOUT
   while [ $# -gt 0 ]; do
@@ -177,12 +177,14 @@ ask_parse_args() {
         --) endopts=1; shift; continue ;;
         --timeout)
           case "${2:-}" in
-            ''|*[!0-9]*|0) ASK_BAD=1; shift ;;     # missing/invalid value: usage
-            *) ASK_TIMEOUT=$2; ASK_TIMEOUT_SET=1; shift 2 ;;
+            ''|*[!0-9]*) ASK_BAD=1; shift ;;     # missing/invalid value: usage
+            *[!0]*) ASK_TIMEOUT=$2; ASK_TIMEOUT_SET=1; shift 2 ;;
+            *) ASK_BAD=1; shift ;;               # zero (0, 00): usage
           esac
           continue ;;
         --keep) ASK_KEEP=1; shift; continue ;;
         --no-lane) ASK_NOLANE=1; shift; continue ;;
+        --*[[:space:]]*) ASK_BAD=1; ASK_HINT=1; shift; continue ;;   # looks like an instruction that starts with --
         --*) ASK_BAD=1; shift; continue ;;
       esac
     fi
@@ -436,7 +438,10 @@ cmd_ask() {
   ask_parse_args "$agent" "$@"
   local text=$ASK_INSTR
   case " $AGENTS " in *" $agent "*) ;; *) ask_inner "$agent" "$text" ;; esac
-  { [ "$ASK_BAD" = 0 ] && [ -n "$text" ]; } || usage
+  if [ "$ASK_BAD" != 0 ] || [ -z "$text" ]; then
+    [ "$ASK_HINT" = 0 ] || echo "harness ask: an instruction that starts with -- must follow a bare --" >&2
+    usage
+  fi
   [ "$agent" != implementer ] || [ "$ASK_NOLANE" = 1 ] || ! lane_in_primary \
     || die "refusing to run the implementer in the primary worktree: create a work folder with 'harness lane <issue#>' and use 'harness -C <folder> ask implementer ...' (--no-lane: only for tasks that do not change this repo)"
   set -- "$agent" "$text"
