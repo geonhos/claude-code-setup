@@ -62,7 +62,7 @@ EOF_PAGES
 # cmd_metrics [--since YYYY-MM-DD] [--json] — numbers from .harness/progress.jsonl (the
 # current window and the equal one before it) plus a snapshot of the wiki state.
 # Windows: [start, now] and [start - len, start). Default start = now - 28 days.
-# Abnormal = an ask whose exit is not 0/5; rate = abnormal / rows.
+# Abnormal = an ask whose exit is not 0/5 and that was not stopped by `close --force`; rate = abnormal / rows.
 cmd_metrics() {
   local since="" json=0 now top wiki="null" pages f st idxl=0 inj=0
   local act=0 stale=0 draft=0 sup=0 oth=0
@@ -105,16 +105,25 @@ cmd_metrics() {
       else (((.[length / 2 - 1] + .[length / 2]) / 2) | round) end;
     def p95: sort | if length == 0 then null else .[((length * 0.95 | ceil) - 1)] end;
     def day: strftime("%Y-%m-%d");
-    def rows: split("\n") | map(fromjson? | select(type == "object" and .event != "close"))
+    def parsed: split("\n") | map(fromjson? | select(type == "object"))
       | map(. + {t: (try (.ts | fromdateiso8601) catch null)}) | map(select(.t != null));
-    def abn: .exit != null and .exit != 0 and .exit != 5;
+    # stopped = a failed ask row written within 10 s after a `close --force` row (reason force_kill) of its
+    # role: an intended stop, not a failure (the close row carries no ask_id, so the time is the join)
+    def rows: parsed as $p
+      | ($p | map(select(.event == "close" and .reason == "force_kill"))) as $k
+      | $p | map(select(.event != "close"))
+      | map(. as $r | . + {stopped: ($r.exit != 0 and ($k | any(.role == $r.agent and ($r.t - .t) >= 0 and ($r.t - .t) <= 10)))});
+    def abn: .exit != null and .exit != 0 and .exit != 5 and (.stopped | not);
+    # old usage-error rows (before #246) copied the exit.json of the previous run: duration 0, negative startup_s
+    def copied: .dur_s == 0 and (.startup_s | type == "number" and . < 0);
     def role_stat($rs):
       { asks: ($rs | length),
           abnormal: ($rs | map(select(abn)) | length),
           abnormal_rate: pct($rs | map(select(abn)) | length; $rs | length),
           exit: ($rs | map(.exit | if . == null then "?" else tostring end)
                  | group_by(.) | map({key: .[0], value: length}) | from_entries),
-          exit5: ($rs | map(select(.exit == 5)) | length),
+          stopped: ($rs | map(select(.stopped)) | length),
+          exit5: ($rs | map(select(.exit == 5 and .verify != "interrupted" and (.stopped | not))) | length),
           duration_median_s: ($rs | map(.dur_s | select(type == "number")) | median),
           duration_p95_s: ($rs | map(.dur_s | select(type == "number")) | p95),
           mean_verify_attempts: ($rs | map(.verify_attempts | select(type == "number")) | if length == 0 then null else ((add / length * 10 | round) / 10) end) };
@@ -125,9 +134,9 @@ cmd_metrics() {
       | .roles.reviewer.fail_rate = pct(.roles.reviewer.exit5; .roles.reviewer.asks)
       | .by_runner = ($rs | group_by("\(.agent)/\(.runner)")
           | map({key: "\(.[0].agent)/\(.[0].runner)",
-                 value: (role_stat(.) + {cost_usd_sum: (map(.cost_usd | select(type == "number")) | add // 0),
-                   cost_usd_median: (map(.cost_usd | select(type == "number")) | median),
-                   startup_s_median: (map(.startup_s | select(type == "number")) | median)})})
+                 value: (role_stat(.) + {cost_usd_sum: (map(select(copied | not) | .cost_usd | select(type == "number")) | add // 0),
+                   cost_usd_median: (map(select(copied | not) | .cost_usd | select(type == "number")) | median),
+                   startup_s_median: (map(select(copied | not) | .startup_s | select(type == "number")) | median)})})
           | from_entries);
     (rows) as $all
     | (if $since == "" then $now - 28 * 86400 else ($since + "T00:00:00Z" | fromdateiso8601) end) as $start
@@ -153,6 +162,7 @@ cmd_metrics() {
           ($roles[] as $r | row("  \($r)"; .current.roles[$r].asks; .prev.roles[$r].asks)),
           row("abnormal rate (exit not 0/5)"; (.current.total.abnormal_rate | pc); (.prev.total.abnormal_rate | pc)),
           ($roles[] as $r | row("  \($r)"; (.current.roles[$r].abnormal_rate | pc); (.prev.roles[$r].abnormal_rate | pc))),
+          row("stopped by close --force"; .current.total.stopped; .prev.total.stopped),
           row("implementer verify-failure rate"; (.current.roles.implementer.verify_failure_rate | pc); (.prev.roles.implementer.verify_failure_rate | pc)),
           row("implementer mean verify attempts"; .current.roles.implementer.mean_verify_attempts; .prev.roles.implementer.mean_verify_attempts),
           row("reviewer FAIL rate"; (.current.roles.reviewer.fail_rate | pc); (.prev.roles.reviewer.fail_rate | pc)),
