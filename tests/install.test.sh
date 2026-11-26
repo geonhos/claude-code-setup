@@ -454,10 +454,13 @@ check "reviewer prompt: checkout is the tree under review or the live install" g
 check "reviewer prompt: rewritten rules compared with source" grep -qF 'compare each rewritten item and each citation with its source sentence' "$REPO/claude/agents/reviewer.md"
 check "implementer prompt: foreign temp worktree is not removed" grep -qF 'do not remove it (it belongs to another session)' "$REPO/claude/agents/implementer.md"
 check "reviewer prompt: guard assertion must be shown able to fail" grep -qF 'may pass on base, but show it can fail: remove or invert the code it guards' "$REPO/claude/agents/reviewer.md"
-check "reviewer prompt: guard check passing without the guard is a finding" grep -qF 'a new check that still passes without the guarded code is a finding' "$REPO/claude/agents/reviewer.md"
+check "reviewer prompt: guard check passing without the guard is a finding" grep -qF 'a new or changed check that still passes without the guarded code is a finding' "$REPO/claude/agents/reviewer.md"
+check "reviewer prompt: guard-check mutant runs in a sibling worktree" grep -qF 'a mutant, in a sibling worktree as in the next line, removed afterwards' "$REPO/claude/agents/reviewer.md"
+check "reviewer prompt: severity list rates guard checks" grep -qF 'a check that cannot fail where removing its guarded code would be a likely bug' "$REPO/claude/agents/reviewer.md"
+check "reviewer prompt: false statement in document, prompt or comment" grep -qF 'a false statement in a document, prompt or comment' "$REPO/claude/agents/reviewer.md"
 check "reviewer prompt: added statements checked against code wherever worded" grep -qF 'wherever its wording came from' "$REPO/claude/agents/reviewer.md"
 check "implementer prompt: see each new test fail" grep -qF 'see each new test fail' "$REPO/claude/agents/implementer.md"
-check "implementer prompt: brief wording checked against code" grep -qF 'Check wording given in a brief, plan or audit against the code' "$REPO/claude/agents/implementer.md"
+check "implementer prompt: brief wording checked against code" grep -qF 'against the code or the decision log before writing it into a document' "$REPO/claude/agents/implementer.md"
 
 printf '{"model":"keep"}\n' > "$CLAUDE_DIR/settings.json"
 run_install

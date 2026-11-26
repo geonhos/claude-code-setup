@@ -2,7 +2,7 @@
 type: troubleshooting
 status: active
 updated: 2026-11-26
-sources: [ask 1793322003-39187-11720, lib/harness-headless.sh:132, claude/agents/implementer.md:70, bin/harness-verify:357-358]
+sources: [ask 1793322003-39187-11720, lib/harness-headless.sh:132, claude/agents/implementer.md:71, bin/harness-verify:357-358]
 verified_by: ask 1793322003-39187-11720 (no check; wording trap)
 ---
 # A "no file edits" brief makes the implementer skip the report
@@ -11,6 +11,6 @@ verified_by: ask 1793322003-39187-11720 (no check; wording trap)
 
 **Cause.** The brief said "Git housekeeping only, no file edits". The worker read it as also forbidding the mandatory report file. The Stop hook never requires a report (`bin/harness-verify:357-358` only hides and restores it); the missing report is caught only by the runner (`lib/harness-headless.sh:132`, exit 3). A similar brief in an earlier ask did get a report, so it is a judgment slip that wording can trigger, not a harness bug.
 
-**Fix.** Briefs that forbid edits say "no source edits (report still required)". Not yet encoded anywhere: candidate for one line in `claude/skills/implement/SKILL.md`, or for making the report contract in `claude/agents/implementer.md:70` override brief wording.
+**Fix.** Briefs that forbid edits say "no source edits (report still required)". Not yet encoded anywhere: candidate for one line in `claude/skills/implement/SKILL.md`, or for making the report contract in `claude/agents/implementer.md:71` override brief wording.
 
 **Evidence.** Ask 1793322003-39187-11720.
