@@ -66,23 +66,11 @@ EOI
   done
 }
 
-# lane_copy <primary> <dir> — copy the files named in .claude/harness.json "lane_copy" (relative, no ..) from the primary
-lane_copy() {
-  local f
-  jq -r '.lane_copy[]? | strings' "$1/.claude/harness.json" 2>/dev/null | while IFS= read -r f; do
-    case "/$f/" in /*//*|*/../*|*/./*) f="" ;; esac
-    case "$f" in /*|"") echo "harness lane: lane_copy: skipping an unsafe path" >&2; continue ;; esac
-    [ -f "$1/$f" ] || { echo "harness lane: lane_copy: $f is missing in the primary folder; skipped" >&2; continue; }
-    [ ! -e "$2/$f" ] || continue
-    case "$f" in */*) mkdir -p "$2/${f%/*}" 2>/dev/null ;; esac
-    cp -p "$1/$f" "$2/$f" || echo "harness lane: lane_copy: could not copy $f" >&2
-  done
-}
-
 # lane_ignored_diff <primary> <dir> — ignored files of the work folder that differ from (or are missing in) the primary
+# (AGENTS.md is skipped: init regenerates the ignored copy it made, #243)
 lane_ignored_diff() {
   git -C "$2" ls-files --others --ignored --exclude-standard \
-    | grep -Ev '^\.harness/|^\.claude/settings\.local\.json$|(^|/)(node_modules|dist|build|\.venv|target|\.next|coverage|__pycache__)/' \
+    | grep -Ev '^\.harness/|^\.claude/settings\.local\.json$|^AGENTS\.md$|(^|/)(node_modules|dist|build|\.venv|target|\.next|coverage|__pycache__)/' \
     | while IFS= read -r f; do
         if [ ! -e "$1/$f" ]; then echo "$f only in the work folder"
         elif ! cmp -s "$1/$f" "$2/$f"; then echo "$f differs from the original folder"; fi
@@ -128,7 +116,6 @@ lane_new() {
   # same mode as the primary: shared only when its committed settings already name the conductor
   ! jq -e '.agent == "conductor"' "$prim/.claude/settings.json" >/dev/null 2>&1 || shared=--shared
   ( cd "$dir" && cmd_init $shared ) || echo "harness lane: harness init failed in $dir" >&2
-  lane_copy "$prim" "$dir"
   setup=$(jq -r '.lane_setup // empty' "$dir/.claude/harness.json" 2>/dev/null)
   if [ -n "$setup" ]; then
     ( cd "$dir" && sh -c "$setup" ) || echo "harness lane: lane_setup failed in $dir (folder kept)" >&2

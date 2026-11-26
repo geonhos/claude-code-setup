@@ -199,6 +199,10 @@ check "skill implement targets implementer" grep -q 'ask implementer' "$REPO/cla
 for f in CLAUDE.md .claude/CLAUDE.md CLAUDE.local.md; do
   check "no $f in the repo: it hides AGENTS.md, see docs/wiki/troubleshooting/agents-md-ignored-when-claude-md-exists.md" [ ! -e "$REPO/$f" ]
 done
+# this repo's AGENTS.md carries the harness rules block, equal to the template init writes (#243)
+agents_block() { awk '$0=="<!-- harness:rules end -->"{s=0} s{print} $0=="<!-- harness:rules begin -->"{s=1}' "$REPO/AGENTS.md"; }
+check "AGENTS.md has one rules begin and one end marker" bash -c '[ "$(grep -cxF "<!-- harness:rules begin -->" "$1")" = 1 ] && [ "$(grep -cxF "<!-- harness:rules end -->" "$1")" = 1 ]' _ "$REPO/AGENTS.md"
+check "AGENTS.md rules block equals claude/templates/agents-rules.md" cmp -s <(agents_block) "$REPO/claude/templates/agents-rules.md"
 check "skill review targets reviewer" grep -q 'harness ask reviewer' "$REPO/claude/skills/review/SKILL.md"
 check "skill review demands VERDICT" grep -q 'VERDICT' "$REPO/claude/skills/review/SKILL.md"
 

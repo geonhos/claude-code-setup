@@ -9,7 +9,7 @@ Read this first. Open a page only when it is relevant. Schema and promotion rule
 - [Docs-only skip scope](troubleshooting/docs-only-asks-skip-the-suite.md): Stop hook skips the suite only for `docs/`/`.harness/`; wiki runs wiki-lint only (active, 2026-10-27)
 
 ## Troubleshooting: workers and env
-- [AGENTS.md is ignored when a CLAUDE.md exists](troubleshooting/agents-md-ignored-when-claude-md-exists.md): no CLAUDE.md on purpose; CLAUDE.md, .claude/CLAUDE.md or CLAUDE.local.md hides AGENTS.md unless it imports it (active, 2026-11-17)
+- [AGENTS.md is ignored when a CLAUDE.md exists](troubleshooting/agents-md-ignored-when-claude-md-exists.md): no CLAUDE.md on purpose; CLAUDE.md, .claude/CLAUDE.md or CLAUDE.local.md hides AGENTS.md unless it imports it; init warns (active, 2026-11-26)
 - [Live gate edit](troubleshooting/live-gate-edit.md): a syntax error denies everything, other gate failures fail open silently; bash -n + suite before each save (active, 2026-11-22)
 - [In-place edit breaks running scripts](troubleshooting/in-place-edit-breaks-running-scripts.md): bin/ is live; bodies are brace-wrapped, edit via new inode; lib/ is safe while sourced eagerly (active, 2026-10-28)
 - [cd "$VAR" deny false hit](troubleshooting/cd-var-deny-rule-false-hit.md): after an unresolvable cd, Claude Code tests relative reads against ~/.ssh/** rules; use absolute paths or git -C (active, 2026-11-23)
@@ -50,4 +50,5 @@ Read this first. Open a page only when it is relevant. Schema and promotion rule
 - [0013 Remove herdr](decisions/0013-remove-herdr.md): no herdr in code/gate/install; watch via `harness watch` in any terminal (active, 2026-11-13)
 - [0014 init writes deny rules](decisions/0014-init-writes-deny-rules.md): `harness init` adds nine worker deny rules to settings.local.json; ask warns when missing; seatbelt, not a sandbox (active, 2026-11-22)
 - [0015 Korean writing rules](decisions/0015-korean-writing-rules.md): Korean for the user written directly under six conductor-prompt rules plus the on-demand `korean-writing` skill; no STE-style drafting (active, 2026-11-20)
+- [0016 init writes AGENTS.md rules](decisions/0016-init-writes-agents-rules.md): `harness init` owns a marker block in AGENTS.md; lane never gets a git-visible change; CLAUDE.md only warned about (active, 2026-11-26)
 - [Per-issue work folders](how-to/work-folders.md): lane create/rm, -C parallel asks, lane_setup, risks (active, 2026-11-13)

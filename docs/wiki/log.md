@@ -82,3 +82,4 @@
 - 2026-11-23 · implementer · #206 · half-assertion-tests: shape 7, a dedupe keyed on a field one source lacks
 - 2026-11-23 · implementer · #230 · base-worktree-during-suite: a dead reviewer's sibling worktree is removed by hand (git worktree remove / harness lane rm --force)
 - 2026-11-23 · implementer · #236 · how-to/release: new page, semver from v3.0.0, tag as the only version, Korean release notes
+- 2026-11-26 · implementer · #243 · decisions/0016-init-writes-agents-rules: new page; `harness init` writes the rules block into AGENTS.md; lane_copy removed
