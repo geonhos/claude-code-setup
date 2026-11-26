@@ -1,11 +1,14 @@
 #!/bin/bash
 # fake gh: logs argv (one line per call) to $FAKE_GH_LOG; `issue list` prints $FAKE_GH_OPEN
 # (newline-separated titles), plus $FAKE_GH_CLOSED when called with `--state all`; FAKE_GH_FAIL=1 makes every call fail.
+# FAKE_GH_CREATE_OK=<k> makes only `issue create` fail once k creates have been logged before it (default: never fail).
 printf '%s\n' "$*" >> "${FAKE_GH_LOG:-/dev/null}"
 [ "${FAKE_GH_FAIL:-}" != 1 ] || exit 1
 case "$1 $2" in
   "issue list") printf '%s\n' "${FAKE_GH_OPEN:-}"
     case "$*" in *"--state all"*) printf '%s\n' "${FAKE_GH_CLOSED:-}" ;; esac ;;
-  "issue create") echo "https://github.com/x/y/issues/1" ;;
+  "issue create")
+    [ -z "${FAKE_GH_CREATE_OK:-}" ] || [ "$(grep -c '^issue create ' "${FAKE_GH_LOG:-/dev/null}")" -le "$FAKE_GH_CREATE_OK" ] || exit 1
+    echo "https://github.com/x/y/issues/1" ;;
 esac
 exit 0
