@@ -75,7 +75,7 @@ agents, skills, bin, 훅은 이 체크아웃에서 심링크되고 기본값은 
 4. `harness -C <폴더> ask implementer '...'`로 구현합니다. lint·test를 통과해야 리포트가 나옵니다.
 5. 큰 작업(agent 프롬프트·스킬 변경인 `claude/agents/`, `claude/skills/`, `AGENTS.md` 포함)만 `/review`를 거칩니다. Critical/Major가 있으면 FAIL이고, Minor는 issue로 남깁니다. FAIL을 고친 뒤에는 `/review`를 다시 하고, 마지막 리뷰가 FAIL인 PR은 사용자가 달리 정하지 않는 한 열지 않습니다.
 6. conductor가 PR을 만듭니다(본문에 `Fixes #N`). merge는 사용자가 합니다.
-7. merge 뒤 `harness lane rm <issue#>`가 폴더와 브랜치를 지웁니다. PR이 merge 또는 close되고 미푸시 커밋이 없을 때만 지워집니다.
+7. merge 뒤 `harness lane rm <issue#>`가 폴더와 브랜치를 지웁니다. PR이 merge 또는 close되고 미푸시 커밋이 없을 때만 지워집니다. 진행 기록은 주 폴더의 `progress.jsonl`에 이미 있으므로 지워지지 않습니다.
 
 겹치지 않는 파일을 건드리는 작업은 폴더를 나눠 병렬로 돌립니다. 상태(`.harness/`)가 폴더마다 따로라 implementer 여럿이 동시에 돕니다. 자세한 규칙은 [docs/wiki/how-to/work-folders.md](docs/wiki/how-to/work-folders.md).
 
