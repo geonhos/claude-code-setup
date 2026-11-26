@@ -501,26 +501,6 @@ cmd_status() {
 # --- config, close -----------------------------------------------------------------------
 CONFIG_FILE=".harness/config.json"
 
-# config_template — the documented default config (what ensure_config writes)
-config_template() {
-  cat <<'EOC'
-{
-  "_doc": "Optional key: headless_max_minutes (number) overrides the headless run cap, in minutes."
-}
-EOC
-}
-
-# ensure_config — create the documented default config when absent (never fatal); an existing
-# file is never touched.
-ensure_config() {
-  # Never creates .harness/ (stray dirs break harness-verify's root lookup): `harness init`
-  # does that. Workers and anything outside an initialised checkout (no .harness/asks) skip.
-  [ "${HARNESS_ROLE:-}" != worker ] || return 0
-  [ -d .harness/asks ] || return 0
-  [ -e "$CONFIG_FILE" ] || config_template > "$CONFIG_FILE" 2>/dev/null
-  return 0
-}
-
 # log_close <role> <reason> [runner] — event line in progress.jsonl (key `role`, not
 # `agent`, so per-agent ask lookups never match it) + progress.md refresh
 log_close() {
@@ -785,8 +765,6 @@ cmd_init() {
   echo "harness init: $top"
   if [ -d .harness/asks ]; then echo ".harness/asks exists"
   else mkdir -p .harness/asks || die "cannot create .harness/asks"; echo "created .harness/asks"; fi
-  if [ -e "$CONFIG_FILE" ]; then echo "$CONFIG_FILE exists"
-  else ensure_config init; [ -e "$CONFIG_FILE" ] && echo "created $CONFIG_FILE"; fi
   if [ "$target" = .claude/settings.local.json ]; then settings_merge "$target" "$agent" 1
   else
     [ "$agent" = 0 ] || settings_merge "$target" 1 0
@@ -816,8 +794,6 @@ if [ "${1:-}" = -C ]; then
   cd "$2" 2>/dev/null || die "cannot enter $2"
   shift 2
 fi
-# _mtime prints a file's epoch mtime (tests: fake GNU/BSD stat on PATH)
-if [ "${1:-}" = _mtime ]; then file_mtime "${2:-}"; exit $?; fi
 # _defaults prints the shared defaults as KEY=VALUE (tests: prose copies are checked against it)
 if [ "${1:-}" = _defaults ]; then
   for k in $(compgen -v HARNESS_ | grep -E '^HARNESS_(ROLES|[A-Z_]+_(MS|DEFAULT))$' | sort); do eval "printf '%s=%s\n' \"$k\" \"\${$k}\""; done
@@ -835,9 +811,6 @@ if [ "${1:-}" = metrics ]; then shift; cmd_metrics "$@"; exit $?; fi
 # ask acts only in an initialised checkout (decision 0010); status/report/close work anywhere
 case "${1:-}" in
   ask) [ "${HARNESS_ROLE:-}" = worker ] || require_checkout ;;
-esac
-case "${1:-}" in
-  ask|status) ensure_config "$1" ;;
 esac
 case "${1:-}" in
   ask)    shift; cmd_ask "$@" ;;

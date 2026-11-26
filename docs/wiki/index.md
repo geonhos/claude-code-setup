@@ -20,7 +20,7 @@ Read this first. Open a page only when it is relevant. Schema and promotion rule
 - [Conductor shell: one command](troubleshooting/conductor-shell-one-command.md): exactly one simple command: no `;`, `&&`, `|`, redirects (active, 2026-10-28)
 
 ## Troubleshooting: shell portability and tests
-- [GNU stat -f](troubleshooting/gnu-stat-f.md): use `-nt`/`-ot` or `stat -c %Y` first (active, 2026-10-21)
+- [GNU stat -f](troubleshooting/gnu-stat-f.md): use `-nt`/`-ot` or `stat -c %Y` first (active, 2026-11-26)
 - [bash signals and job control](troubleshooting/bash-signals-job-control.md): bg jobs ignore INT; `set -m` hands tty signals to children (active, 2026-11-26)
 - [Global gitignore masks ignore gaps](troubleshooting/global-gitignore-masks-ignore-gaps.md): this machine's ~/.config/git/ignore hides missing excludes; check with core.excludesFile=/dev/null (active, 2026-11-26)
 - [Temp worktree fails worktree-guard](troubleshooting/base-worktree-during-suite.md): the guard is per repo, so any session's temp worktree (not only your own base) fails every running suite; remove only yours, else wait and rerun once (active, 2026-11-26)

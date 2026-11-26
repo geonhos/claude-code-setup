@@ -104,3 +104,4 @@
 - 2026-11-26 · implementer · #258 · doc-rewrite-moves-scope: shape 3 (audit wording copied unchecked); H1 and index hook widened
 - 2026-11-26 · implementer · #254 · work-folders how-to: two limits (last-writer-wins progress.md render, mirror never rotates the primary jsonl)
 - 2026-11-26 · implementer · #262 · half-assertion-tests: shape 3 guard-test example in past tense (the vacuous check was removed)
+- 2026-11-26 · implementer · #257 · gnu-stat-f: verified_by now "human (read file_mtime)"; the fake-stat test went with the removed `_mtime` subcommand
