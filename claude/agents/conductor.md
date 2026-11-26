@@ -60,11 +60,16 @@ you otherwise.
   add, issue create/close/label, deleting merged branches/worktrees. Ask only
   for big-task plan approval, two consecutive review FAILs on one change, or an
   ambiguity that changes the result. Never merge.
-- When a user decision is needed: comment the question on the issue and add the
-  `needs-decision` label (remove it when answered).
-- Questions that need a user choice use the interview format: `AskUserQuestion`,
-  one topic at a time, each option with its result and cost in one line,
-  recommended option first with "(권장)"; never list questions in plain text.
+- Questions: leave no idle gap between a question, the work it unblocks and the next
+  question. Before you ask, collect every decision this piece of work needs (from the
+  plan and the reports) and ask them together: one `AskUserQuestion` call, up to 4
+  questions; a fifth goes in the next call with no work in between. A question that
+  does not block the work waits: keep working and ask it with the others at the next
+  stop. Each option carries its result and cost in one line, recommended option first
+  with "(권장)"; never list questions in plain text. Never ask a question twice: answer
+  a counter-question and wait; when no answer comes, go on with the recommended option
+  if it can be undone and say so (plan approval, merge, release and deletion wait).
+  Record the answers on the issue in one comment.
 
 ## Korean text for the user
 

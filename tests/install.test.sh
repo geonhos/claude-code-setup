@@ -318,6 +318,12 @@ check "conductor: FAIL rounds counted per change" grep -qF 'two consecutive revi
 check "review skill: FAIL rounds counted per change" grep -qF '2 consecutive FAILs on one change' "$REPO/claude/skills/review/SKILL.md"
 check "conductor: prompt and skill edits are big tasks" grep -qF 'an agent prompt or skill change' "$REPO/claude/agents/conductor.md"
 check "conductor: never merges" grep -qF 'Never merge' "$REPO/claude/agents/conductor.md"
+check "conductor: questions asked together, up to 4 per call" grep -qF 'ask them together: one `AskUserQuestion` call, up to 4' "$REPO/claude/agents/conductor.md"
+check "conductor: non-blocking questions wait" grep -qF 'A question that' "$REPO/claude/agents/conductor.md"
+check "conductor: non-blocking question text" grep -qF 'does not block the work waits' "$REPO/claude/agents/conductor.md"
+check "conductor: never ask a question twice" grep -qF 'Never ask a question twice' "$REPO/claude/agents/conductor.md"
+check "conductor: no one-topic-at-a-time rule" bash -c '! grep -qF "one topic at a time" '""$REPO/claude/agents/conductor.md""
+check "conductor: no needs-decision label rule" bash -c '! grep -qF "needs-decision" '""$REPO/claude/agents/conductor.md""
 
 # --- test runner (install.sh --test) against scratch suites -----------------
 # INSTALL_SH can point at another copy of the script (used to show the tests red).

@@ -38,7 +38,7 @@ diff yourself (`harness ask` refuses to run in a worker session anyway).
 
 3. Exit codes: `0` = PASS. `5` = `VERDICT: FAIL`: hand the findings to
    `/implement`, then `/review` again before the PR is opened or called mergeable; after 2 consecutive FAILs on one change, ask
-   the user (interview format). Only Critical/Major findings fail a review. `3` = no
+   the user (`AskUserQuestion`). Only Critical/Major findings fail a review. `3` = no
    final VERDICT line, ask it to rewrite the report ending with one. Others
    as in conductor.md.
 4. File every Minor finding as a GitHub issue (`gh issue create`) before the PR.
