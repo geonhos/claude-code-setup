@@ -42,7 +42,7 @@ harness를 쓰려는 저장소에서 한 번 실행합니다. `.harness/asks/`(�
 
 ## CLI
 
-`harness` 인자 없이 실행하면 전체 usage가 나옵니다(`init`, `ask`, `wait`, `watch`, `open-watch`, `report`, `status`, `metrics`, `wiki-lint`, `close`, `lane`). exit code는 `bin/harness` 머리 주석에 있습니다(`ask`/`report` 0-5, `wait` 0·3·4).
+`harness` 인자 없이 실행하면 전체 usage가 나옵니다(`init`, `ask`, `wait`, `watch`, `open-watch`, `report`, `status`, `metrics`, `wiki-lint`, `close`, `lane`). exit code는 `bin/harness` 머리 주석에 있습니다(`ask`/`report` 0-5, `wait` 0·3·4). 작업 폴더에서 한 ask와 close도 주 폴더에 `.harness/asks`가 있으면 그 `progress.jsonl`에 `lane` 필드를 달고 함께 기록됩니다. `lane` 값은 `feat|fix|docs/<번호>-*` 브랜치면 이슈 번호이고, 그 밖의 브랜치나 detached HEAD면 폴더 이름입니다. 그래서 `harness lane rm` 뒤에도 `harness metrics`에 남습니다.
 
 ## 워커, 모델, 상한
 

@@ -86,7 +86,7 @@ num_or_null() { case "${1:-}" in ''|*[!0-9]*) echo null ;; *) echo "$1" ;; esac;
 record_progress() {
   local agent=$1 text=$2 rc=$3 t0=$4 hb=$5 out=$6 cb=
   local report="$REPORT_DIR/$agent.md" vj=.harness/verify/implementer.json rmt
-  local now ts stamp ha sess ca status="" summary="" verify="" logf n brief sha="" va="" hl='{}'
+  local now ts stamp ha sess ca status="" summary="" verify="" logf n brief sha="" va="" hl='{}' line
   now=$(date +%s)
   # a report older than this ask is a previous ask's (this one died before archiving it)
   if [ -f "$report" ]; then rmt=$(file_mtime "$report") && [ "$rmt" -ge "$t0" ] || report=/dev/null.none; fi
@@ -141,7 +141,7 @@ record_progress() {
   if [ -f "$JSONL" ] && [ "$(wc -c < "$JSONL" | tr -d ' ')" -gt "${HARNESS_JSONL_MAX:-1048576}" ]; then
     mv "$JSONL" "$JSONL.$stamp" && gzip -f "$JSONL.$stamp"
   fi
-  jq -n -c --arg ts "$ts" --arg agent "$agent" --arg session "$sess" \
+  line=$(jq -n -c --arg ts "$ts" --arg agent "$agent" --arg session "$sess" \
     --arg instr "$(printf '%s' "$text" | tr '\n' ' ' | cut -c1-160)" \
     --argjson exit "$rc" --arg verify "$verify" --argjson dur "$((now - t0))" \
     --arg hb "$hb" --arg ha "$ha" --argjson cb "$(num_or_null "$cb")" --argjson ca "$(num_or_null "$ca")" \
@@ -150,10 +150,12 @@ record_progress() {
     def nz: if . == "" then null else . end;
     {ts: $ts, agent: $agent, session: ($session | nz), instr: $instr, exit: $exit,
      verify: ($verify | nz), verify_attempts: $va, dur_s: $dur, head_before: ($hb | nz), head_after: ($ha | nz),
-     ctx_before: $cb, ctx_after: $ca, status: ($status | nz), summary: ($summary | nz), report_sha: ($sha | nz)} + (if $nl == 1 then {no_lane: true} else {} end) + $hl' >> "$JSONL" || return 1
+     ctx_before: $cb, ctx_after: $ca, status: ($status | nz), summary: ($summary | nz), report_sha: ($sha | nz)} + (if $nl == 1 then {no_lane: true} else {} end) + $hl') || return 1
+  printf '%s\n' "$line" >> "$JSONL" || return 1
 
   rotate_logs "$logf"
   write_progress_md
+  lane_mirror "$line"
   return 0
 }
 
@@ -214,9 +216,9 @@ write_progress_md() {
     printf '# Progress — %s (%s)\n' "$(basename "$PWD")" "$branch"
     printf 'Goal: %s\n' "$goal"
     printf '## Recent asks (newest first, max 15)\n'
-    grep -v '"event":"close"' "$JSONL" 2>/dev/null | tail -n 15 | jq -r -R 'fromjson? | "- \(.ts) \(.agent) exit \(.exit) verify \(.verify // "-") \(.head_before // "")..\(.head_after // "") — \(.summary // "")"' 2>/dev/null \
+    grep -v '"event":"close"' "$JSONL" 2>/dev/null | tail -n 15 | jq -r -R 'fromjson? | "- \(.ts) \(if .lane then "[#\(.lane)] " else "" end)\(.agent) exit \(.exit) verify \(.verify // "-") \(.head_before // "")..\(.head_after // "") — \(.summary // "")"' 2>/dev/null \
       | awk '{ a[NR] = $0 } END { for (i = NR; i >= 1; i--) print a[i] }'
-    q=$(grep '"event":"close"' "$JSONL" 2>/dev/null | tail -n 5 | jq -r -R 'fromjson? | "\(.ts) \(.role) (\(.reason // "?"))"' 2>/dev/null \
+    q=$(grep '"event":"close"' "$JSONL" 2>/dev/null | tail -n 5 | jq -r -R 'fromjson? | "\(.ts) \(if .lane then "[#\(.lane)] " else "" end)\(.role) (\(.reason // "?"))"' 2>/dev/null \
       | awk '{ a[NR] = $0 } END { for (i = NR; i >= 1; i--) printf "%s%s", (i == NR ? "" : "; "), a[i]; if (NR) print "" }')
     [ -z "$q" ] || printf 'Recent closes (max 5): %s\n' "$q"
     for f in $(ls -t .harness/reports/*.md 2>/dev/null); do
@@ -515,10 +517,13 @@ log_close() {
   # no marker side effects: create .harness/ only at a checkout root (an existing one is used as is)
   [ -d .harness/asks ] || [ "$(harness_root "$PWD" 2>/dev/null)" = "$(pwd -P)" ] || return 0
   mkdir -p .harness 2>/dev/null || return 0
-  jq -n -c --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg role "$1" --arg reason "$2" --arg runner "${3:-}" \
+  local line
+  line=$(jq -n -c --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg role "$1" --arg reason "$2" --arg runner "${3:-}" \
     '{ts: $ts, event: "close", role: $role, reason: $reason}
-     + (if $runner != "" then {runner: $runner} else {} end)' >> "$JSONL" 2>/dev/null
+     + (if $runner != "" then {runner: $runner} else {} end)' 2>/dev/null) || return 0
+  printf '%s\n' "$line" >> "$JSONL" 2>/dev/null
   write_progress_md
+  lane_mirror "$line"
   return 0
 }
 

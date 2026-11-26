@@ -108,16 +108,18 @@ cmd_metrics() {
     def parsed: split("\n") | map(fromjson? | select(type == "object"))
       | map(. + {t: (try (.ts | fromdateiso8601) catch null)}) | map(select(.t != null));
     # stopped = a failed ask row written within 10 s after a `close --force` row (reason force_kill) of its
-    # role: an intended stop, not a failure (the close row carries no ask_id, so the time is the join)
+    # role (and the same lane, or both none): an intended stop, not a failure (the close row carries no ask_id,
+    # so the time is the join)
     def rows: parsed as $p
       | ($p | map(select(.event == "close" and .reason == "force_kill"))) as $k
       | $p | map(select(.event != "close"))
-      | map(. as $r | . + {stopped: ($r.exit != 0 and ($k | any(.role == $r.agent and ($r.t - .t) >= 0 and ($r.t - .t) <= 10)))});
+      | map(. as $r | . + {stopped: ($r.exit != 0 and ($k | any(.role == $r.agent and (.lane // "") == ($r.lane // "") and ($r.t - .t) >= 0 and ($r.t - .t) <= 10)))});
     def abn: .exit != null and .exit != 0 and .exit != 5 and (.stopped | not);
     # old usage-error rows (before #246) copied the exit.json of the previous run: duration 0, negative startup_s
     def copied: .dur_s == 0 and (.startup_s | type == "number" and . < 0);
     def role_stat($rs):
       { asks: ($rs | length),
+          lane_asks: ($rs | map(select(.lane != null)) | length),
           abnormal: ($rs | map(select(abn)) | length),
           abnormal_rate: pct($rs | map(select(abn)) | length; $rs | length),
           exit: ($rs | map(.exit | if . == null then "?" else tostring end)
@@ -162,6 +164,7 @@ cmd_metrics() {
           ($roles[] as $r | row("  \($r)"; .current.roles[$r].asks; .prev.roles[$r].asks)),
           row("abnormal rate (exit not 0/5)"; (.current.total.abnormal_rate | pc); (.prev.total.abnormal_rate | pc)),
           ($roles[] as $r | row("  \($r)"; (.current.roles[$r].abnormal_rate | pc); (.prev.roles[$r].abnormal_rate | pc))),
+          row("implementer in work folders"; .current.roles.implementer.lane_asks; .prev.roles.implementer.lane_asks),
           row("stopped by close --force"; .current.total.stopped; .prev.total.stopped),
           row("implementer verify-failure rate"; (.current.roles.implementer.verify_failure_rate | pc); (.prev.roles.implementer.verify_failure_rate | pc)),
           row("implementer mean verify attempts"; .current.roles.implementer.mean_verify_attempts; .prev.roles.implementer.mean_verify_attempts),

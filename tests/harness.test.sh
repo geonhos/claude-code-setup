@@ -346,6 +346,9 @@ check "ask warns under -C: still says run harness init" grep -q "harness init" <
 jq -n --argjson d "$DENY_JSON" '{permissions:{deny:$d}}' > "$LANE/.claude/settings.local.json"
 hrun -C "$LANE" ask analyst "q"
 check "ask under -C: lane file complete, no warning (the primary's file is not consulted)" not_grep "deny rules" <<<"$OUT"
+# a nested -C dir that is not a work folder (not a worktree) must not mirror into the enclosing checkout
+check "ask under -C (not a worktree): no row in the enclosing checkout" [ "$(cat .harness/progress.jsonl 2>/dev/null | grep -c '"lane":')" = 0 ]
+check "ask under -C (not a worktree): its own row is in the folder" [ "$(jq -s 'length' "$LANE/.harness/progress.jsonl")" -ge 1 ]
 unset FAKE_CLAUDE_MODE FAKE_REPORT_CMD
 
 # --- init writes the harness rules block into AGENTS.md (#243, decision 0016) ---

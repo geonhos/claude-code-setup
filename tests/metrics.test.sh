@@ -138,6 +138,32 @@ check "forced stop: abnormal total counts only real failures (4/8)" [ "$(jv '.cu
 run metrics
 check "forced stop: text line" grep -Eq '^  stopped by close --force +2 +0$' <<<"$OUT"
 
+# --- work-folder rows (mirrored with "lane", #246) are counted; the stopped join respects the lane ---
+msetup
+mkdir -p .harness
+cat > .harness/progress.jsonl <<'EOF'
+{"ts":"2026-10-10T10:00:00Z","agent":"implementer","exit":0,"dur_s":100,"lane":"7"}
+{"ts":"2026-10-11T10:00:00Z","agent":"implementer","exit":0,"dur_s":100,"lane":"8"}
+{"ts":"2026-10-12T10:00:00Z","agent":"implementer","exit":0,"dur_s":100,"no_lane":true}
+{"ts":"2026-10-13T10:00:00Z","event":"close","role":"implementer","reason":"force_kill","lane":"7"}
+{"ts":"2026-10-13T10:00:01Z","agent":"implementer","exit":3,"dur_s":5}
+{"ts":"2026-10-14T10:00:00Z","event":"close","role":"implementer","reason":"force_kill","lane":"7"}
+{"ts":"2026-10-14T10:00:01Z","agent":"implementer","exit":3,"dur_s":5,"lane":"7"}
+{"ts":"2026-10-15T10:00:00Z","event":"close","role":"implementer","reason":"force_kill"}
+{"ts":"2026-10-15T10:00:01Z","agent":"implementer","exit":3,"dur_s":5,"lane":"7"}
+{"ts":"2026-09-10T10:00:00Z","agent":"implementer","exit":0,"dur_s":5,"lane":"6"}
+EOF
+export HARNESS_NOW=$NOW
+run metrics --json
+J=$OUT
+check "lane rows: implementer asks counts them (6 current)" [ "$(jv .current.roles.implementer.asks)" -eq 6 ]
+check "lane rows: lane_asks 4 current, 1 previous" [ "$(jv '"\(.current.roles.implementer.lane_asks)/\(.prev.roles.implementer.lane_asks)"')" = "4/1" ]
+check "lane rows: total lane_asks 4" [ "$(jv .current.total.lane_asks)" -eq 4 ]
+check "lane rows: stopped only when the lane matches (lane 7 close stops the lane 7 row only)" [ "$(jv '.current.roles.implementer.stopped')" -eq 1 ]
+check "lane rows: a lane close does not excuse a no-lane row; a no-lane close does not excuse a lane row" [ "$(jv '.current.roles.implementer.abnormal')" -eq 2 ]
+run metrics
+check "lane rows: text row" grep -Eq '^  implementer in work folders +4 +1$' <<<"$OUT"
+
 # interrupted exit 5 without a close row (the close row may be rotated away) is still no verify failure
 msetup
 mkdir -p .harness
