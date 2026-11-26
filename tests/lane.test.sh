@@ -336,6 +336,22 @@ check "lane rules: tracked without block: lane file unchanged" [ "$(cat "$D/AGEN
 check "lane rules: tracked without block: note printed" grep -qF "note: AGENTS.md is tracked; not changed in a work folder" <<<"$OUT"
 check "lane rules: tracked without block: git status clean" [ -z "$(git -C "$D" status --porcelain)" ]
 
+# tracked with a block equal to the template: no AGENTS.md note at all (#247); a different block still notes
+lsetup
+rm -f AGENTS.md; noagents_exclude
+{ printf '# Tracked\n\n<!-- harness:rules begin -->\n'; cat "$HERE/../claude/templates/agents-rules.md"; printf '<!-- harness:rules end -->\n'; } > AGENTS.md
+git add AGENTS.md; git commit -q -m agents; git push -q origin main 2>/dev/null
+hrun lane 74 r5; D="$BASE/repo-74"
+check "lane rules: tracked, block up to date: no AGENTS.md note" not_grep "AGENTS.md" <<<"$OUT"
+check "lane rules: tracked, block up to date: lane file same, git status clean" bash -c 'cmp -s "$1/AGENTS.md" AGENTS.md && [ -z "$(git -C "$1" status --porcelain)" ]' _ "$D"
+lsetup
+rm -f AGENTS.md; noagents_exclude
+{ printf '# Tracked\n\n<!-- harness:rules begin -->\nold text\n<!-- harness:rules end -->\n'; } > AGENTS.md
+git add AGENTS.md; git commit -q -m agents; git push -q origin main 2>/dev/null
+hrun lane 75 r6; D="$BASE/repo-75"
+check "lane rules: tracked, different block: note printed" grep -qF "note: AGENTS.md is tracked; not changed in a work folder" <<<"$OUT"
+check "lane rules: tracked, different block: lane file unchanged, git status clean" bash -c 'grep -qx "old text" "$1/AGENTS.md" && [ -z "$(git -C "$1" status --porcelain)" ]' _ "$D"
+
 lsetup
 rm -f AGENTS.md; noagents_exclude; printf '{"agent":"conductor"}\n' > .claude/settings.json; git add .claude/settings.json; git commit -q -m shared; git push -q origin main 2>/dev/null
 hrun lane 72 r3; D="$BASE/repo-72"

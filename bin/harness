@@ -651,12 +651,15 @@ RULES_BEGIN='<!-- harness:rules begin -->'
 RULES_END='<!-- harness:rules end -->'
 
 # rules_problem — return 0 (and print why) when AGENTS.md has a broken block: a begin without an end,
-# an end first, or more than one begin or end. Marker lines match whole lines only.
+# an end first, or more than one begin or end. Marker lines match whole lines only; a trailing CR is ignored.
+rules_has_begin() { [ -f AGENTS.md ] && awk -v b="$RULES_BEGIN" '{ sub(/\r$/, "") } $0 == b { f = 1; exit } END { exit !f }' AGENTS.md; }
+
 rules_problem() {
   [ -f AGENTS.md ] || return 1
   awk -v b="$RULES_BEGIN" -v e="$RULES_END" '
-    $0 == b { nb++; if (!bl) bl = NR }
-    $0 == e { ne++; if (!el) el = NR }
+    { l = $0; sub(/\r$/, "", l) }
+    l == b { nb++; if (!bl) bl = NR }
+    l == e { ne++; if (!el) el = NR }
     END { exit !(nb > 1 || ne > 1 || nb != ne || (nb == 1 && el < bl)) }' AGENTS.md || return 1
   echo "AGENTS.md has a broken harness:rules block; fix or remove the markers, then run 'harness init' again"
 }
@@ -665,10 +668,12 @@ rules_problem() {
 # existing text (one blank line between), or alone when the file is absent or empty.
 rules_render() {
   local tpl=$1 out=$2
-  if [ -f AGENTS.md ] && grep -qxF -- "$RULES_BEGIN" AGENTS.md; then
+  if rules_has_begin; then
+    # marker lines are printed as they are (a CR stays); the template text between them is written with LF
     awk -v b="$RULES_BEGIN" -v e="$RULES_END" -v tf="$tpl" '
-      $0 == b { print; while ((getline l < tf) > 0) print l; s = 1; next }
-      $0 == e { s = 0 }
+      { m = $0; sub(/\r$/, "", m) }
+      m == b { print; while ((getline l < tf) > 0) print l; s = 1; next }
+      m == e { s = 0 }
       !s' AGENTS.md > "$out" || return 1
     # awk ends every line with LF: a file that did not end with one keeps its exact tail
     [ -z "$(tail -c1 AGENTS.md)" ] || { head -c "$(( $(wc -c < "$out") - 1 ))" "$out" > "$out.t" && cat "$out.t" > "$out"; rm -f "$out.t"; }
@@ -701,6 +706,7 @@ rules_apply() {
   local shared=$1 hasblock tpl="$HARNESS_LIB/../claude/templates/agents-rules.md" tmp lane=0 tracked=0 existed=0
   rules_created=0
   if [ ! -f "$tpl" ]; then echo "note: harness rules template not found ($tpl); AGENTS.md skipped" >&2; return 0; fi
+  if [ -L AGENTS.md ] && [ ! -e AGENTS.md ]; then echo "note: AGENTS.md is not a regular file; rules block skipped" >&2; return 0; fi
   if [ -e AGENTS.md ] && [ ! -f AGENTS.md ]; then echo "note: AGENTS.md is not a regular file; rules block skipped" >&2; return 0; fi
   [ -f AGENTS.md ] && existed=1
   if git rev-parse --git-dir >/dev/null 2>&1; then
@@ -710,18 +716,24 @@ rules_apply() {
   if [ "$lane" = 1 ]; then
     # work folder: never leave a git-visible change (a lane that git does not ignore AGENTS.md in is left alone)
     if [ "$tracked" = 1 ]; then
+      # a tracked file whose block already equals the template needs nothing from the primary: stay quiet
+      tmp=$(mktemp "${TMPDIR:-/tmp}/harness-rules.XXXXXX") || tmp=""
+      if [ -n "$tmp" ] && [ "$existed" = 1 ] && rules_has_begin && rules_render "$tpl" "$tmp" && cmp -s "$tmp" AGENTS.md; then
+        rm -f "$tmp"; return 0
+      fi
+      rm -f "$tmp"
       echo "note: AGENTS.md is tracked; not changed in a work folder (commit the rules from the primary folder)"; return 0
     fi
     if [ "$existed" = 0 ] && ! git check-ignore -q AGENTS.md 2>/dev/null; then
       echo "note: AGENTS.md not created in a work folder; run 'harness init' in the primary folder (or commit AGENTS.md if shared)"; return 0
     fi
   fi
-  hasblock=0; [ "$existed" = 1 ] && grep -qxF -- "$RULES_BEGIN" AGENTS.md && hasblock=1
+  hasblock=0; [ "$existed" = 1 ] && rules_has_begin && hasblock=1
   tmp=$(mktemp "${TMPDIR:-/tmp}/harness-rules.XXXXXX") || { echo "note: could not write AGENTS.md" >&2; return 0; }
   if ! rules_render "$tpl" "$tmp"; then rm -f "$tmp"; echo "note: could not render AGENTS.md" >&2; return 0; fi
   if [ "$existed" = 1 ] && cmp -s "$tmp" AGENTS.md; then
     echo "AGENTS.md: harness rules up to date"
-  elif cat "$tmp" > AGENTS.md; then
+  elif { cat "$tmp" > AGENTS.md; } 2>/dev/null; then
     if [ "$existed" = 0 ]; then
       rules_created=1
       echo "created AGENTS.md (harness rules)$([ "$shared" = 1 ] && echo '; commit it to share it')"

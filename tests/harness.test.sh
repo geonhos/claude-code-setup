@@ -470,6 +470,31 @@ check "rules 11: template missing: rc 0" [ "$RC" = 0 ]
 check "rules 11: template missing: note on stderr" grep -qF "note: harness rules template not found ($(cd "$SCR/lib" && pwd -P)/../claude/templates/agents-rules.md); AGENTS.md skipped" <<<"$ERR"
 check "rules 11: template missing: no AGENTS.md, rest of init ran" bash -c '[ ! -e AGENTS.md ] && [ -d .harness/asks ]'
 
+# 12 (#247): CRLF marker lines are recognised; the file stays CRLF outside the block; marker lines keep
+# their CR, the template text between them is written with LF; a second init is a no-op
+rsetup; printf 'a\r\nb\r\n<!-- harness:rules begin -->\r\nold\r\n<!-- harness:rules end -->\r\ntail\r\n' > AGENTS.md
+irun init
+{ printf 'a\r\nb\r\n<!-- harness:rules begin -->\r\n'; cat "$RTPL"; printf '<!-- harness:rules end -->\r\ntail\r\n'; } > "$WORK/want"
+check "rules 12: CRLF block replaced, outside bytes and marker CRs kept" cmp -s "$WORK/want" AGENTS.md
+check "rules 12: CRLF: says updated" grep -qF "AGENTS.md: updated the harness rules block" <<<"$OUT"
+irun init
+check "rules 12: CRLF rerun: up to date, file unchanged" bash -c 'grep -qF "AGENTS.md: harness rules up to date" <<<"$1" && cmp -s "$2" AGENTS.md' _ "$OUT" "$WORK/want"
+check "rules 12: CRLF rerun: exactly one block" [ "$(grep -c 'harness:rules begin' AGENTS.md)" = 1 ]
+rsetup; printf 'a\r\n<!-- harness:rules begin -->\r\n' > AGENTS.md; cp AGENTS.md "$WORK/before.md"
+irun init
+check "rules 12: CRLF begin without end: still a broken block" bash -c '[ "$1" = 1 ] && cmp -s "$2" AGENTS.md' _ "$RC" "$WORK/before.md"
+
+# 13 (#247): a dangling AGENTS.md symlink is skipped like any non-regular file: nothing written through it
+rsetup; ln -s nowhere.md AGENTS.md
+irun init
+check "rules 13: dangling symlink: rc 0, note, nothing created" bash -c '[ "$1" = 0 ] && grep -qF "note: AGENTS.md is not a regular file; rules block skipped" <<<"$2" && [ ! -e nowhere.md ] && [ -L AGENTS.md ] && ! grep -qxF AGENTS.md .git/info/exclude' _ "$RC" "$ERR"
+
+# 14 (#247): a read-only AGENTS.md gives the note only, no raw bash error
+rsetup; printf '# Mine\n' > AGENTS.md; chmod 444 AGENTS.md
+irun init
+check "rules 14: read-only: rc 0, one note line on stderr, no raw error" bash -c '[ "$1" = 0 ] && [ "$2" = "note: could not write AGENTS.md" ]' _ "$RC" "$ERR"
+chmod 644 AGENTS.md
+
 
 setup; rm -rf .harness
 INIT_OUT=$(PATH="$HERE/../bin:$PATH" env -u HARNESS_ROLE /bin/bash "$HARNESS" init 2>"$WORK/init.err")
