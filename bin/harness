@@ -178,7 +178,9 @@ ask_parse_args() {
         --timeout)
           case "${2:-}" in
             ''|*[!0-9]*) ASK_BAD=1; shift ;;     # missing/invalid value: usage
-            *[!0]*) ASK_TIMEOUT=$2; ASK_TIMEOUT_SET=1; shift 2 ;;
+            *[!0]*) if digits_cap "$2"; then   # 10#: 08 is 8, not an octal error
+                      ASK_TIMEOUT=$((10#$2)); ASK_TIMEOUT_SET=1; shift 2
+                    else ASK_BAD=1; shift; fi ;;   # more than 12 digits: usage
             *) ASK_BAD=1; shift ;;               # zero (0, 00): usage
           esac
           continue ;;
@@ -476,6 +478,14 @@ digits_only() {
   case "$1" in ''|*[!0-9]*) return 1 ;; esac
 }
 
+# digits_cap <string> — digits_only, and at most 12 digits after the leading zeros: a longer number
+# wraps in $(( )) (2^63) and gives a wrong or negative timeout
+digits_cap() {
+  digits_only "$1" || return 1
+  local s=${1#"${1%%[!0]*}"}
+  [ "${#s}" -le 12 ]
+}
+
 # file_mtime <file> — epoch seconds. GNU `stat -c %Y` first (BSD/macOS stat has no
 # -c and fails); `stat -f %m` second (on GNU, -f is filesystem mode and prints junk,
 # so every result is validated as all digits).
@@ -500,26 +510,6 @@ cmd_status() {
 
 # --- config, close -----------------------------------------------------------------------
 CONFIG_FILE=".harness/config.json"
-
-# config_template — the documented default config (what ensure_config writes)
-config_template() {
-  cat <<'EOC'
-{
-  "_doc": "Optional key: headless_max_minutes (number) overrides the headless run cap, in minutes."
-}
-EOC
-}
-
-# ensure_config — create the documented default config when absent (never fatal); an existing
-# file is never touched.
-ensure_config() {
-  # Never creates .harness/ (stray dirs break harness-verify's root lookup): `harness init`
-  # does that. Workers and anything outside an initialised checkout (no .harness/asks) skip.
-  [ "${HARNESS_ROLE:-}" != worker ] || return 0
-  [ -d .harness/asks ] || return 0
-  [ -e "$CONFIG_FILE" ] || config_template > "$CONFIG_FILE" 2>/dev/null
-  return 0
-}
 
 # log_close <role> <reason> [runner] — event line in progress.jsonl (key `role`, not
 # `agent`, so per-agent ask lookups never match it) + progress.md refresh
@@ -804,8 +794,6 @@ cmd_init() {
   echo "harness init: $top"
   if [ -d .harness/asks ]; then echo ".harness/asks exists"
   else mkdir -p .harness/asks || die "cannot create .harness/asks"; echo "created .harness/asks"; fi
-  if [ -e "$CONFIG_FILE" ]; then echo "$CONFIG_FILE exists"
-  else ensure_config init; [ -e "$CONFIG_FILE" ] && echo "created $CONFIG_FILE"; fi
   # autoCompactWindow (#276): only for the conductor session (settings_merge skips a foreign agent), and a
   # value in the tracked settings.json is respected: local outranks it, so nothing is written to local then.
   # A work folder never gets a git-visible change: there the tracked file is not given the window.
@@ -844,8 +832,6 @@ if [ "${1:-}" = -C ]; then
   cd "$2" 2>/dev/null || die "cannot enter $2"
   shift 2
 fi
-# _mtime prints a file's epoch mtime (tests: fake GNU/BSD stat on PATH)
-if [ "${1:-}" = _mtime ]; then file_mtime "${2:-}"; exit $?; fi
 # _defaults prints the shared defaults as KEY=VALUE (tests: prose copies are checked against it)
 if [ "${1:-}" = _defaults ]; then
   for k in $(compgen -v HARNESS_ | grep -E '^HARNESS_(ROLES|[A-Z_]+_(MS|DEFAULT))$' | sort); do eval "printf '%s=%s\n' \"$k\" \"\${$k}\""; done
@@ -863,9 +849,6 @@ if [ "${1:-}" = metrics ]; then shift; cmd_metrics "$@"; exit $?; fi
 # ask acts only in an initialised checkout (decision 0010); status/report/close work anywhere
 case "${1:-}" in
   ask) [ "${HARNESS_ROLE:-}" = worker ] || require_checkout ;;
-esac
-case "${1:-}" in
-  ask|status) ensure_config "$1" ;;
 esac
 case "${1:-}" in
   ask)    shift; cmd_ask "$@" ;;

@@ -209,8 +209,7 @@ check "default ask timeouts equal the headless caps (ms)" bash -c '[ "$1" = $(($
 check "no stray 6-8 digit number in conductor.md/implement skill" bash -c '! grep -ohE "\b[0-9]{6,8}\b" "$1" "$2" | grep -vxE "$3|$4|7200000"' _ "$HERE/../claude/agents/conductor.md" "$HERE/../claude/skills/implement/SKILL.md" "$T_IMPL" "$T_DEF"
 OUT=$(/bin/bash "$HARNESS" 2>&1)
 check "usage text prints the default timeouts" bash -c 'grep -q "implementer $2" <<<"$1" && grep -q "others $3" <<<"$1"' _ "$OUT" "$T_IMPL" "$T_DEF"
-TPL=$(sed -n "/^config_template() {/,/^EOC/p" "$HARNESS" | sed '1,2d;$d')
-check "config template has only _doc" [ "$(printf '%s' "$TPL" | jq -r 'keys | join(" ")')" = "_doc" ]
+check "no config template left in bin/harness (#257)" bash -c '! grep -q "config_template\|ensure_config" "$1"' _ "$HARNESS"
 check "metrics --json lists every role" bash -c 'cd "$1" && "$2" metrics --json | jq -e ".current.roles | keys == [\"analyst\",\"implementer\",\"reviewer\"]" >/dev/null' _ "$WORK" "$HARNESS"
 
 check "_defaults: headless cap implementer 90 min, others 60" bash -c '[ "$1" = 5400 ] && [ "$2" = 3600 ]' _ "$(dv HARNESS_HL_MAX_S_IMPLEMENTER_DEFAULT)" "$(dv HARNESS_HL_MAX_S_DEFAULT)"
@@ -231,10 +230,13 @@ setup; rm -rf .harness
 run init
 check "init: exit 0" [ "$RC" = 0 ]
 check "init creates asks/" [ -d .harness/asks ]
-check "init creates config.json" [ -s .harness/config.json ]
+check "init creates no config.json (#257)" [ ! -e .harness/config.json ]
+check "init output does not mention config.json" bash -c '! grep -q config.json <<<"$1"' _ "$OUT"
 check "init writes settings.local.json agent conductor" [ "$(jq -r .agent .claude/settings.local.json)" = conductor ]
 check "init (default) leaves the tracked settings.json alone" [ ! -e .claude/settings.json ]
 check "init names the target file" grep -q "settings.local.json" <<<"$OUT"
+run status
+check "status creates no config.json (#257)" [ ! -e .harness/config.json ]
 run init
 check "init is idempotent" bash -c '[ "$1" = 0 ] && [ "$(jq -r .agent .claude/settings.local.json)" = conductor ]' _ "$RC"
 check "init writes autoCompactWindow 400000 (#276)" [ "$(jq -c .autoCompactWindow .claude/settings.local.json)" = 400000 ]
@@ -265,8 +267,14 @@ check "init: tracked settings.json value: agent still set (#276)" [ "$(jq -r .ag
 run init --bogus
 check "init rejects unknown flag" [ "$RC" != 0 ]
 
+# #257: the test-only _mtime subcommand is gone: an unknown command prints usage
+setup
+run _mtime .
+check "_mtime is an unknown command (usage, rc 1)" bash -c '[ "$1" = 1 ] && grep -q "^usage:" <<<"$2"' _ "$RC" "$OUT"
+
 # worker deny rules (#165): the nine rules, written by every init into settings.local.json
-mtime() { stat -f %m "$1" 2>/dev/null || stat -c %Y "$1"; }
+eval "$(sed -n '/^digits_only() {/,/^}/p;/^file_mtime() {/,/^}/p' "$HARNESS")"
+mtime() { file_mtime "$1"; }
 setup; rm -rf .harness .claude
 run init
 check "init deny: settings.local.json has exactly the nine rules in order" [ "$(jq -c .permissions.deny .claude/settings.local.json)" = "$DENY_JSON" ]

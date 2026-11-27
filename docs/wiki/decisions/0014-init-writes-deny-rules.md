@@ -1,7 +1,7 @@
 ---
 type: decision
 status: active
-updated: 2026-11-22
+updated: 2026-11-26
 sources: ["#177", issue #165, issue #162, issue #166, commit feat/165-init-deny-rules, bin/harness:settings_merge]
 verified_by: tests/harness.test.sh, tests/lane.test.sh
 ---
@@ -28,6 +28,6 @@ verified_by: tests/harness.test.sh, tests/lane.test.sh
 - `Read(.env.*)` also blocks editing `.env.example` and `.env.sample`; a deny cannot be overridden by an allow.
 - One matching subcommand denies the whole compound call (`;` too: `head -50; git clean -nd` was denied), and the model sees only "Permission to use Bash with command <whole chain> has been denied.", no rule name (runs a-T3-2/b-T3-2, .harness/deny-bypass-experiment-detail.md:7). A harmless command chained to a denied one is blocked with it (`git commit --amend && git push --force-with-lease`).
 - Checkouts initialised before #165 have no rules until `harness init` runs again; `harness ask` warns meanwhile.
-- A denied call is counted in exit.json `denials`, but `denied[]` is partial: with both a Bash and a Read denial in one run it lists only the Bash one (`bin/harness-run:144-149`, pre-existing, separate issue).
+- A denied call is counted in exit.json `denials`. Resolved 2026-11-26: `denied[]` once listed only the Bash denial when a run had both a Bash and a Read one; since #181 (3b5da82) it merges the stream's `permission_denied` events with the result's `permission_denials` (`bin/harness-run:144-163`), so a Read denial lands in it (test "denied union: Bash event + Read result-only gives 2 entries", `tests/headless-implementer.test.sh:56`).
 - Rules apply to the conductor's own Bash and to `--agent solo` too.
 - A settings file init must write that is unmergeable (invalid or empty JSON, top level not an object, `permissions` not an object, `permissions.deny` not an array) makes init fail (exit 1): checked first, nothing created, file untouched, no `.bak`. A different existing `agent` value is not an error. `harness lane` reports "harness init failed in <dir>" and carries on.

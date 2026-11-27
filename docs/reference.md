@@ -22,7 +22,7 @@ cd ~/workspace/claude-code-setup
 
 ## 저장소마다 `harness init`
 
-harness를 쓰려는 저장소에서 한 번 실행합니다. `.harness/asks/`(체크아웃 표시), 기본 설정 `.harness/config.json`, 그리고 `.claude/settings.local.json`(사용자별, 추적 안 됨)에 `"agent": "conductor"`, `"autoCompactWindow": 400000`, worker deny 규칙을 만듭니다.
+harness를 쓰려는 저장소에서 한 번 실행합니다. `.harness/asks/`(체크아웃 표시)와 `.claude/settings.local.json`(사용자별, 추적 안 됨)에 `"agent": "conductor"`, `"autoCompactWindow": 400000`, worker deny 규칙을 만듭니다.
 
 - `--shared`: `agent` 키를 커밋되는 `.claude/settings.json`에 씁니다(deny 규칙은 아래대로 로컬에 남습니다). 이미 다른 `agent`가 있으면 그대로 두고 알립니다. 기존 파일은 `.bak`을 한 번 남기고 심링크는 유지합니다.
 - `--no-agent`: `agent`와 `autoCompactWindow` 키를 쓰지 않습니다. deny 규칙은 그래도 씁니다.
@@ -48,13 +48,13 @@ harness를 쓰려는 저장소에서 한 번 실행합니다. `.harness/asks/`(�
 
 ## 워커, 모델, 상한
 
-워커는 항상 headless입니다: `harness-run`이 `claude -p`를 detached로 돌리고, 완료는 `.harness/asks/<role>.exit.json`(프로세스 종료)입니다. 마감 시간에 run을 죽이지 않고 exit 4로 돌려줍니다. 한 번의 실행 상한은 `headless_max_minutes`(기본 60, implementer 90)이고, 이 키는 `.harness/config.json`에 두며 설정하면 implementer를 포함한 모든 역할에 적용되고 환경변수 `HARNESS_HL_MAX_S`(초)가 이를 덮어씁니다. `--keep`이 아니면 매번 새 세션입니다. 원본 스트림 `.harness/log/*.jsonl`은 게이트가 conductor의 읽기를 막습니다.
+워커는 항상 headless입니다: `harness-run`이 `claude -p`를 detached로 돌리고, 완료는 `.harness/asks/<role>.exit.json`(프로세스 종료)입니다. 마감 시간에 run을 죽이지 않고 exit 4로 돌려줍니다. 한 번의 실행 상한은 `headless_max_minutes`(기본 60, implementer 90)이고, 이 키는 직접 만든 `.harness/config.json`에 두며(파일이 없으면 기본값) 설정하면 implementer를 포함한 모든 역할에 적용되고 환경변수 `HARNESS_HL_MAX_S`(초)가 이를 덮어씁니다. `--keep`이 아니면 매번 새 세션입니다. 원본 스트림 `.harness/log/*.jsonl`은 게이트가 conductor의 읽기를 막습니다.
 
 모든 역할(결정 0009, #166)의 러너는 `--permission-mode auto --permission-prompts none`으로 고정됩니다. 거부된 도구 호출은 `exit.json`의 `denied[]`에 남고, 리포트 없이 거부만 있으면 exit 2입니다. 워커 세션(`HARNESS_ROLE=worker`)에서는 `harness ask`가 exit 1로 거부됩니다(중첩 위임 방지).
 
 ## 설정
 
-- `.harness/config.json`의 최상위 키 `headless_max_minutes`(분; 모든 역할의 실행 상한, `HARNESS_HL_MAX_S` 초 단위 환경변수가 우선). run은 항상 백그라운드(로그 `.harness/asks/<role>.runner.log`)이고, 진행은 `harness watch <role>`로 봅니다.
+- `.harness/config.json`의 최상위 키 `headless_max_minutes`(분; 파일은 직접 만드는 선택 사항이고 없으면 기본값을 씁니다; 모든 역할의 실행 상한, `HARNESS_HL_MAX_S` 초 단위 환경변수가 우선). run은 항상 백그라운드(로그 `.harness/asks/<role>.runner.log`)이고, 진행은 `harness watch <role>`로 봅니다.
 - 로그 정리(ask가 끝날 때마다): `HARNESS_LOG_KEEP`(기본 200개), `HARNESS_LOG_DAYS`(14일), `HARNESS_JSONL_MAX`(`progress.jsonl` 압축 기준, 바이트, 기본 1 MB).
 - 검증 명령은 명시적인 설정에서만 가져오고, 키마다 먼저 찾은 쪽이 이깁니다: `.harness/verify.local.json` > `.claude/harness.json`. 언어는 감지하지 않습니다. 없는 키(또는 `null`)는 그 단계를 건너뜁니다. 이 저장소는 `{"test": "./install.sh --test"}`를 씁니다. `harness-verify detect`가 해석된 설정을 출력합니다.
 
@@ -62,6 +62,16 @@ harness를 쓰려는 저장소에서 한 번 실행합니다. `.harness/asks/`(�
 { "format": "prettier --write {files}", "lint": "eslint {files}", "test": "npm test",
   "app": { "start": "npm run dev", "url": "http://localhost:3000" }, "maxAttempts": 3 }
 ```
+
+코드가 읽는 키는 아래가 전부입니다.
+
+| 키 | 파일 | 읽는 곳 | 기본값 |
+|---|---|---|---|
+| `format`, `lint`, `test` | `.harness/verify.local.json` > `.claude/harness.json` | `harness-verify`(`resolve_step`) | 없음: 그 단계를 건너뜁니다. `null` 같은 문자열이 아닌 값은 그 단계를 끕니다. |
+| `maxAttempts` | 위와 같음 | `harness-verify`(`max_attempts`) | 3 (양의 정수가 아니면 3) |
+| `app` | 위와 같음 | `harness-verify detect`가 출력만 하고, 다른 단계는 읽지 않습니다. | `null` |
+| `lane_setup` | `.claude/harness.json`만 | `harness lane`이 새 work folder에서 `sh -c`로 실행합니다(`lib/harness-lane.sh`). | 없음: 실행하지 않습니다. |
+| `headless_max_minutes` | `.harness/config.json` | `hl_max_s`(`lib/harness-headless.sh`) | implementer 90분, 나머지 60분. 환경변수 `HARNESS_HL_MAX_S`(초)가 먼저입니다. |
 
 ## conductor가 직접 할 수 있는 일, 한계
 

@@ -72,6 +72,8 @@ ERRS=(
   "--timeout abc|analyst q --timeout abc"
   "--timeout 00|analyst --timeout 00 q"
   "--timeout 000|analyst q --timeout 000"
+  "--timeout 13 digits|analyst --timeout 9999999999999 q"
+  "--timeout 2^63|analyst q --timeout 9223372036854775808"
   "empty instruction|analyst ''"
 )
 for e in "${ERRS[@]}"; do
@@ -97,6 +99,20 @@ hrun ask analyst --timeout 0007000 "leading zeros"
 check "--timeout 0007000: still accepted (rc 0)" [ "$RC" -eq 0 ]
 unset FAKE_CLAUDE_MODE
 
+# #257: a leading zero is decimal (08 used to fail in $(( )) after the worker launched; 010 meant 8 ms)
+asetup; export FAKE_CLAUDE_MODE=slow30
+hrun ask analyst --timeout 08 "leading zero 08"
+check "--timeout 08: the ask deadline, not an octal error (rc 4)" [ "$RC" -eq 4 ]
+check "--timeout 08: no arithmetic error" bash -c '! grep -q "value too great" <<<"$1"' _ "$OUT"
+killpids "$FAKE_DIR/claude.pid"
+asetup; export FAKE_CLAUDE_MODE=slow100
+t0=$(date +%s)
+hrun ask analyst --timeout 03001 "leading zero 03001"
+t1=$(date +%s)
+check "--timeout 03001 is 3001 ms (octal 1537 would end after 2 s): rc 4, at least 4 s" bash -c '[ "$1" = 4 ] && [ "$2" -ge 4 ]' _ "$RC" "$((t1 - t0))"
+killpids "$FAKE_DIR/claude.pid"
+unset FAKE_CLAUDE_MODE
+
 # a usage error after an ordinary ask leaves exactly that ask's row (no copy of its cost or session)
 asetup
 hrun ask analyst "ok"
@@ -118,6 +134,11 @@ hrun ask implementer "q" --no-lane
 check "--no-lane after the text: allowed" [ "$RC" -eq 0 ]
 hrun ask --no-lane implementer "q" 2>/dev/null
 check "--no-lane before the agent: rc 1 (agent comes first)" [ "$RC" -eq 1 ]
+
+# #257: 12 significant digits are accepted (leading zeros do not count); 13 are a usage error (see ERRS)
+asetup
+hrun ask analyst --timeout 0999999999999 "twelve digits"
+check "--timeout of 12 digits after leading zeros: accepted (rc 0)" [ "$RC" -eq 0 ]
 
 echo "PASS $pass / FAIL $fail"
 [ "$fail" -eq 0 ]
