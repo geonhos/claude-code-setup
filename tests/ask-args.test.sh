@@ -93,8 +93,8 @@ check "--instruction with spaces: no row" [ "$(nrows)" -eq 0 ]
 hrun ask analyst --bogus q
 check "plain unknown option: no hint" not_grep -F "$HINT" <<<"$OUT"
 asetup; export FAKE_CLAUDE_MODE=success
-hrun ask analyst --timeout 007 "leading zeros"
-check "--timeout 007: still accepted (rc 0)" [ "$RC" -eq 0 ]
+hrun ask analyst --timeout 0007000 "leading zeros"
+check "--timeout 0007000: still accepted (rc 0)" [ "$RC" -eq 0 ]
 unset FAKE_CLAUDE_MODE
 
 # a usage error after an ordinary ask leaves exactly that ask's row (no copy of its cost or session)
