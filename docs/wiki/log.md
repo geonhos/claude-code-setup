@@ -120,3 +120,4 @@
 - 2026-11-27 · implementer · #271 · troubleshooting/doc-rewrite-moves-scope.md: promoting a wiki Fix into a prompt line is a compression too
 - 2026-11-27 · implementer · #280 · troubleshooting/ask-timeout-is-milliseconds.md: same ms trap in a test (007 = 7 ms)
 - 2026-11-27 · implementer · #282 · troubleshooting/zsh-no-word-split.md: new page, zsh does not split an unquoted $VAR
+- 2026-11-27 · implementer · #285 · index.md: recheck a cited file:line on main before triaging a wiki issue (#273 cited lib/harness-headless.sh:401-403, merged fix 9694c93 moved it to :393; ask 1795742722-28531-24383)
