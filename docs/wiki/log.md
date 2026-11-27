@@ -113,4 +113,5 @@
 - 2026-11-26 · implementer · #257 · decisions/0016-init-writes-agents-rules.md: line-ending behaviour of the rules block
 - 2026-11-26 · implementer · #257 · decisions/0010-herdr-optional-gate-by-checkout.md: cite issue #107 with commit 350118e (PR #114)
 - 2026-11-26 · implementer · #257 · how-to/transcript-forensics.md: progress fields kept for forensics
+- 2026-11-27 · implementer · #267 · decision 0017 questions asked together; conductor question rule, needs-decision label rule removed
 - 2026-11-27 · implementer · #276 · decision 0018: conductor autoCompactWindow 400000 written by harness init, /clear suggestion in the conductor prompt
