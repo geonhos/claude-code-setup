@@ -25,6 +25,7 @@ cd ~/workspace/claude-code-setup
 - `claude/agents/*.md`와 `claude/skills/*/`(한국어 작성 스킬 `korean-writing` 포함)를 `~/.claude/`에 심링크합니다.
 - `bin/*`(`harness`, `harness-verify`, `harness-run`, `harness-view`)를 `~/.local/bin`에 링크합니다.
 - `~/.claude/settings.json`에 게이트·SessionStart·알림 훅과 환경변수를 병합합니다(백업을 남깁니다).
+- 체크아웃을 옮겨서 끊어진 harness 링크는 백업 없이 새 링크로 바꿉니다. 존재하지 않는 경로를 가리키는 harness 훅 항목은 지웁니다. 다른 체크아웃의 훅 항목은 지우지 않고 경고합니다. install은 이 체크아웃이 싣는 이름만 만지므로, 싣지 않는 이름의 끊어진 링크는 그대로 둡니다. 끊어진 링크라도 대상이 harness 모양이 아니면 `agents`·`skills`에서는 백업(`*.bak.<타임스탬프>`)하고 새로 링크하며, `~/.local/bin`에서는 백업 없이 덮어씁니다.
 
 ## 레포에 적용
 
@@ -44,7 +45,7 @@ claude                  # 평소처럼 시작합니다
 - `.harness/`(리포트, 로그, 진행 기록, 설정)는 git에 들어가지 않습니다. `harness init`이 git 제외 목록에 추가합니다.
 - `AGENTS.md`에 작업 규칙 블록(`<!-- harness:rules begin -->` … `<!-- harness:rules end -->`)을 씁니다. 내용은 `claude/templates/agents-rules.md`입니다. 파일이 없으면 만들고 git 제외 목록에 넣으며, `--shared`면 제외하지 않습니다. 파일이 있으면 마커 밖의 글은 한 글자도 바꾸지 않고 블록만 덧붙이거나 갱신합니다. 마커가 깨져 있으면 init은 아무것도 바꾸지 않고 실패합니다. 작업 폴더(`harness lane`)에서는 git에 보이는 변경을 만들지 않습니다. `CLAUDE.md`, `.claude/CLAUDE.md`, `CLAUDE.local.md`가 있으면 Claude Code가 `AGENTS.md`를 읽지 않으므로, 그 파일에 `@AGENTS.md` 줄을 넣으라고 stderr로 안내할 뿐 고치지 않습니다. 되돌리려면 블록을 지웁니다(init이 만든 파일이면 파일과 제외 목록의 `AGENTS.md` 줄도 지웁니다).
 - init하지 않은 저장소에서는 게이트와 훅이 아무것도 하지 않고 `harness ask`는 거부됩니다.
-- 되돌리기: `.harness/asks/`를 지우고, `agent` 키를 지웁니다. deny 규칙 아홉 개는 `.claude/settings.local.json`에 남으므로 직접 지웁니다. 이 규칙은 그 체크아웃에서 도는 모든 Claude Code 세션(conductor와 `--agent solo` 포함)에 적용됩니다. 세션 하나만 끄려면 `HARNESS_ROLE=worker claude --agent solo`.
+- 되돌리기(저장소별): `.harness/asks/`를 지우고, `agent` 키를 지웁니다. deny 규칙 아홉 개는 `.claude/settings.local.json`에 남으므로 직접 지웁니다. 이 규칙은 그 체크아웃에서 도는 모든 Claude Code 세션(conductor와 `--agent solo` 포함)에 적용됩니다. 세션 하나만 끄려면 `HARNESS_ROLE=worker claude --agent solo`. 전역 설치(링크와 훅)를 지우는 방법은 아래 "제거"에 있습니다. 이 저장소별 되돌리기는 `--uninstall`이 하지 않으므로 직접 합니다.
 
 ## 최신화
 
@@ -67,6 +68,27 @@ agents, skills, bin, 훅은 이 체크아웃에서 심링크되고 기본값은 
   - #243 이전에 init한 저장소: `AGENTS.md`에 harness 규칙 블록이 없습니다. `harness init`을 다시 실행하면 만들거나 덧붙입니다.
 - `harness lane`이 만든 작업 폴더는 주 폴더의 제외 목록을 공유하고 새로 만들 때 `harness init`이 함께 돕니다. #165 이전에 만든 작업 폴더는 `harness -C <lane> ask`가 그 폴더 자신의 `settings.local.json`을 확인하므로 그 폴더에서 `harness init`을 실행할 때까지 경고합니다(주 폴더에서 다시 실행해도 소용없습니다).
 - 열려 있는 conductor 세션은 시작할 때의 프롬프트를 유지합니다. 갱신 후 `claude`를 다시 시작합니다. worker가 도는 동안에는 갱신하지 않습니다(`harness status`로 확인). 이유는 [실행 중 스크립트를 제자리에서 고치면 깨진다](docs/wiki/troubleshooting/in-place-edit-breaks-running-scripts.md)에 있습니다.
+
+## 제거
+
+```bash
+cd ~/workspace/claude-code-setup
+./install.sh --uninstall --dry-run   # 지울 것만 출력합니다. 아무것도 바꾸지 않습니다
+./install.sh --uninstall             # 실제로 지웁니다
+```
+
+- 먼저 conductor 세션을 모두 종료합니다. 제거하면 그 세션의 게이트 훅이 사라져서 세션이 깨집니다. 일반 터미널에서 실행합니다.
+- `harness-run`이 살아 있으면 `--uninstall`이 거부합니다. 워커가 `harness-verify`를 잃기 때문입니다. 끝나기를 기다립니다. 감수하려면 `--force`를 줍니다. `--dry-run`은 이 검사를 하지 않습니다.
+- 지우는 것: `~/.claude/agents`, `~/.claude/skills`, `~/.local/bin`에서 이 체크아웃으로 이어지는 링크(현재 14개), `~/.claude/settings.json`의 훅 항목 세 개(게이트, resume, notify), 키 네 개(`promptCacheTtl`, `subagentPromptCacheTtl`, `env.BASH_DEFAULT_TIMEOUT_MS`, `env.BASH_MAX_TIMEOUT_MS`). 키는 값이 install이 쓴 값과 같을 때만 지웁니다. 값이 다르면 남기고 알립니다. 비게 된 `env`도 지웁니다.
+- 지우지 않는 것: 다른 훅과 다른 키, `*.bak.<타임스탬프>` 백업 파일(목록만 출력합니다), 다른 체크아웃에서 만든 링크와 훅(그 체크아웃이 남아 있으면 경고만 하고, 그쪽에서 `./install.sh --uninstall`을 실행해야 합니다), `~/.claude/projects`, 저장소별 `harness init` 상태.
+- 링크가 이 체크아웃에서 왔는지는 가리키는 경로로 판단합니다. 일반 파일과 디렉터리는 건드리지 않습니다. 대상이 `$REPO/`로 시작하는 링크는 저장소에서 지워진 이름이어도 끊어졌다면 지웁니다. 대상이 다른 경로인 끊어진 링크는 이 체크아웃에 있는 이름이고 대상 경로 끝이 같을 때만 지웁니다.
+- 이 체크아웃의 훅은 경로에 한글이나 공백이 있어도 지웁니다. 다만 옮기기 전 옛 경로에 공백이나 셸 특수문자가 있었다면, 그 옛 훅은 사용자가 만든 래퍼 명령과 구별할 수 없어 남깁니다. 그런 훅은 `settings.json`에서 직접 지웁니다.
+- 실제로 지울 때는 `settings.json`을 먼저 `*.bak.<타임스탬프>`로 백업합니다.
+- 저장소별 상태는 "레포에 적용"의 되돌리기 항목대로 직접 지웁니다.
+
+### 체크아웃 옮기기·이름 바꾸기
+
+열려 있는 conductor 세션을 종료하고 `harness-run`이 없는지 확인한 뒤 `mv`로 옮깁니다. 새 폴더에서 `./install.sh`를 실행하면 끊어진 링크와 오래된 훅이 정리되고 새 경로로 다시 연결됩니다. Claude Code의 세션·메모리·trust는 경로별로 저장되므로 `~/.claude/projects/` 이동 같은 추가 단계가 있습니다. 순서와 이유는 [docs/wiki/how-to/move-checkout.md](docs/wiki/how-to/move-checkout.md)에 있습니다.
 
 ## 작업 흐름
 

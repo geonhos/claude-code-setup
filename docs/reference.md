@@ -20,6 +20,25 @@ cd ~/workspace/claude-code-setup
 - `bin/*`(`harness`, `harness-verify`, `harness-run`, `harness-view`)를 `~/.local/bin`에 링크합니다. `lib/`는 링크 없이 실제 경로로 찾습니다.
 - `~/.claude/settings.json`에 PreToolUse 게이트 훅, SessionStart 훅(`conductor-resume.sh`), Notification 훅(`notify-decision.sh`), `env.BASH_DEFAULT_TIMEOUT_MS`/`BASH_MAX_TIMEOUT_MS`, `promptCacheTtl`/`subagentPromptCacheTtl: 1h`를 병합합니다(백업을 남깁니다). 전역 `agent` 키는 쓰지 않습니다.
 
+### 제거: `./install.sh --uninstall [--dry-run] [--force]`
+
+이 체크아웃이 설치한 것만 지웁니다(링크, 훅 세 개, 키 네 개). 백업(`*.bak.<ts>`)은 남깁니다.
+
+- `--dry-run`: 아무것도 바꾸지 않고 live-run 검사도 하지 않습니다. 실제 실행과 같은 `remove …` 줄, 경고, `keep key …` 줄, 백업 목록, 힌트 두 줄을 출력하고 `dry run: nothing was changed`로 끝납니다.
+- `--force`: 살아 있는 `harness-run`이 있어도 지웁니다. 없으면 거부합니다(워커가 `harness-verify`를 잃습니다). 거부는 프로세스 목록에서 명령의 첫 두 단어 중 하나의 basename이 `harness-run`인지로 판단합니다.
+- 인자가 틀리거나 `settings.json`이 객체 JSON이 아니면 아무것도 바꾸지 않고 실패합니다. `settings.json`이 없으면 링크만 처리합니다.
+- 지울 것이 없으면 `nothing to remove`를 출력하고 끝납니다.
+
+소유 규칙(`install.sh`의 install 정리와 `--uninstall`이 같은 함수를 씁니다):
+
+- U1: `agents/`, `skills/`, `~/.local/bin`의 심링크 중 대상이 `$REPO/`로 시작하는 것을 지웁니다(저장소에서 지워진 이름도 포함).
+- U2: 끊어진 링크는 그 이름이 이 체크아웃에 있고 대상 끝이 `/claude/agents/<n>.md`, `/claude/skills/<n>`, `/bin/<n>`으로 같을 때만 지웁니다. 다른 dotfiles 저장소를 가리키는 끊어진 링크는 남습니다.
+- U3: 이 체크아웃 밖의 존재하는 경로를 가리키는 링크(작업 폴더, 다른 클론)는 남기고 `installed from <path>; run its install.sh --uninstall`로 경고합니다. 일반 파일과 디렉터리는 건드리지 않습니다.
+- U4: 훅 항목은 `.command`가 `$REPO/claude/hooks/<b>`와 같거나, 같은 세 이름으로 끝나는 절대 경로인데 파일이 없을 때만 지웁니다. 존재하는 다른 체크아웃의 경로는 경고하고 남깁니다. 인자·따옴표가 있거나 이름이 다른 명령은 건드리지 않습니다. 항목이 비면 그 항목과 빈 이벤트 배열도 지웁니다. `$REPO`와 정확히 같은 명령은 경로에 어떤 문자가 있어도 지웁니다. 옛 경로에 공백이나 셸 특수문자가 있던 오래된 훅은 래퍼 명령과 구별되지 않아 남습니다. 직접 지웁니다.
+- U5: 키 네 개는 값이 install 값과 같을 때만 지웁니다. 다르면 남기고 알립니다. `env`는 `{}`가 될 때만 지웁니다.
+
+install도 같은 규칙으로 정리합니다. 끊어진 harness 링크(U2 모양)는 백업 없이 바꾸고, U4의 오래된 훅 항목은 지우고, 다른 존재하는 체크아웃의 훅은 경고만 합니다. 그래서 `mv` 뒤 `./install.sh`만으로 옮길 수 있습니다([wiki](wiki/how-to/move-checkout.md)).
+
 ## 저장소마다 `harness init`
 
 harness를 쓰려는 저장소에서 한 번 실행합니다. `.harness/asks/`(체크아웃 표시)와 `.claude/settings.local.json`(사용자별, 추적 안 됨)에 `"agent": "conductor"`, `"autoCompactWindow": 400000`, worker deny 규칙을 만듭니다.
@@ -32,7 +51,7 @@ harness를 쓰려는 저장소에서 한 번 실행합니다. `.harness/asks/`(�
 - `harness ask`는 `.claude/settings.local.json`에 규칙이 하나라도 없으면 stderr에 한 줄 경고하고 계속 진행합니다(`harness init`을 다시 실행하라는 안내, 경고에 체크아웃 경로가 들어갑니다. `-C <lane>`이면 그 폴더의 파일을 봅니다). 규칙은 접두사 매칭이라 우회할 수 있습니다(`git -C`, `sh -c`, `+refspec`).
 - 작업 규칙 블록(결정 0016, #243). `AGENTS.md`에 `harness:rules` 블록을 씁니다(마커는 `<!-- harness:rules begin -->`, `<!-- harness:rules end -->`). 내용은 `claude/templates/agents-rules.md`입니다. 파일이 없으면 만들고 git 제외 목록에 넣으며, `--shared`면 제외하지 않습니다. 파일이 있으면 마커 밖의 글은 한 글자도 바꾸지 않고 블록만 덧붙이거나 갱신합니다. 마커가 깨져 있으면 init은 아무것도 바꾸지 않고 실패합니다. 작업 폴더(`harness lane`)에서는 git에 보이는 변경을 만들지 않습니다. `CLAUDE.md`, `.claude/CLAUDE.md`, `CLAUDE.local.md`가 있으면 Claude Code가 `AGENTS.md`를 읽지 않으므로, 그 파일에 `@AGENTS.md` 줄을 넣으라고 stderr로 안내할 뿐 고치지 않습니다. 되돌리려면 블록을 지웁니다(init이 만든 파일이면 파일과 제외 목록의 `AGENTS.md` 줄도 지웁니다).
 - init하지 않은 저장소에서는 게이트·resume 훅이 아무것도 하지 않고 `harness ask`는 거부됩니다.
-- 되돌리기: `.harness/asks/`를 지우고, `agent` 키를 만든 settings 파일에서 지웁니다. deny 규칙 아홉 개는 `.claude/settings.local.json`에 남으므로 직접 지웁니다. 이 규칙은 그 체크아웃의 모든 Claude Code 세션(conductor와 `--agent solo` 포함)에 적용됩니다. 세션 하나만 끄려면 `HARNESS_ROLE=worker claude --agent solo`.
+- 되돌리기(저장소별, `--uninstall`은 하지 않습니다): `.harness/asks/`를 지우고, `agent` 키를 만든 settings 파일에서 지웁니다. deny 규칙 아홉 개는 `.claude/settings.local.json`에 남으므로 직접 지웁니다. 이 규칙은 그 체크아웃의 모든 Claude Code 세션(conductor와 `--agent solo` 포함)에 적용됩니다. 세션 하나만 끄려면 `HARNESS_ROLE=worker claude --agent solo`.
 
 ## conductor 루프
 

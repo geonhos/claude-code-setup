@@ -171,6 +171,45 @@ install_in "$T10"
 check "foreign symlink relinked" [ "$(readlink "$T10/claude/agents/reviewer.md")" = "$REPO/claude/agents/reviewer.md" ]
 check "foreign symlink backed up" [ -L "$(ls "$T10"/claude/agents/reviewer.md.bak.* 2>/dev/null | head -1)" ]
 
+# I1-I3 (#291): a moved checkout. Install from a copy, delete it, install again from the repo: no
+# dangling link, no stale hook, no new backup for the moved links; a live foreign symlink is still backed up
+T12=$(newdir moved); mkdir -p "$T12/claude/agents" "$T12/old"
+(cd "$REPO" && tar --exclude=./.git --exclude=./.harness -cf - .) | (cd "$T12/old" && tar -xf -)
+printf 'live' > "$T12/liveother.md"
+CLAUDE_DIR="$T12/claude" BIN_DIR="$T12/bin" /bin/bash "$T12/old/install.sh" >"$T12/out0.txt" 2>&1
+rm -rf "$T12/old"
+ln -sfn "$T12/liveother.md" "$T12/claude/agents/solo.md"   # a live symlink that is not ours
+check "moved: premise: dangling links exist" [ "$(find "$T12/claude" "$T12/bin" -type l ! -exec test -e {} \; -print | wc -l | tr -d ' ')" -ge 13 ]
+install_in "$T12"
+check "moved: rc 0" [ "$RC" -eq 0 ]
+check "moved: 0 dangling links" [ "$(find "$T12/claude" "$T12/bin" -type l ! -exec test -e {} \; -print | wc -l | tr -d ' ')" -eq 0 ]
+check "moved: 0 stale hooks" [ "$(jq '[.. | .command? | strings | select(contains("/claude/hooks/")) | select(startswith("'"$REPO"'/") | not)] | length' "$T12/claude/settings.json")" -eq 0 ]
+check "moved: 3 hooks of this checkout once each" [ "$(jq '[.. | .command? | strings | select(startswith("'"$REPO"'/claude/hooks/"))] | length' "$T12/claude/settings.json")" -eq 3 ]
+check "moved: no .bak for moved agent links" [ -z "$(ls "$T12"/claude/agents/*.bak.* 2>/dev/null | grep -v solo.md)" ]
+check "moved: no skills.bak for moved skill links" [ -z "$(ls -d "$T12"/claude/skills.bak/* 2>/dev/null)" ]
+check "moved: live foreign symlink still backed up" [ "$(readlink "$T12"/claude/agents/solo.md.bak.* 2>/dev/null)" = "$T12/liveother.md" ]
+check "moved: no backup warning for moved links" bash -c '[ "$(grep -c "backed up" "$1")" -eq 1 ]' _ "$T12/out.txt"
+# a moved checkout whose old path was Korean-named: its stale hooks are pruned too
+T12k=$(newdir movedko); mkdir -p "$T12k/claude" "$T12k/old/작업"
+(cd "$REPO" && tar --exclude=./.git --exclude=./.harness -cf - .) | (cd "$T12k/old/작업" && tar -xf -)
+CLAUDE_DIR="$T12k/claude" BIN_DIR="$T12k/bin" /bin/bash "$T12k/old/작업/install.sh" >"$T12k/out0.txt" 2>&1
+rm -rf "$T12k/old"
+install_in "$T12k"
+check "moved Korean path: rc 0" [ "$RC" -eq 0 ]
+check "moved Korean path: 0 stale hooks" [ "$(jq '[.. | .command? | strings | select(contains("/claude/hooks/")) | select(startswith("'"$REPO"'/") | not)] | length' "$T12k/claude/settings.json")" -eq 0 ]
+# another existing checkout's hooks are kept, with a warning
+T13=$(newdir twogates); mkdir -p "$T13/claude" "$T13/other/claude/hooks"
+printf '#!/bin/sh\n' > "$T13/other/claude/hooks/conductor-gate.sh"
+jq -n --arg g "$T13/other/claude/hooks/conductor-gate.sh" '{hooks:{PreToolUse:[{matcher:"Bash",hooks:[{type:"command",command:$g}]}]}}' > "$T13/claude/settings.json"
+install_in "$T13"
+check "other checkout's gate kept" jq -e --arg g "$T13/other/claude/hooks/conductor-gate.sh" '[.hooks.PreToolUse[].hooks[] | select(.command == $g)] | length == 1' "$T13/claude/settings.json" >/dev/null
+check "other checkout's gate warned about" grep -q 'belongs to another checkout' "$T13/out.txt"
+# no-space metacharacter hooks of the user are kept (mutant target: the metacharacter filter)
+T14=$(newdir metahooks); mkdir -p "$T14/claude"
+jq -n '{hooks:{PreToolUse:[{matcher:"Bash",hooks:[{type:"command",command:"/opt/run.sh;/gone/claude/hooks/conductor-gate.sh"},{type:"command",command:"/x/$(id)/claude/hooks/conductor-gate.sh"}]}]}}' > "$T14/claude/settings.json"
+install_in "$T14"
+check "metacharacter hooks kept by install" jq -e '[.hooks.PreToolUse[].hooks[].command | select(. == "/opt/run.sh;/gone/claude/hooks/conductor-gate.sh" or . == "/x/$(id)/claude/hooks/conductor-gate.sh")] | length == 2' "$T14/claude/settings.json" >/dev/null
+
 # a failed write must fail loudly
 T11=$(newdir rofile); mkdir -p "$T11/claude"; echo '{}' > "$T11/claude/settings.json"; chmod 444 "$T11/claude/settings.json"
 install_in "$T11" >/dev/null
