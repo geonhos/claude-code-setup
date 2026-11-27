@@ -631,6 +631,12 @@ settings_merge() {
     echo "created $f ($msgs)"
     return 0
   fi
+  if [ "$wc" = 1 ]; then
+    cur=$(jq -r '.agent // empty' "$f")
+    if [ -n "$cur" ] && [ "$cur" != conductor ]; then
+      echo "note: $f sets agent \"$cur\"; autoCompactWindow not set (it is for the conductor session)"; wc=0
+    fi
+  fi
   if [ "$wa" = 1 ]; then
     cur=$(jq -r '.agent // empty' "$f")
     if [ "$cur" = conductor ]; then echo "$f: agent already conductor"; wa=0
@@ -800,15 +806,17 @@ cmd_init() {
   else mkdir -p .harness/asks || die "cannot create .harness/asks"; echo "created .harness/asks"; fi
   if [ -e "$CONFIG_FILE" ]; then echo "$CONFIG_FILE exists"
   else ensure_config init; [ -e "$CONFIG_FILE" ] && echo "created $CONFIG_FILE"; fi
-  if [ "$target" = .claude/settings.local.json ]; then settings_merge "$target" "$agent" 1 "$agent"
+  # autoCompactWindow (#276): only for the conductor session (settings_merge skips a foreign agent), and a
+  # value in the tracked settings.json is respected: local outranks it, so nothing is written to local then.
+  # A work folder never gets a git-visible change: there the tracked file is not given the window.
+  local acw_sh=$agent acw_loc=$agent acw_t
+  acw_t=$(jq -r '.autoCompactWindow // empty' .claude/settings.json 2>/dev/null)
+  if [ "$shared" = 0 ]; then acw_sh=0
+  elif git rev-parse --git-dir >/dev/null 2>&1 && ! lane_in_primary; then acw_sh=0; fi
+  if [ "$acw_sh" = 1 ]; then acw_loc=0
+  elif [ "$agent" = 1 ] && [ -n "$acw_t" ]; then echo ".claude/settings.json: autoCompactWindow already $acw_t"; acw_loc=0; fi
+  if [ "$shared" = 0 ]; then settings_merge "$target" "$agent" 1 "$acw_loc"
   else
-    # a work folder never gets a git-visible change: there the tracked settings.json is not given the
-    # window; it goes to the local file unless the tracked one already carries a value (#276)
-    local acw_sh=1 acw_loc=0
-    if git rev-parse --git-dir >/dev/null 2>&1 && ! lane_in_primary; then
-      acw_sh=0
-      [ "$agent" = 0 ] || jq -e 'has("autoCompactWindow")' .claude/settings.json >/dev/null 2>&1 || acw_loc=1
-    fi
     [ "$agent" = 0 ] || settings_merge "$target" 1 0 "$acw_sh"
     settings_merge .claude/settings.local.json 0 1 "$acw_loc"
   fi

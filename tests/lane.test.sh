@@ -359,6 +359,18 @@ check "lane rules: shared primary without AGENTS.md: the work folder has none" [
 check "lane rules: shared primary: note says run init in the primary" grep -qF "note: AGENTS.md not created in a work folder; run 'harness init' in the primary folder" <<<"$OUT"
 check "lane rules: shared primary: git status clean" [ -z "$(git -C "$D" status --porcelain)" ]
 check "lane shared primary: autoCompactWindow goes to the local file, settings.json untouched (#276)" bash -c '[ "$(jq -c .autoCompactWindow "$1/.claude/settings.local.json")" = 400000 ] && jq -e "has(\"autoCompactWindow\") | not" "$1/.claude/settings.json"' _ "$D"
+# tracked settings.json already carries a value: the lane's local file must not get one (#276)
+lsetup
+rm -f AGENTS.md; noagents_exclude; printf '{"agent":"conductor","autoCompactWindow":250000}\n' > .claude/settings.json; git add .claude/settings.json; git commit -q -m shared; git push -q origin main 2>/dev/null
+hrun lane 77 r7; D="$BASE/repo-77"
+check "lane shared primary with a tracked autoCompactWindow: local file gets none (#276)" bash -c '! jq -e "has(\"autoCompactWindow\")" "$1/.claude/settings.local.json" >/dev/null 2>&1' _ "$D"
+check "lane shared primary with a tracked autoCompactWindow: says already 250000 (#276)" grep -qF "settings.json: autoCompactWindow already 250000" <<<"$OUT"
+# --shared --no-agent in a work folder: no key in the local file (#276)
+lsetup
+rm -f AGENTS.md; noagents_exclude; printf '{"agent":"conductor"}\n' > .claude/settings.json; git add .claude/settings.json; git commit -q -m shared; git push -q origin main 2>/dev/null
+hrun lane 78 r8; D="$BASE/repo-78"; rm -f "$D/.claude/settings.local.json"
+( cd "$D" && env -u HARNESS_ROLE /bin/bash "$HARNESS" init --shared --no-agent >/dev/null 2>&1 )
+check "lane: init --shared --no-agent writes no autoCompactWindow to the local file (#276)" bash -c '[ -f "$1/.claude/settings.local.json" ] && ! jq -e "has(\"autoCompactWindow\")" "$1/.claude/settings.local.json" >/dev/null 2>&1' _ "$D"
 lsetup
 rm -f AGENTS.md; noagents_exclude
 hrun lane 73 r4; D="$BASE/repo-73"

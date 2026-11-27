@@ -38,7 +38,7 @@ claude                  # 평소처럼 시작합니다
 ```
 
 - 기본은 `.claude/settings.local.json`(사용자별, 추적 안 됨)에 `"agent": "conductor"`를 씁니다. `--shared`는 `agent` 키만 커밋되는 `.claude/settings.json`에 씁니다. `--no-agent`는 `agent` 키를 쓰지 않습니다.
-- `agent`와 같은 파일에 `"autoCompactWindow": 400000`도 씁니다. conductor 세션이 컨텍스트 40만 토큰 근처에서 자동 압축하게 하는 값입니다. 그 파일에 이미 값이 있으면 그대로 두고, `--no-agent`면 쓰지 않습니다. worker는 환경 변수로 16만 토큰을 씁니다.
+- `agent`와 같은 파일에 `"autoCompactWindow": 400000`도 씁니다. conductor 세션이 컨텍스트 40만 토큰 근처에서 자동 압축하게 하는 값입니다. 그 파일에 이미 값이 있거나 추적되는 `.claude/settings.json`에 값이 있으면 그 값을 존중해 쓰지 않고, 그 파일이 다른 `agent`를 두고 있거나 `--no-agent`면 쓰지 않습니다. worker는 환경 변수로 16만 토큰을 씁니다.
 - worker deny 규칙 아홉 개(`git reset *--hard*`, `git clean *`, force push 세 형태, `.env`·`.env.*`·`~/.ssh/**`·`~/.aws/**` 읽기 차단. 목록은 [docs/reference.md](docs/reference.md))를 옵션과 상관없이 항상 `.claude/settings.local.json`에 추가합니다. init을 실행한 체크아웃에만 생기고 끌 수 없습니다. 기존 `permissions` 항목은 유지하고 빠진 규칙만 덧붙입니다. 쓸 파일이 JSON이 아니거나 비어 있거나 최상위·`permissions`가 객체가 아니거나 `permissions.deny`가 배열이 아니면 init은 아무것도 만들지 않고 파일을 그대로 둔 채 이유를 stderr에 출력하고 실패합니다.
 - 이 규칙은 안전벨트이지 샌드박스가 아닙니다. `git -C`, `sh -c`, `+refspec` 푸시는 걸리지 않고 `git restore`·`git checkout -- <file>`도 막지 않습니다. `Read(.env.*)`는 `.env.example` 편집도 막습니다. `&&`로 이은 명령은 한 부분만 걸려도 통째로 거부됩니다.
 - `.harness/`(리포트, 로그, 진행 기록, 설정)는 git에 들어가지 않습니다. `harness init`이 git 제외 목록에 추가합니다.

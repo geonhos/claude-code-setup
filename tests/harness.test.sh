@@ -247,6 +247,21 @@ check "init says the value was kept (#276)" grep -qF "autoCompactWindow already 
 check "init still sets agent next to a kept autoCompactWindow (#276)" [ "$(jq -r .agent .claude/settings.local.json)" = conductor ]
 setup; rm -rf .harness; run init --no-agent
 check "init --no-agent writes no autoCompactWindow (#276)" jq -e 'has("autoCompactWindow") | not' .claude/settings.local.json
+# conductor session only (#276): a foreign agent in the target file means no key
+setup; rm -rf .harness; mkdir -p .claude; printf '{"agent":"other"}\n' > .claude/settings.local.json
+run init
+check "init: foreign agent in local: no autoCompactWindow (#276)" jq -e 'has("autoCompactWindow") | not' .claude/settings.local.json
+check "init: foreign agent in local: says why (#276)" grep -qF "autoCompactWindow not set" <<<"$OUT"
+setup; rm -rf .harness; mkdir -p .claude; printf '{"agent":"other"}\n' > .claude/settings.json
+run init --shared
+check "init --shared: foreign agent in settings.json: no autoCompactWindow anywhere (#276)" bash -c '! cat .claude/settings.json .claude/settings.local.json | grep -q autoCompactWindow'
+check "init --shared: foreign agent in settings.json: says why (#276)" grep -qF "autoCompactWindow not set" <<<"$OUT"
+# a tracked value is respected: local outranks it, so nothing is written to local (#276)
+setup; rm -rf .harness; mkdir -p .claude; printf '{"autoCompactWindow":250000}\n' > .claude/settings.json
+run init
+check "init: tracked settings.json value: local gets none (#276)" jq -e 'has("autoCompactWindow") | not' .claude/settings.local.json
+check "init: tracked settings.json value: says already 250000 (#276)" grep -qF "settings.json: autoCompactWindow already 250000" <<<"$OUT"
+check "init: tracked settings.json value: agent still set (#276)" [ "$(jq -r .agent .claude/settings.local.json)" = conductor ]
 run init --bogus
 check "init rejects unknown flag" [ "$RC" != 0 ]
 
