@@ -1,7 +1,11 @@
 #!/bin/bash
 # install.sh — symlink agents, skills and the harness CLI into ~/.claude and ~/.local/bin and merge
-# the hooks and env into settings.json. Idempotent. `--test` runs the suites in parallel and exits.
-# Overridable for tests: CLAUDE_DIR, BIN_DIR
+# the hooks and env into settings.json. Idempotent; prunes dangling links and hooks left by a moved
+# checkout. `--test` runs the suites in parallel and exits.
+# `--uninstall [--dry-run] [--force]` removes what this checkout installed (links, the three hooks, the
+# four settings keys when still at their install value) and nothing else; --dry-run only lists, --force
+# skips the live harness-run guard. Backups (*.bak.<ts>) are left in place.
+# Overridable for tests: CLAUDE_DIR, BIN_DIR; HARNESS_UNINSTALL_PS (file used instead of `ps` output)
 set -eu
 
 REPO=$(cd "$(dirname "$0")" && pwd)
@@ -15,6 +19,61 @@ MATCHER="Edit|Write|Read|Grep|Glob|Bash"
 
 die() { echo "install: $*" >&2; exit 1; }
 need() { command -v "$1" >/dev/null 2>&1 || die "$1 is required but not on PATH"; }
+
+# --- ownership rules shared by install (prune) and --uninstall -----------------------------------
+HOOK_BASES="conductor-gate.sh conductor-resume.sh notify-decision.sh"
+
+# link_suffix <kind> <name>: the repo-relative path (with leading /) when <name> exists in this checkout
+link_suffix() {
+  case "$1" in
+    agents) if [ -f "$REPO/claude/agents/$2" ]; then echo "/claude/agents/$2"; fi ;;
+    skills) if [ -f "$REPO/claude/skills/$2/SKILL.md" ]; then echo "/claude/skills/$2"; fi ;;
+    bin)    if [ -f "$REPO/bin/$2" ]; then echo "/bin/$2"; fi ;;
+  esac
+}
+
+# dangling_shaped <dest> <suffix>: dest is a dangling symlink whose target ends in <suffix>
+dangling_shaped() {
+  [ -L "$1" ] && [ ! -e "$1" ] || return 1
+  case "$(readlink "$1" || true)" in *"$2") return 0 ;; esac
+  return 1
+}
+
+# classify_hook <command>: ours (this checkout's path) | stale (harness-shaped bare path that is gone)
+# | foreign (harness-shaped path of another existing checkout) | other (never touched)
+classify_hook() {
+  local c=$1 b
+  case "$c" in /*) ;; *) echo other; return 0 ;; esac
+  case "$c" in *[!A-Za-z0-9._/+@=-]*) echo other; return 0 ;; esac
+  for b in $HOOK_BASES; do
+    [ "$c" = "$REPO/claude/hooks/$b" ] && { echo ours; return 0; }
+    case "$c" in
+      */claude/hooks/"$b") if [ -e "$c" ]; then echo foreign; else echo stale; fi; return 0 ;;
+    esac
+  done
+  echo other
+}
+
+# hook_commands <settings-file>: "<event><TAB><command>" for every hook item
+hook_commands() {
+  jq -r '(.hooks // {}) | objects | to_entries[] | .key as $e
+    | (.value | arrays | .[] | objects | .hooks? | arrays | .[] | objects | .command? | strings)
+    | [$e, .] | @tsv' "$1"
+}
+
+# jq filter: drops the hook items whose .command is in $rm; entries and event arrays it empties go too
+HOOK_RM_JQ='
+  def hit: type == "object" and ((.command // null) as $c | $c != null and ($rm | index($c)) != null);
+  def touched: type == "object" and ((.hooks | type) == "array") and any(.hooks[]; hit);
+  def clean: if touched then (.hooks |= map(select(hit | not))) | select((.hooks | length) > 0) else . end;
+  if (.hooks | type) == "object" then
+    .hooks |= (to_entries | map(
+      if (.value | type) == "array" and (.value | any(.[]; touched))
+      then (.value |= map(clean)) | select((.value | length) > 0) else . end) | from_entries)
+  else . end'
+
+# json_list: stdin lines -> JSON array of strings
+json_list() { jq -R -s 'split("\n") | map(select(length > 0))'; }
 
 if [ "${1:-}" = "--test" ]; then
   # parallel by default; HARNESS_TEST_SERIAL=1 one by one; HARNESS_TEST_TIMEOUT=N seconds per suite (default 300);
@@ -126,6 +185,122 @@ if [ "${1:-}" = "--test" ]; then
   exit $rc
 fi
 
+if [ "${1:-}" = "--uninstall" ]; then
+  need jq
+  shift
+  dry=0; force=0
+  for a in "$@"; do
+    case "$a" in
+      --dry-run) dry=1 ;;
+      --force) force=1 ;;
+      *) die "usage: install.sh --uninstall [--dry-run] [--force]" ;;
+    esac
+  done
+  # validate before modifying anything (same checks as install); a missing settings.json means links only
+  if [ -f "$SETTINGS" ]; then
+    jq -e . "$SETTINGS" >/dev/null 2>&1 || die "$SETTINGS is not valid JSON; fix it before uninstalling"
+    jq -se 'length == 1 and (.[0] | type == "object")' "$SETTINGS" >/dev/null 2>&1 \
+      || die "$SETTINGS is not a JSON object (or holds more than one value); fix it before uninstalling"
+  fi
+  # live-run guard: the links and harness-verify are global, so any harness-run on the machine counts
+  if [ "$dry" -eq 0 ] && [ "$force" -eq 0 ]; then
+    if { if [ -n "${HARNESS_UNINSTALL_PS:-}" ]; then cat "$HARNESS_UNINSTALL_PS"; else ps -axo pid=,command=; fi; } 2>/dev/null \
+      | awk '{ for (i = 2; i <= 3 && i <= NF; i++) { n = split($i, p, "/"); if (p[n] == "harness-run") f = 1 } } END { exit !f }'; then
+      die "a harness-run process is alive; its worker would lose harness-verify. Wait for it, or pass --force"
+    fi
+  fi
+  verb="remove"
+  nact=0
+
+  # U1-U3: links
+  for kind in agents skills bin; do
+    dir="$CLAUDE_DIR/$kind"; [ "$kind" != bin ] || dir="$BIN_DIR"
+    for l in "$dir"/*; do
+      [ -L "$l" ] || continue
+      n=$(basename "$l")
+      case "$n" in *.bak.*) continue ;; esac
+      t=$(readlink "$l" || true)
+      suf=$(link_suffix "$kind" "$n")
+      own=0
+      case "$t" in "$REPO"/*) own=1 ;; esac
+      if [ "$own" -eq 0 ] && [ -n "$suf" ]; then
+        case "$t" in
+          *"$suf")
+            if [ -e "$l" ]; then
+              echo "warning: $l installed from ${t%"$suf"}; run its install.sh --uninstall" >&2
+            else
+              own=1
+            fi ;;
+        esac
+      fi
+      [ "$own" -eq 1 ] || continue
+      echo "$verb link $l -> $t"
+      [ "$dry" -eq 1 ] || rm -f "$l"
+      nact=$((nact + 1))
+    done
+  done
+
+  # U4-U5: settings.json
+  if [ -f "$SETTINGS" ]; then
+    rm_cmds=""; nset=0
+    while IFS="$(printf '\t')" read -r ev cmd; do
+      [ -n "$cmd" ] || continue
+      case "$(classify_hook "$cmd")" in
+        ours|stale) echo "$verb hook $ev $cmd"; rm_cmds="$rm_cmds$cmd
+"; nset=$((nset + 1)) ;;
+        foreign) echo "warning: hook $cmd belongs to another checkout; run its install.sh --uninstall" >&2 ;;
+      esac
+    done <<EOF
+$(hook_commands "$SETTINGS")
+EOF
+    dels="[]"; envdel=0
+    for kv in 'promptCacheTtl|1h' 'subagentPromptCacheTtl|1h' 'env.BASH_DEFAULT_TIMEOUT_MS|600000' 'env.BASH_MAX_TIMEOUT_MS|7200000'; do
+      key=${kv%%|*}; val=${kv#*|}
+      path=$(printf '%s' "$key" | jq -R -c 'split(".")')
+      st=$(jq -r --argjson p "$path" --arg v "$val" '(try getpath($p) catch null) as $x | if $x == null then "absent" elif $x == $v then "equal" else "diff" end' "$SETTINGS")
+      case "$st" in
+        equal)
+          echo "$verb key $key"; nset=$((nset + 1))
+          dels=$(printf '%s' "$dels" | jq -c --argjson p "$path" '. + [$p]')
+          case "$key" in env.*) envdel=1 ;; esac ;;
+        diff) echo "keep key $key (value differs from the install value $val)" ;;
+      esac
+    done
+    if [ "$nset" -gt 0 ]; then
+      nact=$((nact + nset))
+      if [ "$dry" -eq 0 ]; then
+        tmp=$(mktemp)
+        trap 'rm -f "$tmp"' EXIT
+        printf '%s' "$rm_cmds" | json_list > "$tmp.rm"
+        jq --slurpfile rmf "$tmp.rm" --argjson dels "$dels" --argjson envdel "$envdel" '
+          ($rmf[0]) as $rm | delpaths($dels)
+          | if $envdel == 1 and (.env | type) == "object" and (.env | length) == 0 then del(.env) else . end
+          | '"$HOOK_RM_JQ" "$SETTINGS" > "$tmp"
+        rm -f "$tmp.rm"
+        bak="$SETTINGS.bak.$(date +%Y%m%d%H%M%S)"
+        cp "$SETTINGS" "$bak"
+        cat "$tmp" > "$SETTINGS" || die "failed to write $SETTINGS; restore from $bak"
+        echo "settings backup: $bak"
+      fi
+    fi
+  fi
+
+  if [ "$nact" -eq 0 ]; then echo "nothing to remove"; exit 0; fi
+  baks=""
+  for b in "$SETTINGS".bak.* "$CLAUDE_DIR"/agents/*.bak.* "$CLAUDE_DIR"/skills.bak/*; do
+    { [ -e "$b" ] || [ -L "$b" ]; } && baks="$baks$b
+"
+  done
+  if [ -n "$baks" ]; then
+    echo "left in place: $(printf '%s' "$baks" | grep -c .) backup file(s):"
+    printf '%s' "$baks" | sed 's/^/  /'
+  fi
+  echo "quit running conductor sessions before uninstalling or moving the checkout: their gate hook is gone or dangling afterwards."
+  echo "per-repo 'harness init' state (.harness/, agent: conductor in settings) is untouched; see the README to revert it by hand."
+  [ "$dry" -eq 0 ] || echo "dry run: nothing was changed"
+  exit 0
+fi
+
 need jq
 
 # 0. validate before modifying anything
@@ -139,6 +314,8 @@ jq -se 'length == 1 and (.[0] | type == "object")' "$SETTINGS" >/dev/null 2>&1 \
 # link_item <src> <dest> <backup-prefix>: symlink; an existing different dest moves to <prefix>.<timestamp>
 link_item() {
   local bak
+  # a dangling link of this repo's shape (left by a moved checkout) is replaced without a backup
+  if dangling_shaped "$2" "${1#"$REPO"}"; then rm -f "$2"; fi
   if { [ -e "$2" ] || [ -L "$2" ]; } && [ "$(readlink "$2" || true)" != "$1" ]; then
     mkdir -p "${3%/*}"; bak="$3.$(date +%Y%m%d%H%M%S)"
     mv "$2" "$bak"
@@ -167,7 +344,21 @@ esac
 bak="$SETTINGS.bak.$(date +%Y%m%d%H%M%S)"
 cp "$SETTINGS" "$bak"
 tmp=$(mktemp)
-trap 'rm -f "$tmp"' EXIT
+trap 'rm -f "$tmp" "$tmp.rm" "$tmp.pre"' EXIT
+# stale hook items (harness-shaped path that no longer exists) go first; another existing checkout's stay
+rm_cmds=""
+while IFS="$(printf '\t')" read -r ev cmd; do
+  [ -n "$cmd" ] || continue
+  case "$(classify_hook "$cmd")" in
+    stale) rm_cmds="$rm_cmds$cmd
+" ;;
+    foreign) echo "warning: hook $cmd belongs to another checkout; two gates run until its install.sh --uninstall is run" >&2 ;;
+  esac
+done <<EOF
+$(hook_commands "$SETTINGS")
+EOF
+printf '%s' "$rm_cmds" | json_list > "$tmp.rm"
+jq --slurpfile rmf "$tmp.rm" '($rmf[0]) as $rm | '"$HOOK_RM_JQ" "$SETTINGS" > "$tmp.pre"
 jq --arg gate "$GATE" --arg matcher "$MATCHER" --arg resume "$RESUME" --arg notify "$NOTIFY" '
   .promptCacheTtl = "1h"
   | .subagentPromptCacheTtl = "1h"
@@ -183,7 +374,7 @@ jq --arg gate "$GATE" --arg matcher "$MATCHER" --arg resume "$RESUME" --arg noti
   | hook("PreToolUse"; $gate; $matcher)
   | hook("SessionStart"; $resume; "startup|clear|compact")
   | hook("Notification"; $notify; "permission_prompt|idle_prompt|elicitation_dialog|elicitation_url_dialog|agent_needs_input")
-' "$SETTINGS" > "$tmp"
+' "$tmp.pre" > "$tmp"
 cat "$tmp" > "$SETTINGS" || die "failed to write $SETTINGS; restore from $bak"
 
 cat <<EOF
