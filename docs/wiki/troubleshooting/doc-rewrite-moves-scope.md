@@ -1,8 +1,8 @@
 ---
 type: troubleshooting
 status: active
-updated: 2026-11-26
-sources: [ask 1795397876-20643-21846, ask 1795400331-67567-6009, "#212", "#222", a31c751, cf9f8c8, 7262979, "#258", ask 1795684662-94791-269, a6167d5]
+updated: 2026-11-27
+sources: [ask 1795397876-20643-21846, ask 1795400331-67567-6009, "#212", "#222", a31c751, cf9f8c8, 7262979, "#258", ask 1795684662-94791-269, a6167d5, "#271", ask 1795696274-1920-8944, 7b1c7fb]
 verified_by: human (git show 7262979:AGENTS.md vs cf9f8c8:AGENTS.md)
 ---
 # A doc rewrite says what its source does not: moved qualifiers, moved citations, copied suggestions
@@ -10,7 +10,7 @@ verified_by: human (git show 7262979:AGENTS.md vs cf9f8c8:AGENTS.md)
 **Symptom.** A reviewed doc edit reads well and keeps every item, yet a rule changed: an item gained a condition it never had, or a citation vouches for a claim its source does not make. Or a sentence taken from an audit's suggested fix is false.
 
 **Cause.** Three shapes, from compressing, rewording or copying:
-1. A numbered list compressed into one line with a shared qualifier extends the qualifier to every item. Base 7262979 AGENTS.md:62 said "Promotions happen only through a human-approved PR"; cf9f8c8 AGENTS.md:34 wrote "each step only through a human-approved PR", which also covered step 1 (filing a `wiki` issue, done without a PR). Now fixed as "Promotions (steps 2-5)".
+1. A numbered list compressed into one line with a shared qualifier extends the qualifier to every item. Base 7262979 AGENTS.md:62 said "Promotions happen only through a human-approved PR"; cf9f8c8 AGENTS.md:34 wrote "each step only through a human-approved PR", which also covered step 1 (filing a `wiki` issue, done without a PR). Now fixed as "Promotions (steps 2-5)". Promoting a wiki Fix into a prompt line is a compression too: PR #272's first draft of `claude/agents/implementer.md:37` dropped "or the decision log" from this page's Fix (:17); the review caught it (ask 1795696274-1920-8944) and 7b1c7fb restored it. Compare the prompt line with the Fix sentence word for word.
 2. A parenthetical citing a prompt line was put on the neighbouring sentence. At a31c751 the base-worktree page said a guard failure listing only `.../base` from your own `mktemp` "is not a finding (claude/agents/reviewer.md:33 says so since #173)"; at that commit reviewer.md:33 only ordered the base worktree after the suite, and :28 said a suite failure is "a Major finding at least". The exemption existed only in the page.
 3. A suggested wording copied from an audit carries the audit's errors. The pre-release audit for #256 proposed "`harness lane new/rm/ls`" (row D4) and "(spawn removed in prune step 4)" (row W/decisions/0010:19); the branch copied both. `cmd_lane` has no `new` subcommand (`lib/harness-lane.sh:186-191` dispatches `ls`, `rm`, and everything else to `lane_new` as an issue number) and spawn went in prune step 3 (`log.md:41`). Two of the three Majors in the review (ask 1795684662-94791-269); fixed before a6167d5.
 
