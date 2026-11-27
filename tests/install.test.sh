@@ -327,6 +327,8 @@ check "conductor question rule: up to 4 questions per call" bash -c 'printf %s "
 check "conductor question rule: fifth question goes in the next call, no work between" bash -c 'printf %s "$1" | grep -qF -- "$2"' _ "$QB" 'a fifth goes in the next call with no work in between'
 check "conductor question rule: non-blocking question waits" bash -c 'printf %s "$1" | grep -qF -- "$2"' _ "$QB" 'does not block the work waits: keep working'
 check "conductor question rule: non-blocking question asked by the PR or report" bash -c 'printf %s "$1" | grep -qF -- "$2"' _ "$QB" 'at the latest before the PR or the final report'
+check "conductor question rule: non-blocking question asked with the others at the next stop" bash -c 'printf %s "$1" | grep -qF -- "$2"' _ "$QB" 'ask it with the others at the next stop'
+check "conductor question rule: questions come from the plan and the reports" bash -c 'printf %s "$1" | grep -qF -- "$2"' _ "$QB" '(from the plan and the reports)'
 check "conductor question rule: option carries result and cost in one line" bash -c 'printf %s "$1" | grep -qF -- "$2"' _ "$QB" 'result and cost in one line'
 check "conductor question rule: recommended option first with (권장)" bash -c 'printf %s "$1" | grep -qF -- "$2"' _ "$QB" 'recommended option first with "(권장)"'
 check "conductor question rule: never list questions in plain text" bash -c 'printf %s "$1" | grep -qF -- "$2"' _ "$QB" 'never list questions in plain text'
