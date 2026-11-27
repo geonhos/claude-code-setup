@@ -53,7 +53,8 @@ check "1 rc 0" [ "$RC" -eq 0 ]
 check "1 no link into the repo left" [ "$(links_into "$T" "$REPO")" -eq 0 ]
 check "1 output has 14 remove link lines" [ "$(grep -c '^remove link ' "$T/out.txt")" -eq 14 ]
 check "1 three hooks gone" [ "$(jq --arg a "$GATE" --arg b "$RESUME" --arg c "$NOTIFY" '[.. | .command? | strings | select(. == $a or . == $b or . == $c)] | length' "$S")" -eq 0 ]
-check "1 four keys gone" jq -e '(has("promptCacheTtl") or has("subagentPromptCacheTtl") or (.env | has("BASH_DEFAULT_TIMEOUT_MS")) or (.env | has("BASH_MAX_TIMEOUT_MS"))) | not' "$S" >/dev/null
+check "1 seven keys gone" jq -e '(has("promptCacheTtl") or has("subagentPromptCacheTtl") or (.env | has("BASH_DEFAULT_TIMEOUT_MS")) or (.env | has("BASH_MAX_TIMEOUT_MS"))) | not' "$S" >/dev/null
+check "1 attribution gone" jq -e 'has("attribution") | not' "$S" >/dev/null
 check "1 settings equal to the pre-install file" [ "$(jq -S . "$S")" = "$ORIG" ]
 check "1 user skill dir kept" [ -f "$T/claude/skills/mine/SKILL.md" ]
 check "1 /opt hooks kept" [ "$(jq '[.. | .command? | strings | select(startswith("/opt/"))] | length' "$S")" -eq 4 ]
@@ -79,7 +80,7 @@ uninst_from "$REPO" "$T" --dry-run
 check "3 dry-run rc 0" [ "$RC" -eq 0 ]
 check "3 lists 14 links" [ "$(grep -c '^remove link ' "$T/out.txt")" -eq 14 ]
 check "3 lists 3 hooks" [ "$(grep -c '^remove hook ' "$T/out.txt")" -eq 3 ]
-check "3 lists 4 keys" [ "$(grep -c '^remove key ' "$T/out.txt")" -eq 4 ]
+check "3 lists 7 keys" [ "$(grep -c '^remove key ' "$T/out.txt")" -eq 7 ]
 rm -f "$T/out.txt"
 check "3 tree checksum equal before and after" [ "$(tree_sum "$T")" = "$SUM" ]
 
@@ -144,6 +145,15 @@ check "7 differing BASH_DEFAULT_TIMEOUT_MS kept" [ "$(jq -r .env.BASH_DEFAULT_TI
 check "7 equal BASH_MAX_TIMEOUT_MS removed" jq -e '.env | has("BASH_MAX_TIMEOUT_MS") | not' "$S" >/dev/null
 check "7 non-empty env kept with FOO" [ "$(jq -r .env.FOO "$S")" = bar ]
 check "7 reports the kept keys" grep -q '^keep key promptCacheTtl' "$T/out.txt"
+# attribution: custom value kept, install value removed, empty object dropped
+echo '{"attribution":{"commit":"Co-Authored-By: me","pr":""},"model":"m"}' > "$S"
+uninst_from "$REPO" "$T"
+check "7 custom attribution.commit kept" [ "$(jq -r .attribution.commit "$S")" = "Co-Authored-By: me" ]
+check "7 empty attribution.pr removed" jq -e '.attribution | has("pr") | not' "$S" >/dev/null
+check "7 reports kept attribution.commit" grep -q '^keep key attribution.commit' "$T/out.txt"
+echo '{"attribution":{"commit":"","pr":""},"model":"m"}' > "$S"
+uninst_from "$REPO" "$T"
+check "7 empty attribution object dropped" jq -e 'has("attribution") | not' "$S" >/dev/null
 # env left {} is dropped
 echo '{"env":{"BASH_DEFAULT_TIMEOUT_MS":"600000","BASH_MAX_TIMEOUT_MS":"7200000"},"model":"m"}' > "$S"
 uninst_from "$REPO" "$T"
@@ -275,6 +285,33 @@ ln -s "$T/real/settings.json" "$T/claude/settings.json"
 uninst_from "$REPO" "$T"
 check "settings symlink kept" [ -L "$T/claude/settings.json" ]
 check "settings symlink target updated" [ "$(jq -c . "$T/real/settings.json")" = '{"model":"x"}' ]
+
+# --- attribution (#307): non-object kept and reported, custom values kept, owned values removed ---
+att_un() { # NAME JSON [args]: install in a fresh dir, overwrite settings with JSON, uninstall; sets AS
+  local n=$1 j=$2; shift 2
+  T=$(newdir "att-$n"); mkdir -p "$T/claude"; inst_from "$REPO" "$T" || return 1
+  AS="$T/claude/settings.json"; printf '%s\n' "$j" > "$AS"; uninst_from "$REPO" "$T" "$@"
+}
+for v in false '"x"'; do
+  att_un "no-$(printf '%s' "$v" | tr -c 'a-z0-9' _)" "{\"attribution\":$v,\"model\":\"m\"}"
+  check "attribution $v: uninstall rc 0" [ "$RC" -eq 0 ]
+  check "attribution $v: value left" [ "$(jq -c .attribution "$AS")" = "$v" ]
+  check "attribution $v: reported as kept once" [ "$(grep -c '^keep key attribution (not an object' "$T/out.txt")" -eq 1 ]
+  att_un "dry-$(printf '%s' "$v" | tr -c 'a-z0-9' _)" "{\"attribution\":$v}" --dry-run
+  check "attribution $v: dry-run rc 0" [ "$RC" -eq 0 ]
+  check "attribution $v: dry-run reports it" grep -q '^keep key attribution (not an object' "$T/out.txt"
+done
+att_un custom '{"attribution":{"commit":"mine","pr":"PR mine","sessionUrl":true,"extra":1}}'
+check "custom attribution all kept" [ "$(jq -cS .attribution "$AS")" = '{"commit":"mine","extra":1,"pr":"PR mine","sessionUrl":true}' ]
+check "custom attribution: three keep lines" [ "$(grep -c '^keep key attribution\.' "$T/out.txt")" -eq 3 ]
+att_un partial '{"attribution":{"commit":"","pr":"","sessionUrl":false,"extra":1}}'
+check "owned attribution keys removed, extra kept" [ "$(jq -c .attribution "$AS")" = '{"extra":1}' ]
+att_un emptied '{"attribution":{"commit":"","pr":"","sessionUrl":false}}'
+check "emptied attribution object dropped" jq -e 'has("attribution") | not' "$AS" >/dev/null
+att_un su-true '{"attribution":{"commit":"","pr":"","sessionUrl":true}}'
+check "sessionUrl true not removed" [ "$(jq -c .attribution "$AS")" = '{"sessionUrl":true}' ]
+att_un nullattr '{"attribution":null,"model":"m"}'
+check "null attribution: uninstall rc 0" [ "$RC" -eq 0 ]
 
 echo "PASS $pass / FAIL $fail"
 [ "$fail" -eq 0 ]

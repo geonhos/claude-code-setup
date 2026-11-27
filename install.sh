@@ -3,7 +3,7 @@
 # the hooks and env into settings.json. Idempotent; prunes dangling links and hooks left by a moved
 # checkout. `--test` runs the suites in parallel and exits.
 # `--uninstall [--dry-run] [--force]` removes what this checkout installed (links, the three hooks, the
-# four settings keys when still at their install value) and nothing else; --dry-run only lists, --force
+# seven settings keys when still at their install value) and nothing else; --dry-run only lists, --force
 # skips the live harness-run guard. Backups (*.bak.<ts>) are left in place.
 # Overridable for tests: CLAUDE_DIR, BIN_DIR; HARNESS_UNINSTALL_PS (file used instead of `ps` output)
 set -eu
@@ -261,17 +261,20 @@ if [ "${1:-}" = "--uninstall" ]; then
     done <<EOF
 $(hook_commands "$SETTINGS")
 EOF
-    dels="[]"; envdel=0
-    for kv in 'promptCacheTtl|1h' 'subagentPromptCacheTtl|1h' 'env.BASH_DEFAULT_TIMEOUT_MS|600000' 'env.BASH_MAX_TIMEOUT_MS|7200000'; do
+    dels="[]"; envdel=0; attrdel=0; attrwarn=0
+    for kv in 'promptCacheTtl|"1h"' 'subagentPromptCacheTtl|"1h"' 'env.BASH_DEFAULT_TIMEOUT_MS|"600000"' 'env.BASH_MAX_TIMEOUT_MS|"7200000"' 'attribution.commit|""' 'attribution.pr|""' 'attribution.sessionUrl|false'; do
       key=${kv%%|*}; val=${kv#*|}
       path=$(printf '%s' "$key" | jq -R -c 'split(".")')
-      st=$(jq -r --argjson p "$path" --arg v "$val" '(try getpath($p) catch null) as $x | if $x == null then "absent" elif $x == $v then "equal" else "diff" end' "$SETTINGS")
+      st=$(jq -r --argjson p "$path" --argjson v "$val" '(try getpath($p) catch null) as $x
+        | if $p[0] == "attribution" and (.attribution | type) != "object" and .attribution != null then "nonobj"
+          elif $x == null then "absent" elif $x == $v then "equal" else "diff" end' "$SETTINGS")
       case "$st" in
         equal)
           echo "$verb key $key"; nset=$((nset + 1))
           dels=$(printf '%s' "$dels" | jq -c --argjson p "$path" '. + [$p]')
-          case "$key" in env.*) envdel=1 ;; esac ;;
+          case "$key" in env.*) envdel=1 ;; attribution.*) attrdel=1 ;; esac ;;
         diff) echo "keep key $key (value differs from the install value $val)" ;;
+        nonobj) [ "$attrwarn" -eq 1 ] || echo "keep key attribution (not an object; left untouched)"; attrwarn=1 ;;
       esac
     done
     if [ "$nset" -gt 0 ]; then
@@ -280,9 +283,10 @@ EOF
         tmp=$(mktemp)
         trap 'rm -f "$tmp"' EXIT
         printf '%s' "$rm_cmds" | json_list > "$tmp.rm"
-        jq --slurpfile rmf "$tmp.rm" --argjson dels "$dels" --argjson envdel "$envdel" '
+        jq --slurpfile rmf "$tmp.rm" --argjson dels "$dels" --argjson envdel "$envdel" --argjson attrdel "$attrdel" '
           ($rmf[0]) as $rm | delpaths($dels)
           | if $envdel == 1 and (.env | type) == "object" and (.env | length) == 0 then del(.env) else . end
+          | if $attrdel == 1 and (.attribution | type) == "object" and (.attribution | length) == 0 then del(.attribution) else . end
           | '"$HOOK_RM_JQ" "$SETTINGS" > "$tmp"
         rm -f "$tmp.rm"
         bak="$SETTINGS.bak.$(date +%Y%m%d%H%M%S)"
@@ -317,6 +321,13 @@ mkdir -p "$CLAUDE_DIR"
 jq -e . "$SETTINGS" >/dev/null 2>&1 || die "$SETTINGS is not valid JSON; fix it before installing"
 jq -se 'length == 1 and (.[0] | type == "object")' "$SETTINGS" >/dev/null 2>&1 \
   || die "$SETTINGS is not a JSON object (or holds more than one value); fix it before installing"
+
+# attribution: owned keys are set only when unset; a custom value or a non-object attribution is kept (warn before any link is made)
+jq -r '(.attribution) as $a
+  | if $a == null or ($a | type) == "object" then
+      (["commit", ""], ["pr", ""], ["sessionUrl", false]) as [$k, $v]
+      | ($a // {}) | select(has($k) and .[$k] != null and .[$k] != $v) | "install: kept attribution.\($k) (custom value)"
+    else "install: kept attribution (not an object: \($a | tojson))" end' "$SETTINGS" >&2
 
 # 2. agents + skills + harness symlinks
 # link_item <src> <dest> <backup-prefix>: symlink; an existing different dest moves to <prefix>.<timestamp>
@@ -373,6 +384,11 @@ jq --arg gate "$GATE" --arg matcher "$MATCHER" --arg resume "$RESUME" --arg noti
   | .env //= {}
   | .env.BASH_DEFAULT_TIMEOUT_MS = "600000"
   | .env.BASH_MAX_TIMEOUT_MS = "7200000"
+  | if .attribution == null or (.attribution | type) == "object" then
+      .attribution //= {}
+      | reduce (["commit", ""], ["pr", ""], ["sessionUrl", false]) as [$k, $v] (.;
+          if .attribution[$k] == null then .attribution[$k] = $v else . end)
+    else . end
   # strip our command from every entry of an event; drop entries left empty; re-append one canonical entry
   | def hook($ev; $cmd; $m):
       .hooks[$ev] = ((.hooks[$ev] // [])

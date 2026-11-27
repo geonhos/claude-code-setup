@@ -17,8 +17,8 @@ change yourself (`harness ask` refuses to run in a worker session anyway).
    - **Goal**: the exact behaviour wanted, and what must not change.
    - **Files or area** to touch; the spec or plan under `docs/` to follow.
    - **Tests**: which to add or update, and the command that must pass.
-   - **Commit**: whether to commit, the exact message (ending with the
-     attribution lines given in this conversation), and whether to push.
+   - **Commit**: whether to commit, the exact message (no Co-Authored-By or
+     other attribution line), and whether to push.
      Say "do not commit" when unsure.
    - **Report**: files touched, how it verified, the commit hash.
    - **Steps**: a `## Steps` numbered list, one line per step (the viewer dashboard shows it).

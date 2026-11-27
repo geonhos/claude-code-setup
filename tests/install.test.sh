@@ -62,6 +62,8 @@ check "promptCacheTtl" [ "$(jq -r .promptCacheTtl "$S")" = 1h ]
 check "subagentPromptCacheTtl" [ "$(jq -r .subagentPromptCacheTtl "$S")" = 1h ]
 check "BASH_DEFAULT_TIMEOUT_MS" [ "$(jq -r .env.BASH_DEFAULT_TIMEOUT_MS "$S")" = 600000 ]
 check "BASH_MAX_TIMEOUT_MS" [ "$(jq -r .env.BASH_MAX_TIMEOUT_MS "$S")" = 7200000 ]
+check "attribution.commit empty" [ "$(jq -c .attribution.commit "$S")" = '""' ]
+check "attribution.pr empty" [ "$(jq -c .attribution.pr "$S")" = '""' ]
 check "env.FOO preserved" [ "$(jq -r .env.FOO "$S")" = bar ]
 check "backup created" ls "$CLAUDE_DIR"/settings.json.bak.* >/dev/null 2>&1
 
@@ -96,6 +98,7 @@ UPS1=$(jq -c .hooks.UserPromptSubmit "$S")
 run_install
 check "second run rc" [ "$RC" -eq 0 ]
 check "env still preserved after rerun" [ "$(jq -c '.env' "$S")" = '{"FOO":"bar","BASH_DEFAULT_TIMEOUT_MS":"600000","BASH_MAX_TIMEOUT_MS":"7200000"}' ]
+check "attribution idempotent" [ "$(jq -c .attribution "$S")" = '{"commit":"","pr":"","sessionUrl":false}' ]
 check "gate hook still once" [ "$(jq --arg g "$GATE" '[.hooks.PreToolUse[] | select(.hooks[] | .command==$g)] | length' "$S")" -eq 1 ]
 check "other hook still once" [ "$(jq '[.hooks.PreToolUse[] | select(.hooks[] | .command=="/opt/other-hook.sh")] | length' "$S")" -eq 1 ]
 check "other agent still kept after rerun" [ "$(jq -r .agent "$S")" = something ]
@@ -534,6 +537,45 @@ printf '{"model":"keep"}\n' > "$CLAUDE_DIR/settings.json"
 run_install
 check "fresh install writes no agent key" [ "$(jq -r '.agent // "none"' "$S")" = none ]
 check "end note mentions harness init" grep -q "harness init" "$T/out.txt"
+
+# --- attribution (#307): owned keys set only when unset; a non-object or custom value is kept ---
+attr_case() { # NAME SETTINGS-JSON: install twice in a fresh dir; sets AD (dir), AS (settings), RC, RC2, SAME (2nd run left settings unchanged)
+  AD=$(newdir "attr-$1"); mkdir -p "$AD/claude"; AS="$AD/claude/settings.json"; printf '%s\n' "$2" > "$AS"
+  install_in "$AD"; local before; before=$(jq -S . "$AS" 2>/dev/null)
+  cp "$AD/out.txt" "$AD/out1.txt"; install_in "$AD"; RC2=$RC
+  [ "$(jq -S . "$AS" 2>/dev/null)" = "$before" ] && SAME=1 || SAME=0
+  RC=0; [ -s "$AD/claude/agents/analyst.md" ] || [ -L "$AD/claude/agents/analyst.md" ] || RC=1
+}
+for v in false true '"x"' 7 '["a"]'; do
+  attr_case "nonobj-$(printf '%s' "$v" | tr -c 'a-z0-9' _)" "{\"attribution\":$v,\"model\":\"m\"}"
+  check "attribution $v: rc 0, links made" [ "$RC$RC2" = 00 ]
+  check "attribution $v: value untouched" [ "$(jq -c .attribution "$AS")" = "$v" ]
+  check "attribution $v: warning names the value" grep -qF "install: kept attribution (not an object: $v)" "$AD/out1.txt"
+  check "attribution $v: other keys and hooks merged" jq -e '.promptCacheTtl == "1h" and .model == "m" and (.hooks.PreToolUse | length) == 1' "$AS" >/dev/null
+  check "attribution $v: reinstall changes nothing" [ "$SAME" -eq 1 ]
+done
+attr_case custom '{"attribution":{"commit":"Co-Authored-By: me","pr":"PR by me","extra":1}}'
+check "custom attribution: rc 0" [ "$RC" -eq 0 ]
+check "custom attribution: strings and extra kept, sessionUrl added" [ "$(jq -cS .attribution "$AS")" = '{"commit":"Co-Authored-By: me","extra":1,"pr":"PR by me","sessionUrl":false}' ]
+check "custom attribution: warns for commit" grep -qF 'install: kept attribution.commit (custom value)' "$AD/out1.txt"
+check "custom attribution: warns for pr" grep -qF 'install: kept attribution.pr (custom value)' "$AD/out1.txt"
+check "custom attribution: reinstall changes nothing" [ "$SAME" -eq 1 ]
+attr_case partial '{"attribution":{"extra":1}}'
+check "partial attribution: owned keys added, extra kept" [ "$(jq -cS .attribution "$AS")" = '{"commit":"","extra":1,"pr":"","sessionUrl":false}' ]
+check "partial attribution: no warning" [ "$(grep -c 'install: kept' "$AD/out1.txt")" -eq 0 ]
+check "partial attribution: reinstall changes nothing" [ "$SAME" -eq 1 ]
+attr_case null '{"attribution":null}'
+check "null attribution: object created" [ "$(jq -cS .attribution "$AS")" = '{"commit":"","pr":"","sessionUrl":false}' ]
+check "null attribution: reinstall changes nothing" [ "$SAME" -eq 1 ]
+attr_case absent '{}'
+check "absent attribution: object created" [ "$(jq -cS .attribution "$AS")" = '{"commit":"","pr":"","sessionUrl":false}' ]
+check "absent attribution: reinstall changes nothing" [ "$SAME" -eq 1 ]
+attr_case suA '{"attribution":{"sessionUrl":true}}'
+check "sessionUrl true kept" [ "$(jq -c .attribution.sessionUrl "$AS")" = true ]
+check "sessionUrl true warns" grep -qF 'install: kept attribution.sessionUrl (custom value)' "$AD/out1.txt"
+attr_case suB '{"attribution":{"sessionUrl":false}}'
+check "sessionUrl false kept as is" [ "$(jq -c .attribution.sessionUrl "$AS")" = false ]
+check "sessionUrl false: no warning" [ "$(grep -c 'install: kept' "$AD/out1.txt")" -eq 0 ]
 
 echo "PASS $pass / FAIL $fail"
 [ "$fail" -eq 0 ]
