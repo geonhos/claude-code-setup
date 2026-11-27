@@ -22,7 +22,7 @@ cd ~/workspace/my-claude-harness
 
 ### 제거: `./install.sh --uninstall [--dry-run] [--force]`
 
-이 체크아웃이 설치한 것만 지웁니다(링크, 훅 세 개, 키 네 개). 백업(`*.bak.<ts>`)은 남깁니다.
+이 체크아웃이 설치한 것만 지웁니다(링크, 훅 세 개, 키 일곱 개: `promptCacheTtl`, `subagentPromptCacheTtl`, `env.BASH_DEFAULT_TIMEOUT_MS`, `env.BASH_MAX_TIMEOUT_MS`, `attribution.commit`, `attribution.pr`, `attribution.sessionUrl`). 백업(`*.bak.<ts>`)은 남깁니다.
 
 - `--dry-run`: 아무것도 바꾸지 않고 live-run 검사도 하지 않습니다. 실제 실행과 같은 `remove …` 줄, 경고, `keep key …` 줄, 백업 목록, 힌트 두 줄을 출력하고 `dry run: nothing was changed`로 끝납니다.
 - `--force`: 살아 있는 `harness-run`이 있어도 지웁니다. 없으면 거부합니다(워커가 `harness-verify`를 잃습니다). 거부는 프로세스 목록에서 명령의 첫 두 단어 중 하나의 basename이 `harness-run`인지로 판단합니다.
@@ -35,7 +35,7 @@ cd ~/workspace/my-claude-harness
 - U2: 끊어진 링크는 그 이름이 이 체크아웃에 있고 대상 끝이 `/claude/agents/<n>.md`, `/claude/skills/<n>`, `/bin/<n>`으로 같을 때만 지웁니다. 다른 dotfiles 저장소를 가리키는 끊어진 링크는 남습니다.
 - U3: 이 체크아웃 밖의 존재하는 경로를 가리키는 링크(작업 폴더, 다른 클론)는 남기고 `installed from <path>; run its install.sh --uninstall`로 경고합니다. 일반 파일과 디렉터리는 건드리지 않습니다.
 - U4: 훅 항목은 `.command`가 `$REPO/claude/hooks/<b>`와 같거나, 같은 세 이름으로 끝나는 절대 경로인데 파일이 없을 때만 지웁니다. 존재하는 다른 체크아웃의 경로는 경고하고 남깁니다. 인자·따옴표가 있거나 이름이 다른 명령은 건드리지 않습니다. 항목이 비면 그 항목과 빈 이벤트 배열도 지웁니다. `$REPO`와 정확히 같은 명령은 경로에 어떤 문자가 있어도 지웁니다. 옛 경로에 공백이나 셸 특수문자가 있던 오래된 훅은 래퍼 명령과 구별되지 않아 남습니다. 직접 지웁니다.
-- U5: 키 네 개는 값이 install 값과 같을 때만 지웁니다. 다르면 남기고 알립니다. `env`는 `{}`가 될 때만 지웁니다.
+- U5: 키 일곱 개는 값이 install 값과 같을 때만 지웁니다. 다르면 남기고 알립니다. 사용자가 install 전에 같은 값을 직접 넣어 두었어도(예: 자기 `attribution.sessionUrl: false`) 값이 같으면 지웁니다. `env`와 `attribution`은 `{}`가 될 때만 지웁니다. 객체가 아닌 `attribution`(예: `false`)은 건드리지 않고 `keep key attribution (not an object; left untouched)` 줄로 알립니다.
 
 install도 같은 규칙으로 정리합니다. 끊어진 harness 링크(U2 모양)는 백업 없이 바꾸고, U4의 오래된 훅 항목은 지우고, 다른 존재하는 체크아웃의 훅은 경고만 합니다. 그래서 `mv` 뒤 `./install.sh`만으로 옮길 수 있습니다([wiki](wiki/how-to/move-checkout.md)).
 
