@@ -344,6 +344,8 @@ check "conductor question rule: exceptions wait for an explicit answer" bash -c 
 check "conductor question rule: answers recorded on the issue in one comment" bash -c 'printf %s "$1" | grep -qF -- "$2"' _ "$QB" 'Record the answers on the issue in one comment'
 check "conductor: no one-topic-at-a-time rule" bash -c '! grep -qF "one topic at a time" "$1"' _ "$REPO/claude/agents/conductor.md"
 check "conductor: no needs-decision label rule" bash -c '! grep -qF "needs-decision" "$1"' _ "$REPO/claude/agents/conductor.md"
+check "conductor: suggests /clear when a piece of work ends (#276)" grep -qF 'end the report with one line' "$REPO/claude/agents/conductor.md"
+check "conductor: updates goal.md before suggesting /clear (#276)" grep -qF 'update `goal.md`, then end the report' "$REPO/claude/agents/conductor.md"
 
 # --- test runner (install.sh --test) against scratch suites -----------------
 # INSTALL_SH can point at another copy of the script (used to show the tests red).

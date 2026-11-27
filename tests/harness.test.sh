@@ -239,6 +239,31 @@ run status
 check "status creates no config.json (#257)" [ ! -e .harness/config.json ]
 run init
 check "init is idempotent" bash -c '[ "$1" = 0 ] && [ "$(jq -r .agent .claude/settings.local.json)" = conductor ]' _ "$RC"
+check "init writes autoCompactWindow 400000 (#276)" [ "$(jq -c .autoCompactWindow .claude/settings.local.json)" = 400000 ]
+cp .claude/settings.local.json "$WORK/acw1.json"; run init
+check "init twice: settings.local.json bytes equal (#276)" cmp -s "$WORK/acw1.json" .claude/settings.local.json
+setup; rm -rf .harness; mkdir -p .claude; printf '{"autoCompactWindow":300000}\n' > .claude/settings.local.json
+run init
+check "init keeps an existing autoCompactWindow (#276)" [ "$(jq -c .autoCompactWindow .claude/settings.local.json)" = 300000 ]
+check "init says the value was kept (#276)" grep -qF "autoCompactWindow already 300000" <<<"$OUT"
+check "init still sets agent next to a kept autoCompactWindow (#276)" [ "$(jq -r .agent .claude/settings.local.json)" = conductor ]
+setup; rm -rf .harness; run init --no-agent
+check "init --no-agent writes no autoCompactWindow (#276)" jq -e 'has("autoCompactWindow") | not' .claude/settings.local.json
+# conductor session only (#276): a foreign agent in the target file means no key
+setup; rm -rf .harness; mkdir -p .claude; printf '{"agent":"other"}\n' > .claude/settings.local.json
+run init
+check "init: foreign agent in local: no autoCompactWindow (#276)" jq -e 'has("autoCompactWindow") | not' .claude/settings.local.json
+check "init: foreign agent in local: says why (#276)" grep -qF "autoCompactWindow not set" <<<"$OUT"
+setup; rm -rf .harness; mkdir -p .claude; printf '{"agent":"other"}\n' > .claude/settings.json
+run init --shared
+check "init --shared: foreign agent in settings.json: no autoCompactWindow anywhere (#276)" bash -c '! cat .claude/settings.json .claude/settings.local.json | grep -q autoCompactWindow'
+check "init --shared: foreign agent in settings.json: says why (#276)" grep -qF "autoCompactWindow not set" <<<"$OUT"
+# a tracked value is respected: local outranks it, so nothing is written to local (#276)
+setup; rm -rf .harness; mkdir -p .claude; printf '{"autoCompactWindow":250000}\n' > .claude/settings.json
+run init
+check "init: tracked settings.json value: local gets none (#276)" jq -e 'has("autoCompactWindow") | not' .claude/settings.local.json
+check "init: tracked settings.json value: says already 250000 (#276)" grep -qF "settings.json: autoCompactWindow already 250000" <<<"$OUT"
+check "init: tracked settings.json value: agent still set (#276)" [ "$(jq -r .agent .claude/settings.local.json)" = conductor ]
 run init --bogus
 check "init rejects unknown flag" [ "$RC" != 0 ]
 
@@ -515,6 +540,10 @@ check "init: stderr is empty" [ ! -s "$WORK/init.err" ]
 setup; rm -rf .harness .claude
 run init --shared
 check "init --shared: writes settings.json" [ "$(jq -r .agent .claude/settings.json)" = conductor ]
+check "init --shared: settings.json gets autoCompactWindow 400000 (#276)" [ "$(jq -c .autoCompactWindow .claude/settings.json)" = 400000 ]
+check "init --shared: settings.local.json gets no autoCompactWindow (#276)" jq -e 'has("autoCompactWindow") | not' .claude/settings.local.json
+cp .claude/settings.json "$WORK/acw2.json"; run init --shared
+check "init --shared twice: settings.json bytes equal (#276)" cmp -s "$WORK/acw2.json" .claude/settings.json
 check "init --shared: deny rules are not committed to settings.json" jq -e 'has("permissions") | not' .claude/settings.json
 check "init --shared: deny rules go to settings.local.json" [ "$(jq -c .permissions.deny .claude/settings.local.json)" = "$DENY_JSON" ]
 check "init --shared: settings.local.json has no agent key" jq -e 'has("agent") | not' .claude/settings.local.json
