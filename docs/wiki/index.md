@@ -35,7 +35,7 @@ Read this first. Open a page only when it is relevant. Schema and promotion rule
 - [Headless probes](how-to/headless-probes.md): neutral --agents agent for permission probes; clean, cheap claude -p generation call (active, 2026-11-22)
 - [Release](how-to/release.md): semver from v3.0.0, tag is the version, Korean release note, who runs git tag / gh release (active, 2026-11-23)
 - [Move the checkout](how-to/move-checkout.md): quit sessions, `mv`, `./install.sh`, carry `~/.claude/projects/<encoded>` and trust, `git worktree repair` for lanes (active, 2026-11-27)
-- [Per-issue work folders](how-to/work-folders.md): lane <issue#>/ls/rm, -C parallel asks, lane_setup, progress mirroring, risks (active, 2026-11-26)
+- [Per-issue work folders](how-to/work-folders.md): lane <issue#>/ls/rm, -C parallel asks, lane_setup, progress mirroring, risks (active, 2026-11-27)
 
 ## Decisions
 - [0001 Keep herdr panes](decisions/0001-keep-herdr-panes-despite-subagent-model.md): subagent model works; panes kept; superseded by 0011 (superseded, 2026-11-01)
@@ -50,7 +50,7 @@ Read this first. Open a page only when it is relevant. Schema and promotion rule
 - [0010 Harness acts only in a checkout](decisions/0010-herdr-optional-gate-by-checkout.md): gate/resume key on .harness/asks (made by `harness init`); per-repo conductor agent; no HERDR_ENV switch; `harness wait`/`watch`; doctor and `--worktree` removed in step 4 (active, 2026-11-26)
 - [0011 One runner: headless](decisions/0011-single-runner-headless.md): headless is the only runner; herdr viewer removed by 0013; prune plan steps 1-7 done (active, 2026-11-03)
 - [0012 Gate shrink](decisions/0012-gate-shrink.md): gate kept and trimmed to observed use (552 → 513 lines); permissions-rules and native-subagent options rejected (active, 2026-11-26)
-- [0013 Remove herdr](decisions/0013-remove-herdr.md): herdr removed from runner/gate/install; `open-watch` may use a herdr pane first (amended 2026-11-26, #257); watch via `harness watch` in any terminal (active, 2026-11-26)
+- [0013 Remove herdr](decisions/0013-remove-herdr.md): herdr removed from runner/gate/install; `open-watch` may use a herdr pane first (amended 2026-11-26, #257); watch via `harness watch` in any terminal (active, 2026-11-27)
 - [0014 init writes deny rules](decisions/0014-init-writes-deny-rules.md): `harness init` adds nine worker deny rules to settings.local.json; ask warns when missing; seatbelt, not a sandbox; `denied[]` partial-list note resolved (active, 2026-11-26)
 - [0015 Korean writing rules](decisions/0015-korean-writing-rules.md): Korean for the user written directly under six conductor-prompt rules plus the on-demand `korean-writing` skill; no STE-style drafting (active, 2026-11-20)
 - [0016 init writes AGENTS.md rules](decisions/0016-init-writes-agents-rules.md): `harness init` owns a marker block in AGENTS.md; lane never gets a git-visible change; CLAUDE.md only warned about (active, 2026-11-26)

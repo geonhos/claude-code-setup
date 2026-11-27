@@ -1,10 +1,10 @@
 #!/bin/bash
-# harness open-watch (issue #102): fake herdr / tmux / osascript on PATH record their arguments.
+# harness open-watch (issue #102): fake herdr / tmux on PATH record their arguments.
 # Run: /bin/bash tests/openwatch.test.sh
 set -u
 . "$(dirname "$0")/harness-lib.sh"
 BIN=$(mktemp -d); WORKS="$WORKS $BIN"
-for t in herdr tmux osascript open; do
+for t in herdr tmux; do
   printf '#!/bin/bash\nprintf "%%s|%%s\\n" "$(basename "$0")" "$*" >> "$OW_LOG"\n[ "$(basename "$0")" = herdr ] && [ "$1 $2" = "pane split" ] && echo "{\\"result\\":{\\"pane\\":{\\"pane_id\\":\\"w:p9\\"}}}"\n[ -n "${OW_RUNFAIL:-}" ] && [ "$1 $2" = "pane run" ] && exit 1\n[ -n "${OW_FAIL:-}" ] && exit 1\nexit 0\n' > "$BIN/$t"
   chmod +x "$BIN/$t"
 done
@@ -21,15 +21,12 @@ check "herdr: run in new pane with abs path" grep -q "^herdr|pane run w:p9 harne
 check "herdr: message" grep -q "herdr pane" <<<"$OUT"
 ow TMUX=/tmp/x,1,0 -- open-watch analyst
 check "tmux: split-window" grep -q "^tmux|split-window -h harness -C $ABS watch analyst" "$OW_LOG"
-check "tmux: not osascript" not_grep '^osascript' "$OW_LOG"
 ow HERDR_ENV=1 TMUX=/tmp/x -- open-watch analyst
 check "herdr wins over tmux" not_grep '^tmux' "$OW_LOG"
-ow -- open-watch reviewer
-check "terminal: osascript" grep -q "^osascript|-e tell application \"Terminal\" to do script \"harness -C $ABS watch reviewer\"" "$OW_LOG"
-# path with a space and a quote: shell-quoted, then AppleScript-escaped
+# path with a space and a quote: shell-quoted
 SP="$WORK/a b\"c"; mkdir -p "$SP"
-ow -- -C "$SP" open-watch implementer
-check "terminal: space/quote path escaped" grep -qF 'harness -C '"$(printf '%q' "$(cd "$SP" && pwd)" | sed 's/[\\"]/\\&/g')"' watch implementer' "$OW_LOG"
+ow TMUX=/tmp/x -- -C "$SP" open-watch implementer
+check "tmux: space/quote path shell-quoted" grep -qF "split-window -h harness -C $(printf '%q' "$(cd "$SP" && pwd)") watch implementer" "$OW_LOG"
 ow -- open-watch bogus
 check "unknown role refused" [ "$RC" -ne 0 ]
 check "unknown role: nothing launched" [ ! -s "$OW_LOG" ]
@@ -37,26 +34,10 @@ check "unknown role: nothing launched" [ ! -s "$OW_LOG" ]
 ow HERDR_ENV=1 TMUX=/tmp/x OW_RUNFAIL=1 -- open-watch analyst
 check "herdr run failure: pane closed" grep -q "^herdr|pane close w:p9" "$OW_LOG"
 check "herdr run failure: falls to tmux" grep -q "^tmux|split-window" "$OW_LOG"
-# Ghostty: new window through open -na, abs command; no Terminal.app
-ow TERM_PROGRAM=ghostty -- open-watch implementer
-check "ghostty: open -na Ghostty" grep -q "^open|-na Ghostty --args -e /bin/bash -c harness -C $ABS watch implementer" "$OW_LOG"
-check "ghostty: not osascript" not_grep '^osascript' "$OW_LOG"
-ow TERM_PROGRAM=ghostty TMUX=/tmp/x -- open-watch analyst
-check "tmux wins over ghostty" not_grep '^open|' "$OW_LOG"
-ow TERM_PROGRAM=ghostty OW_FAIL=1 -- open-watch analyst
-check "ghostty failure: prints command" grep -q "no pane backend.*harness -C $ABS watch analyst" <<<"$OUT"
-check "ghostty failure: not Terminal.app" not_grep '^osascript' "$OW_LOG"
-# no backend: the Terminal launcher fails too -> the command is printed, exit 0
-ow OW_FAIL=1 -- open-watch analyst
+# no backend: herdr and tmux absent -> the command is printed, exit 0
+ow -- open-watch analyst
 check "no backend: exit 0" [ "$RC" -eq 0 ]
 check "no backend: command shown" grep -q "no pane backend.*harness -C $ABS watch analyst" <<<"$OUT"
-# osascript that hangs (first Automation prompt): killed at the deadline, command printed
-printf '#!/bin/bash\nsleep 30\n' > "$BIN/osascript.slow"
-mkdir -p "$BIN/slow"; cp "$BIN/osascript.slow" "$BIN/slow/osascript"; chmod +x "$BIN/slow/osascript"; rm -f "$BIN/osascript.slow"
-T0=$SECONDS
-OUT=$(env -u HARNESS_ROLE -u HERDR_ENV -u TMUX HARNESS_OSASCRIPT_TIMEOUT=1 PATH="$BIN/slow:$HERE/../bin:/usr/bin:/bin:$(dirname "$(command -v jq)")" /bin/bash "$HARNESS" open-watch analyst 2>&1); RC=$?
-check "osascript hang: returns within the deadline" [ $((SECONDS - T0)) -lt 15 ]
-check "osascript hang: exit 0, command printed" grep -q "no pane backend.*harness -C $ABS watch analyst" <<<"$OUT"
 # control characters in the folder path: command printed, nothing launched
 CP="$WORK/ctl"$'\t'"dir"; mkdir -p "$CP"
 ow -- -C "$CP" open-watch analyst
