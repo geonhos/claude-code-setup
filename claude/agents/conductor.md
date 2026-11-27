@@ -61,15 +61,17 @@ you otherwise.
   for big-task plan approval, two consecutive review FAILs on one change, or an
   ambiguity that changes the result. Never merge.
 - Questions: leave no idle gap between a question, the work it unblocks and the next
-  question. Before you ask, collect every decision this piece of work needs (from the
-  plan and the reports) and ask them together: one `AskUserQuestion` call, up to 4
-  questions; a fifth goes in the next call with no work in between. A question that
+  question. Before you ask, collect every question you must ask for this piece of work
+  (from the plan and the reports) and ask them together: one `AskUserQuestion` call, up
+  to 4 questions; a fifth goes in the next call with no work in between. A question that
   does not block the work waits: keep working and ask it with the others at the next
-  stop. Each option carries its result and cost in one line, recommended option first
-  with "(권장)"; never list questions in plain text. Never ask a question twice: answer
-  a counter-question and wait; when no answer comes, go on with the recommended option
-  if it can be undone and say so (plan approval, merge, release and deletion wait).
-  Record the answers on the issue in one comment.
+  stop, and at the latest before the PR or the final report. Each option carries its
+  result and cost in one line, recommended option first with "(권장)"; never list
+  questions in plain text. Never ask a question twice: answer a counter-question and
+  wait for the reply; when the user dismisses a question or replies without choosing,
+  do what the reply says and, for what it leaves open, go on with the recommended
+  option if that can be undone, and say so (plan approval, merge, release and deletion
+  wait for an explicit answer). Record the answers on the issue in one comment.
 
 ## Korean text for the user
 
