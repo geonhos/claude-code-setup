@@ -2,7 +2,7 @@
 type: how-to
 status: active
 updated: 2026-11-27
-sources: ["https://github.com/geonhos/claude-code-setup/issues/291", install.sh:225-240, install.sh:322-345, install.sh:255-260, install.sh:358-364, tests/uninstall.test.sh]
+sources: ["https://github.com/geonhos/my-claude-harness/issues/291", install.sh:225-240, install.sh:322-345, install.sh:255-260, install.sh:358-364, tests/uninstall.test.sh]
 verified_by: tests/uninstall.test.sh (install and uninstall parts only; the Claude Code state steps are unverified)
 ---
 # Move or rename the harness checkout

@@ -72,7 +72,7 @@ agents, skills, bin, 훅은 이 체크아웃에서 심링크되고 기본값은 
 ## 제거
 
 ```bash
-cd ~/workspace/claude-code-setup
+cd ~/workspace/my-claude-harness
 ./install.sh --uninstall --dry-run   # 지울 것만 출력합니다. 아무것도 바꾸지 않습니다
 ./install.sh --uninstall             # 실제로 지웁니다
 ```
