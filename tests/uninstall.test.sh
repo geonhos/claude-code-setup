@@ -242,6 +242,13 @@ uninst_from "$REPO" "$T" --dry-run
 check "12w wrapper hook: not listed for removal" [ "$(grep -c '^remove hook ' "$T/out.txt")" -eq 0 ]
 uninst_from "$REPO" "$T"
 check "12w wrapper hook kept" [ "$(jq -S . "$T/claude/settings.json")" = "$BEFORE" ]
+# no-space metacharacter forms are kept too (mutant target: the metacharacter filter)
+jq -n '{hooks:{PreToolUse:[{matcher:"Bash",hooks:[{type:"command",command:"/opt/run.sh;/gone/claude/hooks/conductor-gate.sh"},{type:"command",command:"/x/$(id)/claude/hooks/conductor-gate.sh"}]}]}}' > "$T/claude/settings.json"
+BEFORE=$(jq -S . "$T/claude/settings.json")
+uninst_from "$REPO" "$T" --dry-run
+check "12w metacharacter hooks: not listed for removal" [ "$(grep -c '^remove hook ' "$T/out.txt")" -eq 0 ]
+uninst_from "$REPO" "$T"
+check "12w metacharacter hooks kept" [ "$(jq -S . "$T/claude/settings.json")" = "$BEFORE" ]
 # a stale bare path with a space (old checkout path had a space) is kept: documented fail-safe
 jq -n '{hooks:{PreToolUse:[{matcher:"Bash",hooks:[{type:"command",command:"/gone/sp ace/claude/hooks/conductor-gate.sh"}]}]}}' > "$T/claude/settings.json"
 BEFORE=$(jq -S . "$T/claude/settings.json")

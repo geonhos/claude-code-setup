@@ -204,6 +204,11 @@ jq -n --arg g "$T13/other/claude/hooks/conductor-gate.sh" '{hooks:{PreToolUse:[{
 install_in "$T13"
 check "other checkout's gate kept" jq -e --arg g "$T13/other/claude/hooks/conductor-gate.sh" '[.hooks.PreToolUse[].hooks[] | select(.command == $g)] | length == 1' "$T13/claude/settings.json" >/dev/null
 check "other checkout's gate warned about" grep -q 'belongs to another checkout' "$T13/out.txt"
+# no-space metacharacter hooks of the user are kept (mutant target: the metacharacter filter)
+T14=$(newdir metahooks); mkdir -p "$T14/claude"
+jq -n '{hooks:{PreToolUse:[{matcher:"Bash",hooks:[{type:"command",command:"/opt/run.sh;/gone/claude/hooks/conductor-gate.sh"},{type:"command",command:"/x/$(id)/claude/hooks/conductor-gate.sh"}]}]}}' > "$T14/claude/settings.json"
+install_in "$T14"
+check "metacharacter hooks kept by install" jq -e '[.hooks.PreToolUse[].hooks[].command | select(. == "/opt/run.sh;/gone/claude/hooks/conductor-gate.sh" or . == "/x/$(id)/claude/hooks/conductor-gate.sh")] | length == 2' "$T14/claude/settings.json" >/dev/null
 
 # a failed write must fail loudly
 T11=$(newdir rofile); mkdir -p "$T11/claude"; echo '{}' > "$T11/claude/settings.json"; chmod 444 "$T11/claude/settings.json"

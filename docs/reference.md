@@ -24,7 +24,7 @@ cd ~/workspace/claude-code-setup
 
 이 체크아웃이 설치한 것만 지웁니다(링크, 훅 세 개, 키 네 개). 백업(`*.bak.<ts>`)은 남깁니다.
 
-- `--dry-run`: `remove …` 줄만 출력하고 `dry run: nothing was changed`로 끝납니다. 아무것도 바꾸지 않고 live-run 검사도 하지 않습니다.
+- `--dry-run`: 아무것도 바꾸지 않고 live-run 검사도 하지 않습니다. 실제 실행과 같은 `remove …` 줄, 경고, `keep key …` 줄, 백업 목록, 힌트 두 줄을 출력하고 `dry run: nothing was changed`로 끝납니다.
 - `--force`: 살아 있는 `harness-run`이 있어도 지웁니다. 없으면 거부합니다(워커가 `harness-verify`를 잃습니다). 거부는 프로세스 목록에서 명령의 첫 두 단어 중 하나의 basename이 `harness-run`인지로 판단합니다.
 - 인자가 틀리거나 `settings.json`이 객체 JSON이 아니면 아무것도 바꾸지 않고 실패합니다. `settings.json`이 없으면 링크만 처리합니다.
 - 지울 것이 없으면 `nothing to remove`를 출력하고 끝납니다.
