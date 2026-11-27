@@ -129,7 +129,7 @@ check "wait --timeout 08: accepted (no ask: rc 3, not a usage error)" [ "$RC" -e
 bsetup
 hrun wait analyst
 check "wait: no ask rc 3" [ "$RC" -eq 3 ]
-export FAKE_CLAUDE_MODE=slow60
+export FAKE_CLAUDE_MODE=slow100
 hrun ask analyst "q13b" --timeout 1000
 check "wait: slow ask left running (4)" [ "$RC" -eq 4 ]
 note_run
