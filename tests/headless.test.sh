@@ -140,7 +140,7 @@ export FAKE_REPORT_CMD="mkdir -p $WORK/.harness/reports && printf '# analyst rep
 hrun ask analyst "q"
 check "default: headless rc 0" [ "$RC" -eq 0 ]
 check "default: no agent start" not_logged "agent start"
-check "default: config has only _doc" jqt 'keys == ["_doc"]' .harness/config.json
+check "default: no config.json is created (#257)" [ ! -e .harness/config.json ]
 # 14. permission mode other than auto: warning; ## Run line in the ask log
 hsetup; export FAKE_PERM=default
 hrun ask analyst "q"
