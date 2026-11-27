@@ -1,4 +1,4 @@
-# claude-code-setup
+# my-claude-harness
 
 A conductor/worker harness for Claude Code. The default session is the conductor: it cannot read
 or edit source and delegates through `harness ask` (`/analyze`, `/implement`, `/review`) to
