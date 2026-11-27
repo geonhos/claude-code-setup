@@ -13,6 +13,27 @@ run
 check "no args shows usage" [ "$RC" -eq 1 ]
 check "usage text" grep -q "harness ask" <<<"$OUT"
 
+# #304: help forms print usage on stdout and exit 0; error paths keep usage on stderr, rc 1
+setup
+NOREPO=$(mktemp -d); WORKS="$WORKS $NOREPO"
+hsplit() { # hsplit ARGS... -> SOUT, SERR, RC (cwd: a dir without harness init, worker session)
+  SOUT=$(cd "$NOREPO" && HARNESS_ROLE=worker $GUARD /bin/bash "$HARNESS" "$@" 2>"$NOREPO/.err"); RC=$?
+  SERR=$(cat "$NOREPO/.err")
+}
+for h in --help -h help "-C $NOREPO --help" "-C $NOREPO -h" "-C $NOREPO help"; do
+  hsplit $h
+  check "harness $h: rc 0" [ "$RC" -eq 0 ]
+  check "harness $h: usage on stdout" grep -q "^usage:" <<<"$SOUT"
+  check "harness $h: stderr empty" [ -z "$SERR" ]
+done
+check "usage lists help" grep -q "harness help | --help | -h" <<<"$SOUT"
+hsplit
+check "no args: rc 1" [ "$RC" -eq 1 ]
+check "no args: usage on stderr, stdout empty" bash -c 'grep -q "^usage:" <<<"$1" && [ -z "$2" ]' _ "$SERR" "$SOUT"
+hsplit no-such-command
+check "unknown command: rc 1" [ "$RC" -eq 1 ]
+check "unknown command: usage on stderr, stdout empty" bash -c 'grep -q "^usage:" <<<"$1" && [ -z "$2" ]' _ "$SERR" "$SOUT"
+
 setup
 run ask analyst "x" --timeout
 check "ask --timeout without value rc" [ "$RC" -eq 1 ]

@@ -36,8 +36,11 @@ ASK_DIR=".harness/asks"
 # parsed once by ask_parse_args (cmd_ask); ask_inner only reads them
 ASK_TIMEOUT=$DEFAULT_TIMEOUT; ASK_TIMEOUT_SET=0; ASK_KEEP=0; ASK_BAD=0; ASK_NOLANE=0; ASK_HINT=0; ASK_INSTR=
 
+# usage: text to stderr, exit 1 (error path); `usage help` (harness help|--help|-h): text to stdout, exit 0
 usage() {
-  cat >&2 <<EOF
+  local fd=2 rc=1
+  [ "${1:-}" = help ] && { fd=1; rc=0; }
+  cat >&$fd <<EOF
 usage:
   harness ask    <agent> [--timeout MS (default: implementer $IMPLEMENTER_TIMEOUT, others $DEFAULT_TIMEOUT)] [--keep] [--no-lane] [--] '<instruction>'   (options may also follow the instruction)
   harness report <agent>
@@ -51,9 +54,10 @@ usage:
   harness close  <agent> [--force]
   harness wiki-lint [DIR]
   harness metrics [--since YYYY-MM-DD] [--json]
+  harness help | --help | -h
 agents: $AGENTS
 EOF
-  exit 1
+  exit $rc
 }
 
 die() { echo "harness: $*" >&2; exit 1; }
@@ -834,11 +838,14 @@ cmd_init() {
 }
 
 need jq
+# help: usage on stdout, exit 0 (reads and writes nothing); also after -C DIR below
+case "${1:-}" in help|--help|-h) usage help ;; esac
 # global -C DIR (like git -C): every subcommand then runs in DIR, whose .harness/ state is its own
 if [ "${1:-}" = -C ]; then
   [ -n "${2:-}" ] || usage
   cd "$2" 2>/dev/null || die "cannot enter $2"
   shift 2
+  case "${1:-}" in help|--help|-h) usage help ;; esac
 fi
 # _defaults prints the shared defaults as KEY=VALUE (tests: prose copies are checked against it)
 if [ "${1:-}" = _defaults ]; then
