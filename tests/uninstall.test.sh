@@ -199,6 +199,69 @@ PS_FILE="$T/ps.txt" uninst_from "$REPO" "$T" --force
 check "10 --force rc 0" [ "$RC" -eq 0 ]
 check "10 --force removed the links" [ "$(links_into "$T" "$REPO")" -eq 0 ]
 
+# unreadable HARNESS_UNINSTALL_PS must not turn the guard off silently
+T=$(newdir t10c); seed "$T"; inst_from "$REPO" "$T"; SUM=$(tree_sum "$T")
+PS_FILE="$T/missing-ps.txt" uninst_from "$REPO" "$T"
+check "10 missing ps file: rc 1" [ "$RC" -eq 1 ]
+check "10 missing ps file: message" grep -q 'HARNESS_UNINSTALL_PS=.* is not a readable file' "$T/out.txt"
+rm -f "$T/out.txt"
+check "10 missing ps file: nothing changed" [ "$(tree_sum "$T")" = "$SUM" ]
+uninst_from "$REPO" "$T"   # /dev/null still works
+check "10 /dev/null ps file works" [ "$RC" -eq 0 ]
+
+# --- 12. unusual checkout paths (Major 1): own hooks are matched before any character filter ----------
+# copy_to SRC DEST: copy the tree without .git/.harness
+copy_to() { mkdir -p "$2"; (cd "$1" && tar --exclude=./.git --exclude=./.harness -cf - .) | (cd "$2" && tar -xf -); }
+# hook_count FILE: hooks of any checkout in settings
+hook_count() { jq '[.. | .command? | strings | select(contains("/claude/hooks/"))] | length' "$1"; }
+for variant in "ko:작업/ccs" "sp:sp ace/ccs" "gl:gl[a]b*/ccs"; do
+  tag=${variant%%:*}; sub=${variant#*:}
+  T=$(newdir t12$tag); seed "$T"; copy_to "$REPO" "$T/$sub"
+  inst_from "$T/$sub" "$T"
+  check "12$tag premise: 14 links installed" [ "$(links_into "$T" "$T/$sub")" -eq 14 ]
+  check "12$tag premise: 3 hooks installed next to the 4 user hooks" [ "$(hook_count "$T/claude/settings.json")" -eq 3 ]
+  uninst_from "$T/$sub" "$T"
+  check "12$tag rc 0" [ "$RC" -eq 0 ]
+  check "12$tag 14 remove link lines" [ "$(grep -c '^remove link ' "$T/out.txt")" -eq 14 ]
+  check "12$tag no link left" [ "$(links_into "$T" "$T/$sub")" -eq 0 ]
+  check "12$tag 3 hooks removed" [ "$(grep -c '^remove hook ' "$T/out.txt")" -eq 3 ]
+  check "12$tag no hook of the checkout left" [ "$(jq --arg r "$T/$sub" '[.. | .command? | strings | select(startswith($r + "/claude/hooks/"))] | length' "$T/claude/settings.json")" -eq 0 ]
+done
+# moved checkout whose old path was Korean-named: the stale bare paths are removed
+T=$(newdir t12mv); seed "$T"; copy_to "$REPO" "$T/old/작업"
+inst_from "$T/old/작업" "$T"; rm -rf "$T/old"
+uninst_from "$REPO" "$T"
+check "12mv Korean old path: rc 0" [ "$RC" -eq 0 ]
+check "12mv Korean old path: stale hooks removed" [ "$(jq '[.. | .command? | strings | select(contains("/claude/hooks/"))] | length' "$T/claude/settings.json")" -eq 0 ]
+check "12mv Korean old path: /opt hooks kept" [ "$(jq '[.. | .command? | strings | select(startswith("/opt/"))] | length' "$T/claude/settings.json")" -eq 4 ]
+# wrapper-form hook of the user: kept (mutant target: the whitespace filter)
+T=$(newdir t12w); mkdir -p "$T/claude"
+jq -n '{hooks:{PreToolUse:[{matcher:"Bash",hooks:[{type:"command",command:"/opt/wrap.sh /gone/claude/hooks/conductor-gate.sh"}]}]}}' > "$T/claude/settings.json"
+BEFORE=$(jq -S . "$T/claude/settings.json")
+uninst_from "$REPO" "$T" --dry-run
+check "12w wrapper hook: not listed for removal" [ "$(grep -c '^remove hook ' "$T/out.txt")" -eq 0 ]
+uninst_from "$REPO" "$T"
+check "12w wrapper hook kept" [ "$(jq -S . "$T/claude/settings.json")" = "$BEFORE" ]
+# a stale bare path with a space (old checkout path had a space) is kept: documented fail-safe
+jq -n '{hooks:{PreToolUse:[{matcher:"Bash",hooks:[{type:"command",command:"/gone/sp ace/claude/hooks/conductor-gate.sh"}]}]}}' > "$T/claude/settings.json"
+BEFORE=$(jq -S . "$T/claude/settings.json")
+uninst_from "$REPO" "$T"
+check "12w stale path containing a space kept (fail-safe)" [ "$(jq -S . "$T/claude/settings.json")" = "$BEFORE" ]
+
+# --- 13. *.bak.* links and a user's own env {} --------------------------------------------------------
+T=$(newdir t13a); mkdir -p "$T/claude/agents" "$T/bin"
+ln -s "$REPO/claude/agents/analyst.md" "$T/claude/agents/analyst.md.bak.20250101000000"
+ln -s "$REPO/claude/agents/solo.md" "$T/claude/agents/solo.md"
+uninst_from "$REPO" "$T"
+check "13 link named *.bak.* kept" [ -L "$T/claude/agents/analyst.md.bak.20250101000000" ]
+check "13 the ordinary link next to it removed" [ ! -L "$T/claude/agents/solo.md" ]
+# a pre-existing "env": {} stays when only a non-env key is removed (U6)
+T=$(newdir t13b); mkdir -p "$T/claude"
+echo '{"promptCacheTtl":"1h","env":{},"model":"m"}' > "$T/claude/settings.json"
+uninst_from "$REPO" "$T"
+check "13 promptCacheTtl removed" jq -e 'has("promptCacheTtl") | not' "$T/claude/settings.json" >/dev/null
+check "13 user's empty env kept" [ "$(jq -c .env "$T/claude/settings.json")" = '{}' ]
+
 # --- symlinked settings.json stays a symlink -----------------------------------------------------
 T=$(newdir t11); mkdir -p "$T/claude" "$T/real"; echo '{"promptCacheTtl":"1h","model":"x"}' > "$T/real/settings.json"
 ln -s "$T/real/settings.json" "$T/claude/settings.json"

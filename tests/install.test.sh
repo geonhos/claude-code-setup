@@ -189,6 +189,14 @@ check "moved: no .bak for moved agent links" [ -z "$(ls "$T12"/claude/agents/*.b
 check "moved: no skills.bak for moved skill links" [ -z "$(ls -d "$T12"/claude/skills.bak/* 2>/dev/null)" ]
 check "moved: live foreign symlink still backed up" [ "$(readlink "$T12"/claude/agents/solo.md.bak.* 2>/dev/null)" = "$T12/liveother.md" ]
 check "moved: no backup warning for moved links" bash -c '[ "$(grep -c "backed up" "$1")" -eq 1 ]' _ "$T12/out.txt"
+# a moved checkout whose old path was Korean-named: its stale hooks are pruned too
+T12k=$(newdir movedko); mkdir -p "$T12k/claude" "$T12k/old/작업"
+(cd "$REPO" && tar --exclude=./.git --exclude=./.harness -cf - .) | (cd "$T12k/old/작업" && tar -xf -)
+CLAUDE_DIR="$T12k/claude" BIN_DIR="$T12k/bin" /bin/bash "$T12k/old/작업/install.sh" >"$T12k/out0.txt" 2>&1
+rm -rf "$T12k/old"
+install_in "$T12k"
+check "moved Korean path: rc 0" [ "$RC" -eq 0 ]
+check "moved Korean path: 0 stale hooks" [ "$(jq '[.. | .command? | strings | select(contains("/claude/hooks/")) | select(startswith("'"$REPO"'/") | not)] | length' "$T12k/claude/settings.json")" -eq 0 ]
 # another existing checkout's hooks are kept, with a warning
 T13=$(newdir twogates); mkdir -p "$T13/claude" "$T13/other/claude/hooks"
 printf '#!/bin/sh\n' > "$T13/other/claude/hooks/conductor-gate.sh"

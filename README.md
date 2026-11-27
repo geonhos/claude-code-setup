@@ -82,6 +82,7 @@ cd ~/workspace/claude-code-setup
 - 지우는 것: `~/.claude/agents`, `~/.claude/skills`, `~/.local/bin`에서 이 체크아웃으로 이어지는 링크(현재 14개), `~/.claude/settings.json`의 훅 항목 세 개(게이트, resume, notify), 키 네 개(`promptCacheTtl`, `subagentPromptCacheTtl`, `env.BASH_DEFAULT_TIMEOUT_MS`, `env.BASH_MAX_TIMEOUT_MS`). 키는 값이 install이 쓴 값과 같을 때만 지웁니다. 값이 다르면 남기고 알립니다. 비게 된 `env`도 지웁니다.
 - 지우지 않는 것: 다른 훅과 다른 키, `*.bak.<타임스탬프>` 백업 파일(목록만 출력합니다), 다른 체크아웃에서 만든 링크와 훅(그 체크아웃이 남아 있으면 경고만 하고, 그쪽에서 `./install.sh --uninstall`을 실행해야 합니다), `~/.claude/projects`, 저장소별 `harness init` 상태.
 - 링크가 이 체크아웃에서 왔는지는 가리키는 경로로 판단합니다. 일반 파일과 디렉터리는 건드리지 않습니다. 끊어진 링크는 이 체크아웃에 있는 이름이고 대상 경로 끝이 같을 때만 지웁니다.
+- 이 체크아웃의 훅은 경로에 한글이나 공백이 있어도 지웁니다. 다만 옮기기 전 옛 경로에 공백이나 셸 특수문자가 있었다면, 그 옛 훅은 사용자가 만든 래퍼 명령과 구별할 수 없어 남깁니다. 그런 훅은 `settings.json`에서 직접 지웁니다.
 - 실제로 지울 때는 `settings.json`을 먼저 `*.bak.<타임스탬프>`로 백업합니다.
 - 저장소별 상태는 "레포에 적용"의 되돌리기 항목대로 직접 지웁니다.
 

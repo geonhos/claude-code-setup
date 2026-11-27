@@ -44,9 +44,14 @@ dangling_shaped() {
 classify_hook() {
   local c=$1 b
   case "$c" in /*) ;; *) echo other; return 0 ;; esac
-  case "$c" in *[!A-Za-z0-9._/+@=-]*) echo other; return 0 ;; esac
+  # ours first: an exact match is ours whatever characters $REPO holds (non-ASCII, space, glob characters)
   for b in $HOOK_BASES; do
     [ "$c" = "$REPO/claude/hooks/$b" ] && { echo ours; return 0; }
+  done
+  # a command with whitespace or shell metacharacters is a wrapper or has arguments: never ours to judge
+  case "$c" in *[[:space:]]*) echo other; return 0 ;; esac
+  case "$c" in *[\;\&\|\<\>\(\)\$\`\\\"\'\*\?\[\]\{\}\!\#~]*) echo other; return 0 ;; esac
+  for b in $HOOK_BASES; do
     case "$c" in
       */claude/hooks/"$b") if [ -e "$c" ]; then echo foreign; else echo stale; fi; return 0 ;;
     esac
@@ -204,6 +209,9 @@ if [ "${1:-}" = "--uninstall" ]; then
   fi
   # live-run guard: the links and harness-verify are global, so any harness-run on the machine counts
   if [ "$dry" -eq 0 ] && [ "$force" -eq 0 ]; then
+    if [ -n "${HARNESS_UNINSTALL_PS:-}" ] && [ ! -r "$HARNESS_UNINSTALL_PS" ]; then
+      die "HARNESS_UNINSTALL_PS=$HARNESS_UNINSTALL_PS is not a readable file"
+    fi
     if { if [ -n "${HARNESS_UNINSTALL_PS:-}" ]; then cat "$HARNESS_UNINSTALL_PS"; else ps -axo pid=,command=; fi; } 2>/dev/null \
       | awk '{ for (i = 2; i <= 3 && i <= NF; i++) { n = split($i, p, "/"); if (p[n] == "harness-run") f = 1 } } END { exit !f }'; then
       die "a harness-run process is alive; its worker would lose harness-verify. Wait for it, or pass --force"
