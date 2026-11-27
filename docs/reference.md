@@ -63,7 +63,7 @@ harness를 쓰려는 저장소에서 한 번 실행합니다. `.harness/asks/`(�
 
 ## CLI
 
-`harness` 인자 없이 실행하면 전체 usage가 나옵니다(`init`, `ask`, `wait`, `watch`, `open-watch`, `report`, `status`, `metrics`, `wiki-lint`, `close`, `lane`). exit code는 `bin/harness` 머리 주석에 있습니다(`ask`/`report` 0-5, `wait` 0·3·4). 작업 폴더에서 한 ask와 close도 주 폴더에 `.harness/asks`가 있으면 그 `progress.jsonl`에 `lane` 필드를 달고 함께 기록됩니다. `lane` 값은 브랜치가 `feat|fix|docs/<n>-*` 꼴이면(`<n>`은 숫자로 시작하고 뒤에 `-`가 하나라도 있어야 합니다) 접두사와 첫 `-` 사이의 글자입니다. `feat/12abc-x`면 `12abc`입니다. 그 밖의 브랜치나 detached HEAD면 폴더 이름입니다. 그래서 `harness lane rm` 뒤에도 `harness metrics`에 남습니다.
+`harness help`, `--help`, `-h`는 usage를 stdout에 출력하고 exit 0입니다(`-C <dir>` 뒤에서도 같습니다). `harness`를 인자 없이 실행하거나 모르는 명령을 주면 usage를 stderr에 출력하고 exit 1입니다. 전체 usage는 다음 명령을 보여 줍니다(`init`, `ask`, `wait`, `watch`, `open-watch`, `report`, `status`, `metrics`, `wiki-lint`, `close`, `lane`). exit code는 `bin/harness` 머리 주석에 있습니다(`ask`/`report` 0-5, `wait` 0·3·4). 작업 폴더에서 한 ask와 close도 주 폴더에 `.harness/asks`가 있으면 그 `progress.jsonl`에 `lane` 필드를 달고 함께 기록됩니다. `lane` 값은 브랜치가 `feat|fix|docs/<n>-*` 꼴이면(`<n>`은 숫자로 시작하고 뒤에 `-`가 하나라도 있어야 합니다) 접두사와 첫 `-` 사이의 글자입니다. `feat/12abc-x`면 `12abc`입니다. 그 밖의 브랜치나 detached HEAD면 폴더 이름입니다. 그래서 `harness lane rm` 뒤에도 `harness metrics`에 남습니다.
 
 ## 워커, 모델, 상한
 
