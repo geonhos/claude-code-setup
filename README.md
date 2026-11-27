@@ -1,4 +1,4 @@
-# claude-code-setup
+# my-claude-harness
 
 Claude Code의 메인 세션을 **conductor(지휘 세션)** 로 쓰는 사용자 단위 설정입니다. 소스를 읽거나 고치거나 검증하는 일은 conductor가 직접 하지 않고, 백그라운드에서 도는 headless Claude 워커 셋에게 맡깁니다.
 
@@ -16,8 +16,8 @@ Claude Code의 메인 세션을 **conductor(지휘 세션)** 로 쓰는 사용�
 요구 사항: macOS의 `/bin/bash` 3.2, `jq`, `gh`, Claude Code(`claude`) ≥ 2.1.277, `PATH`에 `~/.local/bin`. `install.sh`는 `jq`만 확인합니다. Claude Code 버전과 `gh`는 직접 확인하세요.
 
 ```bash
-git clone https://github.com/geonhos/claude-code-setup ~/workspace/claude-code-setup
-cd ~/workspace/claude-code-setup
+git clone https://github.com/geonhos/my-claude-harness ~/workspace/my-claude-harness
+cd ~/workspace/my-claude-harness
 ./install.sh        # 여러 번 실행해도 결과가 같습니다
 ```
 
@@ -51,7 +51,7 @@ claude                  # 평소처럼 시작합니다
 harness 체크아웃에서 한 번 실행합니다.
 
 ```bash
-cd ~/workspace/claude-code-setup
+cd ~/workspace/my-claude-harness
 git pull --ff-only
 ./install.sh
 ```

@@ -8,8 +8,8 @@
 - `install.sh`는 `jq`만 확인합니다. Claude Code 버전과 `gh`는 직접 확인하세요.
 
 ```bash
-git clone https://github.com/geonhos/claude-code-setup ~/workspace/claude-code-setup
-cd ~/workspace/claude-code-setup
+git clone https://github.com/geonhos/my-claude-harness ~/workspace/my-claude-harness
+cd ~/workspace/my-claude-harness
 ./install.sh
 ```
 
