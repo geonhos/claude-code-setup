@@ -261,8 +261,8 @@ if [ "${1:-}" = "--uninstall" ]; then
     done <<EOF
 $(hook_commands "$SETTINGS")
 EOF
-    dels="[]"; envdel=0
-    for kv in 'promptCacheTtl|1h' 'subagentPromptCacheTtl|1h' 'env.BASH_DEFAULT_TIMEOUT_MS|600000' 'env.BASH_MAX_TIMEOUT_MS|7200000'; do
+    dels="[]"; envdel=0; attrdel=0
+    for kv in 'promptCacheTtl|1h' 'subagentPromptCacheTtl|1h' 'env.BASH_DEFAULT_TIMEOUT_MS|600000' 'env.BASH_MAX_TIMEOUT_MS|7200000' 'attribution.commit|' 'attribution.pr|'; do
       key=${kv%%|*}; val=${kv#*|}
       path=$(printf '%s' "$key" | jq -R -c 'split(".")')
       st=$(jq -r --argjson p "$path" --arg v "$val" '(try getpath($p) catch null) as $x | if $x == null then "absent" elif $x == $v then "equal" else "diff" end' "$SETTINGS")
@@ -270,7 +270,7 @@ EOF
         equal)
           echo "$verb key $key"; nset=$((nset + 1))
           dels=$(printf '%s' "$dels" | jq -c --argjson p "$path" '. + [$p]')
-          case "$key" in env.*) envdel=1 ;; esac ;;
+          case "$key" in env.*) envdel=1 ;; attribution.*) attrdel=1 ;; esac ;;
         diff) echo "keep key $key (value differs from the install value $val)" ;;
       esac
     done
@@ -280,9 +280,10 @@ EOF
         tmp=$(mktemp)
         trap 'rm -f "$tmp"' EXIT
         printf '%s' "$rm_cmds" | json_list > "$tmp.rm"
-        jq --slurpfile rmf "$tmp.rm" --argjson dels "$dels" --argjson envdel "$envdel" '
+        jq --slurpfile rmf "$tmp.rm" --argjson dels "$dels" --argjson envdel "$envdel" --argjson attrdel "$attrdel" '
           ($rmf[0]) as $rm | delpaths($dels)
           | if $envdel == 1 and (.env | type) == "object" and (.env | length) == 0 then del(.env) else . end
+          | if $attrdel == 1 and (.attribution | type) == "object" and (.attribution | length) == 0 then del(.attribution) else . end
           | '"$HOOK_RM_JQ" "$SETTINGS" > "$tmp"
         rm -f "$tmp.rm"
         bak="$SETTINGS.bak.$(date +%Y%m%d%H%M%S)"
@@ -373,6 +374,8 @@ jq --arg gate "$GATE" --arg matcher "$MATCHER" --arg resume "$RESUME" --arg noti
   | .env //= {}
   | .env.BASH_DEFAULT_TIMEOUT_MS = "600000"
   | .env.BASH_MAX_TIMEOUT_MS = "7200000"
+  | .attribution.commit = ""
+  | .attribution.pr = ""
   # strip our command from every entry of an event; drop entries left empty; re-append one canonical entry
   | def hook($ev; $cmd; $m):
       .hooks[$ev] = ((.hooks[$ev] // [])

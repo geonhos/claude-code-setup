@@ -18,7 +18,7 @@ cd ~/workspace/my-claude-harness
 - `claude/agents/*.md`를 `~/.claude/agents/`에, `claude/skills/*/`를 `~/.claude/skills/`에 심링크합니다(이미 있던 다른 스킬은 `~/.claude/skills.bak/`으로 옮깁니다).
 - `claude/skills/korean-writing/`은 conductor와 워커가 모두 쓰는 한국어 작성 스킬입니다(결정 0015). 나머지 스킬 넷은 conductor 전용입니다.
 - `bin/*`(`harness`, `harness-verify`, `harness-run`, `harness-view`)를 `~/.local/bin`에 링크합니다. `lib/`는 링크 없이 실제 경로로 찾습니다.
-- `~/.claude/settings.json`에 PreToolUse 게이트 훅, SessionStart 훅(`conductor-resume.sh`), Notification 훅(`notify-decision.sh`), `env.BASH_DEFAULT_TIMEOUT_MS`/`BASH_MAX_TIMEOUT_MS`, `promptCacheTtl`/`subagentPromptCacheTtl: 1h`를 병합합니다(백업을 남깁니다). 전역 `agent` 키는 쓰지 않습니다.
+- `~/.claude/settings.json`에 PreToolUse 게이트 훅, SessionStart 훅(`conductor-resume.sh`), Notification 훅(`notify-decision.sh`), `env.BASH_DEFAULT_TIMEOUT_MS`/`BASH_MAX_TIMEOUT_MS`, `promptCacheTtl`/`subagentPromptCacheTtl: 1h`, `attribution.commit`/`attribution.pr`(빈 문자열: 커밋 trailer와 PR 꼬리말을 붙이지 않음)를 병합합니다(백업을 남깁니다). 전역 `agent` 키는 쓰지 않습니다.
 
 ### 제거: `./install.sh --uninstall [--dry-run] [--force]`
 
