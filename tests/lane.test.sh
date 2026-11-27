@@ -358,6 +358,7 @@ hrun lane 72 r3; D="$BASE/repo-72"
 check "lane rules: shared primary without AGENTS.md: the work folder has none" [ ! -e "$D/AGENTS.md" ]
 check "lane rules: shared primary: note says run init in the primary" grep -qF "note: AGENTS.md not created in a work folder; run 'harness init' in the primary folder" <<<"$OUT"
 check "lane rules: shared primary: git status clean" [ -z "$(git -C "$D" status --porcelain)" ]
+check "lane shared primary: autoCompactWindow goes to the local file, settings.json untouched (#276)" bash -c '[ "$(jq -c .autoCompactWindow "$1/.claude/settings.local.json")" = 400000 ] && jq -e "has(\"autoCompactWindow\") | not" "$1/.claude/settings.json"' _ "$D"
 lsetup
 rm -f AGENTS.md; noagents_exclude
 hrun lane 73 r4; D="$BASE/repo-73"

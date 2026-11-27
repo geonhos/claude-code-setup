@@ -107,3 +107,4 @@
 - 2026-11-26 · implementer · #268 · half-assertion-tests: guard-test mutant rule promoted to reviewer.md and implementer.md
 - 2026-11-26 · implementer · #268 · doc-rewrite-moves-scope: audit/plan wording check promoted to reviewer.md and implementer.md
 - 2026-11-26 · implementer · #268 · serial-suite-loop, no-edits-brief-skips-report: implementer.md line citations :40→:41, :70→:71 (one line added to the prompt)
+- 2026-11-27 · implementer · #276 · decision 0018: conductor autoCompactWindow 400000 written by harness init, /clear suggestion in the conductor prompt

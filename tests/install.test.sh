@@ -318,6 +318,8 @@ check "conductor: FAIL rounds counted per change" grep -qF 'two consecutive revi
 check "review skill: FAIL rounds counted per change" grep -qF '2 consecutive FAILs on one change' "$REPO/claude/skills/review/SKILL.md"
 check "conductor: prompt and skill edits are big tasks" grep -qF 'an agent prompt or skill change' "$REPO/claude/agents/conductor.md"
 check "conductor: never merges" grep -qF 'Never merge' "$REPO/claude/agents/conductor.md"
+check "conductor: suggests /clear when a piece of work ends (#276)" grep -qF 'end the report with one line' "$REPO/claude/agents/conductor.md"
+check "conductor: updates goal.md before suggesting /clear (#276)" grep -qF 'update `goal.md`, then end the report' "$REPO/claude/agents/conductor.md"
 
 # --- test runner (install.sh --test) against scratch suites -----------------
 # INSTALL_SH can point at another copy of the script (used to show the tests red).

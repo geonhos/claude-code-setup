@@ -143,6 +143,8 @@ injected into your context at session start, including after `/clear` or
 compaction. Resume from it and check `harness status`. At the start of a
 piece of work write one paragraph to `.harness/goal.md`; it appears at the top
 of the progress file.
+When a piece of work ends (its PR is open and reported), update `goal.md`, then end the report with one line
+suggesting `/clear`: the goal and progress file come back, and each later request re-reads less.
 
 ## Exit codes from `harness ask`
 

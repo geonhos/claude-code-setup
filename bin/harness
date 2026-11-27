@@ -610,17 +610,23 @@ settings_problem() {
   else return 1; fi
 }
 
-# settings_merge FILE WANT_AGENT WANT_DENY — one pass over FILE: set "agent": "conductor" (WANT_AGENT=1)
-# and append the missing HARNESS_DENY_RULES to .permissions.deny (WANT_DENY=1), never clobbering other
+# HARNESS_ACW is the conductor's auto-compact window (#276, decision 0018); workers keep 160000 through
+# CLAUDE_CODE_AUTO_COMPACT_WINDOW (lib/harness-headless.sh), which beats this key.
+HARNESS_ACW=400000
+
+# settings_merge FILE WANT_AGENT WANT_DENY [WANT_ACW] — one pass over FILE: set "agent": "conductor" (WANT_AGENT=1),
+# "autoCompactWindow": HARNESS_ACW when absent (WANT_ACW=1; an existing value is kept), and append the missing HARNESS_DENY_RULES to .permissions.deny (WANT_DENY=1), never clobbering other
 # keys. The file is read once, written only when its content changes, backed up once (.bak, never
 # overwritten). An existing different agent is kept and noted. FILE must pass settings_problem (cmd_init checks first).
 settings_merge() {
-  local f=$1 wa=$2 wd=$3 cur tmp n msgs=""
+  local f=$1 wa=$2 wd=$3 wc=${4:-0} cur tmp n msgs=""
   if [ ! -e "$f" ]; then
     mkdir -p "${f%/*}" || { echo "harness init: cannot create ${f%/*}" >&2; return 0; }
     jq -n --argjson wa "$wa" --argjson wd "$wd" --argjson d "$HARNESS_DENY_RULES" \
-      '(if $wa == 1 then {agent: "conductor"} else {} end) + (if $wd == 1 then {permissions: {deny: $d}} else {} end)' > "$f" || return 0
+      --argjson wc "$wc" --argjson acw "$HARNESS_ACW" \
+      '(if $wa == 1 then {agent: "conductor"} else {} end) + (if $wc == 1 then {autoCompactWindow: $acw} else {} end) + (if $wd == 1 then {permissions: {deny: $d}} else {} end)' > "$f" || return 0
     [ "$wa" != 1 ] || msgs="agent: conductor"
+    [ "$wc" != 1 ] || msgs="${msgs:+$msgs; }autoCompactWindow: $HARNESS_ACW"
     [ "$wd" != 1 ] || msgs="${msgs:+$msgs; }deny rules: $(jq -r 'join(", ")' <<<"$HARNESS_DENY_RULES")"
     echo "created $f ($msgs)"
     return 0
@@ -630,16 +636,22 @@ settings_merge() {
     if [ "$cur" = conductor ]; then echo "$f: agent already conductor"; wa=0
     elif [ -n "$cur" ]; then echo "note: $f sets agent \"$cur\"; kept (use --no-agent to silence this)"; wa=0; fi
   fi
+  if [ "$wc" = 1 ]; then
+    cur=$(jq -r '.autoCompactWindow // empty' "$f")
+    if [ -n "$cur" ]; then echo "$f: autoCompactWindow already $cur"; wc=0; fi
+  fi
   if [ "$wd" = 1 ]; then
     n=$(jq -r --argjson d "$HARNESS_DENY_RULES" '$d - (.permissions.deny // []) | join(", ")' "$f")
     [ -n "$n" ] || { echo "$f: deny rules present"; wd=0; }
   fi
-  [ "$wa" = 1 ] || [ "$wd" = 1 ] || return 0
+  [ "$wa" = 1 ] || [ "$wd" = 1 ] || [ "$wc" = 1 ] || return 0
   tmp=$(mktemp "${TMPDIR:-/tmp}/harness-settings.XXXXXX") || return 0
   [ "$wa" != 1 ] || msgs="agent: conductor"
+  [ "$wc" != 1 ] || msgs="${msgs:+$msgs; }set autoCompactWindow $HARNESS_ACW"
   [ "$wd" != 1 ] || msgs="${msgs:+$msgs; }added deny rules: $n"
-  if jq --argjson wa "$wa" --argjson wd "$wd" --argjson d "$HARNESS_DENY_RULES" \
+  if jq --argjson wa "$wa" --argjson wd "$wd" --argjson wc "$wc" --argjson acw "$HARNESS_ACW" --argjson d "$HARNESS_DENY_RULES" \
       '(if $wa == 1 then .agent = "conductor" else . end)
+       | (if $wc == 1 then .autoCompactWindow = $acw else . end)
        | if $wd == 1 then .permissions.deny = ((.permissions.deny // []) + ($d - (.permissions.deny // []))) else . end' "$f" > "$tmp" \
      && settings_commit "$tmp" "$f"; then
     echo "updated $f ($msgs; backup $f.bak)"
@@ -751,7 +763,8 @@ rules_apply() {
 }
 
 # cmd_init [--no-agent] [--shared] — make the current repo (git toplevel, else the cwd) a harness
-# checkout: .harness/asks/, the default config, "agent": "conductor" in .claude/settings.local.json
+# checkout: .harness/asks/, the default config, "agent": "conductor" and "autoCompactWindow": 400000 (an existing
+# value is kept) in .claude/settings.local.json
 # (per user, untracked; --shared: .claude/settings.json, committed, never excluded; --no-agent skips
 # the key), the worker deny rules (HARNESS_DENY_RULES) in .claude/settings.local.json always, and every
 # harness-made path (.harness/, settings.local.json(.bak), agent-memory, docs/superpowers)
@@ -787,10 +800,17 @@ cmd_init() {
   else mkdir -p .harness/asks || die "cannot create .harness/asks"; echo "created .harness/asks"; fi
   if [ -e "$CONFIG_FILE" ]; then echo "$CONFIG_FILE exists"
   else ensure_config init; [ -e "$CONFIG_FILE" ] && echo "created $CONFIG_FILE"; fi
-  if [ "$target" = .claude/settings.local.json ]; then settings_merge "$target" "$agent" 1
+  if [ "$target" = .claude/settings.local.json ]; then settings_merge "$target" "$agent" 1 "$agent"
   else
-    [ "$agent" = 0 ] || settings_merge "$target" 1 0
-    settings_merge .claude/settings.local.json 0 1
+    # a work folder never gets a git-visible change: there the tracked settings.json is not given the
+    # window; it goes to the local file unless the tracked one already carries a value (#276)
+    local acw_sh=1 acw_loc=0
+    if git rev-parse --git-dir >/dev/null 2>&1 && ! lane_in_primary; then
+      acw_sh=0
+      [ "$agent" = 0 ] || jq -e 'has("autoCompactWindow")' .claude/settings.json >/dev/null 2>&1 || acw_loc=1
+    fi
+    [ "$agent" = 0 ] || settings_merge "$target" 1 0 "$acw_sh"
+    settings_merge .claude/settings.local.json 0 1 "$acw_loc"
   fi
   rules_apply "$shared"
   [ ! -e AGENTS.md ] || rules_claude_note
