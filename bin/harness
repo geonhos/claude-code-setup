@@ -510,7 +510,7 @@ cmd_report() {
 cmd_status() {
   local json=0 all=0 a
   for a in "$@"; do
-    case "$a" in --json) json=1 ;; --all) all=1 ;; *) usage ;; esac
+    case "$a" in --json) json=1 ;; --all) all=1 ;; -*) usage ;; esac
   done
   [ "$all" = 0 ] || [ "$json" = 1 ] || usage
   if [ "$json" = 1 ]; then dash_status_json "$all"; return 0; fi

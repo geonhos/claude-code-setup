@@ -88,18 +88,18 @@ harness를 쓰려는 저장소에서 한 번 실행합니다. `.harness/asks/`(�
 | `state` | string | `running`, `exited`, `dead` |
 | `ask_id` | string\|null | 현재 ask |
 | `started_at` | number\|null | 시작 시각(epoch 초) |
-| `elapsed_s` | number\|null | running이면 지금까지, exited면 `exit.json`의 실행 시간. 그 밖에는 `null` |
-| `idle_s` | number\|null | running일 때 스트림이 마지막으로 바뀐 뒤 지난 초 |
-| `turns` | number\|null | assistant 턴 수 |
-| `ctx` | number\|null | 컨텍스트 토큰 수 |
-| `model` | string\|null | 모델 |
-| `brief_title` | string\|null | 브리프의 제목 줄 |
-| `now` | string\|null | running일 때 대시보드의 "Now" 텍스트. 120자까지 |
+| `elapsed_s` | number\|null | `running`이면 시작부터 지금까지, `exited`면 `exit.json`의 실행 시간. `dead`는 `null` |
+| `idle_s` | number\|null | `running`일 때 스트림이 마지막으로 바뀐 뒤 지난 초. `exited`와 `dead`는 `null` |
+| `turns` | number\|null | assistant 턴 수. 세 상태 모두 스트림에서 읽고, 스트림이 없으면 `null` |
+| `ctx` | number\|null | 컨텍스트 토큰 수. 세 상태 모두 스트림에서 읽고, 스트림이 없으면 `null` |
+| `model` | string\|null | 모델. 세 상태 모두 스트림에서 읽고, 스트림이 없으면 `null` |
+| `brief_title` | string\|null | 브리프의 제목 줄. 세 상태 모두 같습니다 |
+| `now` | string\|null | `running`일 때 대시보드의 "Now" 텍스트(120자까지). `exited`와 `dead`는 `null` |
 | `steps` | array | 브리프 `## Steps`의 `{"n": number, "text": string}`. 없으면 `[]` |
 | `step` | number\|null | 현재 단계. 지금은 항상 `null` |
-| `verify` | string\|null | Stop hook 검증이 `running`, `pass`, `fail`이면 그 값, 아니면 `null` |
-| `exit` | object\|null | running이면 `null`. 아니면 `{rc, result, cost_usd, duration_s, verdict}` |
-| `exit.verdict` | string\|null | reviewer 리포트의 마지막 줄이 `VERDICT:`일 때 그 값 |
+| `verify` | string\|null | 세 상태 모두 스트림의 Stop hook 검증이 `running`, `pass`, `fail`이면 그 값, 아니면 `null` |
+| `exit` | object\|null | 상태가 `exited`일 때만 `{rc, result, cost_usd, duration_s, verdict}`. `running`과 `dead`는 `null` |
+| `exit.verdict` | string\|null | reviewer가 `exited`이고 `.harness/reports/reviewer.md`가 `.current`보다 오래되지 않았으며 마지막 비어 있지 않은 줄이 정확히 `VERDICT: PASS` 또는 `VERDICT: FAIL`일 때 `PASS` 또는 `FAIL`. 그 밖에는 줄 끝의 CR을 포함해 `null` |
 
 상태 규칙은 다음 순서로 정합니다.
 

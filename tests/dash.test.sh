@@ -504,6 +504,42 @@ NG=$(mktemp -d); WORKS="$WORKS $NG"; mkdir -p "$NG/.harness/asks"
 sj -C "$NG" status --json --all
 check "no git repo: exit 0" [ "$RC" -eq 0 ]
 check "no git repo: the folder alone" jqt '(.folders | length == 1) and .folders[0].primary == true and .folders[0].workers == [] and .folders[0].branch == null' <<<"$OUT"
+# verdict freshness: a reviewer report older than .current is a leftover of an earlier ask, so its VERDICT is not read
+VT=$(mktemp -d); WORKS="$WORKS $VT"
+mkrun "$VT" reviewer r-5 $((SJ_NOW - 100))
+mkexit "$VT" r-5 reviewer
+printf '# reviewer report\nstatus: done\nVERDICT: PASS\n' > $VT/.harness/reports/reviewer.md
+at_mtime $((SJ_NOW - 5000)) $VT/.harness/reports/reviewer.md
+at_mtime $((SJ_NOW - 100)) $VT/.harness/asks/reviewer.current
+sj -C "$VT" status --json
+check "stale reviewer report (older than .current): verdict null" jqt '.folders[0].workers[0] | .state == "exited" and .exit.rc == 0 and .exit.verdict == null' <<<"$OUT"
+at_mtime $((SJ_NOW - 50)) $VT/.harness/reports/reviewer.md
+sj -C "$VT" status --json
+check "fresh reviewer report (newer than .current): verdict PASS" jqt '.folders[0].workers[0].exit.verdict == "PASS"' <<<"$OUT"
+# start grace (pinned clock): just launched and no pid file for this ask yet counts as running
+GT=$(mktemp -d); WORKS="$WORKS $GT"
+mkrun "$GT" analyst g-1 $((SJ_NOW - 5))
+sj -C "$GT" status --json
+check "start grace: fresh .current, no .pid: running" jqt '.folders[0].workers[0].state == "running"' <<<"$OUT"
+printf 'g-0 999999 999999\n' > $GT/.harness/asks/analyst.pid
+sj -C "$GT" status --json
+check "start grace: .pid of an older ask, within the grace: running" jqt '.folders[0].workers[0].state == "running"' <<<"$OUT"
+mkrun "$GT" analyst g-1 $((SJ_NOW - 60))
+sj -C "$GT" status --json
+check "start grace: .pid of an older ask, past the grace: dead" jqt '.folders[0].workers[0].state == "dead"' <<<"$OUT"
+mkrun "$GT" analyst g-2 $((SJ_NOW - 60))
+rm -f $GT/.harness/asks/analyst.pid
+sj -C "$GT" status --json
+check "start grace: no .pid, past the grace: dead" jqt '.folders[0].workers[0].state == "dead"' <<<"$OUT"
+# arguments: an unknown flag is a usage error, a plain extra word is ignored as before
+sj status --bogus
+check "status --bogus: usage error, exit 1" [ "$RC" -eq 1 ]
+sj status extra
+check "status extra: ignored, exit 0, text lines" [ "$RC" -eq 0 ]
+check "status extra: same output as plain status" bash -c '[ "$1" = "$(HARNESS_DASH_NOW='"$SJ_NOW"' env -u HARNESS_ROLE /bin/bash "$2" status)" ]' _ "$OUT" "$HARNESS"
+sj status --json extra
+check "status --json extra: extra word ignored" jqt '.version == 1' <<<"$OUT"
+
 # golden: the full document of the representative fixture (path normalised) is the checked-in file the mod reads too
 GOLD="$HERE/fixtures/status-v1.json"
 mkrun "$P" reviewer r-1 $((SJ_NOW - 100))
