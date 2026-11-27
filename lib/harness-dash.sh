@@ -82,6 +82,95 @@ dash_facts() {
                 else "pass" end)}'
 }
 
+# --- `harness status --json [--all]` (#305): machine-readable worker state, version 1 (docs/reference.md) ---
+# Pure read of <folder>/.harness/ (cwd = the folder): writes, creates and locks nothing.
+
+# st_starting <role> <id> <start> <now> — hl_starting on the pinned clock: just launched, no pid file for this ask yet
+st_starting() {
+  grep -q "^$2 " "$ASK_DIR/$1.pid" 2>/dev/null && return 1
+  digits_only "${3:-}" && [ $(( $4 - $3 )) -lt "${HARNESS_HL_START_S:-15}" ]
+}
+
+# st_worker_json <role> — one compact worker object; nothing when the role has no .current here
+st_worker_json() {
+  local role=$1 a="$ASK_DIR/$1" id start state raw="" facts="" brief="" ej="" rep verdict="" now
+  [ -f "$a.current" ] || return 0
+  read -r id start _ < "$a.current" 2>/dev/null
+  now=$(dash_now)
+  if hl_alive "$role" || st_starting "$role" "${id:-}" "${start:-}" "$now"; then state=running
+  elif hl_done "$role" "${id:-}"; then state=exited
+  else state=dead; fi
+  raw=$(hl_stream_of "$role")
+  if [ -n "$raw" ] && { [ -f "$raw" ] || [ -f "$raw.gz" ]; }; then facts=$(dash_facts "$raw"); else raw=""; fi
+  brief=$(dash_brief "$role" 2>/dev/null)
+  [ "$state" != exited ] || ej=$(cat "$a.exit.json" 2>/dev/null)
+  rep=".harness/reports/$role.md"
+  if [ "$state" = exited ] && [ "$role" = reviewer ] && [ -f "$rep" ] && ! [ "$rep" -ot "$a.current" ]; then
+    verdict=$(awk 'NF { l = $0 } END { print l }' "$rep" 2>/dev/null)
+  fi
+  local idle=""
+  if [ "$state" = running ] && [ -n "$raw" ] && [ -f "$raw" ] && idle=$(file_mtime "$raw"); then idle=$((now - idle)); else idle=""; fi
+  jq -n -c --arg role "$role" --arg state "$state" --arg id "${id:-}" --argjson start "$(num_or_null "${start:-}")" \
+    --argjson now "$now" --argjson idle "$(num_or_null "$idle")" --arg facts "$facts" --arg brief "$brief" \
+    --arg ej "$ej" --arg verdict "$verdict" '
+    def num: if type == "number" then . else null end;
+    def str: if type == "string" and . != "" then . else null end;
+    def obj: if type == "object" then . else {} end;
+    ($facts | (try fromjson catch {}) | obj) as $f
+    | ($ej | (try fromjson catch {}) | obj) as $e
+    | ($brief | split("\n")) as $bl
+    | {role: $role, state: $state, ask_id: ($id | str), started_at: $start,
+       elapsed_s: (if $state == "running" and $start != null then ([$now - $start, 0] | max)
+                   elif $state == "exited" and ($e.duration_ms | num) != null then (($e.duration_ms / 1000) | floor)
+                   else null end),
+       idle_s: (if $idle == null then null else ([$idle, 0] | max) end),
+       turns: ($f.turns | num), ctx: ($f.ctx | num),
+       model: (if ($f.model // "?") == "?" then null else ($f.model | str) end),
+       brief_title: (($bl[0] // "") | if . == "(untitled brief)" then "" else . end | str),
+       now: (if $state == "running" then (($f.now // {}) | ([.sum, (.detail // "" | split("\n") | map(select(test("\\S"))) | .[0])] | map(select(type == "string" and test("\\S"))) | .[0] // null) | if . == null then null else .[0:120] end) else null end),
+       steps: [$bl[1:][] | select(startswith("S\t")) | .[2:] | capture("^(?<n>[0-9]+)[.] (?<t>.*)$")? | {n: (.n | tonumber), text: .t}],
+       step: null,
+       verify: ($f.verify | if . == "running" or . == "pass" or . == "fail" then . else null end),
+       exit: (if $state == "exited" then {rc: ($e.rc | num), result: ($e.result | str), cost_usd: ($e.cost_usd | num),
+                duration_s: (if ($e.duration_ms | num) != null then (($e.duration_ms / 1000) | floor) else null end),
+                verdict: (if $role == "reviewer" and ($verdict == "VERDICT: PASS" or $verdict == "VERDICT: FAIL") then ($verdict | ltrimstr("VERDICT: ")) else null end)} else null end)}' 2>/dev/null
+}
+
+# st_folder_json <primary 0|1> <branch> — the folder object for the cwd, workers in role order
+st_folder_json() {
+  local prim=$1 br=${2:-} role w="" lane=""
+  for role in $AGENTS; do w="$w$(st_worker_json "$role")"$'\n'; done
+  case "$br" in feat/[0-9]*-*|fix/[0-9]*-*|docs/[0-9]*-*) lane=${br#*/}; lane=${lane%%-*} ;; esac
+  { [ "$prim" = 0 ] && digits_only "$lane"; } || lane=""
+  printf '%s' "$w" | jq -s -c --arg path "$(pwd -P)" --argjson primary "$([ "$prim" = 1 ] && echo true || echo false)" \
+    --arg branch "${br#refs/heads/}" --argjson lane "$(num_or_null "$lane")" \
+    '{path: $path, primary: $primary, lane: $lane, branch: (if $branch == "" then null else $branch end), workers: .}'
+}
+
+# dash_status_json <all 0|1> — the whole document (one line) on stdout
+dash_status_json() {
+  local all=$1 here rows p b first=1 docs="" cur
+  here=$(pwd -P)
+  rows=$(lane_all_rows 2>/dev/null)
+  if [ "$all" = 1 ] && [ -n "$rows" ]; then
+    while IFS=$'\t' read -r p b; do
+      if [ -d "$p/.harness/asks" ]; then docs="$docs$(cd "$p" 2>/dev/null && st_folder_json "$first" "$b")"$'\n'; fi
+      first=0
+    done <<<"$rows"
+  else
+    cur=$(printf '%s\n' "$rows" | awk -F'\t' -v h="$here" '$1 == h { print NR "\t" $2; exit }')   # row number, branch
+    if [ -n "$cur" ]; then
+      b=${cur#*$'\t'}
+      if [ "${cur%%$'\t'*}" = 1 ]; then first=1; else first=0; fi
+    else
+      b=$(git symbolic-ref -q --short HEAD 2>/dev/null || true)
+      if git rev-parse --git-dir >/dev/null 2>&1 && ! lane_in_primary; then first=0; else first=1; fi
+    fi
+    docs="$(st_folder_json "$first" "$b")"$'\n'
+  fi
+  printf '%s' "$docs" | jq -s -c --argjson now "$(dash_now)" '{version: 1, generated_at: $now, folders: .}'
+}
+
 # jq def cw: display columns of a code point (2 = East-Asian Wide/Fullwidth; deliberately conservative: all of
 # U+1F000-1FAFF counts 2, overcounting only clips a line early). Autowrap is off while drawing (dash_begin).
 DASH_JQ_CW='def cw: [[4352,4447],[8986,8987],[9001,9002],[9193,9196],[9200,9200],[9203,9203],[9725,9726],[9748,9749],

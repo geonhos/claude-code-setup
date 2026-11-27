@@ -409,5 +409,111 @@ cp $ASK_DIR/implementer.current .harness/log/cur.bak; rm -f $ASK_DIR/implementer
 check "hold: exits when the ask is removed, terminal restored" bash -c '! kill -0 "$1" 2>/dev/null && tail -c 20 "$2" | od -An -c | tr -d " \n" | grep -qF "$3"' _ "$HP" .harness/log/gone.out '033[?7h033[?25h\n'
 cp .harness/log/cur.bak $ASK_DIR/implementer.current
 
+# ---- harness status --json [--all] (#305): machine-readable worker state, pure read ----
+setup
+SJ_BASE=$(mktemp -d); WORKS="$WORKS $SJ_BASE"
+printf '#!/bin/bash\nsleep 60\n' > "$SJ_BASE/harness-run"; chmod +x "$SJ_BASE/harness-run"
+"$SJ_BASE/harness-run" & SJ_LIVE=$!
+"$SJ_BASE/harness-run" & SJ_LIVE2=$!
+echo "$SJ_LIVE $SJ_LIVE2" > "$SJ_BASE/pids"
+SJ_NOW=1795867512
+git init -q -b main . && git -c user.name=t -c user.email=t@t commit -q --allow-empty -m init
+# at_mtime EPOCH FILE — set a file's mtime to an epoch (UTC, portable BSD/GNU)
+at_mtime() { TZ=UTC touch -t "$(TZ=UTC date -u -r "$1" +%Y%m%d%H%M.%S 2>/dev/null || date -u -d "@$1" +%Y%m%d%H%M.%S)" "$2"; }
+# mkrun DIR ROLE ID START — .current + .prompt + a small stream (init, a Bash tool_use with quotes) + .stream
+mkrun() {
+  local d=$1 r=$2 id=$3 st=$4
+  mkdir -p "$d/.harness/asks" "$d/.harness/log" "$d/.harness/verify" "$d/.harness/reports"
+  printf '%s %s\n' "$id" "$st" > "$d/.harness/asks/$r.current"
+  printf 'Read .harness/task-%s.md and do it.\n' "$r" > "$d/.harness/asks/$r.prompt"
+  printf '%s .harness/log/s-%s.jsonl\n' "$id" "$r" > "$d/.harness/asks/$r.stream"
+  cat > "$d/.harness/log/s-$r.jsonl" <<EOS
+{"type":"system","subtype":"init","model":"sonnet","session_id":"s1"}
+{"type":"assistant","message":{"id":"m1","content":[{"type":"text","text":"start"}],"usage":{"input_tokens":10,"cache_read_input_tokens":60000,"cache_creation_input_tokens":990}}}
+{"type":"assistant","message":{"id":"m2","content":[{"type":"tool_use","name":"Bash","input":{"command":"x","description":"Run the \"dash\" suite"}}],"usage":{"input_tokens":10,"cache_read_input_tokens":60000,"cache_creation_input_tokens":990}}}
+EOS
+}
+mkexit() { printf '{"ask_id":"%s","rc":0,"result":"success","num_turns":5,"cost_usd":0.25,"duration_ms":220000,"ctx":61000,"stream_log":".harness/log/s-%s.jsonl"}\n' "$2" "$3" > "$1/.harness/asks/$3.exit.json"; }
+sj() { OUT=$(HARNESS_DASH_NOW=$SJ_NOW env -u HARNESS_ROLE /bin/bash "$HARNESS" "$@" 2>"$WORK/sj.err"); RC=$?; }
+P=$(pwd -P)
+# primary: analyst running (live pid), implementer exited (matching exit.json, brief with Steps, Stop hook pass),
+# reviewer exited with a VERDICT line in its report
+mkrun "$P" analyst a-1 $((SJ_NOW - 252))
+printf '한국어 질문: 코드를 읽어 주세요\nsecond line\n' > $P/.harness/asks/analyst.prompt
+printf 'a-1 %s %s\n' "$SJ_LIVE" "$SJ_LIVE" > $P/.harness/asks/analyst.pid
+at_mtime $((SJ_NOW - 4)) $P/.harness/log/s-analyst.jsonl
+mkrun "$P" implementer i-1 $((SJ_NOW - 300))
+printf '# 작업: 상태 JSON\n\n## Goal\nx\n\n## Steps\n1. Read AGENTS.md\n2) Add failing tests\n- not numbered\n\n## Done\ny\n' > $P/.harness/task-implementer.md
+echo '{"type":"system","subtype":"hook_response","hook_event":"Stop","exit_code":0,"stdout":""}' >> $P/.harness/log/s-implementer.jsonl
+mkexit "$P" i-1 implementer
+mkrun "$P" reviewer r-1 $((SJ_NOW - 100))
+printf '# reviewer report\nstatus: done\nVERDICT: PASS\n' > $P/.harness/reports/reviewer.md
+mkexit "$P" r-1 reviewer
+before=$(cd "$P" && find .harness -type f | sort | xargs cksum | cksum)
+sj status --json
+check "status --json: exit 0" [ "$RC" -eq 0 ]
+check "status --json: stderr empty" [ ! -s "$WORK/sj.err" ]
+check "status --json: one valid document, version 1" jqt '.version == 1 and (.generated_at == 1795867512) and (.folders | length == 1)' <<<"$OUT"
+check "status --json: stdout is a single JSON value" [ "$(jq -c . <<<"$OUT" | wc -l | tr -d ' ')" = 1 ]
+check "folder fields" jqt --arg p "$P" '.folders[0] | .path == $p and .primary == true and .lane == null and .branch == "main"' <<<"$OUT"
+check "roles in order analyst, implementer, reviewer" jqt '[.folders[0].workers[].role] == ["analyst","implementer","reviewer"]' <<<"$OUT"
+check "running worker: state, ids, times, facts" jqt '.folders[0].workers[0] | .state == "running" and .ask_id == "a-1" and .started_at == 1795867260 and .elapsed_s == 252 and .idle_s == 4 and .turns == 2 and .ctx == 61000 and .model == "sonnet" and .exit == null' <<<"$OUT"
+check "running worker: Korean title kept, no brief steps" jqt '.folders[0].workers[0] | .brief_title == "한국어 질문: 코드를 읽어 주세요" and .steps == [] and .step == null' <<<"$OUT"
+check "running worker: now keeps quotes (jq-escaped)" jqt '.folders[0].workers[0].now == "Run the \"dash\" suite"' <<<"$OUT"
+check "exited worker (matching exit.json): state, exit, verify" jqt '.folders[0].workers[1] | .state == "exited" and .elapsed_s == 220 and .idle_s == null and .now == null and .verify == "pass" and .exit == {rc: 0, result: "success", cost_usd: 0.25, duration_s: 220, verdict: null}' <<<"$OUT"
+check "brief with ## Steps: numbered list, Korean title" jqt '.folders[0].workers[1] | .brief_title == "작업: 상태 JSON" and .steps == [{n:1,text:"Read AGENTS.md"},{n:2,text:"Add failing tests"}]' <<<"$OUT"
+check "reviewer: verdict from the report's VERDICT line" jqt '.folders[0].workers[2] | .state == "exited" and .exit.verdict == "PASS"' <<<"$OUT"
+check "status --json writes and creates nothing" [ "$before" = "$(cd "$P" && find .harness -type f | sort | xargs cksum | cksum)" ]
+# a role that never ran is omitted
+rm -f $P/.harness/asks/reviewer.*
+sj status --json
+check "role that never ran is omitted" jqt '[.folders[0].workers[].role] == ["analyst","implementer"]' <<<"$OUT"
+# --all needs --json; a bare status is untouched
+sj status --all
+check "--all without --json: usage error, exit 1" [ "$RC" -eq 1 ]
+sj status
+check "plain status: text lines, not JSON" bash -c '! jq -e . >/dev/null 2>&1 <<<"$1" && grep -q "^analyst  *running" <<<"$1"' _ "$OUT"
+# dead (current ask, pid gone, no matching exit.json) and stale exit.json (other ask_id); corrupt exit.json; --all over worktrees
+git worktree add -q "$P/wt1" -b feat/12-x && git worktree add -q "$P/wt2" -b scratch
+W1=$(cd "$P/wt1" && pwd -P)
+mkrun "$W1" implementer i-9 $((SJ_NOW - 60))
+printf 'i-9 999999 999999\n' > $W1/.harness/asks/implementer.pid
+mkexit "$W1" i-OLD implementer
+mkrun "$W1" reviewer r-9 $((SJ_NOW - 30))
+printf '{"ask_id":"r-9","rc":\n' > $W1/.harness/asks/reviewer.exit.json
+printf 'garbage\n' > $W1/.harness/asks/analyst.current
+sj status --json --all
+check "--all: exit 0" [ "$RC" -eq 0 ]
+check "--all: one document, version 1" jqt '.version == 1' <<<"$OUT"
+check "--all: primary first, folder without .harness/asks skipped" jqt --arg p "$P" --arg w "$W1" '[.folders[].path] == [$p, $w]' <<<"$OUT"
+check "--all: lane folder: primary false, lane 12, branch" jqt '.folders[1] | .primary == false and .lane == 12 and .branch == "feat/12-x"' <<<"$OUT"
+check "dead worker: stale exit.json is ignored" jqt '.folders[1].workers[] | select(.role == "implementer") | .state == "dead" and .exit == null and .elapsed_s == null and .now == null' <<<"$OUT"
+check "corrupt exit.json: exited, exit fields null" jqt '.folders[1].workers[] | select(.role == "reviewer") | .state == "exited" and .exit == {rc: null, result: null, cost_usd: null, duration_s: null, verdict: null}' <<<"$OUT"
+check "garbage .current: worker emitted with null start" jqt '.folders[1].workers[] | select(.role == "analyst") | .state == "dead" and .started_at == null and .ask_id == "garbage"' <<<"$OUT"
+# from a work folder: current folder only, even with --all it lists the whole repository
+sj -C "$W1" status --json
+check "from a work folder: only that folder" jqt --arg w "$W1" '[.folders[].path] == [$w] and .folders[0].primary == false' <<<"$OUT"
+sj -C "$W1" status --json --all
+check "--all from a work folder: same list, primary first" jqt --arg p "$P" '.folders[0].path == $p and (.folders | length) == 2' <<<"$OUT"
+# a worker session may read status as it can today
+OUT=$(HARNESS_ROLE=worker env /bin/bash "$HARNESS" status --json 2>&1); RC=$?
+check "worker session: exit 0" [ "$RC" -eq 0 ]
+check "worker session: status --json works" jqt '.version == 1' <<<"$OUT"
+# empty ask dir / no git: emits the folder with no workers
+NG=$(mktemp -d); WORKS="$WORKS $NG"; mkdir -p "$NG/.harness/asks"
+sj -C "$NG" status --json --all
+check "no git repo: exit 0" [ "$RC" -eq 0 ]
+check "no git repo: the folder alone" jqt '(.folders | length == 1) and .folders[0].primary == true and .folders[0].workers == [] and .folders[0].branch == null' <<<"$OUT"
+# golden: the full document of the representative fixture (path normalised) is the checked-in file the mod reads too
+GOLD="$HERE/fixtures/status-v1.json"
+mkrun "$P" reviewer r-1 $((SJ_NOW - 100))
+printf '# reviewer report\nstatus: done\nVERDICT: PASS\n' > $P/.harness/reports/reviewer.md
+mkexit "$P" r-1 reviewer
+sj status --json
+jq -S --arg p "$P" '.folders[0].path = "/FIXTURE"' <<<"$OUT" > "$WORK/gold.out"
+if [ -n "${GOLDEN_UPDATE:-}" ]; then cp "$WORK/gold.out" "$GOLD"; fi
+check "golden: status --json equals tests/fixtures/status-v1.json" cmp -s "$WORK/gold.out" "$GOLD"
+kill $SJ_LIVE $SJ_LIVE2 2>/dev/null; wait $SJ_LIVE $SJ_LIVE2 2>/dev/null
+
 echo "dash: $pass passed, $fail failed"
 [ "$fail" -eq 0 ]

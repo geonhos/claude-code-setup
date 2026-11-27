@@ -118,7 +118,7 @@ cd ~/workspace/my-claude-harness
 | `harness ask <agent> '<instruction>'` | 워커에게 맡깁니다(보통 스킬이 호출). `--timeout MS`, `--keep`, `--no-lane`은 지시문 앞뒤 어디에나 둘 수 있고, `--`로 옵션을 끝냅니다 |
 | `harness wait <agent>` | 실행 중인 워커가 끝날 때까지 기다립니다 |
 | `harness report <agent>` | 리포트를 다시 봅니다 |
-| `harness status` | 워커 상태 |
+| `harness status [--json [--all]]` | 워커 상태. `--json`은 기계가 읽는 JSON, `--all`은 모든 작업 폴더([형식](docs/reference.md)) |
 | `harness lane <issue#> [slug]`, `lane ls`, `lane rm` | 작업 폴더 생성·목록·삭제 |
 | `harness open-watch <agent>` | 대시보드를 herdr/tmux 새 패널에 엽니다 |
 | `harness watch <agent>` | 실행 스트림을 터미널에서 봅니다 |

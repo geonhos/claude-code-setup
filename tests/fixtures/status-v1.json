@@ -1,0 +1,86 @@
+{
+  "folders": [
+    {
+      "branch": "main",
+      "lane": null,
+      "path": "/FIXTURE",
+      "primary": true,
+      "workers": [
+        {
+          "ask_id": "a-1",
+          "brief_title": "한국어 질문: 코드를 읽어 주세요",
+          "ctx": 61000,
+          "elapsed_s": 252,
+          "exit": null,
+          "idle_s": 4,
+          "model": "sonnet",
+          "now": "Run the \"dash\" suite",
+          "role": "analyst",
+          "started_at": 1795867260,
+          "state": "running",
+          "step": null,
+          "steps": [],
+          "turns": 2,
+          "verify": null
+        },
+        {
+          "ask_id": "i-1",
+          "brief_title": "작업: 상태 JSON",
+          "ctx": 61000,
+          "elapsed_s": 220,
+          "exit": {
+            "cost_usd": 0.25,
+            "duration_s": 220,
+            "rc": 0,
+            "result": "success",
+            "verdict": null
+          },
+          "idle_s": null,
+          "model": "sonnet",
+          "now": null,
+          "role": "implementer",
+          "started_at": 1795867212,
+          "state": "exited",
+          "step": null,
+          "steps": [
+            {
+              "n": 1,
+              "text": "Read AGENTS.md"
+            },
+            {
+              "n": 2,
+              "text": "Add failing tests"
+            }
+          ],
+          "turns": 2,
+          "verify": "pass"
+        },
+        {
+          "ask_id": "r-1",
+          "brief_title": "Read .harness/task-reviewer.md and do it.",
+          "ctx": 61000,
+          "elapsed_s": 220,
+          "exit": {
+            "cost_usd": 0.25,
+            "duration_s": 220,
+            "rc": 0,
+            "result": "success",
+            "verdict": "PASS"
+          },
+          "idle_s": null,
+          "model": "sonnet",
+          "now": null,
+          "role": "reviewer",
+          "started_at": 1795867412,
+          "state": "exited",
+          "step": null,
+          "steps": [],
+          "turns": 2,
+          "verify": null
+        }
+      ]
+    }
+  ],
+  "generated_at": 1795867512,
+  "version": 1
+}

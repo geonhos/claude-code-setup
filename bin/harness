@@ -47,7 +47,7 @@ usage:
   harness wait   <agent> [--timeout MS]
   harness watch  <agent> [-n N]   (human terminal only)
   harness open-watch <agent>   (open the watch dashboard in a new pane/window)
-  harness status
+  harness status [--json [--all]]   (--json: worker state of this folder as one JSON document; --all: every work folder of the repository)
   harness [-C DIR] <command> ...
   harness lane   <issue#> [slug] [--type feat|fix|docs] | ls | rm <issue#|path> [--force]
   harness init   [--no-agent] [--shared]   (once per repo: makes it a harness checkout, writes the worker deny rules and the rules block in AGENTS.md; ask refuses without it)
@@ -508,7 +508,12 @@ cmd_report() {
 }
 
 cmd_status() {
-  local a
+  local json=0 all=0 a
+  for a in "$@"; do
+    case "$a" in --json) json=1 ;; --all) all=1 ;; *) usage ;; esac
+  done
+  [ "$all" = 0 ] || [ "$json" = 1 ] || usage
+  if [ "$json" = 1 ]; then dash_status_json "$all"; return 0; fi
   for a in $AGENTS; do hl_status_line "$a" status; done
 }
 
@@ -871,7 +876,7 @@ case "${1:-}" in
   wait)   shift; cmd_wait "$@" ;;
   watch)  shift; cmd_watch "$@" ;;
   open-watch) shift; cmd_open_watch "$@" ;;
-  status) cmd_status ;;
+  status) shift; cmd_status "$@" ;;
   close)  shift; cmd_close "$@" ;;
   *)      usage ;;
 esac
