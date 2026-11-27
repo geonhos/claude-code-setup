@@ -174,7 +174,8 @@ of the progress file.
   (use `--keep` for a follow-up that needs the implementer's previous conversation).
   If it still fails after 2 such rounds (for reviews: 2 consecutive FAILs on one change), ask the user.
 - Closing: a run ends with its process, so there is nothing to clean up. `harness close <worker>` clears an ended
-  run's slot (exit 4 = still running; `--force` only if the user agrees, and it kills the run).
+  run's slot and drops that role's session, so a later `--keep` starts fresh (exit 4 = still running; `--force` only if
+  the user agrees, and it kills the run; exit 1 = the role is idle, nothing to close).
   The user can watch a run with `harness watch <role>` in any terminal; `/watch <role>` runs `harness open-watch <role>`, which opens the dashboard in a new pane or window and prints the command (with `-C <folder>` for a work folder) only when no backend is available.
 
 ## Metrics

@@ -194,9 +194,27 @@ hrun ask implementer "q"
 check "cap: implementer default 5400 s" grep -qx 'max_s=5400' .harness/asks/implementer.run
 hrun ask analyst "q"
 check "cap: analyst default 3600 s" grep -qx 'max_s=3600' .harness/asks/analyst.run
+check "cap: no config.json was auto-created by the asks above (#257)" [ ! -e .harness/config.json ]
 mkdir -p .harness; printf '{"headless_max_minutes": 7}\n' > .harness/config.json
 hrun ask implementer "q"
 check "cap: config headless_max_minutes wins for the implementer" grep -qx 'max_s=420' .harness/asks/implementer.run
+
+# #257: a leading zero in the cap is decimal (08 aborted ask_headless after the launch: a worker with no progress row)
+isetup; rm -f .harness/config.json
+HARNESS_HL_MAX_S=08 hrun ask analyst "q"
+check "cap: HARNESS_HL_MAX_S=08 is 8 s, the run ended (exit.json)" bash -c '[ -s .harness/asks/analyst.exit.json ] && grep -qx "max_s=8" .harness/asks/analyst.run' _
+check "cap: HARNESS_HL_MAX_S=08 left no arithmetic error" bash -c '! grep -q "value too great" <<<"$1"' _ "$OUT"
+mkdir -p .harness; printf '{"headless_max_minutes": "08"}\n' > .harness/config.json
+hrun ask analyst "q"
+check "cap: config headless_max_minutes \"08\" is 480 s, the run ended (exit.json)" bash -c '[ -s .harness/asks/analyst.exit.json ] && grep -qx "max_s=480" .harness/asks/analyst.run' _
+# a cap with more than 12 digits falls back like a non-number (it wraps in $(( )))
+HARNESS_HL_MAX_S=9999999999999 hrun ask analyst "q"
+check "cap: 13-digit env cap falls through to the config (480 s)" grep -qx 'max_s=480' .harness/asks/analyst.run
+HARNESS_HL_MAX_S=999999999999 hrun ask analyst "q"
+check "cap: 12-digit env cap is used" grep -qx 'max_s=999999999999' .harness/asks/analyst.run
+printf '{"headless_max_minutes": "9999999999999"}\n' > .harness/config.json
+hrun ask analyst "q"
+check "cap: 13-digit config cap falls back to the 3600 s default" grep -qx 'max_s=3600' .harness/asks/analyst.run
 
 echo "PASS $pass / FAIL $fail"
 [ "$fail" -eq 0 ]

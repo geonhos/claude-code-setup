@@ -1,9 +1,9 @@
 ---
 type: troubleshooting
 status: active
-updated: 2026-10-21
+updated: 2026-11-26
 sources: [commit 2e1764a, reviewer report 2026-10-21 (docker alpine coreutils check)]
-verified_by: tests/harness.test.sh (fake GNU/BSD stat on PATH)
+verified_by: human (read bin/harness file_mtime; the fake-stat test went with the `_mtime` subcommand, #257)
 ---
 # `stat -f %m` is not portable
 
