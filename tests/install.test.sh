@@ -318,6 +318,32 @@ check "conductor: FAIL rounds counted per change" grep -qF 'two consecutive revi
 check "review skill: FAIL rounds counted per change" grep -qF '2 consecutive FAILs on one change' "$REPO/claude/skills/review/SKILL.md"
 check "conductor: prompt and skill edits are big tasks" grep -qF 'an agent prompt or skill change' "$REPO/claude/agents/conductor.md"
 check "conductor: never merges" grep -qF 'Never merge' "$REPO/claude/agents/conductor.md"
+# the question rule is checked on the bullet joined into one line (a phrase may wrap)
+QB=$(sed -n '/^- Questions:/,/^$/p' "$REPO/claude/agents/conductor.md" | tr '\n' ' ' | tr -s ' ')
+check "conductor question rule: headline: no idle gap" bash -c 'printf %s "$1" | grep -qF -- "$2"' _ "$QB" 'leave no idle gap between a question, the work it unblocks and the next question'
+check "conductor question rule: collect every question for the piece of work" bash -c 'printf %s "$1" | grep -qF -- "$2"' _ "$QB" 'collect every question you must ask for this piece of work'
+check "conductor question rule: ask them together in one AskUserQuestion call" bash -c 'printf %s "$1" | grep -qF -- "$2"' _ "$QB" 'ask them together: one `AskUserQuestion` call'
+check "conductor question rule: up to 4 questions per call" bash -c 'printf %s "$1" | grep -qF -- "$2"' _ "$QB" 'up to 4 questions'
+check "conductor question rule: fifth question goes in the next call, no work between" bash -c 'printf %s "$1" | grep -qF -- "$2"' _ "$QB" 'a fifth goes in the next call with no work in between'
+check "conductor question rule: non-blocking question waits" bash -c 'printf %s "$1" | grep -qF -- "$2"' _ "$QB" 'does not block the work waits: keep working'
+check "conductor question rule: non-blocking question asked by the PR or report" bash -c 'printf %s "$1" | grep -qF -- "$2"' _ "$QB" 'at the latest before the PR or the final report'
+check "conductor question rule: non-blocking question asked with the others at the next stop" bash -c 'printf %s "$1" | grep -qF -- "$2"' _ "$QB" 'ask it with the others at the next stop'
+check "conductor question rule: questions come from the plan and the reports" bash -c 'printf %s "$1" | grep -qF -- "$2"' _ "$QB" '(from the plan and the reports)'
+check "conductor question rule: option carries result and cost in one line" bash -c 'printf %s "$1" | grep -qF -- "$2"' _ "$QB" 'result and cost in one line'
+check "conductor question rule: recommended option first with (권장)" bash -c 'printf %s "$1" | grep -qF -- "$2"' _ "$QB" 'recommended option first with "(권장)"'
+check "conductor question rule: never list questions in plain text" bash -c 'printf %s "$1" | grep -qF -- "$2"' _ "$QB" 'never list questions in plain text'
+check "conductor question rule: never ask a question twice" bash -c 'printf %s "$1" | grep -qF -- "$2"' _ "$QB" 'Never ask a question twice'
+check "conductor question rule: counter-question: answer and wait for the reply" bash -c 'printf %s "$1" | grep -qF -- "$2"' _ "$QB" 'answer a counter-question and wait for the reply'
+check "conductor question rule: dismissed or no choice" bash -c 'printf %s "$1" | grep -qF -- "$2"' _ "$QB" 'when the user dismisses a question or replies without choosing'
+check "conductor question rule: do what the reply says" bash -c 'printf %s "$1" | grep -qF -- "$2"' _ "$QB" 'do what the reply says'
+check "conductor question rule: left open: go on with the recommended option" bash -c 'printf %s "$1" | grep -qF -- "$2"' _ "$QB" 'for what it leaves open, go on with the recommended option'
+check "conductor question rule: proceed only if it can be undone" bash -c 'printf %s "$1" | grep -qF -- "$2"' _ "$QB" 'if that can be undone'
+check "conductor question rule: say so when proceeding" bash -c 'printf %s "$1" | grep -qF -- "$2"' _ "$QB" 'undone, and say so'
+check "conductor question rule: exceptions list: plan approval, merge, release, deletion" bash -c 'printf %s "$1" | grep -qF -- "$2"' _ "$QB" '(plan approval, merge, release and deletion'
+check "conductor question rule: exceptions wait for an explicit answer" bash -c 'printf %s "$1" | grep -qF -- "$2"' _ "$QB" 'wait for an explicit answer)'
+check "conductor question rule: answers recorded on the issue in one comment" bash -c 'printf %s "$1" | grep -qF -- "$2"' _ "$QB" 'Record the answers on the issue in one comment'
+check "conductor: no one-topic-at-a-time rule" bash -c '! grep -qF "one topic at a time" "$1"' _ "$REPO/claude/agents/conductor.md"
+check "conductor: no needs-decision label rule" bash -c '! grep -qF "needs-decision" "$1"' _ "$REPO/claude/agents/conductor.md"
 
 # --- test runner (install.sh --test) against scratch suites -----------------
 # INSTALL_SH can point at another copy of the script (used to show the tests red).

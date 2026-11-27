@@ -86,7 +86,6 @@ agents, skills, bin, 훅은 이 체크아웃에서 심링크되고 기본값은 
 - `/watch <role>`: 워커 대시보드를 herdr/tmux 패널이나 Ghostty·Terminal 창에 엽니다. 열 수 없으면 실행할 명령을 출력합니다(`harness open-watch`).
 - `harness watch <role>`: 아무 터미널에서 직접 봅니다. 사람 터미널 전용입니다.
 - 데스크톱 알림: conductor가 사용자 입력을 기다리면 macOS 알림이 뜹니다(`osascript` 필요).
-- `needs-decision`: 사용자 결정이 필요하면 conductor가 질문을 issue에 댓글로 달고 이 라벨을 붙입니다. 답이 오면 뗍니다.
 - `harness status`와 `.harness/progress.md`로 워커 상태와 최근 ask를 봅니다.
 
 ## 주요 명령
