@@ -115,3 +115,8 @@
 - 2026-11-26 · implementer · #257 · how-to/transcript-forensics.md: progress fields kept for forensics
 - 2026-11-27 · implementer · #267 · decision 0017 questions asked together; conductor question rule, needs-decision label rule removed
 - 2026-11-27 · implementer · #276 · decision 0018: conductor autoCompactWindow 400000 written by harness init, /clear suggestion in the conductor prompt
+- 2026-11-27 · implementer · #283 · decision 0018: D2 narrowed to autoCompactWindow in a work folder; foreign tracked agent skips the local window
+- 2026-11-27 · implementer · #273,#279 · troubleshooting/half-assertion-tests.md: input-parsing test shape (shape 3), mutant per clause for prompt-wording tests (Fix 2)
+- 2026-11-27 · implementer · #271 · troubleshooting/doc-rewrite-moves-scope.md: promoting a wiki Fix into a prompt line is a compression too
+- 2026-11-27 · implementer · #280 · troubleshooting/ask-timeout-is-milliseconds.md: same ms trap in a test (007 = 7 ms)
+- 2026-11-27 · implementer · #282 · troubleshooting/zsh-no-word-split.md: new page, zsh does not split an unquoted $VAR

@@ -3,7 +3,7 @@
 Read this first. Open a page only when it is relevant. Schema and promotion rules: the Wiki section of `AGENTS.md`. `wiki`-label issues go stale fast: check `git log` for a fix before triaging one.
 
 ## Troubleshooting: ask completion and timeouts
-- [ask --timeout is ms](troubleshooting/ask-timeout-is-milliseconds.md): `--timeout 1200` = 1.2s; defaults are role-aware (active, 2026-10-27)
+- [ask --timeout is ms](troubleshooting/ask-timeout-is-milliseconds.md): `--timeout 1200` = 1.2s, in tests too (`007` = 7 ms); defaults are role-aware (active, 2026-11-27)
 - [Serial suite loop](troubleshooting/serial-suite-loop.md): workers looping over suites cost 5x the parallel run; run singly or `./install.sh --test` once (active, 2026-11-26)
 - [.harness root lookup](troubleshooting/harness-root-lookup.md): hook finds root by nearest `.harness/asks/`; one definition in lib/harness-root.sh; probe the gate from a checkout (active, 2026-11-16)
 - [Docs-only skip scope](troubleshooting/docs-only-asks-skip-the-suite.md): Stop hook skips the suite only for `docs/`/`.harness/`; wiki runs wiki-lint only (active, 2026-11-03)
@@ -22,6 +22,7 @@ Read this first. Open a page only when it is relevant. Schema and promotion rule
 ## Troubleshooting: shell portability and tests
 - [GNU stat -f](troubleshooting/gnu-stat-f.md): use `-nt`/`-ot` or `stat -c %Y` first (active, 2026-11-26)
 - [bash signals and job control](troubleshooting/bash-signals-job-control.md): bg jobs ignore INT; `set -m` hands tty signals to children (active, 2026-11-26)
+- [zsh does not split $VAR](troubleshooting/zsh-no-word-split.md): under the zsh Bash tool an unquoted `$S` with spaces is one argument; pass words separately and print what each run got (active, 2026-11-27)
 - [Global gitignore masks ignore gaps](troubleshooting/global-gitignore-masks-ignore-gaps.md): this machine's ~/.config/git/ignore hides missing excludes; check with core.excludesFile=/dev/null (active, 2026-11-26)
 - [Temp worktree fails worktree-guard](troubleshooting/base-worktree-during-suite.md): the guard is per repo, so any session's temp worktree (not only your own base) fails every running suite; remove only yours, else wait and rerun once (active, 2026-11-26)
 - [Tests inherit worker env](troubleshooting/tests-inherit-worker-env.md): suites run by a worker see `HARNESS_ROLE=worker`; unset it (active, 2026-11-26)

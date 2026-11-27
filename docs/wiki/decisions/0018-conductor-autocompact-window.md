@@ -11,7 +11,7 @@ verified_by: tests/harness.test.sh, tests/install.test.sh
 
 **Decision.** (user, 2026-11-27)
 - D1: `autoCompactWindow: 400000` for the conductor (documented settings key: tokens, at least 100000, capped at the model window). Frontmatter `autoCompactWindow` has no effect when the session runs as that agent, so it goes in settings.
-- D2: `harness init` writes it into the file that receives `agent` (`.claude/settings.local.json`; `--shared`: `.claude/settings.json`; `--no-agent` skips it). An existing value in that file is kept and reported; a second run changes nothing. In a work folder (lane) the tracked `settings.json` is never edited (decision 0016: no git-visible change): the key goes to the local file unless the tracked file already has a value. Local settings outrank project settings.
+- D2: `harness init` writes it into the file that receives `agent` (`.claude/settings.local.json`; `--shared`: `.claude/settings.json`; `--no-agent` skips it). An existing value in that file is kept and reported; a second run changes nothing. In a work folder (lane) `autoCompactWindow` is never written to the tracked `settings.json` (decision 0016: no git-visible change): the key goes to the local file unless the tracked file already has a value. Local settings outrank project settings.
 - D3: the conductor prompt ("Progress and resuming") says to update `goal.md` and end the report with a `/clear` suggestion when a piece of work (one PR) ends; `goal.md` and the progress file come back through the SessionStart hook.
 - D4: workers are unchanged.
 
@@ -21,5 +21,7 @@ verified_by: tests/harness.test.sh, tests/install.test.sh
 - The compaction point is expected near 370k tokens. This is an assumption (a fixed headroom inferred from workers), not verified. Supporting evidence only: on Claude Code 2.1.332 `/context` shows "Autocompact buffer 33k" with a 400k window (about 367k). It stays unconfirmed until a real `compact_boundary` is seen.
 - init writes the key only for the conductor session: not with `--no-agent`, not when the target file keeps another `agent`, and not when the tracked `.claude/settings.json` already carries a value (local would override a team value); it prints one line saying so.
 - Checkouts initialised before #276 get the key when `harness init` runs again.
+
+**Correction (2026-11-27, #283).** D2 first said the tracked `settings.json` is never edited in a work folder; that was too wide: `init --shared` there still writes `agent: conductor` into the tracked file when absent (predates #276, unchanged). Only `autoCompactWindow` stays out of it. Also, when the tracked file names a foreign agent and the local file does not name the conductor, the local file gets no window either (it would reach a non-conductor session); init prints the usual "autoCompactWindow not set" note.
 
 **Verify after rollout.** `/autocompact` prints the window. Cheap check, verified on 2.1.332: `claude -p "/autocompact"` prints the effective window and its source ("400k tokens (from settings)"; "160k tokens (from CLAUDE_CODE_AUTO_COMPACT_WINDOW)" for workers). A `compact_boundary` with trigger `auto` near 370k and no 55-minute idle gap before it shows the window works (as opposed to an idle compaction).

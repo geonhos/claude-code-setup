@@ -796,13 +796,21 @@ cmd_init() {
   else mkdir -p .harness/asks || die "cannot create .harness/asks"; echo "created .harness/asks"; fi
   # autoCompactWindow (#276): only for the conductor session (settings_merge skips a foreign agent), and a
   # value in the tracked settings.json is respected: local outranks it, so nothing is written to local then.
-  # A work folder never gets a git-visible change: there the tracked file is not given the window.
-  local acw_sh=$agent acw_loc=$agent acw_t
+  # In a work folder the tracked file is never given the window (decision 0018 D2); the local file gets it
+  # unless the tracked file names a foreign agent and the local one does not name the conductor (#283).
+  local acw_sh=$agent acw_loc=$agent acw_t acw_ta acw_la
   acw_t=$(jq -r '.autoCompactWindow // empty' .claude/settings.json 2>/dev/null)
   if [ "$shared" = 0 ]; then acw_sh=0
   elif git rev-parse --git-dir >/dev/null 2>&1 && ! lane_in_primary; then acw_sh=0; fi
   if [ "$acw_sh" = 1 ]; then acw_loc=0
-  elif [ "$agent" = 1 ] && [ -n "$acw_t" ]; then echo ".claude/settings.json: autoCompactWindow already $acw_t"; acw_loc=0; fi
+  elif [ "$agent" = 1 ] && [ -n "$acw_t" ]; then echo ".claude/settings.json: autoCompactWindow already $acw_t"; acw_loc=0
+  elif [ "$agent" = 1 ] && [ "$shared" = 1 ]; then
+    acw_ta=$(jq -r '.agent // empty' .claude/settings.json 2>/dev/null)
+    acw_la=$(jq -r '.agent // empty' .claude/settings.local.json 2>/dev/null)
+    if [ -n "$acw_ta" ] && [ "$acw_ta" != conductor ] && [ "$acw_la" != conductor ]; then
+      echo "note: .claude/settings.json sets agent \"$acw_ta\"; autoCompactWindow not set (it is for the conductor session)"; acw_loc=0
+    fi
+  fi
   if [ "$shared" = 0 ]; then settings_merge "$target" "$agent" 1 "$acw_loc"
   else
     [ "$agent" = 0 ] || settings_merge "$target" 1 0 "$acw_sh"

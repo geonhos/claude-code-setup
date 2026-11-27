@@ -371,6 +371,13 @@ rm -f AGENTS.md; noagents_exclude; printf '{"agent":"conductor"}\n' > .claude/se
 hrun lane 78 r8; D="$BASE/repo-78"; rm -f "$D/.claude/settings.local.json"
 ( cd "$D" && env -u HARNESS_ROLE /bin/bash "$HARNESS" init --shared --no-agent >/dev/null 2>&1 )
 check "lane: init --shared --no-agent writes no autoCompactWindow to the local file (#276)" bash -c '[ -f "$1/.claude/settings.local.json" ] && ! jq -e "has(\"autoCompactWindow\")" "$1/.claude/settings.local.json" >/dev/null 2>&1' _ "$D"
+# manual init --shared in a work folder whose tracked settings.json has a foreign agent: no window anywhere (#283)
+lsetup
+rm -f AGENTS.md; noagents_exclude; printf '{"agent":"other"}\n' > .claude/settings.json; git add .claude/settings.json; git commit -q -m shared; git push -q origin main 2>/dev/null
+hrun lane 79 r9; D="$BASE/repo-79"; rm -f "$D/.claude/settings.local.json"
+OUT=$(cd "$D" && env -u HARNESS_ROLE /bin/bash "$HARNESS" init --shared 2>&1)
+check "lane: init --shared with a foreign tracked agent: local file gets no autoCompactWindow (#283)" bash -c '! jq -e "has(\"autoCompactWindow\")" "$1/.claude/settings.local.json" >/dev/null 2>&1' _ "$D"
+check "lane: init --shared with a foreign tracked agent: says why (#283)" grep -qF "autoCompactWindow not set" <<<"$OUT"
 lsetup
 rm -f AGENTS.md; noagents_exclude
 hrun lane 73 r4; D="$BASE/repo-73"
