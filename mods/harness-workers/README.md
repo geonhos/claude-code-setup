@@ -5,10 +5,18 @@ session, without typing anything. It reads only `harness status --json --all` (s
 version 1, `docs/reference.md`; golden `tests/fixtures/status-v1.json`).
 
 ```
- ▸ ● implementer #305  2/7 Add failing tests · 4m12s
-   ● analyst     main  → Read lib/harness-dash.sh · 1m03s
-   ✓ reviewer    #301  exit 0 · PASS · 3m40s
+ ▸ ● implementer #305  4m12s · 2/7 Add failing tests
+   ● analyst     main  1m03s · → Read lib/harness-dash.sh
+   ✓ reviewer    #301  3m40s · exit 0 · PASS
 ```
+
+- Narrow terminals: no line wraps. Order is fixed, least important last: collapsed = symbol, role, `n/N`,
+  elapsed, step (or action), folder tag; expanded header = symbol, role, folder tag, elapsed, turns, ctx.
+  Elapsed comes before the step, so a cut (`…`, by display width, Korean = 2 cells) eats the end of the
+  step. Below the width of the full line (columns < `NARROW_COLS` in `hooks/model.ts`, or when any row
+  does not fit) fields are joined by one space and roles shorten (`impl`, `anl`, `rev`); then `main` is
+  dropped (`#N` stays), then ctx, then turns. Below `NARROW_COLS` the action line is indented 2, not 6.
+  Example at 40 columns: `● impl #331 4m12s 2/4 실패하는 테스트 …`.
 
 - One row per worker that is running or finished within the last 60 s, across all work folders.
   `●` running, `✓` exit 0, `✗` any other exit or a dead worker. Nothing is drawn when there is none.

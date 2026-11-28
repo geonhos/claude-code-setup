@@ -253,31 +253,54 @@ function middle(w: Worker): string {
   return w.now ? `→ ${w.now}` : ''
 }
 
-type Pad = { role: number; folder: number }
+// Narrow-terminal rules. A head line is built in the fixed order symbol, role, folder tag, elapsed, then the
+// step (or action), or the finished parts; expanded: then turns, then ctx. When a line does not fit,
+// the least important part goes first: compact form (short role, one space between fields), then
+// ctx, turns, the `main` tag (a `#N` tag stays), and last the end of the line is cut with `…`.
+export const SHORT_ROLE: Record<string, string> = { implementer: 'impl', analyst: 'anl', reviewer: 'rev' }
+export const NARROW_COLS = 60 // below this the action line under a step is indented 2, else ACTION_INDENT
+export const ACTION_INDENT = 6
+export const NARROW_ACTION_INDENT = 2
 
-function headText(w: Worker, nowS: number, expanded: boolean, pad: Pad): { left: string; right: string } {
-  const { g } = glyphOf(w)
+type Pad = { role: number; folder: number; compact: boolean }
+
+type Fields = { g: string; role: string; folder: string; elapsed: string | null; mid: string[]; turns: string | null; ctx: string | null }
+
+function fieldsOf(w: Worker, nowS: number, expanded: boolean): Fields {
   const dur = elapsedOf(w, nowS)
-  const id = `${g} ${w.role.padEnd(pad.role)} ${w.folder.padEnd(pad.folder)}`
-  const durText = dur === null ? null : formatDuration(dur)
-  if (!expanded) {
-    if (w.state === 'running') return { left: `${id}  ${middle(w)}`.trimEnd(), right: durText ? ` · ${durText}` : '' }
-    const parts = finishedParts(w)
-    if (durText) parts.push(durText)
-    return { left: `${id}  ${parts.join(' · ')}`, right: '' }
+  const f: Fields = { g: glyphOf(w).g, role: w.role, folder: w.folder, elapsed: dur === null ? null : formatDuration(dur), mid: [], turns: null, ctx: null }
+  if (w.state !== 'running') f.mid = finishedParts(w)
+  else if (!expanded) f.mid = middle(w) ? [middle(w)] : []
+  if (expanded) {
+    if (w.turns !== null) f.turns = `${w.turns} turns`
+    if (w.ctx !== null) f.ctx = `ctx ${formatCtx(w.ctx)}`
   }
-  const parts: string[] = []
-  if (w.state !== 'running') parts.push(...finishedParts(w))
-  if (durText) parts.push(durText)
-  if (w.turns !== null) parts.push(`${w.turns} turns`)
-  if (w.ctx !== null) parts.push(`ctx ${formatCtx(w.ctx)}`)
-  return { left: `${id}  ${parts.join(' · ')}`.trimEnd(), right: '' }
+  return f
+}
+
+function joinFields(f: Fields, pad: Pad, o: { ctx: boolean; turns: boolean; folder: boolean }): string {
+  const parts = [f.elapsed, ...f.mid, o.turns ? f.turns : null, o.ctx ? f.ctx : null].filter((x): x is string => x !== null)
+  if (pad.compact) return [f.g, SHORT_ROLE[f.role] ?? f.role, o.folder ? f.folder : null, ...parts].filter(x => x !== null && x !== '').join(' ')
+  return `${f.g} ${f.role.padEnd(pad.role)} ${f.folder.padEnd(pad.folder)}  ${parts.join(' · ')}`.trimEnd()
+}
+
+/** The head line of one worker: the first of the shrinking forms that fits `cols`, else the last cut with `…`. */
+function headText(w: Worker, nowS: number, expanded: boolean, pad: Pad, cols: number): string {
+  const f = fieldsOf(w, nowS, expanded)
+  const keepFolder = f.folder !== 'main'
+  const forms = [{ ctx: true, turns: true, folder: true }]
+  if (pad.compact) forms.push({ ctx: false, turns: true, folder: true }, { ctx: false, turns: false, folder: true }, { ctx: false, turns: false, folder: keepFolder })
+  let line = ''
+  for (const o of forms) {
+    line = joinFields(f, pad, o)
+    if (width(line) <= cols) return line
+  }
+  return truncate(line, cols)
 }
 
 function buildBlock(w: Worker, nowS: number, expanded: boolean, pad: Pad, cols: number): Block {
   const { color } = glyphOf(w)
-  const { left, right } = headText(w, nowS, expanded, pad)
-  const head: Line = { text: truncate(left, cols - width(right)) + right, color: w.state === 'running' ? undefined : color }
+  const head: Line = { text: headText(w, nowS, expanded, pad, cols), color: w.state === 'running' ? undefined : color }
   const block: Block = { head, top: [], essential: [], steps: [] }
   if (!expanded || w.state !== 'running') return block
   if (w.titleKo) block.top.push({ text: truncate(`  지시: ${w.titleKo}`, cols) })
@@ -289,7 +312,7 @@ function buildBlock(w: Worker, nowS: number, expanded: boolean, pad: Pad, cols: 
   for (const s of w.steps) {
     const sym = s.n < cur.n ? '✓' : s.n === cur.n ? '▸' : '·'
     const lines: Line[] = [{ text: truncate(`  ${sym} ${s.n} ${stepName(s)}`, cols), color: s.n < cur.n ? 'green' : undefined, dim: s.n > cur.n }]
-    if (s.n === cur.n && w.now) lines.push({ text: truncate(`      → ${w.now}`, cols), dim: true })
+    if (s.n === cur.n && w.now) lines.push({ text: truncate(`${' '.repeat(cols < NARROW_COLS ? NARROW_ACTION_INDENT : ACTION_INDENT)}→ ${w.now}`, cols), dim: true })
     if (s.n === cur.n) block.essential = lines
     block.steps.push({ n: s.n, lines, dist: Math.abs(s.n - cur.n) })
   }
@@ -303,7 +326,10 @@ function buildBlock(w: Worker, nowS: number, expanded: boolean, pad: Pad, cols: 
  */
 export function layout(workers: Worker[], o: { expanded: boolean; maxRows: number; columns: number; nowS: number }): Layout {
   const cols = Math.max(10, o.columns)
-  const pad: Pad = { role: Math.max(0, ...workers.map(w => w.role.length)), folder: Math.max(0, ...workers.map(w => width(w.folder))) }
+  const wide: Pad = { role: Math.max(0, ...workers.map(w => w.role.length)), folder: Math.max(0, ...workers.map(w => width(w.folder))), compact: false }
+  // the aligned form only when every head fits whole; else all heads use the compact form
+  const fits = workers.every(w => width(headText(w, o.nowS, o.expanded, wide, Infinity)) <= cols)
+  const pad: Pad = fits ? wide : { ...wide, compact: true }
   const blocks = workers.map(w => buildBlock(w, o.nowS, o.expanded, pad, cols))
   const cost = (b: Block) => 1 + b.top.length + b.essential.length
   const total = blocks.reduce((n, b) => n + 1 + b.top.length + (b.steps.length > 0 ? b.steps.reduce((m, s) => m + s.lines.length, 0) : b.essential.length), 0)

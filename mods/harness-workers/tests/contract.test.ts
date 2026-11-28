@@ -47,7 +47,7 @@ test('the golden parses into the expected rows', () => {
   const rows = selectWorkers(s, now, {})
   expect(rows.map(r => r.role)).toEqual(['analyst', 'reviewer'])
   const lines = layout(rows, { expanded: false, maxRows: 5, columns: 100, nowS: now }).lines.map(l => l.text)
-  expect(lines[0]).toBe('● analyst  main  → Run the "dash" suite · 4m12s')
+  expect(lines[0]).toBe('● analyst  main  4m12s · → Run the "dash" suite')
   expect(lines[1]).toContain('exit 0 · PASS')
   // the implementer finished at 1795867432, long before: never shown; the reviewer lingers 60 s from 1795867632
   expect(selectWorkers(s, 1795867632 + 61, {}).map(r => r.role)).toEqual(['analyst'])
