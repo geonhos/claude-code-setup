@@ -224,9 +224,9 @@ export function diffSnapshots(prev: Snapshot | null, next: Snapshot, nowS: numbe
 
 // ---------- lines ----------
 
-// `top`: the instruction line. `essential`: the lines that always stay (the current step and its action
-// line, or the lone action line when no step is known). `cur`: the current step line (or that lone action
-// line), `act`: the action line under the current step. `steps`: every step in order with its distance.
+// One worker's lines. `head`: the header. `top`: the 지시 line. `cur`: the current step line (or the lone
+// `→ now` line when no step is known). `act`: the action line under the current step. `steps`: every step in
+// order with its distance from the current one. Tier order when rows are short: head, cur, top, act, other steps.
 type Block = { head: Line; top: Line[]; cur: Line | null; act: Line | null; steps: { n: number; line: Line; dist: number; cur: boolean }[] }
 
 const stepName = (s: Step): string => s.ko ?? s.text
@@ -331,7 +331,8 @@ function allLines(b: Block): Line[] {
  * The lines to draw for `workers` (already ordered by selectWorkers) in at most `maxRows` rows.
  * When rows are short they go by priority, each tier round-robin over the workers: header, current step
  * (or the lone action line), 지시, action line, then the other steps nearest the current one first.
- * If the headers do not all fit, the last row is `+N more`.
+ * If the headers do not all fit, the last row is `+N more`. Exception: with maxRows 1 only the first header
+ * is drawn and there is no `+N more` row.
  */
 export function layout(workers: Worker[], o: { expanded: boolean; maxRows: number; columns: number; nowS: number }): Layout {
   const cols = Math.max(10, o.columns)

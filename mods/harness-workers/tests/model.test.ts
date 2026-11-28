@@ -472,20 +472,14 @@ test('narrow: at 80, 60, 40 and 30 columns no line is wider than the width and e
   expect(heads30[0]).toContain('4m12s')
   expect(heads30[1]).toContain('1h01m')
   expect(heads30[2]).toContain('1m15s')
-  // collapsed heads at 60/40/30 are the compact form; `…` is there exactly when that line does not fit:
-  // the expected line is the whole compact line (tag dropped when the tag is not `#N` and the line is too wide), cut to cols
-  const exp = (g: string, role: string, tag: string, el: string, mid: string, cols: number) => {
-    const full = [g, role, tag, el, mid].filter(Boolean).join(' ')
-    const noTag = [g, role, el, mid].filter(Boolean).join(' ')
-    const line = width(full) <= cols || /^#\d+$/.test(tag) ? full : noTag
-    return truncate(line, cols)
+  // collapsed heads at 60/40/30 are the compact form, written out by hand from the rules: short role, one space
+  // between fields, the `main` tag dropped when the line is too wide (`#N` stays), the end cut with `…` to fit
+  const WIDE: Record<number, string[]> = {
+    60: ['● impl #331 4m12s 2/4 실패하는 테스트 추가', '● rev 1h01m 3/3 A long English step name for the width test', '✗ anl #12 1m15s exit 1 verify fail FAIL'],
+    40: ['● impl #331 4m12s 2/4 실패하는 테스트 …', '● rev 1h01m 3/3 A long English step nam…', '✗ anl #12 1m15s exit 1 verify fail FAIL'],
+    30: ['● impl #331 4m12s 2/4 실패하…', '● rev 1h01m 3/3 A long Englis…', '✗ anl #12 1m15s exit 1 verify…'],
   }
-  for (const cols of [60, 40, 30]) {
-    const got = samples[`${cols}c`]!
-    expect(got[0]).toBe(exp('●', 'impl', '#331', '4m12s', '2/4 실패하는 테스트 추가', cols))
-    expect(got[1]).toBe(exp('●', 'rev', 'main', '1h01m', '3/3 A long English step name for the width test', cols))
-    expect(got[2]).toBe(exp('✗', 'anl', '#12', '1m15s', 'exit 1 · verify fail · FAIL'.replace(/ · /g, ' '), cols))
-  }
+  for (const cols of [60, 40, 30]) expect(samples[`${cols}c`]).toEqual(WIDE[cols])
   expect(samples['60c']![0]?.endsWith('…')).toBe(false)
   expect(samples['30c']![0]?.endsWith('…')).toBe(true)
   expect(samples['30x']!.some(t => t.endsWith('…'))).toBe(true)
