@@ -598,9 +598,41 @@ check "step: exited worker keeps the last marker" [ "$(step_of)" = 2 ]
 sj -C "$ST" status --json
 check "step: ... state is exited" jqt '.folders[0].workers[0].state == "exited"' <<<"$OUT"
 mkrun "$ST" implementer s-4 $((SJ_NOW - 10))
+# the window first: .stream still names the previous ask (s-3), whose log carries STEP 2
+printf 's-3 .harness/log/s-new.jsonl\n' > $ST/.harness/asks/implementer.stream
+cp $ST/$SR $ST/.harness/log/s-new.jsonl; evt_text n5 'STEP 2' >> $ST/.harness/log/s-new.jsonl
+check "step: a new ask whose .stream is still the old ask's -> null" [ "$(step_of)" = null ]
 printf 's-4 .harness/log/s-new.jsonl\n' > $ST/.harness/asks/implementer.stream
 grep -v 'STEP' $ST/$SR > $ST/.harness/log/s-new.jsonl
 check "step: a new ask (new log without a marker) -> null" [ "$(step_of)" = null ]
+# the start window (#305 round 2): .current is the new ask, .stream still the old ask's -> every stream field null
+mkrun "$ST" implementer x2 $((SJ_NOW - 3)); evt_text w1 'STEP 2' >> $ST/$SR
+printf 'x1 %s\n' "$SR" > $ST/.harness/asks/implementer.stream
+rm -f $ST/.harness/asks/implementer.exit.json
+sj -C "$ST" status --json
+check "start window: old .stream id -> state running, ask_id new" jqt '.folders[0].workers[0] | .state == "running" and .ask_id == "x2"' <<<"$OUT"
+check "start window: step, turns, ctx, model, now, idle_s all null" jqt '.folders[0].workers[0] | .step == null and .turns == null and .ctx == null and .model == null and .now == null and .idle_s == null' <<<"$OUT"
+printf 'x2 %s\n' "$SR" > $ST/.harness/asks/implementer.stream
+sj -C "$ST" status --json
+check "matching .stream id: values present" jqt '.folders[0].workers[0] | .step == 2 and .turns > 0 and .model == "sonnet" and .ctx > 0' <<<"$OUT"
+# sub-agent (sidechain) messages do not move the step
+mkrun "$ST" implementer x3 $((SJ_NOW - 3)); evt_text w2 'STEP 1' >> $ST/$SR
+jq -n -c '{type:"assistant",parent_tool_use_id:"toolu_1",message:{id:"sc1",content:[{type:"text",text:"STEP 3"}]}}' >> $ST/$SR
+check "step: a sub-agent message (parent_tool_use_id) is ignored" [ "$(step_of)" = 1 ]
+jq -n -c '{type:"assistant",parent_tool_use_id:null,message:{id:"sc2",content:[{type:"text",text:"STEP 2"}]}}' >> $ST/$SR
+check "step: parent_tool_use_id null still counts" [ "$(step_of)" = 2 ]
+# dash Steps of a finished worker: rc 0 -> last step done (✓), other rc or no exit record -> ▶ stays
+printf '# Steps task\n\n## Steps\n1. one\n2. two\n3. three\n' > $ST/.harness/task-implementer.md
+mkrun "$ST" implementer x4 $((SJ_NOW - 300)); evt_text w3 'STEP 2' >> $ST/$SR
+mkexit "$ST" x4 implementer
+cd "$ST"; OUT=$(HARNESS_DASH_FINAL=1 HARNESS_DASH_NOW=$SJ_NOW HARNESS_DASH_LINES=30 HARNESS_DASH_COLS=70 PATH="$HERE/../bin:$PATH" hl_dash_frame implementer "$SR"); cd "$P"
+check "dash Steps: exited rc 0 -> last marked step done" bash -c 'sed -n "/── Steps/,/── Verify/p" <<<"$1" | tr "\n" "|" | grep -qF "── Steps ──|  ✓ 1. one|  ✓ 2. two|    3. three|"' _ "$OUT"
+sed -i.bak 's/"rc":0/"rc":1/' $ST/.harness/asks/implementer.exit.json; rm -f $ST/.harness/asks/implementer.exit.json.bak
+cd "$ST"; OUT=$(HARNESS_DASH_FINAL=1 HARNESS_DASH_NOW=$SJ_NOW HARNESS_DASH_LINES=30 HARNESS_DASH_COLS=70 PATH="$HERE/../bin:$PATH" hl_dash_frame implementer "$SR"); cd "$P"
+check "dash Steps: exited rc 1 -> ▶ stays" bash -c 'sed -n "/── Steps/,/── Verify/p" <<<"$1" | tr "\n" "|" | grep -qF "── Steps ──|  ✓ 1. one|  ▶ 2. two|    3. three|"' _ "$OUT"
+rm -f $ST/.harness/asks/implementer.exit.json
+cd "$ST"; OUT=$(HARNESS_DASH_FINAL=1 HARNESS_DASH_NOW=$SJ_NOW HARNESS_DASH_LINES=30 HARNESS_DASH_COLS=70 PATH="$HERE/../bin:$PATH" hl_dash_frame implementer "$SR"); cd "$P"
+check "dash Steps: dead (no exit record) -> ▶ stays" bash -c 'sed -n "/── Steps/,/── Verify/p" <<<"$1" | tr "\n" "|" | grep -qF "  ▶ 2. two|"' _ "$OUT"
 # Now: a bare marker is skipped as the summary of a tool call; marker + prose keeps the prose
 mkrun "$ST" implementer s-5 $((SJ_NOW - 10))
 { evt_text p1 $'Reading the code now'; evt_text p2 'STEP 2'; evt_tool p3 '{"command":"ls"}'; } >> $ST/$SR

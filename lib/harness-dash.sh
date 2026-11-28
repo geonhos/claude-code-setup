@@ -62,7 +62,7 @@ dash_facts() {
     | ([$e[] | select(.type == "system" and .subtype == "init")] | first) as $i
     | [$e[] | select(.type == "assistant")] as $a
     | ([$a[] | .message.usage?] | map(select(. != null)) | last) as $u
-    | [$a[] | (.message.content // [])[] | select(.type == "text") | (.text // "" | tostring) | scan("(?m)^STEP ([0-9]+)[ \t]*$") | .[0] | tonumber] as $mk
+    | [$a[] | select(.parent_tool_use_id == null) | (.message.content // [])[] | select(.type == "text") | (.text // "" | tostring) | scan("(?m)^STEP ([0-9]+)[ \t]*$") | .[0] | tonumber] as $mk
     | [$a[] | (.message.content // [])[]
        | if .type == "text" then .text = ((.text // "" | tostring) | split("\n") | map(select(test("^STEP [0-9]+[ \t]*$") | not)) | join("\n")) else . end
        | select((.type == "text" and (.text | test("\\S"))) or .type == "tool_use")] as $it
@@ -108,6 +108,9 @@ st_worker_json() {
   elif hl_done "$role" "${id:-}"; then state=exited
   else state=dead; fi
   raw=$(hl_stream_of "$role")
+  # a stream counts only when .stream names this ask: between `ask` writing .current and the runner writing
+  # .stream, hl_stream_of falls back to the previous ask's log, and its values must not show under the new id
+  [ "$(hl_stream_id "$role")" = "${id:-}" ] || raw=""
   if [ -n "$raw" ] && { [ -f "$raw" ] || [ -f "$raw.gz" ]; }; then facts=$(dash_facts "$raw"); else raw=""; fi
   brief=$(dash_brief "$role" 2>/dev/null)
   [ "$state" != exited ] || ej=$(cat "$a.exit.json" 2>/dev/null)
@@ -252,7 +255,9 @@ hl_dash_frame() {
   local cur=""
   if [ -n "$steps" ]; then
     cur=$(jq -r --argjson n "$(printf '%s' "$steps" | grep -c '')" '[(.markers // [])[] | select(type == "number" and . >= 1 and . <= $n)] | last // empty' <<<"$facts")
-    [ -z "$cur" ] || steps=$(printf '%s' "$steps" | awk -v c="$cur" '{ printf "%s%s\n", (NR < c ? "✓ " : NR == c ? "▶ " : "  "), $0 }')
+    # an ask that ended with rc 0 has finished its marked step: ✓; a failed or dead one keeps ▶
+    local fin=0; [ "$final" != 1 ] || [ "$exit_ok" != 1 ] || [ "$(jq -r '.rc // empty' "$a.exit.json" 2>/dev/null)" != 0 ] || fin=1
+    [ -z "$cur" ] || steps=$(printf '%s' "$steps" | awk -v c="$cur" -v d="$fin" '{ printf "%s%s\n", (NR < c || (NR == c && d) ? "✓ " : NR == c ? "▶ " : "  "), $0 }')
   else steps=$(printf '%s' "$heads" | awk '{ print NR ". " $0 }'); fi
   [ -z "$steps" ] || steps=${steps%$'\n'}
   steps=$(printf '%s\n' "$steps" | sed '/^$/d' | head -n 10)
