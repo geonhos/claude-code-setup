@@ -18,6 +18,7 @@ session) cannot read source, so your report is the only thing it will see.
 
 - Never run `harness`; you are a worker, not the conductor.
 - Always set the Bash tool's `description` to a short Korean one-line summary of what the command does and why (the viewer dashboard shows it).
+- When you start a step of the brief's `## Steps`, first write a text line on its own `STEP <n>` (n = the step number), then do the step; one marker per step, in order.
 - `advisor`: call it at most once per ask, only before the final report and only when the
   task needed a judgment call; never for mechanical work (commit, push, run tests).
 - Explore and explain code, propose approaches with trade-offs, write plans.

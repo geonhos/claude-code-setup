@@ -96,7 +96,7 @@ harness를 쓰려는 저장소에서 한 번 실행합니다. `.harness/asks/`(�
 | `brief_title` | string\|null | 브리프의 제목 줄. 세 상태 모두 같습니다 |
 | `now` | string\|null | `running`일 때 대시보드의 "Now" 텍스트(120자까지). `exited`와 `dead`는 `null` |
 | `steps` | array | 브리프 `## Steps`의 `{"n": number, "text": string}`. 없으면 `[]` |
-| `step` | number\|null | 현재 단계. 지금은 항상 `null` |
+| `step` | number\|null | 현재 단계. 현재 ask의 스트림 전체에서 마지막 `STEP <n>` 표시의 번호입니다. 표시는 assistant text 블록 안에서 `STEP <숫자>`만 있는 줄이고, 뒤에 공백이나 탭이 올 수 있습니다. 도구 입력, 도구 결과, 프롬프트, thinking 안의 줄은 표시가 아닙니다. 번호가 1보다 작거나 `steps` 개수보다 크면 그 표시는 무시하고 앞의 유효한 표시를 씁니다. 표시가 없거나 `steps`가 `[]`이면 `null`입니다. 현재 ask의 스트림이 생기기 전(`.stream`이 아직 이전 ask를 가리키는 시작 구간)에도 `null`입니다. 앞의 0은 허용하고(`STEP 007`은 7), 서브에이전트 메시지(`parent_tool_use_id`가 null이 아닌 것)는 세지 않으며, worker 자신의 text 안 코드 블록에 있는 표시 줄은 셉니다. 새 ask(`--keep` 포함)는 `null`에서 시작하고, `exited`와 `dead`는 마지막 표시를 그대로 둡니다. 관례로 이 번호보다 앞의 단계는 완료, 이 번호는 진행 중, 뒤는 대기입니다 |
 | `verify` | string\|null | 세 상태 모두 스트림의 Stop hook 검증이 `running`, `pass`, `fail`이면 그 값, 아니면 `null` |
 | `exit` | object\|null | 상태가 `exited`일 때만 `{rc, result, cost_usd, duration_s, verdict}`. `running`과 `dead`는 `null` |
 | `exit.verdict` | string\|null | reviewer가 `exited`이고 `.harness/reports/reviewer.md`가 `.current`보다 오래되지 않았으며 마지막 비어 있지 않은 줄이 정확히 `VERDICT: PASS` 또는 `VERDICT: FAIL`일 때 `PASS` 또는 `FAIL`. 그 밖에는 줄 끝의 CR을 포함해 `null` |
