@@ -123,3 +123,4 @@
 - 2026-11-27 · implementer · #285 · index.md: recheck a cited file:line on main before triaging a wiki issue (#273 cited lib/harness-headless.sh:401-403, merged fix 9694c93 moved it to :393; ask 1795742722-28531-24383)
 - 2026-11-27 · implementer · #291 · how-to/move-checkout.md: new page, move or rename the checkout (install prunes stale links and hooks; Claude Code path-keyed state steps)
 - 2026-11-27 · implementer · #300 · how-to/move-checkout.md: replace leftover old repo name in sources URL
+- 2026-11-27 · implementer · #305 · how-to/work-folders, decisions/0013: open-watch no longer opens Ghostty or Terminal.app windows (0 of 13 real calls, 2026-11-16 to 2026-11-27, all herdr; the status --json mod replaces a mechanism); no troubleshooting page covered them, none deleted

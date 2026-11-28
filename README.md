@@ -106,7 +106,7 @@ cd ~/workspace/my-claude-harness
 
 ## 진행 보기
 
-- `/watch <role>`: 워커 대시보드를 herdr/tmux 패널이나 Ghostty·Terminal 창에 엽니다. 열 수 없으면 실행할 명령을 출력합니다(`harness open-watch`).
+- `/watch <role>`: 워커 대시보드를 herdr/tmux 패널에 엽니다. 열 수 없으면 실행할 명령을 출력합니다(`harness open-watch`).
 - `harness watch <role>`: 아무 터미널에서 직접 봅니다. 사람 터미널 전용입니다.
 - 데스크톱 알림: conductor가 사용자 입력을 기다리면 macOS 알림이 뜹니다(`osascript` 필요).
 - `harness status`와 `.harness/progress.md`로 워커 상태와 최근 ask를 봅니다.
@@ -118,9 +118,9 @@ cd ~/workspace/my-claude-harness
 | `harness ask <agent> '<instruction>'` | 워커에게 맡깁니다(보통 스킬이 호출). `--timeout MS`, `--keep`, `--no-lane`은 지시문 앞뒤 어디에나 둘 수 있고, `--`로 옵션을 끝냅니다 |
 | `harness wait <agent>` | 실행 중인 워커가 끝날 때까지 기다립니다 |
 | `harness report <agent>` | 리포트를 다시 봅니다 |
-| `harness status` | 워커 상태 |
+| `harness status [--json [--all]]` | 워커 상태. `--json`은 기계가 읽는 JSON, `--all`은 모든 작업 폴더([형식](docs/reference.md)) |
 | `harness lane <issue#> [slug]`, `lane ls`, `lane rm` | 작업 폴더 생성·목록·삭제 |
-| `harness open-watch <agent>` | 대시보드를 새 패널·창에 엽니다 |
+| `harness open-watch <agent>` | 대시보드를 herdr/tmux 새 패널에 엽니다 |
 | `harness watch <agent>` | 실행 스트림을 터미널에서 봅니다 |
 | `harness close <agent>` | 끝난 슬롯을 비웁니다. 실행 중이면 exit 4로 거부하고, `--force`를 주면 멈춥니다 |
 | `harness metrics` | ask·종료·소요 시간 통계와 wiki 상태 |

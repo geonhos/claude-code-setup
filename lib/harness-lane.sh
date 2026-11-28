@@ -31,15 +31,18 @@ lane_in_primary() {
   [ "$(cd "$g" && pwd -P)" = "$c" ]
 }
 
-# lane_rows — "path<TAB>branch" for every non-primary worktree (path canonical, pwd -P)
-lane_rows() {
+# lane_all_rows — "path<TAB>branch" for every worktree, the primary first (path canonical, pwd -P)
+lane_all_rows() {
   local p b
-  git worktree list --porcelain | awk -v RS= -F'\n' 'NR > 1 { p = b = ""
+  git worktree list --porcelain | awk -v RS= -F'\n' '{ p = b = ""
     for (i = 1; i <= NF; i++) { if ($i ~ /^worktree /) p = substr($i, 10); if ($i ~ /^branch /) b = substr($i, 19) }
     print p "\t" b }' | while IFS="$(printf '\t')" read -r p b; do
     printf '%s\t%s\n' "$(cd "$p" 2>/dev/null && pwd -P || echo "$p")" "$b"
   done
 }
+
+# lane_rows — "path<TAB>branch" for every non-primary worktree (path canonical, pwd -P)
+lane_rows() { lane_all_rows | sed 1d; }
 
 # lane_running <path> — a worker of this folder is running
 lane_running() {

@@ -1,8 +1,8 @@
 ---
 type: decision
 status: active
-updated: 2026-11-26
-sources: [issue #67, issue #63 §8, decisions/0011-single-runner-headless.md, commit 74249a0, "#257", lib/harness-openwatch.sh:22-26]
+updated: 2026-11-27
+sources: [issue #67, issue #63 §8, decisions/0011-single-runner-headless.md, commit 74249a0, "#257", lib/harness-openwatch.sh:13-17, "#305"]
 verified_by: tests/headless.test.sh, tests/gate.test.sh, tests/install.test.sh, tests/openwatch.test.sh (herdr backend)
 ---
 # 0013: Remove herdr from the harness
@@ -20,3 +20,5 @@ verified_by: tests/headless.test.sh, tests/gate.test.sh, tests/install.test.sh, 
 - Decisions 0001-0011 keep their herdr wording as history.
 
 **Amendment 2026-11-26 (user decision, #257).** Herdr was removed from the runner, the gate and `install.sh`. It stays allowed as the first backend of `harness open-watch`: when `HERDR_ENV` is set and `herdr` is on PATH, `lib/harness-openwatch.sh` (lines 22-26) opens the watch in a herdr pane, and falls through to tmux, Ghostty or Terminal if that fails. The sentence "the harness must not depend on herdr" holds: nothing needs herdr, and `harness watch` works in any terminal. `tests/openwatch.test.sh` covers the herdr backend.
+
+**Amendment 2026-11-27 (#305).** The Ghostty and Terminal.app backends were removed (0 of 13 real uses); `harness open-watch` now tries herdr (`lib/harness-openwatch.sh` lines 13-17), then tmux.

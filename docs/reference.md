@@ -65,6 +65,50 @@ harness를 쓰려는 저장소에서 한 번 실행합니다. `.harness/asks/`(�
 
 `harness help`, `--help`, `-h`는 usage를 stdout에 출력하고 exit 0입니다(`-C <dir>` 뒤에서도 같습니다). `harness`를 인자 없이 실행하거나 모르는 명령을 주면 usage를 stderr에 출력하고 exit 1입니다. 전체 usage는 다음 명령을 보여 줍니다(`init`, `ask`, `wait`, `watch`, `open-watch`, `report`, `status`, `metrics`, `wiki-lint`, `close`, `lane`). exit code는 `bin/harness` 머리 주석에 있습니다(`ask`/`report` 0-5, `wait` 0·3·4). 작업 폴더에서 한 ask와 close도 주 폴더에 `.harness/asks`가 있으면 그 `progress.jsonl`에 `lane` 필드를 달고 함께 기록됩니다. `lane` 값은 브랜치가 `feat|fix|docs/<n>-*` 꼴이면(`<n>`은 숫자로 시작하고 뒤에 `-`가 하나라도 있어야 합니다) 접두사와 첫 `-` 사이의 글자입니다. `feat/12abc-x`면 `12abc`입니다. 그 밖의 브랜치나 detached HEAD면 폴더 이름입니다. 그래서 `harness lane rm` 뒤에도 `harness metrics`에 남습니다.
 
+### `harness status --json [--all]`
+
+작업 폴더의 워커 상태를 JSON 문서 하나로 stdout에 출력합니다. 읽기만 하며 아무것도 만들거나 고치거나 잠그지 않으므로 워커가 도는 중에도 안전합니다. 플래그가 없는 `harness status`의 출력은 그대로입니다. 폴더 셋 기준 실행 시간은 약 0.15초입니다.
+
+- `--json`: 현재 폴더의 문서를 출력합니다.
+- `--all`: `git worktree list`의 폴더 중 `.harness/asks/`가 있는 폴더를 모두 담습니다. 주 폴더가 먼저입니다. `--json` 없이 `--all`만 주면 usage 오류(exit 1)입니다.
+- 상태 파일이 깨졌거나 쓰는 중이면 읽을 수 있는 값만 담고 나머지는 `null`로 둡니다. exit 코드는 0입니다.
+
+문서 모양은 `{"version":1,"generated_at":N,"folders":[…]}`이고, 전체 예는 `tests/fixtures/status-v1.json`입니다.
+
+| 필드 | 타입 | 설명 |
+|------|------|------|
+| `version` | number | 형식 버전. 현재 1 |
+| `generated_at` | number | 생성 시각(epoch 초) |
+| `folders[].path` | string | 폴더의 절대 경로 |
+| `folders[].primary` | boolean | 주 폴더면 `true` |
+| `folders[].lane` | number\|null | `harness lane` 폴더의 이슈 번호. 주 폴더와 그 밖의 폴더는 `null` |
+| `folders[].branch` | string\|null | 브랜치 이름 |
+| `workers[]` | array | `.current`가 있는 역할만. 순서는 analyst, implementer, reviewer |
+| `role` | string | 역할 |
+| `state` | string | `running`, `exited`, `dead` |
+| `ask_id` | string\|null | 현재 ask |
+| `started_at` | number\|null | 시작 시각(epoch 초) |
+| `elapsed_s` | number\|null | `running`이면 시작부터 지금까지, `exited`면 `exit.json`의 실행 시간. `dead`는 `null` |
+| `idle_s` | number\|null | `running`일 때 스트림이 마지막으로 바뀐 뒤 지난 초. `exited`와 `dead`는 `null` |
+| `turns` | number\|null | assistant 턴 수. 세 상태 모두 스트림에서 읽고, 스트림이 없으면 `null` |
+| `ctx` | number\|null | 컨텍스트 토큰 수. 세 상태 모두 스트림에서 읽고, 스트림이 없으면 `null` |
+| `model` | string\|null | 모델. 세 상태 모두 스트림에서 읽고, 스트림이 없으면 `null` |
+| `brief_title` | string\|null | 브리프의 제목 줄. 세 상태 모두 같습니다 |
+| `now` | string\|null | `running`일 때 대시보드의 "Now" 텍스트(120자까지). `exited`와 `dead`는 `null` |
+| `steps` | array | 브리프 `## Steps`의 `{"n": number, "text": string}`. 없으면 `[]` |
+| `step` | number\|null | 현재 단계. 지금은 항상 `null` |
+| `verify` | string\|null | 세 상태 모두 스트림의 Stop hook 검증이 `running`, `pass`, `fail`이면 그 값, 아니면 `null` |
+| `exit` | object\|null | 상태가 `exited`일 때만 `{rc, result, cost_usd, duration_s, verdict}`. `running`과 `dead`는 `null` |
+| `exit.verdict` | string\|null | reviewer가 `exited`이고 `.harness/reports/reviewer.md`가 `.current`보다 오래되지 않았으며 마지막 비어 있지 않은 줄이 정확히 `VERDICT: PASS` 또는 `VERDICT: FAIL`일 때 `PASS` 또는 `FAIL`. 그 밖에는 줄 끝의 CR을 포함해 `null` |
+
+상태 규칙은 다음 순서로 정합니다.
+
+1. `running`: 워커 pid가 살아 있습니다. 또는 실행한 지 15초 안이고 이 ask의 pid 파일이 아직 없는 경우입니다(시작 유예).
+2. `exited`: `exit.json`의 `ask_id`가 현재 ask와 같습니다. 다른 ask의 `exit.json`은 무시합니다.
+3. `dead`: 위 둘이 아닙니다. pid가 없고 맞는 `exit.json`도 없습니다.
+
+버전 약속: 필드는 추가만 합니다. 이름을 바꾸거나 뜻을 바꾸면 `version`을 올립니다. 읽는 쪽은 모르는 필드를 무시해야 합니다.
+
 ## 워커, 모델, 상한
 
 워커는 항상 headless입니다: `harness-run`이 `claude -p`를 detached로 돌리고, 완료는 `.harness/asks/<role>.exit.json`(프로세스 종료)입니다. 마감 시간에 run을 죽이지 않고 exit 4로 돌려줍니다. 한 번의 실행 상한은 `headless_max_minutes`(기본 60, implementer 90)이고, 이 키는 직접 만든 `.harness/config.json`에 두며(파일이 없으면 기본값) 설정하면 implementer를 포함한 모든 역할에 적용되고 환경변수 `HARNESS_HL_MAX_S`(초)가 이를 덮어씁니다. `--keep`이 아니면 매번 새 세션입니다. 원본 스트림 `.harness/log/*.jsonl`은 게이트가 conductor의 읽기를 막습니다.

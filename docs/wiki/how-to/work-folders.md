@@ -1,8 +1,8 @@
 ---
 type: how-to
 status: active
-updated: 2026-11-26
-sources: [commit 41b679b, "#63", "#59", "#246", "#254", bin/harness:142, tests/lane.test.sh]
+updated: 2026-11-27
+sources: [commit 41b679b, "#63", "#59", "#246", "#254", "#305", bin/harness:142, tests/lane.test.sh]
 verified_by: tests/lane.test.sh
 ---
 # Per-issue work folders (git worktrees)
@@ -11,7 +11,7 @@ Code changes happen in `../<repo>-<issue#>` on branch `<feat|fix|docs>/<issue#>-
 
 - **Create.** `harness lane <issue#> [slug] [--type feat|fix|docs]`: fetches origin, branches from origin's default branch, runs `harness init` there, runs `lane_setup` from `.claude/harness.json` (e.g. `"lane_setup": "npm ci"`; a failure is reported, the folder stays) and prints the absolute path. To copy an ignored file such as `.env` into the new folder, use `"lane_setup": "cp ../<repo>/.env ."` (the work folder is a sibling of the primary folder). Run again to reuse an existing folder or branch. The slug comes from the issue title (`gh`), kebab-case, 30 chars.
 - **Parallel asks.** `harness -C <path> ask implementer '...'`, then `-C <path> wait|report|status`. State (`.harness/`) is per folder, so implementers in different folders run at once. Use an absolute path: the conductor gate rejects `..`. Run tasks in parallel only when their file sets do not overlap.
-- **Watch** (human terminal): `/watch implementer` runs `harness -C <path> open-watch implementer`, which opens `harness -C <path> watch implementer` in a new herdr pane, tmux pane, Ghostty window (`TERM_PROGRAM=ghostty`) or Terminal window (or prints it when none is available). `harness lane ls` lists issue, branch, path, PR state and running workers.
+- **Watch** (human terminal): `/watch implementer` runs `harness -C <path> open-watch implementer`, which opens `harness -C <path> watch implementer` in a new herdr or tmux pane (or prints it when neither is available). `harness lane ls` lists issue, branch, path, PR state and running workers.
 - **Remove.** `harness lane rm <issue#|path> [--force]` only when the PR is MERGED or CLOSED **and** the local HEAD equals the PR's `headRefOid` (`gh pr view`); otherwise it refuses, so unpushed commits are never lost. Also refuses while a worker runs there, with uncommitted changes, on a detached HEAD, and when an ignored file (not `.harness/`, `.claude/settings.local.json`, `AGENTS.md`, `node_modules/`, `dist/`, `build/`, `.venv/`, `target/`, `.next/`, `coverage/`, `__pycache__/`) is missing in or differs from the primary folder (an identical copy such as `.env` is fine). Removes the folder and local branch (`-D`); for MERGED it deletes the remote branch with `--force-with-lease=<branch>:<headRefOid>` (later pushes keep it), a CLOSED PR keeps it. `--force` prints how many commits are lost first.
 - **Progress rows.** Every ask and close row written in a work folder is also appended to the primary's `.harness/progress.jsonl` (only when the primary has `.harness/asks`) with a `lane` key: the issue number on a `feat|fix|docs/<n>-*` branch, else the folder's basename (detached HEAD, other branch names; `feat/12abc-x` gives `12abc`), so `harness metrics` and progress.md see lane work and `lane rm` loses nothing but the folder's `.harness/log` and reports (`stream_log` paths of lane rows dangle). `--keep` in the primary ignores lane rows.
 
