@@ -463,13 +463,16 @@ check "running worker: now keeps quotes (jq-escaped)" jqt '.folders[0].workers[0
 check "exited worker (matching exit.json): state, exit, verify" jqt '.folders[0].workers[1] | .state == "exited" and .elapsed_s == 220 and .idle_s == null and .now == null and .verify == "pass" and .exit == {rc: 0, result: "success", cost_usd: 0.25, duration_s: 220, verdict: null}' <<<"$OUT"
 check "brief with ## Steps: numbered list, Korean title" jqt '.folders[0].workers[1] | .brief_title == "작업: 상태 JSON" and .steps == [{n:1,text:"Read AGENTS.md",ko:"AGENTS.md 읽기"},{n:2,text:"Add failing tests",ko:null}]' <<<"$OUT"
 check "brief with Title-ko and one [ko:] step: title_ko set, suffix not in text" jqt '.folders[0].workers[1] | .title_ko == "상태 JSON에 한글 필드" and (.steps | map(.text | contains("[ko") | not) | all)' <<<"$OUT"
-check "brief without Korean: title_ko null, ko null" jqt '.folders[0].workers[0] | .title_ko == null and .steps == []' <<<"$OUT"
 check "reviewer: verdict from the report's VERDICT line" jqt '.folders[0].workers[2] | .state == "exited" and .exit.verdict == "PASS"' <<<"$OUT"
 check "status --json writes and creates nothing" [ "$before" = "$(cd "$P" && find .harness -type f | sort | xargs cksum | cksum)" ]
 # a brief without markers: both fields null; `[ko:` mid-line, an empty `[ko: ]` and a Title-ko below a heading are not Korean names
 printf '# Plain\n\n## Steps\n1. Keep [ko: x] inside\n2. Empty [ko: ]\n3. Plain\n\n## Notes\nTitle-ko: late\n' > $P/.harness/task-implementer.md
 sj status --json
 check "brief: mid-line [ko:], empty [ko: ] and late Title-ko are ignored" jqt '.folders[0].workers[1] | .title_ko == null and .steps == [{n:1,text:"Keep [ko: x] inside",ko:null},{n:2,text:"Empty",ko:null},{n:3,text:"Plain",ko:null}]' <<<"$OUT"
+# a brief with Steps and no Korean marker: title_ko and every ko are null on real steps
+printf '# Plain\n\n## Steps\n1. Read it\n2. Do it\n' > $P/.harness/task-implementer.md
+sj status --json
+check "brief without Korean: title_ko null, ko null on real steps" jqt '.folders[0].workers[1] | .title_ko == null and (.steps | length == 2) and (.steps | map(.ko == null) | all)' <<<"$OUT"
 # the English text without the suffix is what the dashboard Steps block shows
 printf 'Title-ko: 한글\n# T\n\n## Steps\n1. Read it [ko: 읽기]\n2. Do it\n' > $P/.harness/task-implementer.md
 frame 30 70 implementer "$P"

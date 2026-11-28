@@ -170,11 +170,18 @@ test('maxRows overflow, expanded: current step and its action line of each worke
   const eight = texts([a, b], { expanded: true, maxRows: 8 })
   expect(eight.length).toBe(8)
   expect(eight.filter(t => t.includes('▸')).length).toBe(2)
-  // a third worker that does not fit becomes +1 more
+  // all three headers fit, so all three are shown, each with its current step first
   const c = w({ key: 'c', role: 'reviewer', step: 1, steps: STEPS })
   const seven = texts([a, b, c], { expanded: true, maxRows: 7 })
   expect(seven.length).toBe(7)
-  expect(seven[6]?.trim()).toBe('+1 more')
+  expect(seven.filter(t => /^[●✓✗]/.test(t)).length).toBe(3)
+  expect(seven.filter(t => t.includes('▸')).length).toBe(3)
+  // headers that do not all fit: as many as fit beside `+N more`
+  const d = w({ key: 'd', role: 'x', step: 1, steps: STEPS })
+  const four = texts([a, b, c, d], { expanded: true, maxRows: 3 })
+  expect(four.length).toBe(3)
+  expect(four.filter(t => /^[●✓✗]/.test(t)).length).toBe(2)
+  expect(four[2]?.trim()).toBe('+2 more')
   // order of lines stays the order of steps, the action line stays under its step
   const ordered = texts([a], { expanded: true, maxRows: 5 })
   expect(ordered.slice(1).map(t => t.trim().slice(0, 3))).toEqual(['✓ 2', '▸ 3', '→ X', '· 4'])
@@ -216,20 +223,46 @@ test('Korean: expanded shows 지시 first, ko names, the action line under the c
 test('Korean: the 지시 line counts toward maxRows and is cut by cells', () => {
   const a = w({ key: 'a', step: 2, steps: KO_STEPS, titleKo: '아주 긴 한글 지시 문장입니다 정말로 매우 깁니다', now: 'X' })
   const b = w({ key: 'b', role: 'analyst', step: 1, steps: KO_STEPS, titleKo: '두 번째' })
-  // a costs header + 지시 + step + action = 4; b does not fit with +1 more
+  // both headers and both current steps come first, the 지시 line of a takes the fifth row
   const out = texts([a, b], { expanded: true, maxRows: 5 })
   expect(out.length).toBe(5)
   expect(out[1]).toContain('지시:')
-  expect(out[4]?.trim()).toBe('+1 more')
+  expect(out.filter(t => /^[●✓✗]/.test(t)).length).toBe(2)
+  expect(out.filter(t => t.includes('지시')).length).toBe(1)
   for (const cols of [12, 20, 30]) {
     const lines = layout([a], { expanded: true, maxRows: 10, columns: cols, nowS: NOW }).lines
     for (const l of lines) expect(width(l.text)).toBeLessThanOrEqual(cols)
   }
   const cut = layout([a], { expanded: true, maxRows: 10, columns: 20, nowS: NOW }).lines[1]?.text ?? ''
   expect(cut.endsWith('…')).toBe(true)
-  // a block that cannot fit its 지시 line keeps header and current step first
-  const tight = texts([a], { expanded: true, maxRows: 3 })
-  expect(tight.length).toBe(3)
+})
+
+test('row priority when maxRows is short: header, current step, 지시, action line, other steps', () => {
+  const a = w({ key: 'a', step: 2, steps: KO_STEPS, titleKo: '한글 지시', now: 'Run it' })
+  const b = w({ key: 'b', role: 'analyst', folder: '#7', step: 1, steps: KO_STEPS, titleKo: '둘째 지시', now: 'Read it' })
+  const head = '● implementer #305  4m12s · 23 turns · ctx 61k'
+  expect(texts([a], { expanded: true, maxRows: 2 })).toEqual([head, '  ▸ 2 실패하는 테스트 추가'])
+  expect(texts([a], { expanded: true, maxRows: 3 })).toEqual([head, '  지시: 한글 지시', '  ▸ 2 실패하는 테스트 추가'])
+  expect(texts([a], { expanded: true, maxRows: 4 })).toEqual([head, '  지시: 한글 지시', '  ▸ 2 실패하는 테스트 추가', '      → Run it'])
+  // both headers come before any 지시 line
+  const two = texts([a, b], { expanded: true, maxRows: 3 })
+  expect(two.length).toBe(3)
+  expect(two[0]).toBe('● implementer #305  4m12s · 23 turns · ctx 61k')
+  expect(two[1]).toBe('  ▸ 2 실패하는 테스트 추가')
+  expect(two[2]?.startsWith('● analyst')).toBe(true)
+  expect(two.some(t => t.includes('지시'))).toBe(false)
+})
+
+test('narrow: a long folder tag is dropped before elapsed is lost', () => {
+  const a = w({ folder: 'my-very-long-lane-directory-name', step: 1, steps: [{ n: 1, text: 'Read the code', ko: null }] })
+  for (const expanded of [false, true]) {
+    for (const cols of [30, 40, 50]) {
+      const h = layout([a], { expanded, maxRows: 5, columns: cols, nowS: NOW }).lines[0]?.text ?? ''
+      expect(width(h)).toBeLessThanOrEqual(cols)
+      expect(h).toContain('4m12s')
+    }
+  }
+  expect(texts([a], { expanded: false, maxRows: 5, columns: 30 })).toEqual(['● impl 4m12s 1/1 Read the code'])
 })
 
 test('parseStatus reads title_ko and steps[].ko; absent or empty is null', () => {
@@ -379,8 +412,6 @@ test('harness root: nearest ancestor with .harness/asks, up to .git inclusive', 
 
 // ---------- narrow terminals ----------
 
-const hasWide = (t: string) => /[\u1100-\u115f\u2e80-\ua4cf\uac00-\ud7a3]/.test(t)
-
 test('narrow: the wide form keeps full role names, aligned, at 80 columns', () => {
   const a = w({ step: 2, steps: KO_STEPS })
   const b = w({ key: 'b', role: 'analyst', folder: 'main', now: 'Read lib/harness-dash.sh', startedAt: NOW - 63 })
@@ -430,7 +461,10 @@ test('narrow: at 80, 60, 40 and 30 columns no line is wider than the width and e
       const lines = layout([korean, english, done], { expanded, maxRows: 30, columns: cols, nowS: NOW }).lines.map(l => l.text)
       samples[`${cols}${expanded ? 'x' : 'c'}`] = lines
       for (const t of lines) expect(width(t)).toBeLessThanOrEqual(cols)
-      for (const h of lines.filter(t => /^[●✓✗]/.test(t))) expect(/\d+(s|m\d\d s|m\d\ds|h\d\dm)/.test(h) || /\d(s|m)/.test(h)).toBe(true)
+      // the exact elapsed token of each head is present
+      const heads = lines.filter(t => /^[●✓✗]/.test(t))
+      expect(heads.length).toBe(3)
+      ;['4m12s', '1h01m', '1m15s'].forEach((tok, i) => expect(heads[i]).toContain(tok))
     }
   }
   // elapsed text of each worker is visible in every head at 30 columns, Korean step names are cut with …
@@ -438,7 +472,22 @@ test('narrow: at 80, 60, 40 and 30 columns no line is wider than the width and e
   expect(heads30[0]).toContain('4m12s')
   expect(heads30[1]).toContain('1h01m')
   expect(heads30[2]).toContain('1m15s')
-  expect(heads30[0]?.endsWith('…') || hasWide(heads30[0] ?? '')).toBe(true)
+  // collapsed heads at 60/40/30 are the compact form; `…` is there exactly when that line does not fit:
+  // the expected line is the whole compact line (tag dropped when the tag is not `#N` and the line is too wide), cut to cols
+  const exp = (g: string, role: string, tag: string, el: string, mid: string, cols: number) => {
+    const full = [g, role, tag, el, mid].filter(Boolean).join(' ')
+    const noTag = [g, role, el, mid].filter(Boolean).join(' ')
+    const line = width(full) <= cols || /^#\d+$/.test(tag) ? full : noTag
+    return truncate(line, cols)
+  }
+  for (const cols of [60, 40, 30]) {
+    const got = samples[`${cols}c`]!
+    expect(got[0]).toBe(exp('●', 'impl', '#331', '4m12s', '2/4 실패하는 테스트 추가', cols))
+    expect(got[1]).toBe(exp('●', 'rev', 'main', '1h01m', '3/3 A long English step name for the width test', cols))
+    expect(got[2]).toBe(exp('✗', 'anl', '#12', '1m15s', 'exit 1 · verify fail · FAIL'.replace(/ · /g, ' '), cols))
+  }
+  expect(samples['60c']![0]?.endsWith('…')).toBe(false)
+  expect(samples['30c']![0]?.endsWith('…')).toBe(true)
   expect(samples['30x']!.some(t => t.endsWith('…'))).toBe(true)
   expect(samples['80c']![0]).toBe('● implementer #331  4m12s · 2/4 실패하는 테스트 추가')
 })
