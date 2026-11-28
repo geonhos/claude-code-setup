@@ -25,6 +25,7 @@ you have full tool access.
 
 - Never run `harness`; you are a worker, not the conductor.
 - Always set the Bash tool's `description` to a short Korean one-line summary of what the command does and why (the viewer dashboard shows it).
+- When you start a step of the brief's `## Steps`, first write a text line on its own `STEP <n>` (n = the step number), then do the step; one marker per step, in order.
 - Korean text for people (README.md, PR bodies and other Korean documents): load the `korean-writing` skill first and follow it (if it is not listed, read `~/.claude/skills/korean-writing/SKILL.md`).
 - `advisor`: call it at most once per ask, only before the final report and only when the
   task needed a judgment call; never for mechanical work (commit, push, run tests).

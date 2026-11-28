@@ -540,11 +540,105 @@ check "status extra: same output as plain status" bash -c '[ "$1" = "$(HARNESS_D
 sj status --json extra
 check "status --json extra: extra word ignored" jqt '.version == 1' <<<"$OUT"
 
+# ---- step marker (#305 PR B): `STEP <n>` in an assistant text block -> .step ----
+# The canonical instruction line lives in the three agent files; the test greps each for it verbatim.
+STEP_LINE='- When you start a step of the brief'"'"'s `## Steps`, first write a text line on its own `STEP <n>` (n = the step number), then do the step; one marker per step, in order.'
+for ag in analyst implementer reviewer; do
+  check "agent $ag.md carries the STEP marker instruction verbatim" grep -qxF -- "$STEP_LINE" "$HERE/../claude/agents/$ag.md"
+done
+# evt_text ID TEXT — an assistant text event; evt_tool ID JSON-INPUT — a tool_use event
+evt_text() { jq -n -c --arg id "$1" --arg t "$2" '{type:"assistant",message:{id:$id,content:[{type:"text",text:$t}]}}'; }
+evt_tool() { jq -n -c --arg id "$1" --argjson i "$2" '{type:"assistant",message:{id:$id,content:[{type:"tool_use",name:"Bash",input:$i}]}}'; }
+ST=$(mktemp -d); WORKS="$WORKS $ST"
+mkrun "$ST" implementer s-1 $((SJ_NOW - 300))
+printf '# Steps task\n\n## Steps\n1. one\n2. two\n3. three\n' > $ST/.harness/task-implementer.md
+SR=.harness/log/s-implementer.jsonl
+step_of() { sj -C "$ST" status --json; jq -c '.folders[0].workers[0].step' <<<"$OUT"; }
+check "step: no marker -> null" [ "$(step_of)" = null ]
+{ evt_text m3 'STEP 2'; } >> $ST/$SR
+check "step: marker -> number" [ "$(step_of)" = 2 ]
+sj -C "$ST" status --json
+check "step: a number, not a string" jqt '.folders[0].workers[0].step | type == "number"' <<<"$OUT"
+{ evt_text m4 'STEP 3'; } >> $ST/$SR
+check "step: last marker wins" [ "$(step_of)" = 3 ]
+{ evt_text m5 $'plain prose\nSTEP 1\nSTEP 2  \t\nmore'; } >> $ST/$SR
+check "step: two markers in one block, trailing blanks: the last" [ "$(step_of)" = 2 ]
+{ evt_text m6 'STEP 9'; } >> $ST/$SR
+check "step: n above the step count ignored (previous valid stands)" [ "$(step_of)" = 2 ]
+{ evt_text m7 'STEP 0'; evt_text m8 'STEP 03'; } >> $ST/$SR
+check "step: n = 0 ignored, 03 is step 3" [ "$(step_of)" = 3 ]
+{ evt_text m9 'STEP 2 done'; evt_text m10 'xSTEP 1'; evt_text m11 'step 1'; evt_text m12 'STEP'; evt_text m13 'STEP -1'; } >> $ST/$SR
+check "step: near-miss lines are not markers" [ "$(step_of)" = 3 ]
+# marker only inside a tool_use input, a tool_result, a user prompt, thinking: not a marker
+mkrun "$ST" implementer s-2 $((SJ_NOW - 300))
+{ evt_tool n1 '{"command":"echo","description":"x\nSTEP 2\ny"}'
+  jq -n -c '{type:"user",message:{content:[{type:"tool_result",tool_use_id:"t",content:"STEP 2\nSTEP 1"}]}}'
+  jq -n -c '{type:"user",message:{content:[{type:"text",text:"STEP 3"}]}}'
+  jq -n -c '{type:"user",message:{content:"STEP 3"}}'
+  jq -n -c '{type:"assistant",message:{id:"n2",content:[{type:"thinking",thinking:"STEP 2"}]}}'
+  jq -n -c '{type:"system",subtype:"init",model:"STEP 2"}'
+  printf 'STEP 2\n'; } >> $ST/$SR
+check "step: marker only in tool input / tool_result / prompt / thinking / raw line -> null" [ "$(step_of)" = null ]
+# brief without ## Steps -> null even with a marker
+printf '# No steps\n\n## Goal\nx\n' > $ST/.harness/task-implementer.md
+evt_text n3 'STEP 1' >> $ST/$SR
+check "step: brief without Steps -> null" [ "$(step_of)" = null ]
+sj -C "$ST" status --json
+check "step: ... and steps is []" jqt '.folders[0].workers[0].steps == []' <<<"$OUT"
+printf '# Steps task\n\n## Steps\n1. one\n2. two\n3. three\n' > $ST/.harness/task-implementer.md
+check "step: Steps back -> number" [ "$(step_of)" = 1 ]
+# .gz part: the stream only as <raw>.gz
+gzip -c $ST/$SR > $ST/$SR.gz; rm -f $ST/$SR
+check "step: read from a .gz stream" [ "$(step_of)" = 1 ]
+rm -f $ST/$SR.gz
+# exited worker keeps its step; a new ask (new log, even --keep) starts at null
+mkrun "$ST" implementer s-3 $((SJ_NOW - 300)); evt_text n4 'STEP 2' >> $ST/$SR
+mkexit "$ST" s-3 implementer
+check "step: exited worker keeps the last marker" [ "$(step_of)" = 2 ]
+sj -C "$ST" status --json
+check "step: ... state is exited" jqt '.folders[0].workers[0].state == "exited"' <<<"$OUT"
+mkrun "$ST" implementer s-4 $((SJ_NOW - 10))
+printf 's-4 .harness/log/s-new.jsonl\n' > $ST/.harness/asks/implementer.stream
+grep -v 'STEP' $ST/$SR > $ST/.harness/log/s-new.jsonl
+check "step: a new ask (new log without a marker) -> null" [ "$(step_of)" = null ]
+# Now: a bare marker is skipped as the summary of a tool call; marker + prose keeps the prose
+mkrun "$ST" implementer s-5 $((SJ_NOW - 10))
+{ evt_text p1 $'Reading the code now'; evt_text p2 'STEP 2'; evt_tool p3 '{"command":"ls"}'; } >> $ST/$SR
+sj -C "$ST" status --json
+check "now: bare marker skipped, previous text is the summary" jqt '.folders[0].workers[0].now == "Reading the code now"' <<<"$OUT"
+mkrun "$ST" implementer s-6 $((SJ_NOW - 10))
+{ evt_text q1 $'STEP 2\nDoing the second thing'; evt_tool q2 '{"command":"ls"}'; } >> $ST/$SR
+sj -C "$ST" status --json
+check "now: marker line stripped, prose kept" jqt '.folders[0].workers[0].now == "Doing the second thing"' <<<"$OUT"
+mkrun "$ST" implementer s-7 $((SJ_NOW - 10))
+{ evt_text r1 'STEP 1'; } >> $ST/$SR
+sj -C "$ST" status --json
+check "now: a bare marker as the last item falls back to the earlier item" jqt '.folders[0].workers[0].now == "Run the \"dash\" suite"' <<<"$OUT"
+# the dashboard: Now never shows a bare marker; the marker line stays in Recent (harness-view prints texts as is)
+cd "$ST"; frame 30 70 implementer "$SR"; cd "$P"
+check "dash: Now has no bare marker line" bash -c '! sed -n "/── Now/,/── Steps/p" <<<"$1" | grep -q "STEP 1"' _ "$OUT"
+check "dash: Recent keeps the marker line" bash -c 'sed -n "/── Recent/,\$p" <<<"$1" | grep -qx "  STEP 1"' _ "$OUT"
+
+# dash: the Steps block marks done (✓) and current (▶) steps from the marker; no marker leaves it as it was
+printf '# Steps task\n\n## Steps\n1. one\n2. two\n3. three\n' > $ST/.harness/task-implementer.md
+mkrun "$ST" implementer s-8 $((SJ_NOW - 10)); evt_text u1 'STEP 2' >> $ST/$SR
+cd "$ST"; frame 30 70 implementer "$SR"; cd "$P"
+check "dash Steps: done ✓, current ▶, pending plain" bash -c 'sed -n "/── Steps/,/── Verify/p" <<<"$1" | tr "\n" "|" | grep -qF "── Steps ──|  ✓ 1. one|  ▶ 2. two|    3. three|"' _ "$OUT"
+mkrun "$ST" implementer s-9 $((SJ_NOW - 10))
+cd "$ST"; frame 30 70 implementer "$SR"; cd "$P"
+check "dash Steps: no marker, no marks" bash -c 'sed -n "/── Steps/,/── Verify/p" <<<"$1" | tr "\n" "|" | grep -qF "── Steps ──|  1. one|  2. two|  3. three|"' _ "$OUT"
+printf '# H task\n\n## Goal\nx\n\n## Done\ny\n' > $ST/.harness/task-implementer.md
+evt_text u2 'STEP 1' >> $ST/$SR
+cd "$ST"; frame 30 70 implementer "$SR"; cd "$P"
+check "dash Steps: headings fallback is never marked" bash -c 'sed -n "/── Steps/,/── Verify/p" <<<"$1" | tr "\n" "|" | grep -qF "── Steps ──|  1. Goal|  2. Done|"' _ "$OUT"
+
 # golden: the full document of the representative fixture (path normalised) is the checked-in file the mod reads too
 GOLD="$HERE/fixtures/status-v1.json"
 mkrun "$P" reviewer r-1 $((SJ_NOW - 100))
 printf '# reviewer report\nstatus: done\nVERDICT: PASS\n' > $P/.harness/reports/reviewer.md
 mkexit "$P" r-1 reviewer
+# one golden worker carries a marker (same message id as m1: turns/ctx stay as they were)
+evt_text m1 'STEP 2' >> $P/.harness/log/s-implementer.jsonl
 sj status --json
 jq -S --arg p "$P" '.folders[0].path = "/FIXTURE"' <<<"$OUT" > "$WORK/gold.out"
 if [ -n "${GOLDEN_UPDATE:-}" ]; then cp "$WORK/gold.out" "$GOLD"; fi

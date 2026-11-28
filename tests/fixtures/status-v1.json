@@ -41,7 +41,7 @@
           "role": "implementer",
           "started_at": 1795867212,
           "state": "exited",
-          "step": null,
+          "step": 2,
           "steps": [
             {
               "n": 1,
