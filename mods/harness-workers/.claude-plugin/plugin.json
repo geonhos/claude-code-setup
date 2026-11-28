@@ -1,0 +1,6 @@
+{
+  "name": "harness-workers",
+  "version": "0.1.0",
+  "description": "Worker progress above the prompt: one row per running or just-finished harness worker across work folders, expandable to the brief's step list.",
+  "types": "./types/index.d.ts"
+}

@@ -124,3 +124,4 @@
 - 2026-11-27 · implementer · #291 · how-to/move-checkout.md: new page, move or rename the checkout (install prunes stale links and hooks; Claude Code path-keyed state steps)
 - 2026-11-27 · implementer · #300 · how-to/move-checkout.md: replace leftover old repo name in sources URL
 - 2026-11-27 · implementer · #305 · how-to/work-folders, decisions/0013: open-watch no longer opens Ghostty or Terminal.app windows (0 of 13 real calls, 2026-11-16 to 2026-11-27, all herdr; the status --json mod replaces a mechanism); no troubleshooting page covered them, none deleted
+- 2026-11-28 · implementer · #305 · decisions/0019: new page, the harness-workers mod (in-repo, reads status --json --all, contract test against the golden)

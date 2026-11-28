@@ -1,0 +1,333 @@
+// Pure part of the harness-workers mod: parse `harness status --json --all`, pick and order the
+// workers to show, format collapsed/expanded lines, decide notifications from two snapshots.
+// No `$` access here, so it is unit-testable (tests/model.test.ts).
+import type { Snapshot, Step, Worker, WorkerState } from '../types'
+
+export const SUPPORTED_VERSION = 1
+export const LINGER_S = 60 // a finished worker stays in the band this long
+
+export type Color = 'green' | 'red' | 'yellow'
+export type Line = { text: string; color?: Color; dim?: boolean }
+export type Layout = { lines: Line[]; hidden: number }
+export type ExitEvent = { key: string; text: string; notify: boolean }
+
+// ---------- text helpers ----------
+
+/** One line of plain text: control characters (newlines, ANSI escapes) become spaces. */
+export function clean(s: string): string {
+  return s.replace(/[\u0000-\u001f\u007f-\u009f]+/g, ' ').trim()
+}
+
+function cellWidth(cp: number): number {
+  if (cp === 0 || (cp >= 0x200b && cp <= 0x200f) || (cp >= 0x300 && cp <= 0x36f) || (cp >= 0xfe00 && cp <= 0xfe0f)) return 0
+  if (
+    (cp >= 0x1100 && cp <= 0x115f) ||
+    (cp >= 0x2e80 && cp <= 0xa4cf) ||
+    (cp >= 0xac00 && cp <= 0xd7a3) ||
+    (cp >= 0xf900 && cp <= 0xfaff) ||
+    (cp >= 0xfe30 && cp <= 0xfe6f) ||
+    (cp >= 0xff00 && cp <= 0xff60) ||
+    (cp >= 0xffe0 && cp <= 0xffe6) ||
+    (cp >= 0x1f300 && cp <= 0x1faff) ||
+    (cp >= 0x20000 && cp <= 0x3fffd)
+  )
+    return 2
+  return 1
+}
+
+/** Terminal cells the text takes (wide Korean/CJK characters count 2). */
+export function width(s: string): number {
+  let w = 0
+  for (const ch of s) w += cellWidth(ch.codePointAt(0) as number)
+  return w
+}
+
+/** Cut to at most `cols` cells, ending in `…` when something was cut. */
+export function truncate(s: string, cols: number): string {
+  if (cols <= 0) return ''
+  if (width(s) <= cols) return s
+  let out = ''
+  let w = 0
+  for (const ch of s) {
+    const cw = cellWidth(ch.codePointAt(0) as number)
+    if (w + cw > cols - 1) break
+    out += ch
+    w += cw
+  }
+  return out + '…'
+}
+
+export function formatDuration(s: number): string {
+  const t = Math.max(0, Math.floor(s))
+  const pad = (n: number) => String(n).padStart(2, '0')
+  if (t < 60) return `${t}s`
+  if (t < 3600) return `${Math.floor(t / 60)}m${pad(t % 60)}s`
+  return `${Math.floor(t / 3600)}h${pad(Math.floor((t % 3600) / 60))}m`
+}
+
+function formatCtx(n: number): string {
+  return n >= 1000 ? `${Math.round(n / 1000)}k` : String(n)
+}
+
+// ---------- parsing ----------
+
+const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v)
+const num = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null)
+const str = (v: unknown): string | null => (typeof v === 'string' ? v : null)
+
+function baseName(p: string): string {
+  const parts = p.split('/').filter(Boolean)
+  return parts[parts.length - 1] ?? p
+}
+
+function parseWorker(raw: unknown, folder: string, path: string): Worker | null {
+  if (!isObj(raw)) return null
+  const role = str(raw.role)
+  const state = str(raw.state)
+  if (role === null || (state !== 'running' && state !== 'exited' && state !== 'dead')) return null
+  const steps: Step[] = []
+  if (Array.isArray(raw.steps)) {
+    for (const s of raw.steps) {
+      if (isObj(s) && num(s.n) !== null && str(s.text) !== null) steps.push({ n: s.n as number, text: clean(s.text as string) })
+    }
+  }
+  const step = num(raw.step)
+  const exit = isObj(raw.exit) ? raw.exit : null
+  const now = str(raw.now)
+  return {
+    key: `${path}|${role}`,
+    role,
+    state: state as WorkerState,
+    folder,
+    askId: str(raw.ask_id),
+    startedAt: num(raw.started_at),
+    elapsedS: num(raw.elapsed_s),
+    turns: num(raw.turns),
+    ctx: num(raw.ctx),
+    now: now === null || clean(now) === '' ? null : clean(now),
+    steps,
+    step: step !== null && steps.some(s => s.n === step) ? step : null, // a step the list lacks is unknown, not certain
+    verify: str(raw.verify),
+    rc: exit ? num(exit.rc) : null,
+    verdict: exit ? str(exit.verdict) : null,
+    durationS: exit ? num(exit.duration_s) : null,
+  }
+}
+
+/** Parse the output of `harness status --json --all`; a reason when it cannot be shown. */
+export function parseStatus(raw: string): Snapshot {
+  let doc: unknown
+  try {
+    doc = JSON.parse(raw)
+  } catch {
+    return { ok: false, reason: 'harness status printed unparsable output' }
+  }
+  if (!isObj(doc)) return { ok: false, reason: 'harness status printed unparsable output' }
+  if (doc.version !== SUPPORTED_VERSION) {
+    const v = typeof doc.version === 'number' || typeof doc.version === 'string' ? String(doc.version) : '?'
+    return { ok: false, reason: `status format v${clean(v).slice(0, 12)} is not supported` }
+  }
+  if (!Array.isArray(doc.folders)) return { ok: false, reason: 'harness status printed no folders list' }
+  const workers: Worker[] = []
+  for (const f of doc.folders) {
+    if (!isObj(f) || !Array.isArray(f.workers)) continue
+    const path = str(f.path) ?? '?'
+    const lane = num(f.lane)
+    const branch = str(f.branch)
+    const folder = lane !== null ? `#${lane}` : f.primary === true ? 'main' : clean(branch ?? baseName(path))
+    for (const w of f.workers) {
+      const one = parseWorker(w, folder, path)
+      if (one) workers.push(one)
+    }
+  }
+  return { ok: true, workers, generatedAt: num(doc.generated_at) }
+}
+
+export function anyRunning(s: Snapshot | null): boolean {
+  return s !== null && s.ok && s.workers.some(w => w.state === 'running')
+}
+
+// ---------- which workers, in which order ----------
+
+/** Epoch second at which a stopped worker finished: the document's own, else when a poll saw it stop. */
+export function finishedAt(w: Worker, deadAt: Record<string, number>): number | null {
+  if (w.state === 'exited' && w.startedAt !== null && w.durationS !== null) return w.startedAt + w.durationS
+  return deadAt[w.key] ?? null
+}
+
+/** Running workers (oldest first), then workers that finished within LINGER_S (latest first). */
+export function selectWorkers(s: { workers: Worker[] }, nowS: number, deadAt: Record<string, number>): Worker[] {
+  const running = s.workers.filter(w => w.state === 'running').sort((a, b) => (a.startedAt ?? 0) - (b.startedAt ?? 0) || a.key.localeCompare(b.key))
+  const done: { w: Worker; at: number }[] = []
+  for (const w of s.workers) {
+    if (w.state === 'running') continue
+    const at = finishedAt(w, deadAt)
+    if (at !== null && nowS - at <= LINGER_S) done.push({ w, at })
+  }
+  done.sort((a, b) => b.at - a.at || a.w.key.localeCompare(b.w.key))
+  return [...running, ...done.map(d => d.w)]
+}
+
+// ---------- notifications ----------
+
+function elapsedOf(w: Worker, nowS: number): number | null {
+  if (w.state === 'running') return w.startedAt !== null ? nowS - w.startedAt : w.elapsedS
+  return w.durationS ?? w.elapsedS
+}
+
+function exitText(w: Worker): string {
+  if (w.state === 'dead') return 'dead'
+  return w.rc === null ? 'exited' : `exit ${w.rc}`
+}
+
+/**
+ * Compare two consecutive snapshots. An event is a worker that was running in `prev` and has
+ * stopped in `next` (same ask). A worker that vanished, or whose ask was replaced, gives none.
+ * `deadAt` gets the stop time of each such worker so its row can linger.
+ */
+export function diffSnapshots(prev: Snapshot | null, next: Snapshot, nowS: number): { events: ExitEvent[]; deadAt: Record<string, number> } {
+  const events: ExitEvent[] = []
+  const deadAt: Record<string, number> = {}
+  if (prev === null || !prev.ok || !next.ok) return { events, deadAt }
+  const before = new Map<string, Worker>()
+  for (const w of prev.workers) before.set(w.key, w)
+  for (const w of next.workers) {
+    const p = before.get(w.key)
+    if (!p || p.state !== 'running' || w.state === 'running' || p.askId !== w.askId) continue
+    deadAt[w.key] = nowS
+    const parts = [`harness: ${w.role} ${w.folder} ${exitText(w)}`]
+    if (w.verify === 'pass' || w.verify === 'fail') parts.push(`verify ${w.verify}`)
+    if (w.verdict) parts.push(w.verdict)
+    const dur = w.durationS ?? (p.startedAt !== null ? nowS - p.startedAt : null)
+    if (dur !== null) parts.push(formatDuration(dur))
+    const failed = w.state === 'dead' || (w.rc !== null && w.rc !== 0) || w.verify === 'fail'
+    events.push({ key: w.key, text: parts.join(' · '), notify: failed })
+  }
+  return { events, deadAt }
+}
+
+// ---------- lines ----------
+
+type Block = { head: Line; essential: Line | null; steps: { n: number; line: Line; dist: number }[] }
+
+function glyphOf(w: Worker): { g: string; color: Color } {
+  if (w.state === 'running') return { g: '●', color: 'yellow' }
+  const ok = w.state === 'exited' && w.rc === 0
+  return ok ? { g: '✓', color: 'green' } : { g: '✗', color: 'red' }
+}
+
+function finishedParts(w: Worker): string[] {
+  const parts = [exitText(w)]
+  if (w.verify) parts.push(`verify ${w.verify}`)
+  if (w.verdict) parts.push(w.verdict)
+  return parts
+}
+
+/** Middle part of a collapsed row: `<step>/<n> <text>`, else `→ <now>`, else nothing. */
+function middle(w: Worker): string {
+  if (w.step !== null) {
+    const s = w.steps.find(x => x.n === w.step)
+    if (s) return `${w.step}/${w.steps.length} ${s.text}`
+  }
+  return w.now ? `→ ${w.now}` : ''
+}
+
+type Pad = { role: number; folder: number }
+
+function headText(w: Worker, nowS: number, expanded: boolean, pad: Pad): { left: string; right: string } {
+  const { g } = glyphOf(w)
+  const dur = elapsedOf(w, nowS)
+  const id = `${g} ${w.role.padEnd(pad.role)} ${w.folder.padEnd(pad.folder)}`
+  const durText = dur === null ? null : formatDuration(dur)
+  if (!expanded) {
+    if (w.state === 'running') return { left: `${id}  ${middle(w)}`.trimEnd(), right: durText ? ` · ${durText}` : '' }
+    const parts = finishedParts(w)
+    if (durText) parts.push(durText)
+    return { left: `${id}  ${parts.join(' · ')}`, right: '' }
+  }
+  const parts: string[] = []
+  if (w.state !== 'running') parts.push(...finishedParts(w))
+  if (durText) parts.push(durText)
+  if (w.turns !== null) parts.push(`${w.turns} turns`)
+  if (w.ctx !== null) parts.push(`ctx ${formatCtx(w.ctx)}`)
+  return { left: `${id}  ${parts.join(' · ')}`.trimEnd(), right: '' }
+}
+
+function buildBlock(w: Worker, nowS: number, expanded: boolean, pad: Pad, cols: number): Block {
+  const { color } = glyphOf(w)
+  const { left, right } = headText(w, nowS, expanded, pad)
+  const head: Line = { text: truncate(left, cols - width(right)) + right, color: w.state === 'running' ? undefined : color }
+  const block: Block = { head, essential: null, steps: [] }
+  if (!expanded || w.state !== 'running') return block
+  const cur = w.step !== null ? w.steps.find(s => s.n === w.step) : undefined
+  if (!cur) {
+    if (w.now) block.essential = { text: truncate(`  → ${w.now}`, cols), dim: true }
+    return block
+  }
+  for (const s of w.steps) {
+    const sym = s.n < cur.n ? '✓' : s.n === cur.n ? '▸' : '·'
+    const text = `  ${sym} ${s.n} ${s.text}` + (s.n === cur.n && w.now ? `   → ${w.now}` : '')
+    const line: Line = { text: truncate(text, cols), color: s.n < cur.n ? 'green' : undefined, dim: s.n > cur.n }
+    if (s.n === cur.n) block.essential = line
+    else block.steps.push({ n: s.n, line, dist: Math.abs(s.n - cur.n) })
+  }
+  // The current step is `essential` and rendered in step order below: keep its place.
+  block.steps.push({ n: cur.n, line: block.essential as Line, dist: 0 })
+  block.steps.sort((a, b) => a.n - b.n)
+  return block
+}
+
+/**
+ * The lines to draw for `workers` (already ordered by selectWorkers) in at most `maxRows` rows.
+ * Each worker's header and current step/now line have priority; the other steps fill what is left,
+ * nearest the current step first, round-robin over workers. Workers that do not fit end in `+N more`.
+ */
+export function layout(workers: Worker[], o: { expanded: boolean; maxRows: number; columns: number; nowS: number }): Layout {
+  const cols = Math.max(10, o.columns)
+  const pad: Pad = { role: Math.max(0, ...workers.map(w => w.role.length)), folder: Math.max(0, ...workers.map(w => width(w.folder))) }
+  const blocks = workers.map(w => buildBlock(w, o.nowS, o.expanded, pad, cols))
+  const cost = (b: Block) => 1 + (b.essential ? 1 : 0)
+  const total = blocks.reduce((n, b) => n + 1 + (b.steps.length > 0 ? b.steps.length : b.essential ? 1 : 0), 0)
+  if (o.maxRows <= 0 || blocks.length === 0) return { lines: [], hidden: blocks.length }
+  if (total <= o.maxRows) {
+    return { lines: blocks.flatMap(b => [b.head, ...(b.steps.length > 0 ? b.steps.map(s => s.line) : b.essential ? [b.essential] : [])]), hidden: 0 }
+  }
+  // Pass 1: whole workers by essential cost, leaving one row for `+N more` when some are left out.
+  let k = 0
+  let used = 0
+  while (k < blocks.length && used + cost(blocks[k]!) + (k + 1 < blocks.length ? 1 : 0) <= o.maxRows) used += cost(blocks[k++]!)
+  if (k === 0) k = 1
+  const shown = blocks.slice(0, k)
+  const hidden = blocks.length - k
+  let budget = o.maxRows - shown.reduce((n, b) => n + cost(b), 0) - (hidden > 0 ? 1 : 0)
+  // Pass 2: optional steps, nearest first, round-robin.
+  const keep = shown.map(() => new Set<number>())
+  const rest = shown.map(b => b.steps.filter(s => s.dist > 0).sort((a, b2) => a.dist - b2.dist || a.n - b2.n))
+  for (let round = 0; budget > 0; round++) {
+    let added = false
+    for (let i = 0; i < shown.length && budget > 0; i++) {
+      const s = rest[i]?.[round]
+      if (s) {
+        keep[i]?.add(s.n)
+        budget--
+        added = true
+      }
+    }
+    if (!added) break
+  }
+  const lines: Line[] = []
+  shown.forEach((b, i) => {
+    lines.push(b.head)
+    if (b.steps.length === 0) {
+      if (b.essential) lines.push(b.essential)
+      return
+    }
+    for (const s of b.steps) if (s.dist === 0 || keep[i]?.has(s.n)) lines.push(s.line)
+  })
+  if (o.maxRows >= 1 && hidden > 0 && lines.length < o.maxRows) lines.push({ text: truncate(`  +${hidden} more`, cols), dim: true })
+  return { lines, hidden }
+}
+
+export function failureLine(reason: string, columns: number): Line {
+  return { text: truncate(`harness-workers: ${clean(reason)}`, Math.max(10, columns)), dim: true }
+}
