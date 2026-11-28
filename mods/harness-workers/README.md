@@ -16,6 +16,13 @@ version 1, `docs/reference.md`; golden `tests/fixtures/status-v1.json`).
   (done `✓`, current `▸` with the `now` text, pending `·`). The state lasts for the session. When the
   rows do not fit `maxRows`, the current step of each worker has priority. Whenever a worker is hidden and
   `maxRows` is at least 2, the last row is `+N more`; with `maxRows` 1 only the first header is drawn.
+- Korean text comes from the brief the conductor writes (both optional, English names and no instruction
+  line without them): a `Title-ko: <Korean one-liner>` line above the first `## ` heading, and a
+  `[ko: <Korean step name>]` suffix at the end of a `## Steps` item. The expanded band draws
+  `지시: <title>` under the header (it counts toward `maxRows`); step names use the Korean name, else
+  the English text, collapsed and expanded. The current action (`→ …`) stays English and sits under the
+  current step. They reach the mod as `title_ko` and `steps[].ko` of `harness status --json` (additive,
+  `version` stays 1; `null` when absent). The `[ko: …]` suffix is cut from `steps[].text`.
 - A toast on every worker exit; a native notification only when it failed (rc ≠ 0, dead, verify fail).
 - If the status format is not version 1, `harness status` fails or times out, one dim row
   `harness-workers: <reason>` is drawn and polling continues slowly.

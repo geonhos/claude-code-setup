@@ -39,6 +39,9 @@ test('the golden parses into the expected rows', () => {
     ['implementer', 'exited', 'main', 2, 2, 0, 'pass', null, 220],
     ['reviewer', 'exited', 'main', null, 0, 0, null, 'PASS', 220],
   ])
+  // the golden's implementer brief has a Title-ko and one [ko:] step; the others have none
+  expect(s.workers.map(w => w.titleKo)).toEqual([null, '상태 JSON에 한글 필드', null])
+  expect(s.workers[1]?.steps.map(x => x.ko)).toEqual(['AGENTS.md 읽기', null])
   expect(s.workers[0]).toMatchObject({ askId: 'a-1', startedAt: 1795867260, turns: 2, ctx: 61000, now: 'Run the "dash" suite' })
   // the golden is synthetic: the reviewer's start + duration lies after generated_at, so it counts as just finished
   const rows = selectWorkers(s, now, {})

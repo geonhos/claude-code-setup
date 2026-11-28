@@ -88,6 +88,13 @@ function baseName(p: string): string {
   return parts[parts.length - 1] ?? p
 }
 
+/** A string field made one clean line; null when it is absent, not a string, or empty after cleaning. */
+function cleanOrNull(v: unknown): string | null {
+  const t = str(v)
+  const c = t === null ? '' : clean(t)
+  return c === '' ? null : c
+}
+
 function parseWorker(raw: unknown, folder: string, path: string): Worker | null {
   if (!isObj(raw)) return null
   const role = str(raw.role)
@@ -96,7 +103,7 @@ function parseWorker(raw: unknown, folder: string, path: string): Worker | null 
   const steps: Step[] = []
   if (Array.isArray(raw.steps)) {
     for (const s of raw.steps) {
-      if (isObj(s) && num(s.n) !== null && str(s.text) !== null) steps.push({ n: s.n as number, text: clean(s.text as string) })
+      if (isObj(s) && num(s.n) !== null && str(s.text) !== null) steps.push({ n: s.n as number, text: clean(s.text as string), ko: cleanOrNull(s.ko) })
     }
   }
   const step = num(raw.step)
@@ -113,6 +120,7 @@ function parseWorker(raw: unknown, folder: string, path: string): Worker | null 
     turns: num(raw.turns),
     ctx: num(raw.ctx),
     now: now === null || clean(now) === '' ? null : clean(now),
+    titleKo: cleanOrNull(raw.title_ko),
     steps,
     step: step !== null && steps.some(s => s.n === step) ? step : null, // a step the list lacks is unknown, not certain
     verify: str(raw.verify),
@@ -216,7 +224,12 @@ export function diffSnapshots(prev: Snapshot | null, next: Snapshot, nowS: numbe
 
 // ---------- lines ----------
 
-type Block = { head: Line; essential: Line | null; steps: { n: number; line: Line; dist: number }[] }
+// `top`: the instruction line. `essential`: the lines that always stay (the current step and its action
+// line, or the lone action line when no step is known). `steps`: every step in order with its lines;
+// the current one (dist 0) holds the same lines as `essential`.
+type Block = { head: Line; top: Line[]; essential: Line[]; steps: { n: number; lines: Line[]; dist: number }[] }
+
+const stepName = (s: Step): string => s.ko ?? s.text
 
 function glyphOf(w: Worker): { g: string; color: Color } {
   if (w.state === 'running') return { g: '●', color: 'yellow' }
@@ -235,7 +248,7 @@ function finishedParts(w: Worker): string[] {
 function middle(w: Worker): string {
   if (w.step !== null) {
     const s = w.steps.find(x => x.n === w.step)
-    if (s) return `${w.step}/${w.steps.length} ${s.text}`
+    if (s) return `${w.step}/${w.steps.length} ${stepName(s)}`
   }
   return w.now ? `→ ${w.now}` : ''
 }
@@ -265,23 +278,21 @@ function buildBlock(w: Worker, nowS: number, expanded: boolean, pad: Pad, cols: 
   const { color } = glyphOf(w)
   const { left, right } = headText(w, nowS, expanded, pad)
   const head: Line = { text: truncate(left, cols - width(right)) + right, color: w.state === 'running' ? undefined : color }
-  const block: Block = { head, essential: null, steps: [] }
+  const block: Block = { head, top: [], essential: [], steps: [] }
   if (!expanded || w.state !== 'running') return block
+  if (w.titleKo) block.top.push({ text: truncate(`  지시: ${w.titleKo}`, cols) })
   const cur = w.step !== null ? w.steps.find(s => s.n === w.step) : undefined
   if (!cur) {
-    if (w.now) block.essential = { text: truncate(`  → ${w.now}`, cols), dim: true }
+    if (w.now) block.essential = [{ text: truncate(`  → ${w.now}`, cols), dim: true }]
     return block
   }
   for (const s of w.steps) {
     const sym = s.n < cur.n ? '✓' : s.n === cur.n ? '▸' : '·'
-    const text = `  ${sym} ${s.n} ${s.text}` + (s.n === cur.n && w.now ? `   → ${w.now}` : '')
-    const line: Line = { text: truncate(text, cols), color: s.n < cur.n ? 'green' : undefined, dim: s.n > cur.n }
-    if (s.n === cur.n) block.essential = line
-    else block.steps.push({ n: s.n, line, dist: Math.abs(s.n - cur.n) })
+    const lines: Line[] = [{ text: truncate(`  ${sym} ${s.n} ${stepName(s)}`, cols), color: s.n < cur.n ? 'green' : undefined, dim: s.n > cur.n }]
+    if (s.n === cur.n && w.now) lines.push({ text: truncate(`      → ${w.now}`, cols), dim: true })
+    if (s.n === cur.n) block.essential = lines
+    block.steps.push({ n: s.n, lines, dist: Math.abs(s.n - cur.n) })
   }
-  // The current step is `essential` and rendered in step order below: keep its place.
-  block.steps.push({ n: cur.n, line: block.essential as Line, dist: 0 })
-  block.steps.sort((a, b) => a.n - b.n)
   return block
 }
 
@@ -294,11 +305,11 @@ export function layout(workers: Worker[], o: { expanded: boolean; maxRows: numbe
   const cols = Math.max(10, o.columns)
   const pad: Pad = { role: Math.max(0, ...workers.map(w => w.role.length)), folder: Math.max(0, ...workers.map(w => width(w.folder))) }
   const blocks = workers.map(w => buildBlock(w, o.nowS, o.expanded, pad, cols))
-  const cost = (b: Block) => 1 + (b.essential ? 1 : 0)
-  const total = blocks.reduce((n, b) => n + 1 + (b.steps.length > 0 ? b.steps.length : b.essential ? 1 : 0), 0)
+  const cost = (b: Block) => 1 + b.top.length + b.essential.length
+  const total = blocks.reduce((n, b) => n + 1 + b.top.length + (b.steps.length > 0 ? b.steps.reduce((m, s) => m + s.lines.length, 0) : b.essential.length), 0)
   if (o.maxRows <= 0 || blocks.length === 0) return { lines: [], hidden: blocks.length }
   if (total <= o.maxRows) {
-    return { lines: blocks.flatMap(b => [b.head, ...(b.steps.length > 0 ? b.steps.map(s => s.line) : b.essential ? [b.essential] : [])]), hidden: 0 }
+    return { lines: blocks.flatMap(b => [b.head, ...b.top, ...(b.steps.length > 0 ? b.steps.flatMap(s => s.lines) : b.essential)]), hidden: 0 }
   }
   // Pass 1: whole workers by essential cost, leaving one row for `+N more` when some are left out.
   let k = 0
@@ -325,12 +336,12 @@ export function layout(workers: Worker[], o: { expanded: boolean; maxRows: numbe
   }
   const lines: Line[] = []
   shown.forEach((b, i) => {
-    lines.push(b.head)
+    lines.push(b.head, ...b.top)
     if (b.steps.length === 0) {
-      if (b.essential) lines.push(b.essential)
+      lines.push(...b.essential)
       return
     }
-    for (const s of b.steps) if (s.dist === 0 || keep[i]?.has(s.n)) lines.push(s.line)
+    for (const s of b.steps) if (s.dist === 0 || keep[i]?.has(s.n)) lines.push(...s.lines)
   })
   // The rule: with a worker hidden and maxRows >= 2 the last row is `+N more`; with maxRows 1 only the
   // first header. Never more rows than maxRows.

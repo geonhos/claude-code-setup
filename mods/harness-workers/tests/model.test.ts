@@ -32,6 +32,7 @@ function w(over: Partial<Worker> = {}): Worker {
     turns: 23,
     ctx: 61000,
     now: null,
+    titleKo: null,
     steps: [],
     step: null,
     verify: null,
@@ -41,7 +42,7 @@ function w(over: Partial<Worker> = {}): Worker {
     ...over,
   }
 }
-const STEPS = ['Read AGENTS.md', 'Add failing tests', 'Implement', 'Run the full tests'].map((text, i) => ({ n: i + 1, text }))
+const STEPS = ['Read AGENTS.md', 'Add failing tests', 'Implement', 'Run the full tests'].map((text, i) => ({ n: i + 1, text, ko: null }))
 const snap = (...workers: Worker[]): Snapshot => ({ ok: true, workers, generatedAt: NOW })
 const okSnap = (...workers: Worker[]) => snap(...workers) as Extract<Snapshot, { ok: true }>
 const texts = (workers: Worker[], o: { expanded: boolean; maxRows: number; columns?: number }) => layout(workers, { columns: 100, nowS: NOW, ...o }).lines.map(l => l.text)
@@ -128,7 +129,8 @@ test('expanded: step list marks done, current with now, pending', () => {
   expect(texts([a], { expanded: true, maxRows: 10 })).toEqual([
     '● implementer #305  4m12s · 23 turns · ctx 61k',
     '  ✓ 1 Read AGENTS.md',
-    '  ▸ 2 Add failing tests   → Run the dash suite',
+    '  ▸ 2 Add failing tests',
+    '      → Run the dash suite',
     '  · 3 Implement',
     '  · 4 Run the full tests',
   ])
@@ -154,26 +156,93 @@ test('maxRows overflow, collapsed: as many as fit then +N more', () => {
   expect(texts(ws, { expanded: false, maxRows: 1 }).length).toBe(1)
 })
 
-test('maxRows overflow, expanded: current step of each worker beats done and pending steps', () => {
+test('maxRows overflow, expanded: current step and its action line of each worker beat done and pending steps', () => {
   const a = w({ key: 'a', role: 'implementer', step: 3, steps: STEPS, now: 'X' })
   const b = w({ key: 'b', role: 'analyst', step: 2, steps: STEPS, now: 'Y' })
-  // 2 workers x (header + current) = 4 rows: nothing else fits
-  const four = texts([a, b], { expanded: true, maxRows: 4 })
-  expect(four.length).toBe(4)
-  expect(four.filter(t => t.includes('▸')).length).toBe(2)
-  expect(four.some(t => t.includes('✓') || t.includes('·  '))).toBe(false)
-  // a fifth and sixth row go to the steps nearest the current one, one per worker
+  // 2 workers x (header + current step + action line) = 6 rows: nothing else fits
   const six = texts([a, b], { expanded: true, maxRows: 6 })
   expect(six.length).toBe(6)
   expect(six.filter(t => t.includes('▸')).length).toBe(2)
+  expect(six.filter(t => t.includes('→')).length).toBe(2)
+  expect(six.some(t => t.includes('✓') || t.includes('·  '))).toBe(false)
+  // a seventh and eighth row go to the steps nearest the current one, one per worker
+  const eight = texts([a, b], { expanded: true, maxRows: 8 })
+  expect(eight.length).toBe(8)
+  expect(eight.filter(t => t.includes('▸')).length).toBe(2)
   // a third worker that does not fit becomes +1 more
   const c = w({ key: 'c', role: 'reviewer', step: 1, steps: STEPS })
-  const three = texts([a, b, c], { expanded: true, maxRows: 5 })
-  expect(three.length).toBe(5)
-  expect(three[4]?.trim()).toBe('+1 more')
-  // order of lines stays the order of steps
-  const ordered = texts([a], { expanded: true, maxRows: 4 })
-  expect(ordered.slice(1).map(t => t.trim().slice(0, 3))).toEqual(['✓ 2', '▸ 3', '· 4'])
+  const seven = texts([a, b, c], { expanded: true, maxRows: 7 })
+  expect(seven.length).toBe(7)
+  expect(seven[6]?.trim()).toBe('+1 more')
+  // order of lines stays the order of steps, the action line stays under its step
+  const ordered = texts([a], { expanded: true, maxRows: 5 })
+  expect(ordered.slice(1).map(t => t.trim().slice(0, 3))).toEqual(['✓ 2', '▸ 3', '→ X', '· 4'])
+})
+
+const KO_STEPS = [
+  { n: 1, text: 'Read the mod code', ko: 'mod 코드와 계약 읽기' },
+  { n: 2, text: 'Add failing tests', ko: '실패하는 테스트 추가' },
+  { n: 3, text: 'No Korean name', ko: null },
+  { n: 4, text: 'Run all tests', ko: '전체 테스트 실행' },
+]
+
+test('Korean: collapsed row uses the step ko, else the English text', () => {
+  const a = w({ step: 2, steps: KO_STEPS, titleKo: 'band에 한글 지시' })
+  expect(texts([a], { expanded: false, maxRows: 5 })).toEqual(['● implementer #305  2/4 실패하는 테스트 추가 · 4m12s'])
+  const b = w({ step: 3, steps: KO_STEPS })
+  expect(texts([b], { expanded: false, maxRows: 5 })).toEqual(['● implementer #305  3/4 No Korean name · 4m12s'])
+})
+
+test('Korean: expanded shows 지시 first, ko names, the action line under the current step', () => {
+  const a = w({ step: 2, steps: KO_STEPS, titleKo: 'band에 한글 지시와 단계 표시', now: 'Run the dash suite' })
+  expect(texts([a], { expanded: true, maxRows: 10 })).toEqual([
+    '● implementer #305  4m12s · 23 turns · ctx 61k',
+    '  지시: band에 한글 지시와 단계 표시',
+    '  ✓ 1 mod 코드와 계약 읽기',
+    '  ▸ 2 실패하는 테스트 추가',
+    '      → Run the dash suite',
+    '  · 3 No Korean name',
+    '  · 4 전체 테스트 실행',
+  ])
+  // no step known: 지시 line, then the action line
+  const n = w({ titleKo: '한글 지시', now: 'Read it' })
+  expect(texts([n], { expanded: true, maxRows: 10 })).toEqual(['● implementer #305  4m12s · 23 turns · ctx 61k', '  지시: 한글 지시', '  → Read it'])
+  // without a title or ko the layout is the old one
+  const plain = w({ step: 1, steps: STEPS })
+  expect(texts([plain], { expanded: true, maxRows: 10 }).some(t => t.includes('지시'))).toBe(false)
+})
+
+test('Korean: the 지시 line counts toward maxRows and is cut by cells', () => {
+  const a = w({ key: 'a', step: 2, steps: KO_STEPS, titleKo: '아주 긴 한글 지시 문장입니다 정말로 매우 깁니다', now: 'X' })
+  const b = w({ key: 'b', role: 'analyst', step: 1, steps: KO_STEPS, titleKo: '두 번째' })
+  // a costs header + 지시 + step + action = 4; b does not fit with +1 more
+  const out = texts([a, b], { expanded: true, maxRows: 5 })
+  expect(out.length).toBe(5)
+  expect(out[1]).toContain('지시:')
+  expect(out[4]?.trim()).toBe('+1 more')
+  for (const cols of [12, 20, 30]) {
+    const lines = layout([a], { expanded: true, maxRows: 10, columns: cols, nowS: NOW }).lines
+    for (const l of lines) expect(width(l.text)).toBeLessThanOrEqual(cols)
+  }
+  const cut = layout([a], { expanded: true, maxRows: 10, columns: 20, nowS: NOW }).lines[1]?.text ?? ''
+  expect(cut.endsWith('…')).toBe(true)
+  // a block that cannot fit its 지시 line keeps header and current step first
+  const tight = texts([a], { expanded: true, maxRows: 3 })
+  expect(tight.length).toBe(3)
+})
+
+test('parseStatus reads title_ko and steps[].ko; absent or empty is null', () => {
+  const s = parseStatus(doc([
+    { role: 'a', state: 'running', title_ko: '지시 문장', steps: [{ n: 1, text: 'x', ko: '하나' }, { n: 2, text: 'y', ko: null }, { n: 3, text: 'z' }, { n: 4, text: 'q', ko: '  ' }] },
+    { role: 'b', state: 'running', title_ko: null, steps: [] },
+    { role: 'c', state: 'running' },
+  ]))
+  expect(s.ok).toBe(true)
+  if (!s.ok) return
+  expect(s.workers[0]?.titleKo).toBe('지시 문장')
+  expect(s.workers[0]?.steps.map(x => x.ko)).toEqual(['하나', null, null, null])
+  expect(s.workers[1]?.titleKo).toBeNull()
+  expect(s.workers[2]?.titleKo).toBeNull()
 })
 
 test('truncation counts wide Korean characters as two cells', () => {
@@ -181,7 +250,7 @@ test('truncation counts wide Korean characters as two cells', () => {
   expect(truncate('가나다라마', 6)).toBe('가나…')
   expect(truncate('가나다라마', 10)).toBe('가나다라마')
   expect(truncate('abcdef', 4)).toBe('abc…')
-  const a = w({ step: 1, steps: [{ n: 1, text: '한국어로 된 아주 긴 단계 이름입니다 정말로 깁니다' }] })
+  const a = w({ step: 1, steps: [{ n: 1, text: '한국어로 된 아주 긴 단계 이름입니다 정말로 깁니다', ko: null }] })
   const line = texts([a], { expanded: false, maxRows: 5, columns: 40 })[0]
   expect(width(line ?? "")).toBeLessThanOrEqual(40)
   expect(line?.endsWith(' · 4m12s')).toBe(true) // the duration survives the cut

@@ -125,7 +125,8 @@ Applies to everything the user reads: replies, questions, issues, PR bodies. A P
    `/implement` per task, then `/review`.
 2. The skills run `harness ask <worker> '<instruction>'`. Write
    the brief so the worker needs nothing else: goal, files or area, constraints,
-   done criteria, whether to commit and with what message. Wrap the instruction in
+   done criteria, whether to commit and with what message. Write `Title-ko: <Korean noun phrase>` as a top line of the brief and `[ko: <Korean noun phrase>]` at the end of each `## Steps` item (the worker band shows them; noun phrases, not 합니다체).
+   Wrap the instruction in
    single quotes; backticks and `$(` are only allowed inside single quotes.
    For long briefs, write them to `.harness/task-<worker>.md` (the gate allows
    writes under `.harness/`) and send

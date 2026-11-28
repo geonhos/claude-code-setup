@@ -30,20 +30,33 @@ dash_brief_file() {
   return 1
 }
 
-# dash_brief <role> — title line, then "S<TAB>step" / "H<TAB>heading" lines. The brief is the task
+# dash_brief <role> — title line, then "T<TAB>title-ko" (a `Title-ko:` line above the first `## `), then
+# "S<TAB>step" / "H<TAB>heading" lines, then "K<TAB>n<TAB>ko" for each step that ends in `[ko: ...]` (the
+# suffix is cut from the S line). The brief is the task
 # file only when the ask's prompt names one under .harness/; otherwise the prompt text itself (first line, no steps).
 dash_brief() {
   local role=$1 p="$ASK_DIR/$1.prompt" f
   if f=$(dash_brief_file "$p"); then
     awk '
-      BEGIN { t = ""; sec = 0 }
+      BEGIN { t = ""; sec = 0; tk = ""; top = 1 }
+      top && tk == "" && /^Title-ko:/ { tk = $0; sub(/^Title-ko:[ \t]*/, "", tk); sub(/[ \t\r]+$/, "", tk); gsub(/\t/, " ", tk) }
       /^# / && t == "" { t = substr($0, 3); next }
-      /^## / { h[++nh] = substr($0, 4); sec = ($0 ~ /^## Steps[ \t]*$/); next }
-      sec && /^[0-9]+[.)] / { s = $0; sub(/^[0-9]+[.)] +/, "", s); st[++ns] = ++k ". " s }
+      /^## / { top = 0; h[++nh] = substr($0, 4); sec = ($0 ~ /^## Steps[ \t]*$/); next }
+      sec && /^[0-9]+[.)] / {
+        s = $0; sub(/^[0-9]+[.)] +/, "", s); ++k
+        if (match(s, /[ \t]*\[ko:[^]]*\][ \t]*$/)) {
+          ko = substr(s, RSTART, RLENGTH); s = substr(s, 1, RSTART - 1)
+          sub(/^[ \t]*\[ko:[ \t]*/, "", ko); sub(/[ \t]*\][ \t]*$/, "", ko); gsub(/\t/, " ", ko)
+          if (ko != "") kos[k] = ko
+        }
+        st[++ns] = k ". " s
+      }
       END {
         print (t == "" ? "(untitled brief)" : t)
+        if (tk != "") print "T\t" tk
         if (ns > 0) { for (i = 1; i <= ns; i++) print "S\t" st[i] }
         else { for (i = 1; i <= nh; i++) print "H\t" h[i] }
+        for (i = 1; i <= ns; i++) if (i in kos) print "K\t" i "\t" kos[i]
       }' "$f"
   else
     awk 'NR == 1 { print; exit }' "$p" 2>/dev/null
@@ -129,6 +142,7 @@ st_worker_json() {
     ($facts | (try fromjson catch {}) | obj) as $f
     | ($ej | (try fromjson catch {}) | obj) as $e
     | ($brief | split("\n")) as $bl
+    | ([$bl[1:][] | select(startswith("K\t")) | .[2:] | capture("^(?<n>[0-9]+)\t(?<k>.*)$")? | {key: .n, value: .k}] | from_entries) as $ko
     | {role: $role, state: $state, ask_id: ($id | str), started_at: $start,
        elapsed_s: (if $state == "running" and $start != null then ([$now - $start, 0] | max)
                    elif $state == "exited" and ($e.duration_ms | num) != null then (($e.duration_ms / 1000) | floor)
@@ -138,7 +152,8 @@ st_worker_json() {
        model: (if ($f.model // "?") == "?" then null else ($f.model | str) end),
        brief_title: (($bl[0] // "") | if . == "(untitled brief)" then "" else . end | str),
        now: (if $state == "running" then (($f.now // {}) | ([.sum, (.detail // "" | split("\n") | map(select(test("\\S"))) | .[0])] | map(select(type == "string" and test("\\S"))) | .[0] // null) | if . == null then null else .[0:120] end) else null end),
-       steps: [$bl[1:][] | select(startswith("S\t")) | .[2:] | capture("^(?<n>[0-9]+)[.] (?<t>.*)$")? | {n: (.n | tonumber), text: .t}],
+       title_ko: ([$bl[1:][] | select(startswith("T\t")) | .[2:] | select(. != "")] | first // null),
+       steps: [$bl[1:][] | select(startswith("S\t")) | .[2:] | capture("^(?<n>[0-9]+)[.] (?<t>.*)$")? | {n: (.n | tonumber), text: .t, ko: ($ko[.n] // null)}],
        step: ([($f.markers // [])[] | select(type == "number" and . >= 1 and . <= ($bl[1:] | map(select(startswith("S\t"))) | length))] | last),
        verify: ($f.verify | if . == "running" or . == "pass" or . == "fail" then . else null end),
        exit: (if $state == "exited" then {rc: ($e.rc | num), result: ($e.result | str), cost_usd: ($e.cost_usd | num),
