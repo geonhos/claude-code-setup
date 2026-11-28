@@ -24,6 +24,15 @@ version 1, `docs/reference.md`; golden `tests/fixtures/status-v1.json`).
 - Polling: every 3 s while a worker runs, every 30 s otherwise, never two runs at once; a 1 s clock
   tick only while a worker runs. It draws only: it never writes a file or puts text into the conversation.
 
+## Known limits
+
+- After a hot reload of the mod (a changed module while a session runs) the new copy starts its own loop
+  at once, and the old copy's loop runs on until the old copy unloads (the host documents `clock.after`
+  loops as running on). For that overlap you may see a duplicate toast. The API gives the old copy no
+  unload signal, so nothing retires it earlier.
+- A failed start (the environment, the cwd or the file check throws) is shown as
+  `harness-workers: start gate failed: <message>` and retried every 30 s; it needs no `/clear`.
+
 ## Install
 
 Add the marketplace from the **primary** checkout, the folder where `./install.sh` was run, not from a

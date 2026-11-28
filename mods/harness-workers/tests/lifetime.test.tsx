@@ -8,7 +8,7 @@ import { golden } from './golden'
 
 if (golden === '') throw new Error('tests/golden.ts is the empty placeholder: run these tests through bash tests/mod.test.sh')
 
-type Opts = { env?: Record<string, string>; cwd?: string; dirs?: string[]; delayMs?: number; mode?: 'ok' | 'reject' | 'hang' }
+type Opts = { failOnce?: 'fs' | 'env' | 'cwd'; slowStateMs?: number; slowSetMs?: number; env?: Record<string, string>; cwd?: string; dirs?: string[]; delayMs?: number; mode?: 'ok' | 'reject' | 'hang' }
 const SLOW = 30_000
 
 // `on` and `$` are the test kit's; a hook here stands for the engine beneath the plugin.
@@ -16,14 +16,33 @@ const SLOW = 30_000
 function rig($: any, on: any, o: Opts = {}) {
   // every state write counts: a live 1 s clock writes the `now` atom each second
   const everys = { writes: 0 }
-  on('state.set', (_: unknown, e: unknown, next: (e: unknown) => unknown) => (everys.writes++, next(e)))
   const clock = mock.clock(on)
-  mock.env(on, { HOME: '/home/u', ...(o.env ?? {}) })
+  // a slow store write (slowSetMs): the poll is inside its last `update` while a retire lands
+  on('state.set', async (_: unknown, e: unknown, next: (e: unknown) => unknown) => {
+    if (o.slowSetMs) await clock.sleep(o.slowSetMs)
+    everys.writes++
+    return next(e)
+  })
+  const vars: Record<string, string> = { HOME: '/home/u', ...(o.env ?? {}) }
+  let failed = false // the one failure of `failOnce`
+  const failNow = (what: string) => (o.failOnce === what && !failed ? ((failed = true), true) : false)
+  if (o.failOnce === 'env') {
+    on('env.get', (_: unknown, e: { name: string }) => (failNow('env') ? { deny: 'env down' } : { value: vars[e.name] }))
+  } else {
+    mock.env(on, vars)
+  }
+  // a slow store read: a poll is inside its read/update awaits for that long
+  if (o.slowStateMs) {
+    on('state.get', async (_: unknown, e: unknown, next: (e: unknown) => unknown) => {
+      await clock.sleep(o.slowStateMs!)
+      return next(e)
+    })
+  }
   const dirs = new Set(o.dirs ?? ['/w/repo/.harness/asks', '/w/repo/.git'])
-  const st = { runs: 0, active: 0, maxActive: 0, cwds: [] as string[], mode: o.mode ?? 'ok', delayMs: o.delayMs ?? 0 }
-  on('session.cwd', () => ({ value: o.cwd ?? '/w/repo' }))
-  on('fs.exists', (_: unknown, e: { path: string }) => ({ value: dirs.has(e.path) }))
-  on('ui.toast', () => ({ value: undefined }))
+  const st = { runs: 0, active: 0, maxActive: 0, cwds: [] as string[], toasts: 0, mode: o.mode ?? 'ok', delayMs: o.delayMs ?? 0 }
+  on('session.cwd', () => (failNow('cwd') ? { deny: 'cwd down' } : { value: o.cwd ?? '/w/repo' }))
+  on('fs.exists', (_: unknown, e: { path: string }) => (failNow('fs') ? { deny: 'fs down' } : { value: dirs.has(e.path) }))
+  on('ui.toast', () => (st.toasts++, { value: undefined }))
   on('ui.notify', () => ({ value: { isShown: true } }))
   on('session.start', (_: unknown, e: { cwd: string }) => ({ cwd: e.cwd }))
   on('session.end', () => ({ sessionId: 's' }))
@@ -98,9 +117,8 @@ for (const reason of ['prompt_input_exit', 'logout', 'other']) {
     const after = r.st.runs
     await r.clock.advance(120_000)
     expect(r.st.runs).toBe(after)
-    const writes = r.everys.writes
-    await r.clock.advance(10_000)
-    expect(r.everys.writes).toBe(writes) // the in-flight poll must not start the 1 s clock after the retire
+    // (the 1 s clock race is pinned by the store-read tests below: here the retire lands before the
+    // poll can see a snapshot, so no clock could have started either way)
   })
 }
 
@@ -153,4 +171,89 @@ test('a harness subdirectory: runs `harness status` in the root', async ($, on) 
   await r.clock.advance(100)
   expect(r.st.runs).toBeGreaterThanOrEqual(1)
   expect(r.st.cwds[0]).toBe('/w/repo')
+})
+
+// A gate call that fails once must not leave a claimed loop that never polls (review round 3, probe P8).
+for (const what of ['fs', 'env', 'cwd'] as const) {
+  test(`${what} rejects once in the start gate: dim row, then polling starts by itself, one loop`, async ($, on) => {
+    const r = rig($, on, { failOnce: what, delayMs: 500 })
+    await r.start()
+    await r.clock.advance(100)
+    expect(r.st.runs).toBe(0)
+    const ui = await $.ui.mount(BAND)
+    expect((await ui.find({ type: 'Text', text: /harness-workers: start gate failed/ }))?.text).toMatch(/start gate failed/)
+    await ui.unmount()
+    await r.clock.advance(SLOW + 1_000) // the retry, with no /clear
+    expect(r.st.runs).toBeGreaterThanOrEqual(1)
+    await r.clock.advance(60_000)
+    expect(r.st.runs).toBeGreaterThanOrEqual(10)
+    expect(r.st.runs).toBeLessThanOrEqual(25)
+    expect(r.st.maxActive).toBe(1)
+  })
+}
+
+test('a failed gate with HARNESS_ROLE=worker stays silent: no row, no runs', async ($, on) => {
+  const r = rig($, on, { env: { HARNESS_ROLE: 'worker' }, failOnce: 'fs' })
+  await r.start()
+  await r.clock.advance(120_000)
+  expect(r.st.runs).toBe(0)
+  const ui = await $.ui.mount(BAND)
+  expect(await ui.find({ type: 'Text', text: /harness-workers/ })).toBeFalsy()
+  await ui.unmount()
+})
+
+// A retire that lands while the poll is inside its read/update awaits: nothing late is shown (review round 3, P5).
+test('retire during the store reads: no toast, no write, no clock afterwards', async ($, on) => {
+  const r = rig($, on, { slowStateMs: 400 })
+  await r.start()
+  await r.clock.advance(100) // process.run answered; the poll waits in `read(snapshot)`
+  expect(r.st.runs).toBe(1)
+  await r.end('prompt_input_exit')
+  const toasts = r.st.toasts
+  const writes = r.everys.writes
+  await r.clock.advance(30_000)
+  expect(r.st.toasts).toBe(toasts)
+  expect(r.everys.writes).toBe(writes)
+  expect(r.st.runs).toBe(1)
+})
+
+// The retire-time clock race (review round 3, P7): the poll sees a running worker, is retired while it
+// still reads the store, and must not start the 1 s clock that nothing would cancel.
+test('retire during the store reads with a running worker: no 1 s clock starts', async ($, on) => {
+  const r = rig($, on, { slowStateMs: 400 })
+  await r.start()
+  await r.clock.advance(100)
+  await r.end('prompt_input_exit')
+  await r.clock.advance(1_000) // the in-flight reads finish
+  const writes = r.everys.writes
+  await r.clock.advance(20_000)
+  expect(r.everys.writes).toBe(writes)
+})
+
+// Retire, then start again in the same process (an in-process resume): the new loop must not be blocked
+// by the retired loop's poll still in flight (review round 3, P3: a module-global in-flight guard).
+test('retire during a poll, then session.start: exactly one loop resumes', async ($, on) => {
+  const r = rig($, on, { delayMs: 500 })
+  await r.start()
+  await r.clock.advance(100) // first poll in flight
+  await r.end('logout')
+  await r.start()
+  await r.clock.advance(60_000)
+  expect(r.st.runs).toBeGreaterThanOrEqual(5)
+  expect(r.st.runs).toBeLessThanOrEqual(25)
+  // the retired poll's run cannot be cancelled, so one overlap with the new loop's first run is allowed
+  expect(r.st.maxActive).toBeLessThanOrEqual(2)
+})
+
+// The last await of a poll is the `now` write; a retire landing there leaves `running` true in the
+// finally, whose syncClock must not start the 1 s clock (review round 3, P7; mutant: no dead check there).
+test('retire during the last store write with a running worker: no 1 s clock starts', async ($, on) => {
+  const r = rig($, on, { slowSetMs: 400 })
+  await r.start()
+  await r.clock.advance(1_000) // deadAt (400) and snapshot (400) written; the `now` write is in flight
+  await r.end('prompt_input_exit')
+  await r.clock.advance(2_000) // the write settles
+  const writes = r.everys.writes
+  await r.clock.advance(20_000)
+  expect(r.everys.writes).toBe(writes)
 })

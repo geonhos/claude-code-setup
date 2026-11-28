@@ -58,22 +58,20 @@ function retire(): void {
   l.poller = l.clock = null
 }
 
-// Gate: not a worker, and the cwd is in a harness checkout; `harness status` runs in that root.
+// Start: a loop is claimed (`current`) and its gate runs as the loop's first step. The gate is "not a
+// worker, and the cwd is in a harness checkout"; `harness status` runs in that root. A gate call that
+// throws is a poll failure like any other: the dim row `harness-workers: start gate failed: <msg>` is
+// drawn and the gate is retried at the slow interval, so a claimed loop is never left without a timer.
+// HARNESS_ROLE=worker (or no root) releases the claim and is silent; if `env.get` itself fails, it is
+// not assumed to be a worker.
 async function start($: Dollar): Promise<void> {
   if (current !== null) return
   const me: Loop = { dead: false, isPolling: false, poller: null, clock: null }
   current = me // claimed before the first await: a second start() during the gate sees it
-  const isWorker = (await $.env.get('HARNESS_ROLE')) === 'worker'
-  const root = isWorker ? null : await findHarnessRoot(await $.session.cwd(), p => $.fs.exists(p))
-  if (me.dead) return // retired while the gate ran
-  if (root === null) {
-    current = null // not a harness conductor: no polling, no row; a later session.end may try again
-    return
-  }
 
-  const schedule = (ms: number) => {
+  const schedule = (ms: number, fn: () => Promise<void>) => {
     if (me.dead) return
-    me.poller = $.clock.after(ms, () => void poll())
+    me.poller = $.clock.after(ms, () => void fn())
   }
   // A clock for the elapsed times, only while something runs.
   const syncClock = (isRunning: boolean) => {
@@ -86,7 +84,8 @@ async function start($: Dollar): Promise<void> {
     }
   }
   // One poll. Every stage that can throw is caught and shown as the dim `harness-workers: <reason>` row,
-  // and the next poll is scheduled in `finally`, so the loop never dies silently.
+  // and the next poll is scheduled in `finally`, so the loop never dies silently. After every await a
+  // retired loop (`me.dead`) returns without drawing, toasting, writing, starting a clock or rescheduling.
   const poll = async (): Promise<void> => {
     if (me.dead || me.isPolling) return
     me.isPolling = true
@@ -105,8 +104,10 @@ async function start($: Dollar): Promise<void> {
       try {
         if (fresh?.ok) {
           const prev = await read($, snapshot)
+          if (me.dead) return
           const d = diffSnapshots(prev, fresh, t)
           await update($, deadAt, old => mergeDeadAt(old, d.deadAt, t))
+          if (me.dead) return
           for (const ev of d.events) {
             try {
               $.ui.toast(ev.text)
@@ -120,8 +121,10 @@ async function start($: Dollar): Promise<void> {
       } catch (err) {
         fresh = failureSnapshot('read', err)
       }
+      if (me.dead) return
       try {
         await update($, snapshot, () => fresh)
+        if (me.dead) return
         await update($, now, () => Date.now())
       } catch (err) {
         // the failure row cannot be stored either: nothing left to show it with
@@ -136,10 +139,35 @@ async function start($: Dollar): Promise<void> {
       } catch (err) {
         // a clock that cannot start must not stop the poll
       }
-      schedule(running ? FAST_MS : SLOW_MS)
+      schedule(running ? FAST_MS : SLOW_MS, poll)
     }
   }
-  void poll()
+  let gateFailed = false
+  const gate = async (): Promise<void> => {
+    let root: string | null
+    try {
+      const isWorker = (await $.env.get('HARNESS_ROLE')) === 'worker'
+      root = isWorker ? null : await findHarnessRoot(await $.session.cwd(), p => $.fs.exists(p))
+    } catch (err) {
+      if (me.dead) return
+      gateFailed = true
+      try {
+        await update($, snapshot, () => failureSnapshot('start gate', err))
+      } catch (e) {
+        // nothing left to show it with; the retry below still runs
+      }
+      schedule(SLOW_MS, gate)
+      return
+    }
+    if (me.dead) return // retired while the gate ran
+    if (root === null) {
+      current = null // not a harness conductor: no polling; a later session.end may try again
+      if (gateFailed) await update($, snapshot, () => null).catch(() => {}) // take the failure row away
+      return
+    }
+    void poll()
+  }
+  void gate()
 }
 
 export const register: Register = on => {

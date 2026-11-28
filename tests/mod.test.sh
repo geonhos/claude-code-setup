@@ -61,6 +61,9 @@ claude_gate() {
 }
 
 # claude_checks BIN: `plugin validate` and `plugin test` of a copy of the mod, or SKIP lines.
+TMPROOT=$(mktemp -d); WORKS="$WORKS $TMPROOT"
+# tests_ran FILE: how many tests of tests/FILE the last `plugin test` output reports as passed
+tests_ran() { printf '%s\n' "$OUT" | awk -v f="tests/$1:" '$0 == f { on = 1; next } /^tests\/.*:$/ { on = 0 } on && /^\(pass\)/ { n++ } END { print n + 0 }'; }
 claude_checks() {
   local bin=$1 cfg tmp rc
   if [ -z "$bin" ]; then GATE_MSG="no real claude binary on PATH"
@@ -71,8 +74,9 @@ claude_checks() {
     echo "SKIP claude plugin test: $GATE_MSG"
     return 0
   fi
-  cfg=$(mktemp -d); WORKS="$WORKS $cfg"
-  tmp=$(mktemp -d); WORKS="$WORKS $tmp"
+  # under TMPROOT (made before any subshell and removed by the trap), so a subshell cannot leak them
+  cfg=$(mktemp -d "$TMPROOT/cfg.XXXXXX")
+  tmp=$(mktemp -d "$TMPROOT/mod.XXXXXX")
   # a copy, so that the engine's generated .claude-plugin/types and the golden fixture stay out of the checkout
   cp -R "$MOD" "$tmp/harness-workers"
   rm -rf "$tmp/harness-workers/.claude-plugin/types"
@@ -87,7 +91,10 @@ claude_checks() {
 
   OUT=$(CLAUDE_CONFIG_DIR="$cfg" "$bin" plugin test "$tmp/harness-workers" 2>&1); rc=$?
   check "claude plugin test passes (unit + contract)" test "$rc" -eq 0
-  check "plugin test ran the contract file" has "contract.test.ts"
+  # every test file of the mod must have run at least one test (the list comes from the directory)
+  for f in $(cd "$MOD/tests" && ls | grep -E '\.test\.tsx?$'); do
+    check "plugin test ran $f (>0 tests passed)" test "$(tests_ran "$f")" -gt 0
+  done
 }
 
 # --- self-checks of the gate with stub claude binaries (they reject `plugin`, so a run would fail)
