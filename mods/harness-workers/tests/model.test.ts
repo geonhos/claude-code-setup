@@ -10,6 +10,7 @@ import {
   findHarnessRoot,
   layout,
   mergeDeadAt,
+  NARROW_COLS,
   parseStatus,
   selectWorkers,
   sessionEndAction,
@@ -32,6 +33,7 @@ function w(over: Partial<Worker> = {}): Worker {
     turns: 23,
     ctx: 61000,
     now: null,
+    titleKo: null,
     steps: [],
     step: null,
     verify: null,
@@ -41,7 +43,7 @@ function w(over: Partial<Worker> = {}): Worker {
     ...over,
   }
 }
-const STEPS = ['Read AGENTS.md', 'Add failing tests', 'Implement', 'Run the full tests'].map((text, i) => ({ n: i + 1, text }))
+const STEPS = ['Read AGENTS.md', 'Add failing tests', 'Implement', 'Run the full tests'].map((text, i) => ({ n: i + 1, text, ko: null }))
 const snap = (...workers: Worker[]): Snapshot => ({ ok: true, workers, generatedAt: NOW })
 const okSnap = (...workers: Worker[]) => snap(...workers) as Extract<Snapshot, { ok: true }>
 const texts = (workers: Worker[], o: { expanded: boolean; maxRows: number; columns?: number }) => layout(workers, { columns: 100, nowS: NOW, ...o }).lines.map(l => l.text)
@@ -105,9 +107,9 @@ test('collapsed rows: step, now, neither', () => {
   const b = w({ role: 'analyst', folder: 'main', startedAt: NOW - 63, now: 'Read lib/harness-dash.sh' })
   const c = w({ role: 'reviewer', folder: 'main', startedAt: NOW - 5 })
   expect(texts([a, b, c], { expanded: false, maxRows: 10 })).toEqual([
-    '● implementer #305  2/4 Add failing tests · 4m12s',
-    '● analyst     main  → Read lib/harness-dash.sh · 1m03s',
-    '● reviewer    main · 5s',
+    '● implementer #305  4m12s · 2/4 Add failing tests',
+    '● analyst     main  1m03s · → Read lib/harness-dash.sh',
+    '● reviewer    main  5s',
   ])
 })
 
@@ -116,8 +118,8 @@ test('collapsed rows: finished ✓ ✗, exit, verify, verdict, duration', () => 
   const bad = w({ role: 'implementer', folder: '#301', state: 'exited', rc: 5, verify: 'fail', durationS: 61, startedAt: NOW - 70 })
   const dead = w({ role: 'analyst', folder: '#301', state: 'dead', startedAt: null, elapsedS: null })
   const out = texts([ok, bad, dead], { expanded: false, maxRows: 10 })
-  expect(out[0]).toBe('✓ reviewer    #301  exit 0 · PASS · 3m40s')
-  expect(out[1]).toBe('✗ implementer #301  exit 5 · verify fail · 1m01s')
+  expect(out[0]).toBe('✓ reviewer    #301  3m40s · exit 0 · PASS')
+  expect(out[1]).toBe('✗ implementer #301  1m01s · exit 5 · verify fail')
   expect(out[2]).toBe('✗ analyst     #301  dead')
   const lines = layout([ok, bad], { expanded: false, maxRows: 10, columns: 100, nowS: NOW }).lines
   expect(lines.map(l => l.color)).toEqual(['green', 'red'])
@@ -128,7 +130,8 @@ test('expanded: step list marks done, current with now, pending', () => {
   expect(texts([a], { expanded: true, maxRows: 10 })).toEqual([
     '● implementer #305  4m12s · 23 turns · ctx 61k',
     '  ✓ 1 Read AGENTS.md',
-    '  ▸ 2 Add failing tests   → Run the dash suite',
+    '  ▸ 2 Add failing tests',
+    '      → Run the dash suite',
     '  · 3 Implement',
     '  · 4 Run the full tests',
   ])
@@ -154,26 +157,126 @@ test('maxRows overflow, collapsed: as many as fit then +N more', () => {
   expect(texts(ws, { expanded: false, maxRows: 1 }).length).toBe(1)
 })
 
-test('maxRows overflow, expanded: current step of each worker beats done and pending steps', () => {
+test('maxRows overflow, expanded: current step and its action line of each worker beat done and pending steps', () => {
   const a = w({ key: 'a', role: 'implementer', step: 3, steps: STEPS, now: 'X' })
   const b = w({ key: 'b', role: 'analyst', step: 2, steps: STEPS, now: 'Y' })
-  // 2 workers x (header + current) = 4 rows: nothing else fits
-  const four = texts([a, b], { expanded: true, maxRows: 4 })
-  expect(four.length).toBe(4)
-  expect(four.filter(t => t.includes('▸')).length).toBe(2)
-  expect(four.some(t => t.includes('✓') || t.includes('·  '))).toBe(false)
-  // a fifth and sixth row go to the steps nearest the current one, one per worker
+  // 2 workers x (header + current step + action line) = 6 rows: nothing else fits
   const six = texts([a, b], { expanded: true, maxRows: 6 })
   expect(six.length).toBe(6)
   expect(six.filter(t => t.includes('▸')).length).toBe(2)
-  // a third worker that does not fit becomes +1 more
+  expect(six.filter(t => t.includes('→')).length).toBe(2)
+  expect(six.some(t => t.includes('✓') || t.includes('·  '))).toBe(false)
+  // a seventh and eighth row go to the steps nearest the current one, one per worker
+  const eight = texts([a, b], { expanded: true, maxRows: 8 })
+  expect(eight.length).toBe(8)
+  expect(eight.filter(t => t.includes('▸')).length).toBe(2)
+  // all three headers fit, so all three are shown, each with its current step first
   const c = w({ key: 'c', role: 'reviewer', step: 1, steps: STEPS })
-  const three = texts([a, b, c], { expanded: true, maxRows: 5 })
-  expect(three.length).toBe(5)
-  expect(three[4]?.trim()).toBe('+1 more')
-  // order of lines stays the order of steps
-  const ordered = texts([a], { expanded: true, maxRows: 4 })
-  expect(ordered.slice(1).map(t => t.trim().slice(0, 3))).toEqual(['✓ 2', '▸ 3', '· 4'])
+  const seven = texts([a, b, c], { expanded: true, maxRows: 7 })
+  expect(seven.length).toBe(7)
+  expect(seven.filter(t => /^[●✓✗]/.test(t)).length).toBe(3)
+  expect(seven.filter(t => t.includes('▸')).length).toBe(3)
+  // headers that do not all fit: as many as fit beside `+N more`
+  const d = w({ key: 'd', role: 'x', step: 1, steps: STEPS })
+  const four = texts([a, b, c, d], { expanded: true, maxRows: 3 })
+  expect(four.length).toBe(3)
+  expect(four.filter(t => /^[●✓✗]/.test(t)).length).toBe(2)
+  expect(four[2]?.trim()).toBe('+2 more')
+  // order of lines stays the order of steps, the action line stays under its step
+  const ordered = texts([a], { expanded: true, maxRows: 5 })
+  expect(ordered.slice(1).map(t => t.trim().slice(0, 3))).toEqual(['✓ 2', '▸ 3', '→ X', '· 4'])
+})
+
+const KO_STEPS = [
+  { n: 1, text: 'Read the mod code', ko: 'mod 코드와 계약 읽기' },
+  { n: 2, text: 'Add failing tests', ko: '실패하는 테스트 추가' },
+  { n: 3, text: 'No Korean name', ko: null },
+  { n: 4, text: 'Run all tests', ko: '전체 테스트 실행' },
+]
+
+test('Korean: collapsed row uses the step ko, else the English text', () => {
+  const a = w({ step: 2, steps: KO_STEPS, titleKo: 'band에 한글 지시' })
+  expect(texts([a], { expanded: false, maxRows: 5 })).toEqual(['● implementer #305  4m12s · 2/4 실패하는 테스트 추가'])
+  const b = w({ step: 3, steps: KO_STEPS })
+  expect(texts([b], { expanded: false, maxRows: 5 })).toEqual(['● implementer #305  4m12s · 3/4 No Korean name'])
+})
+
+test('Korean: expanded shows 지시 first, ko names, the action line under the current step', () => {
+  const a = w({ step: 2, steps: KO_STEPS, titleKo: 'band에 한글 지시와 단계 표시', now: 'Run the dash suite' })
+  expect(texts([a], { expanded: true, maxRows: 10 })).toEqual([
+    '● implementer #305  4m12s · 23 turns · ctx 61k',
+    '  지시: band에 한글 지시와 단계 표시',
+    '  ✓ 1 mod 코드와 계약 읽기',
+    '  ▸ 2 실패하는 테스트 추가',
+    '      → Run the dash suite',
+    '  · 3 No Korean name',
+    '  · 4 전체 테스트 실행',
+  ])
+  // no step known: 지시 line, then the action line
+  const n = w({ titleKo: '한글 지시', now: 'Read it' })
+  expect(texts([n], { expanded: true, maxRows: 10 })).toEqual(['● implementer #305  4m12s · 23 turns · ctx 61k', '  지시: 한글 지시', '  → Read it'])
+  // without a title or ko the layout is the old one
+  const plain = w({ step: 1, steps: STEPS })
+  expect(texts([plain], { expanded: true, maxRows: 10 }).some(t => t.includes('지시'))).toBe(false)
+})
+
+test('Korean: the 지시 line counts toward maxRows and is cut by cells', () => {
+  const a = w({ key: 'a', step: 2, steps: KO_STEPS, titleKo: '아주 긴 한글 지시 문장입니다 정말로 매우 깁니다', now: 'X' })
+  const b = w({ key: 'b', role: 'analyst', step: 1, steps: KO_STEPS, titleKo: '두 번째' })
+  // both headers and both current steps come first, the 지시 line of a takes the fifth row
+  const out = texts([a, b], { expanded: true, maxRows: 5 })
+  expect(out.length).toBe(5)
+  expect(out[1]).toContain('지시:')
+  expect(out.filter(t => /^[●✓✗]/.test(t)).length).toBe(2)
+  expect(out.filter(t => t.includes('지시')).length).toBe(1)
+  for (const cols of [12, 20, 30]) {
+    const lines = layout([a], { expanded: true, maxRows: 10, columns: cols, nowS: NOW }).lines
+    for (const l of lines) expect(width(l.text)).toBeLessThanOrEqual(cols)
+  }
+  const cut = layout([a], { expanded: true, maxRows: 10, columns: 20, nowS: NOW }).lines[1]?.text ?? ''
+  expect(cut.endsWith('…')).toBe(true)
+})
+
+test('row priority when maxRows is short: header, current step, 지시, action line, other steps', () => {
+  const a = w({ key: 'a', step: 2, steps: KO_STEPS, titleKo: '한글 지시', now: 'Run it' })
+  const b = w({ key: 'b', role: 'analyst', folder: '#7', step: 1, steps: KO_STEPS, titleKo: '둘째 지시', now: 'Read it' })
+  const head = '● implementer #305  4m12s · 23 turns · ctx 61k'
+  expect(texts([a], { expanded: true, maxRows: 2 })).toEqual([head, '  ▸ 2 실패하는 테스트 추가'])
+  expect(texts([a], { expanded: true, maxRows: 3 })).toEqual([head, '  지시: 한글 지시', '  ▸ 2 실패하는 테스트 추가'])
+  expect(texts([a], { expanded: true, maxRows: 4 })).toEqual([head, '  지시: 한글 지시', '  ▸ 2 실패하는 테스트 추가', '      → Run it'])
+  // both headers come before any 지시 line
+  const two = texts([a, b], { expanded: true, maxRows: 3 })
+  expect(two.length).toBe(3)
+  expect(two[0]).toBe('● implementer #305  4m12s · 23 turns · ctx 61k')
+  expect(two[1]).toBe('  ▸ 2 실패하는 테스트 추가')
+  expect(two[2]?.startsWith('● analyst')).toBe(true)
+  expect(two.some(t => t.includes('지시'))).toBe(false)
+})
+
+test('narrow: a long folder tag is dropped before elapsed is lost', () => {
+  const a = w({ folder: 'my-very-long-lane-directory-name', step: 1, steps: [{ n: 1, text: 'Read the code', ko: null }] })
+  for (const expanded of [false, true]) {
+    for (const cols of [30, 40, 50]) {
+      const h = layout([a], { expanded, maxRows: 5, columns: cols, nowS: NOW }).lines[0]?.text ?? ''
+      expect(width(h)).toBeLessThanOrEqual(cols)
+      expect(h).toContain('4m12s')
+    }
+  }
+  expect(texts([a], { expanded: false, maxRows: 5, columns: 30 })).toEqual(['● impl 4m12s 1/1 Read the code'])
+})
+
+test('parseStatus reads title_ko and steps[].ko; absent or empty is null', () => {
+  const s = parseStatus(doc([
+    { role: 'a', state: 'running', title_ko: '지시 문장', steps: [{ n: 1, text: 'x', ko: '하나' }, { n: 2, text: 'y', ko: null }, { n: 3, text: 'z' }, { n: 4, text: 'q', ko: '  ' }] },
+    { role: 'b', state: 'running', title_ko: null, steps: [] },
+    { role: 'c', state: 'running' },
+  ]))
+  expect(s.ok).toBe(true)
+  if (!s.ok) return
+  expect(s.workers[0]?.titleKo).toBe('지시 문장')
+  expect(s.workers[0]?.steps.map(x => x.ko)).toEqual(['하나', null, null, null])
+  expect(s.workers[1]?.titleKo).toBeNull()
+  expect(s.workers[2]?.titleKo).toBeNull()
 })
 
 test('truncation counts wide Korean characters as two cells', () => {
@@ -181,10 +284,11 @@ test('truncation counts wide Korean characters as two cells', () => {
   expect(truncate('가나다라마', 6)).toBe('가나…')
   expect(truncate('가나다라마', 10)).toBe('가나다라마')
   expect(truncate('abcdef', 4)).toBe('abc…')
-  const a = w({ step: 1, steps: [{ n: 1, text: '한국어로 된 아주 긴 단계 이름입니다 정말로 깁니다' }] })
+  const a = w({ step: 1, steps: [{ n: 1, text: '한국어로 된 아주 긴 단계 이름입니다 정말로 깁니다', ko: null }] })
   const line = texts([a], { expanded: false, maxRows: 5, columns: 40 })[0]
   expect(width(line ?? "")).toBeLessThanOrEqual(40)
-  expect(line?.endsWith(' · 4m12s')).toBe(true) // the duration survives the cut
+  expect(line?.includes('4m12s')).toBe(true) // the duration survives the cut
+  expect(line?.endsWith('…')).toBe(true)
   const fail = failureLine('매우 긴 사유 '.repeat(20), 30)
   expect(width(fail.text)).toBeLessThanOrEqual(30)
 })
@@ -304,4 +408,80 @@ test('harness root: nearest ancestor with .harness/asks, up to .git inclusive', 
   const counting = async () => (calls++, false)
   expect(await findHarnessRoot('/' + Array.from({ length: 200 }, () => 'd').join('/'), counting, 5)).toBe(null)
   expect(calls <= 2 * 6 + 1).toBe(true)
+})
+
+// ---------- narrow terminals ----------
+
+test('narrow: the wide form keeps full role names, aligned, at 80 columns', () => {
+  const a = w({ step: 2, steps: KO_STEPS })
+  const b = w({ key: 'b', role: 'analyst', folder: 'main', now: 'Read lib/harness-dash.sh', startedAt: NOW - 63 })
+  expect(texts([a, b], { expanded: false, maxRows: 5, columns: 80 })).toEqual([
+    '● implementer #305  4m12s · 2/4 실패하는 테스트 추가',
+    '● analyst     main  1m03s · → Read lib/harness-dash.sh',
+  ])
+})
+
+test('narrow: short roles, single spaces; the end of the step name goes first', () => {
+  const a = w({ step: 2, steps: KO_STEPS, folder: '#331', now: 'Run the dash suite' })
+  expect(texts([a], { expanded: false, maxRows: 5, columns: 30 })).toEqual(['● impl #331 4m12s 2/4 실패하…'])
+  expect(texts([a], { expanded: false, maxRows: 5, columns: 40 })).toEqual(['● impl #331 4m12s 2/4 실패하는 테스트 …'])
+  const long = w({ step: 1, folder: '#331', steps: [{ n: 1, text: 'A very long English step name that cannot fit', ko: null }] })
+  expect(texts([long], { expanded: false, maxRows: 5, columns: 40 })).toEqual(['● impl #331 4m12s 1/1 A very long Engli…'])
+})
+
+test('narrow: main tag is dropped before the step name is cut, #N stays', () => {
+  const a = w({ role: 'analyst', folder: 'main', step: 1, steps: [{ n: 1, text: 'Read the code', ko: null }] })
+  expect(texts([a], { expanded: false, maxRows: 5, columns: 24 })).toEqual(['● anl 4m12s 1/1 Read th…'])
+  const b = w({ role: 'reviewer', folder: '#7', step: 1, steps: [{ n: 1, text: 'Read the code', ko: null }] })
+  expect(texts([b], { expanded: false, maxRows: 5, columns: 24 })[0]).toBe('● rev #7 4m12s 1/1 Read…')
+})
+
+test('narrow: expanded header drops ctx, then turns', () => {
+  const a = w({ folder: '#331' })
+  expect(texts([a], { expanded: true, maxRows: 5, columns: 80 })).toEqual(['● implementer #331  4m12s · 23 turns · ctx 61k'])
+  expect(texts([a], { expanded: true, maxRows: 5, columns: 40 })).toEqual(['● impl #331 4m12s 23 turns ctx 61k'])
+  expect(texts([a], { expanded: true, maxRows: 5, columns: 30 })).toEqual(['● impl #331 4m12s 23 turns'])
+  expect(texts([a], { expanded: true, maxRows: 5, columns: 22 })).toEqual(['● impl #331 4m12s'])
+})
+
+test('narrow: action line is indented 6 when wide, 2 below NARROW_COLS', () => {
+  const a = w({ step: 2, steps: KO_STEPS, folder: '#331', now: 'Run the dash suite' })
+  expect(texts([a], { expanded: true, maxRows: 10, columns: 80 })[3]).toBe('      → Run the dash suite')
+  expect(texts([a], { expanded: true, maxRows: 10, columns: NARROW_COLS })[3]).toBe('      → Run the dash suite')
+  expect(texts([a], { expanded: true, maxRows: 10, columns: NARROW_COLS - 1 })[3]).toBe('  → Run the dash suite')
+})
+
+test('narrow: at 80, 60, 40 and 30 columns no line is wider than the width and elapsed stays', () => {
+  const korean = w({ step: 2, steps: KO_STEPS, titleKo: '아주 긴 한글 지시 문장입니다 정말로 매우 깁니다', folder: '#331', now: '한글이 섞인 아주 긴 동작 Run the whole dash suite now' })
+  const english = w({ key: 'e', role: 'reviewer', folder: 'main', step: 3, steps: [{ n: 1, text: 'a', ko: null }, { n: 2, text: 'b', ko: null }, { n: 3, text: 'A long English step name for the width test', ko: null }], now: 'Reading a long file path lib/harness-dash.sh', startedAt: NOW - 3700 })
+  const done = w({ key: 'd', role: 'analyst', folder: '#12', state: 'exited', rc: 1, verify: 'fail', verdict: 'FAIL', durationS: 75, startedAt: NOW - 90 })
+  const samples: Record<string, string[]> = {}
+  for (const cols of [80, 60, 40, 30]) {
+    for (const expanded of [false, true]) {
+      const lines = layout([korean, english, done], { expanded, maxRows: 30, columns: cols, nowS: NOW }).lines.map(l => l.text)
+      samples[`${cols}${expanded ? 'x' : 'c'}`] = lines
+      for (const t of lines) expect(width(t)).toBeLessThanOrEqual(cols)
+      // the exact elapsed token of each head is present
+      const heads = lines.filter(t => /^[●✓✗]/.test(t))
+      expect(heads.length).toBe(3)
+      ;['4m12s', '1h01m', '1m15s'].forEach((tok, i) => expect(heads[i]).toContain(tok))
+    }
+  }
+  // elapsed text of each worker is visible in every head at 30 columns, Korean step names are cut with …
+  const heads30 = samples['30c']!
+  expect(heads30[0]).toContain('4m12s')
+  expect(heads30[1]).toContain('1h01m')
+  expect(heads30[2]).toContain('1m15s')
+  // collapsed heads at 60/40/30 are the compact form, written out by hand from the rules: short role, one space
+  // between fields, the `main` tag dropped when the line is too wide (`#N` stays), the end cut with `…` to fit
+  const WIDE: Record<number, string[]> = {
+    60: ['● impl #331 4m12s 2/4 실패하는 테스트 추가', '● rev 1h01m 3/3 A long English step name for the width test', '✗ anl #12 1m15s exit 1 verify fail FAIL'],
+    40: ['● impl #331 4m12s 2/4 실패하는 테스트 …', '● rev 1h01m 3/3 A long English step nam…', '✗ anl #12 1m15s exit 1 verify fail FAIL'],
+    30: ['● impl #331 4m12s 2/4 실패하…', '● rev 1h01m 3/3 A long Englis…', '✗ anl #12 1m15s exit 1 verify…'],
+  }
+  for (const cols of [60, 40, 30]) expect(samples[`${cols}c`]).toEqual(WIDE[cols])
+  expect(samples['60c']![0]?.endsWith('…')).toBe(false)
+  expect(samples['30c']![0]?.endsWith('…')).toBe(true)
+  expect(samples['30x']!.some(t => t.endsWith('…'))).toBe(true)
+  expect(samples['80c']![0]).toBe('● implementer #331  4m12s · 2/4 실패하는 테스트 추가')
 })

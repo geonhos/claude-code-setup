@@ -22,6 +22,7 @@ investigation yourself (`harness ask` refuses to run in a worker session anyway)
    - Long detail goes to `.harness/<topic>-detail.md`; the report summarises
      it and names the file.
    - **Steps**: a `## Steps` numbered list, one line per step (the viewer dashboard shows it).
+   - **Korean**: `Title-ko: <Korean noun phrase>` as a top line of the brief and `[ko: <Korean noun phrase>]` at the end of each `## Steps` item (the worker band shows them; noun phrases, not 합니다체).
 2. Run it as conductor.md's Loop step 2 says (Bash `run_in_background: true` and `timeout: 7200000`; the task notification wakes you):
 
    ```

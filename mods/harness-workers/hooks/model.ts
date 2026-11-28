@@ -88,6 +88,13 @@ function baseName(p: string): string {
   return parts[parts.length - 1] ?? p
 }
 
+/** A string field made one clean line; null when it is absent, not a string, or empty after cleaning. */
+function cleanOrNull(v: unknown): string | null {
+  const t = str(v)
+  const c = t === null ? '' : clean(t)
+  return c === '' ? null : c
+}
+
 function parseWorker(raw: unknown, folder: string, path: string): Worker | null {
   if (!isObj(raw)) return null
   const role = str(raw.role)
@@ -96,7 +103,7 @@ function parseWorker(raw: unknown, folder: string, path: string): Worker | null 
   const steps: Step[] = []
   if (Array.isArray(raw.steps)) {
     for (const s of raw.steps) {
-      if (isObj(s) && num(s.n) !== null && str(s.text) !== null) steps.push({ n: s.n as number, text: clean(s.text as string) })
+      if (isObj(s) && num(s.n) !== null && str(s.text) !== null) steps.push({ n: s.n as number, text: clean(s.text as string), ko: cleanOrNull(s.ko) })
     }
   }
   const step = num(raw.step)
@@ -113,6 +120,7 @@ function parseWorker(raw: unknown, folder: string, path: string): Worker | null 
     turns: num(raw.turns),
     ctx: num(raw.ctx),
     now: now === null || clean(now) === '' ? null : clean(now),
+    titleKo: cleanOrNull(raw.title_ko),
     steps,
     step: step !== null && steps.some(s => s.n === step) ? step : null, // a step the list lacks is unknown, not certain
     verify: str(raw.verify),
@@ -216,7 +224,12 @@ export function diffSnapshots(prev: Snapshot | null, next: Snapshot, nowS: numbe
 
 // ---------- lines ----------
 
-type Block = { head: Line; essential: Line | null; steps: { n: number; line: Line; dist: number }[] }
+// One worker's lines. `head`: the header. `top`: the 지시 line. `cur`: the current step line (or the lone
+// `→ now` line when no step is known). `act`: the action line under the current step. `steps`: every step in
+// order with its distance from the current one. Tier order when rows are short: head, cur, top, act, other steps.
+type Block = { head: Line; top: Line[]; cur: Line | null; act: Line | null; steps: { n: number; line: Line; dist: number; cur: boolean }[] }
+
+const stepName = (s: Step): string => s.ko ?? s.text
 
 function glyphOf(w: Worker): { g: string; color: Color } {
   if (w.state === 'running') return { g: '●', color: 'yellow' }
@@ -235,109 +248,126 @@ function finishedParts(w: Worker): string[] {
 function middle(w: Worker): string {
   if (w.step !== null) {
     const s = w.steps.find(x => x.n === w.step)
-    if (s) return `${w.step}/${w.steps.length} ${s.text}`
+    if (s) return `${w.step}/${w.steps.length} ${stepName(s)}`
   }
   return w.now ? `→ ${w.now}` : ''
 }
 
-type Pad = { role: number; folder: number }
+// Narrow-terminal rules. A head line is built in the fixed order symbol, role, folder tag, elapsed, then the
+// step (or action), or the finished parts; expanded: then turns, then ctx. When a line does not fit,
+// the least important part goes first: compact form (short role, one space between fields), then
+// ctx, turns, the folder tag (a `#N` tag stays), and last the end of the line is cut with `…`.
+export const SHORT_ROLE: Record<string, string> = { implementer: 'impl', analyst: 'anl', reviewer: 'rev' }
+export const NARROW_COLS = 60 // below this the action line under a step is indented 2, else ACTION_INDENT
+export const ACTION_INDENT = 6
+export const NARROW_ACTION_INDENT = 2
 
-function headText(w: Worker, nowS: number, expanded: boolean, pad: Pad): { left: string; right: string } {
-  const { g } = glyphOf(w)
+type Pad = { role: number; folder: number; compact: boolean }
+
+type Fields = { g: string; role: string; folder: string; elapsed: string | null; mid: string[]; turns: string | null; ctx: string | null }
+
+function fieldsOf(w: Worker, nowS: number, expanded: boolean): Fields {
   const dur = elapsedOf(w, nowS)
-  const id = `${g} ${w.role.padEnd(pad.role)} ${w.folder.padEnd(pad.folder)}`
-  const durText = dur === null ? null : formatDuration(dur)
-  if (!expanded) {
-    if (w.state === 'running') return { left: `${id}  ${middle(w)}`.trimEnd(), right: durText ? ` · ${durText}` : '' }
-    const parts = finishedParts(w)
-    if (durText) parts.push(durText)
-    return { left: `${id}  ${parts.join(' · ')}`, right: '' }
+  const f: Fields = { g: glyphOf(w).g, role: w.role, folder: w.folder, elapsed: dur === null ? null : formatDuration(dur), mid: [], turns: null, ctx: null }
+  if (w.state !== 'running') f.mid = finishedParts(w)
+  else if (!expanded) f.mid = middle(w) ? [middle(w)] : []
+  if (expanded) {
+    if (w.turns !== null) f.turns = `${w.turns} turns`
+    if (w.ctx !== null) f.ctx = `ctx ${formatCtx(w.ctx)}`
   }
-  const parts: string[] = []
-  if (w.state !== 'running') parts.push(...finishedParts(w))
-  if (durText) parts.push(durText)
-  if (w.turns !== null) parts.push(`${w.turns} turns`)
-  if (w.ctx !== null) parts.push(`ctx ${formatCtx(w.ctx)}`)
-  return { left: `${id}  ${parts.join(' · ')}`.trimEnd(), right: '' }
+  return f
+}
+
+function joinFields(f: Fields, pad: Pad, o: { ctx: boolean; turns: boolean; folder: boolean }): string {
+  const parts = [f.elapsed, ...f.mid, o.turns ? f.turns : null, o.ctx ? f.ctx : null].filter((x): x is string => x !== null)
+  if (pad.compact) return [f.g, SHORT_ROLE[f.role] ?? f.role, o.folder ? f.folder : null, ...parts].filter(x => x !== null && x !== '').join(' ')
+  return `${f.g} ${f.role.padEnd(pad.role)} ${f.folder.padEnd(pad.folder)}  ${parts.join(' · ')}`.trimEnd()
+}
+
+/** The head line of one worker: the first of the shrinking forms that fits `cols`, else the last cut with `…`. */
+function headText(w: Worker, nowS: number, expanded: boolean, pad: Pad, cols: number): string {
+  const f = fieldsOf(w, nowS, expanded)
+  const keepFolder = /^#\d+$/.test(f.folder) // `main` and any other tag go before elapsed is cut
+  const forms = [{ ctx: true, turns: true, folder: true }]
+  if (pad.compact) forms.push({ ctx: false, turns: true, folder: true }, { ctx: false, turns: false, folder: true }, { ctx: false, turns: false, folder: keepFolder })
+  let line = ''
+  for (const o of forms) {
+    line = joinFields(f, pad, o)
+    if (width(line) <= cols) return line
+  }
+  return truncate(line, cols)
 }
 
 function buildBlock(w: Worker, nowS: number, expanded: boolean, pad: Pad, cols: number): Block {
   const { color } = glyphOf(w)
-  const { left, right } = headText(w, nowS, expanded, pad)
-  const head: Line = { text: truncate(left, cols - width(right)) + right, color: w.state === 'running' ? undefined : color }
-  const block: Block = { head, essential: null, steps: [] }
+  const head: Line = { text: headText(w, nowS, expanded, pad, cols), color: w.state === 'running' ? undefined : color }
+  const block: Block = { head, top: [], cur: null, act: null, steps: [] }
   if (!expanded || w.state !== 'running') return block
+  if (w.titleKo) block.top.push({ text: truncate(`  지시: ${w.titleKo}`, cols) })
   const cur = w.step !== null ? w.steps.find(s => s.n === w.step) : undefined
   if (!cur) {
-    if (w.now) block.essential = { text: truncate(`  → ${w.now}`, cols), dim: true }
+    if (w.now) block.cur = { text: truncate(`  → ${w.now}`, cols), dim: true }
     return block
   }
   for (const s of w.steps) {
     const sym = s.n < cur.n ? '✓' : s.n === cur.n ? '▸' : '·'
-    const text = `  ${sym} ${s.n} ${s.text}` + (s.n === cur.n && w.now ? `   → ${w.now}` : '')
-    const line: Line = { text: truncate(text, cols), color: s.n < cur.n ? 'green' : undefined, dim: s.n > cur.n }
-    if (s.n === cur.n) block.essential = line
-    else block.steps.push({ n: s.n, line, dist: Math.abs(s.n - cur.n) })
+    const line: Line = { text: truncate(`  ${sym} ${s.n} ${stepName(s)}`, cols), color: s.n < cur.n ? 'green' : undefined, dim: s.n > cur.n }
+    if (s.n === cur.n) {
+      block.cur = line
+      if (w.now) block.act = { text: truncate(`${' '.repeat(cols < NARROW_COLS ? NARROW_ACTION_INDENT : ACTION_INDENT)}→ ${w.now}`, cols), dim: true }
+    }
+    block.steps.push({ n: s.n, line, dist: Math.abs(s.n - cur.n), cur: s.n === cur.n })
   }
-  // The current step is `essential` and rendered in step order below: keep its place.
-  block.steps.push({ n: cur.n, line: block.essential as Line, dist: 0 })
-  block.steps.sort((a, b) => a.n - b.n)
   return block
+}
+
+/** Every line of a block in display order. */
+function allLines(b: Block): Line[] {
+  if (b.steps.length === 0) return [b.head, ...b.top, ...(b.cur ? [b.cur] : [])]
+  return [b.head, ...b.top, ...b.steps.flatMap(s => (s.cur && b.act ? [s.line, b.act] : [s.line]))]
 }
 
 /**
  * The lines to draw for `workers` (already ordered by selectWorkers) in at most `maxRows` rows.
- * Each worker's header and current step/now line have priority; the other steps fill what is left,
- * nearest the current step first, round-robin over workers. Workers that do not fit end in `+N more`.
+ * When rows are short they go by priority, each tier round-robin over the workers: header, current step
+ * (or the lone action line), 지시, action line, then the other steps nearest the current one first.
+ * If the headers do not all fit, the last row is `+N more`. Exception: with maxRows 1 only the first header
+ * is drawn and there is no `+N more` row.
  */
 export function layout(workers: Worker[], o: { expanded: boolean; maxRows: number; columns: number; nowS: number }): Layout {
   const cols = Math.max(10, o.columns)
-  const pad: Pad = { role: Math.max(0, ...workers.map(w => w.role.length)), folder: Math.max(0, ...workers.map(w => width(w.folder))) }
+  const wide: Pad = { role: Math.max(0, ...workers.map(w => w.role.length)), folder: Math.max(0, ...workers.map(w => width(w.folder))), compact: false }
+  // the aligned form only when every head fits whole; else all heads use the compact form
+  const fits = workers.every(w => width(headText(w, o.nowS, o.expanded, wide, Infinity)) <= cols)
+  const pad: Pad = fits ? wide : { ...wide, compact: true }
   const blocks = workers.map(w => buildBlock(w, o.nowS, o.expanded, pad, cols))
-  const cost = (b: Block) => 1 + (b.essential ? 1 : 0)
-  const total = blocks.reduce((n, b) => n + 1 + (b.steps.length > 0 ? b.steps.length : b.essential ? 1 : 0), 0)
   if (o.maxRows <= 0 || blocks.length === 0) return { lines: [], hidden: blocks.length }
-  if (total <= o.maxRows) {
-    return { lines: blocks.flatMap(b => [b.head, ...(b.steps.length > 0 ? b.steps.map(s => s.line) : b.essential ? [b.essential] : [])]), hidden: 0 }
-  }
-  // Pass 1: whole workers by essential cost, leaving one row for `+N more` when some are left out.
-  let k = 0
-  let used = 0
-  while (k < blocks.length && used + cost(blocks[k]!) + (k + 1 < blocks.length ? 1 : 0) <= o.maxRows) used += cost(blocks[k++]!)
-  if (k === 0) k = 1
+  if (blocks.reduce((n, b) => n + allLines(b).length, 0) <= o.maxRows) return { lines: blocks.flatMap(allLines), hidden: 0 }
+  // Which workers: all when every header fits, else as many headers as fit beside the `+N more` row (at least one).
+  const k = blocks.length <= o.maxRows ? blocks.length : Math.max(1, o.maxRows - 1)
   const shown = blocks.slice(0, k)
   const hidden = blocks.length - k
-  let budget = o.maxRows - shown.reduce((n, b) => n + cost(b), 0) - (hidden > 0 ? 1 : 0)
-  // Pass 2: optional steps, nearest first, round-robin.
-  const keep = shown.map(() => new Set<number>())
-  const rest = shown.map(b => b.steps.filter(s => s.dist > 0).sort((a, b2) => a.dist - b2.dist || a.n - b2.n))
+  let budget = o.maxRows - k - (hidden > 0 && o.maxRows >= 2 ? 1 : 0)
+  // Tiers 2-4, then the other steps: a Set of kept lines per worker.
+  const keep = shown.map(() => new Set<Line>())
+  const take = (i: number, l: Line | null | undefined) => {
+    if (l && budget > 0) {
+      keep[i]?.add(l)
+      budget--
+    }
+  }
+  shown.forEach((b, i) => take(i, b.cur))
+  shown.forEach((b, i) => b.top.forEach(l => take(i, l)))
+  shown.forEach((b, i) => take(i, b.act))
+  const rest = shown.map(b => b.steps.filter(s => !s.cur).sort((a, c) => a.dist - c.dist || a.n - c.n))
   for (let round = 0; budget > 0; round++) {
-    let added = false
-    for (let i = 0; i < shown.length && budget > 0; i++) {
-      const s = rest[i]?.[round]
-      if (s) {
-        keep[i]?.add(s.n)
-        budget--
-        added = true
-      }
-    }
-    if (!added) break
+    const before = budget
+    shown.forEach((_, i) => take(i, rest[i]?.[round]?.line))
+    if (budget === before) break
   }
-  const lines: Line[] = []
-  shown.forEach((b, i) => {
-    lines.push(b.head)
-    if (b.steps.length === 0) {
-      if (b.essential) lines.push(b.essential)
-      return
-    }
-    for (const s of b.steps) if (s.dist === 0 || keep[i]?.has(s.n)) lines.push(s.line)
-  })
-  // The rule: with a worker hidden and maxRows >= 2 the last row is `+N more`; with maxRows 1 only the
-  // first header. Never more rows than maxRows.
-  if (hidden > 0 && o.maxRows >= 2) {
-    lines.length = Math.min(lines.length, o.maxRows - 1)
-    lines.push({ text: truncate(`  +${hidden} more`, cols), dim: true })
-  }
+  const lines: Line[] = shown.flatMap((b, i) => allLines(b).filter(l => l === b.head || keep[i]?.has(l)))
+  // With a worker hidden and maxRows >= 2 the last row is `+N more`; with maxRows 1 only the first header.
+  if (hidden > 0 && o.maxRows >= 2) lines.push({ text: truncate(`  +${hidden} more`, cols), dim: true })
   if (lines.length > o.maxRows) lines.length = o.maxRows
   return { lines, hidden }
 }

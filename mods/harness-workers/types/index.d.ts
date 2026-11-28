@@ -1,7 +1,8 @@
 // Data types of the harness-workers mod and its `$.state` contract.
 // The document it parses is `harness status --json --all`, version 1 (docs/reference.md).
 
-export type Step = { n: number; text: string }
+/** `ko` is the Korean step name the brief gave (`[ko: …]`), else null. */
+export type Step = { n: number; text: string; ko: string | null }
 
 export type WorkerState = 'running' | 'exited' | 'dead'
 
@@ -19,6 +20,8 @@ export type Worker = {
   turns: number | null
   ctx: number | null
   now: string | null
+  /** the brief's `Title-ko:` line, else null */
+  titleKo: string | null
   steps: Step[]
   step: number | null
   verify: string | null

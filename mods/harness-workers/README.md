@@ -5,17 +5,36 @@ session, without typing anything. It reads only `harness status --json --all` (s
 version 1, `docs/reference.md`; golden `tests/fixtures/status-v1.json`).
 
 ```
- ▸ ● implementer #305  2/7 Add failing tests · 4m12s
-   ● analyst     main  → Read lib/harness-dash.sh · 1m03s
-   ✓ reviewer    #301  exit 0 · PASS · 3m40s
+ ▸ ● implementer #305  4m12s · 2/7 Add failing tests
+   ● analyst     main  1m03s · → Read lib/harness-dash.sh
+   ✓ reviewer    #301  3m40s · exit 0 · PASS
 ```
+
+- Narrow terminals: no line wraps. Order is fixed, least important last: collapsed = symbol, role, `n/N`,
+  elapsed, step (or action), folder tag; expanded header = symbol, role, folder tag, elapsed, turns, ctx.
+  Elapsed comes before the step, so a cut (`…`, by display width, Korean = 2 cells) eats the end of the
+  step. The aligned form with full role names is used while every head line fits `columns`. As soon as one
+  head line does not fit, all heads use the compact form: one space between fields, roles shortened
+  (`impl`, `anl`, `rev`). If a compact head still does not fit, parts go in this order: ctx, then turns,
+  then the folder tag (`main` or any other name; a `#N` tag stays), and last the end of the line is cut
+  with `…`. `NARROW_COLS` (60) only sets the indent of the action line under the current step: 6 at
+  60 columns or more, 2 below. Example at 40 columns: `● impl #331 4m12s 2/4 실패하는 테스트 …`.
 
 - One row per worker that is running or finished within the last 60 s, across all work folders.
   `●` running, `✓` exit 0, `✗` any other exit or a dead worker. Nothing is drawn when there is none.
 - The `▸`/`▾` button at the left of the first row expands the band to each worker's step list
   (done `✓`, current `▸` with the `now` text, pending `·`). The state lasts for the session. When the
-  rows do not fit `maxRows`, the current step of each worker has priority. Whenever a worker is hidden and
+  rows do not fit `maxRows`, rows go in this priority, each tier over all workers in order: header,
+  current step, `지시`, action line, then the other steps nearest the current one. Both headers of two workers
+  show before any `지시` line (`maxRows` 3: first header, its current step, second header). Whenever a worker is hidden and
   `maxRows` is at least 2, the last row is `+N more`; with `maxRows` 1 only the first header is drawn.
+- Korean text comes from the brief the conductor writes (both optional, English names and no instruction
+  line without them): a `Title-ko: <Korean one-liner>` line above the first `## ` heading, and a
+  `[ko: <Korean step name>]` suffix at the end of a `## Steps` item. The expanded band draws
+  `지시: <title>` under the header (it counts toward `maxRows`); step names use the Korean name, else
+  the English text, collapsed and expanded. The current action (`→ …`) stays English and sits under the
+  current step. They reach the mod as `title_ko` and `steps[].ko` of `harness status --json` (additive,
+  `version` stays 1; `null` when absent). The `[ko: …]` suffix is cut from `steps[].text`.
 - A toast on every worker exit; a native notification only when it failed (rc ≠ 0, dead, verify fail).
 - If the status format is not version 1, `harness status` fails or times out, one dim row
   `harness-workers: <reason>` is drawn and polling continues slowly.

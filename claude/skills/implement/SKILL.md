@@ -22,6 +22,7 @@ change yourself (`harness ask` refuses to run in a worker session anyway).
      Say "do not commit" when unsure.
    - **Report**: files touched, how it verified, the commit hash.
    - **Steps**: a `## Steps` numbered list, one line per step (the viewer dashboard shows it).
+   - **Korean**: `Title-ko: <Korean noun phrase>` as a top line of the brief and `[ko: <Korean noun phrase>]` at the end of each `## Steps` item (the worker band shows them; noun phrases, not 합니다체).
 2. Work folder: `harness lane <issue#>` (once per issue; it prints the absolute folder path), then pass
    `-C <that path>` to every harness call below (`harness -C <path> ask implementer ...`, `wait`, `report`).
    The brief goes to `<path>/.harness/task-implementer.md`. Run independent tasks in parallel, one folder each.

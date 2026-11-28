@@ -20,6 +20,7 @@
           "state": "running",
           "step": null,
           "steps": [],
+          "title_ko": null,
           "turns": 2,
           "verify": null
         },
@@ -44,14 +45,17 @@
           "step": 2,
           "steps": [
             {
+              "ko": "AGENTS.md 읽기",
               "n": 1,
               "text": "Read AGENTS.md"
             },
             {
+              "ko": null,
               "n": 2,
               "text": "Add failing tests"
             }
           ],
+          "title_ko": "상태 JSON에 한글 필드",
           "turns": 2,
           "verify": "pass"
         },
@@ -75,6 +79,7 @@
           "state": "exited",
           "step": null,
           "steps": [],
+          "title_ko": null,
           "turns": 2,
           "verify": null
         }
