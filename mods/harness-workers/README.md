@@ -14,11 +14,13 @@ version 1, `docs/reference.md`; golden `tests/fixtures/status-v1.json`).
   `●` running, `✓` exit 0, `✗` any other exit or a dead worker. Nothing is drawn when there is none.
 - The `▸`/`▾` button at the left of the first row expands the band to each worker's step list
   (done `✓`, current `▸` with the `now` text, pending `·`). The state lasts for the session. When the
-  rows do not fit `maxRows`, the current step of each worker has priority and the band ends in `+N more`.
+  rows do not fit `maxRows`, the current step of each worker has priority. Whenever a worker is hidden and
+  `maxRows` is at least 2, the last row is `+N more`; with `maxRows` 1 only the first header is drawn.
 - A toast on every worker exit; a native notification only when it failed (rc ≠ 0, dead, verify fail).
 - If the status format is not version 1, `harness status` fails or times out, one dim row
   `harness-workers: <reason>` is drawn and polling continues slowly.
-- It does nothing when `HARNESS_ROLE=worker` or when the session's cwd has no `.harness/asks`.
+- It does nothing when the session is not inside a harness checkout (no `.harness/asks` in the cwd or an
+  ancestor up to the git root), or when `HARNESS_ROLE=worker`.
 - Polling: every 3 s while a worker runs, every 30 s otherwise, never two runs at once; a 1 s clock
   tick only while a worker runs. It draws only: it never writes a file or puts text into the conversation.
 
@@ -46,7 +48,7 @@ the types of that release; earlier releases were not tried. The harness itself s
 
 `bash tests/mod.test.sh` from the repository root (also part of `./install.sh --test`). The manifest and
 field-path checks always run; `claude plugin validate` and the unit and contract tests run only when the
-real `claude` binary is found.
+real `claude` binary is found and is at least 2.1.332.
 
 ## Troubleshooting
 

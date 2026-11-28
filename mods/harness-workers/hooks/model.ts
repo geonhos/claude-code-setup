@@ -332,8 +332,12 @@ export function layout(workers: Worker[], o: { expanded: boolean; maxRows: numbe
     }
     for (const s of b.steps) if (s.dist === 0 || keep[i]?.has(s.n)) lines.push(s.line)
   })
-  if (o.maxRows >= 1 && hidden > 0 && lines.length < o.maxRows) lines.push({ text: truncate(`  +${hidden} more`, cols), dim: true })
-  // Never more rows than allowed (maxRows 1 keeps the first header only); the header comes first.
+  // The rule: with a worker hidden and maxRows >= 2 the last row is `+N more`; with maxRows 1 only the
+  // first header. Never more rows than maxRows.
+  if (hidden > 0 && o.maxRows >= 2) {
+    lines.length = Math.min(lines.length, o.maxRows - 1)
+    lines.push({ text: truncate(`  +${hidden} more`, cols), dim: true })
+  }
   if (lines.length > o.maxRows) lines.length = o.maxRows
   return { lines, hidden }
 }
@@ -380,8 +384,11 @@ export function mergeDeadAt(old: Record<string, number>, fresh: Record<string, n
 }
 
 /**
- * The harness root for a session cwd, as lib/harness-root.sh finds it: the nearest dir at or above `cwd`
- * with `.harness/asks`, searched up to the dir holding `.git` inclusive; outside git only `cwd` counts.
+ * The harness root for a session cwd: the nearest dir at or above `cwd` with `.harness/asks`, searched
+ * up to the dir holding `.git` inclusive; outside git only `cwd` counts. Same search as lib/harness-root.sh
+ * with two differences: it walks the logical cwd (the shell version resolves `pwd -P` first, so a symlinked
+ * cwd can find a different root) and `exists` only checks existence (the shell version tests `-d`).
+ * `$.fs.stat(path, { resolve: true })` could close both, but costs a call per level; not used.
  * `exists` is the host's `$.fs.exists`. The walk is bounded and stops at the filesystem root.
  */
 export async function findHarnessRoot(cwd: string, exists: (path: string) => Promise<boolean>, maxDepth = 64): Promise<string | null> {

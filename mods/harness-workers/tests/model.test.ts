@@ -244,6 +244,17 @@ test('layout never returns more rows than maxRows', () => {
       }
     }
   }
+  // a hidden worker with maxRows >= 2: the last row says how many
+  for (const expanded of [false, true]) {
+    for (const maxRows of [2, 3]) {
+      const out = layout(many, { expanded, maxRows, columns: 80, nowS: NOW })
+      expect(out.lines.length).toBe(maxRows)
+      expect(out.lines[maxRows - 1]!.text.trim()).toBe(`+${out.hidden} more`)
+      expect(out.hidden >= 1).toBe(true)
+    }
+  }
+  const two = layout(many, { expanded: true, maxRows: 2, columns: 80, nowS: NOW })
+  expect(two.lines.map(l => l.text.trim()).slice(1)).toEqual(['+5 more'])
   const one = layout([many[0]!], { expanded: true, maxRows: 1, columns: 80, nowS: NOW })
   expect(one.lines.length).toBe(1)
 })

@@ -40,40 +40,56 @@ async function runStatus($: Dollar, cwd: string): Promise<{ exitCode: number; st
   return last
 }
 
-let poller: Timer | null = null
-let clock: Timer | null = null
-let isPolling = false // a slow run must not let two polls overlap
-let epoch = 0 // a reload or a new session start retires the loop of the old one
+// One loop instance owns everything with a lifetime: its timers, its in-flight guard and its `dead`
+// flag. `current` is the one live instance (or null), so after any sequence of session.start and
+// session.end exactly one loop is alive, and a retired loop's late poll can neither reschedule nor
+// start a clock. start() is idempotent: while a loop is alive it does nothing (each poll re-resolves
+// the harness root, so a changed cwd needs no restart).
+type Loop = { dead: boolean; isPolling: boolean; poller: Timer | null; clock: Timer | null }
+let current: Loop | null = null
 
-// Starts the loop (or restarts it: a new `mine` retires the old one). Gate: not a worker, and the cwd
-// is in a harness checkout; `harness status` runs in that root, so a subdirectory works too.
+function retire(): void {
+  const l = current
+  current = null
+  if (l === null) return
+  l.dead = true
+  l.poller?.cancel()
+  l.clock?.cancel()
+  l.poller = l.clock = null
+}
+
+// Gate: not a worker, and the cwd is in a harness checkout; `harness status` runs in that root.
 async function start($: Dollar): Promise<void> {
-  poller?.cancel()
-  clock?.cancel()
-  poller = clock = null
-  const mine = ++epoch
+  if (current !== null) return
+  const me: Loop = { dead: false, isPolling: false, poller: null, clock: null }
+  current = me // claimed before the first await: a second start() during the gate sees it
   const isWorker = (await $.env.get('HARNESS_ROLE')) === 'worker'
   const root = isWorker ? null : await findHarnessRoot(await $.session.cwd(), p => $.fs.exists(p))
-  if (root === null) return // not a harness conductor: no polling, no row
+  if (me.dead) return // retired while the gate ran
+  if (root === null) {
+    current = null // not a harness conductor: no polling, no row; a later session.end may try again
+    return
+  }
 
   const schedule = (ms: number) => {
-    if (mine !== epoch) return
-    poller = $.clock.after(ms, () => void poll())
+    if (me.dead) return
+    me.poller = $.clock.after(ms, () => void poll())
   }
   // A clock for the elapsed times, only while something runs.
   const syncClock = (isRunning: boolean) => {
-    if (isRunning && clock === null) {
-      clock = $.clock.every(1000, () => void update($, now, () => Date.now()).catch(() => {}))
-    } else if (!isRunning && clock !== null) {
-      clock.cancel()
-      clock = null
+    if (me.dead) return
+    if (isRunning && me.clock === null) {
+      me.clock = $.clock.every(1000, () => void update($, now, () => Date.now()).catch(() => {}))
+    } else if (!isRunning && me.clock !== null) {
+      me.clock.cancel()
+      me.clock = null
     }
   }
   // One poll. Every stage that can throw is caught and shown as the dim `harness-workers: <reason>` row,
   // and the next poll is scheduled in `finally`, so the loop never dies silently.
   const poll = async (): Promise<void> => {
-    if (mine !== epoch || isPolling) return
-    isPolling = true
+    if (me.dead || me.isPolling) return
+    me.isPolling = true
     let running = false
     try {
       let fresh: Snapshot | null // null: not in a harness checkout (no band)
@@ -84,7 +100,7 @@ async function start($: Dollar): Promise<void> {
       } catch (err) {
         fresh = failureSnapshot('harness status', err)
       }
-      if (mine !== epoch) return
+      if (me.dead) return
       const t = nowS()
       try {
         if (fresh?.ok) {
@@ -114,7 +130,7 @@ async function start($: Dollar): Promise<void> {
     } catch (err) {
       // unreachable by design; the finally below still reschedules
     } finally {
-      isPolling = false
+      me.isPolling = false
       try {
         syncClock(running)
       } catch (err) {
@@ -136,14 +152,8 @@ export const register: Register = on => {
   // The process ends: retire the loop. /clear and resume go on under a new session id and fire no
   // session.start, so the loop keeps running (or starts, if the gate failed before); see sessionEndAction.
   on('session.end', async ($, e, next) => {
-    if (sessionEndAction(e.reason) === 'retire') {
-      epoch++
-      poller?.cancel()
-      clock?.cancel()
-      poller = clock = null
-    } else if (poller === null && clock === null) {
-      await start($)
-    }
+    if (sessionEndAction(e.reason) === 'retire') retire()
+    else await start($) // no-op while a loop is alive; starts one if the gate failed before
     return next(e)
   })
 

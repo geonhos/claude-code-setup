@@ -63,7 +63,10 @@ claude_gate() {
 # claude_checks BIN: `plugin validate` and `plugin test` of a copy of the mod, or SKIP lines.
 claude_checks() {
   local bin=$1 cfg tmp rc
-  if ! claude_gate "$bin"; then
+  if [ -z "$bin" ]; then GATE_MSG="no real claude binary on PATH"
+  elif claude_gate "$bin"; then GATE_MSG=""
+  fi
+  if [ -n "$GATE_MSG" ]; then
     echo "SKIP claude plugin validate: $GATE_MSG"
     echo "SKIP claude plugin test: $GATE_MSG"
     return 0
@@ -97,6 +100,9 @@ mkstub() { # NAME VERSION-OUTPUT
 mkstub old "2.1.300 (Claude Code)"
 mkstub garbage "not a version"
 mkstub new "2.1.332 (Claude Code)"
+mkstub older "2.1.99 (Claude Code)"
+mkstub minor "2.2.0 (Claude Code)"
+mkstub major "3.0.0 (Claude Code)"
 claude_checks "$STUBS/old/claude" > "$STUBS/old.out"
 claude_checks "$STUBS/garbage/claude" > "$STUBS/garbage.out"
 cat "$STUBS/old.out" "$STUBS/garbage.out"
@@ -105,6 +111,24 @@ check "gate: claude 2.1.300 never ran plugin" test ! -e "$STUBS/old.calls"
 check "gate: a garbage version prints SKIP (unparsable)" grep -q '^SKIP claude plugin test: unparsable version' "$STUBS/garbage.out"
 check "gate: a garbage version never ran plugin" test ! -e "$STUBS/garbage.calls"
 check "gate: 2.1.332 passes the gate" claude_gate "$STUBS/new/claude"
+# 2.1.99 is older than 2.1.332 (numeric, not lexical, comparison)
+claude_checks "$STUBS/older/claude" > "$STUBS/older.out"
+cat "$STUBS/older.out"
+check "gate: claude 2.1.99 prints SKIP lines" grep -q '^SKIP claude plugin validate: claude 2.1.99 is older than' "$STUBS/older.out"
+check "gate: claude 2.1.99 never ran plugin" test ! -e "$STUBS/older.calls"
+# newer versions pass the gate and the checks are attempted (the stub rejects `plugin` and records the call;
+# the subshell keeps its failed checks out of this suite's counters)
+for n in minor major; do
+  check "gate: $n version passes the gate" claude_gate "$STUBS/$n/claude"
+  (claude_checks "$STUBS/$n/claude" > "$STUBS/$n.out" 2>&1)
+  check "gate: $n version attempted plugin validate" grep -q '^plugin validate ' "$STUBS/$n.calls"
+  check "gate: $n version attempted plugin test" grep -q '^plugin test ' "$STUBS/$n.calls"
+  check "gate: $n version printed no SKIP" test -z "$(grep '^SKIP' "$STUBS/$n.out")"
+done
+# no binary at all
+claude_checks "" > "$STUBS/absent.out"
+cat "$STUBS/absent.out"
+check "gate: an absent binary prints SKIP lines" grep -q '^SKIP claude plugin test: no real claude binary on PATH' "$STUBS/absent.out"
 
 # --- the real claude binary (never tests/fake-claude on PATH)
 REAL=""
@@ -113,11 +137,7 @@ for d in $(printf '%s' "$PATH" | tr ':' ' '); do
   if [ -x "$d/claude" ]; then REAL="$d/claude"; break; fi
 done
 
-if [ -z "$REAL" ]; then
-  echo "SKIP claude plugin validate / plugin test: no real claude binary on PATH"
-else
-  claude_checks "$REAL"
-fi
+claude_checks "$REAL"
 
 echo "PASS $pass / FAIL $fail"
 [ "$fail" -eq 0 ]
