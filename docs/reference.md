@@ -109,6 +109,10 @@ harness를 쓰려는 저장소에서 한 번 실행합니다. `.harness/asks/`(�
 
 버전 약속: 필드는 추가만 합니다. 이름을 바꾸거나 뜻을 바꾸면 `version`을 올립니다. 읽는 쪽은 모르는 필드를 무시해야 합니다.
 
+### mod `harness-workers`
+
+`mods/harness-workers/`(결정 0019, #305)는 `harness status --json --all`의 version 1만 읽어 conductor 프롬프트 위에 워커 진행을 그리는 Claude Code mod입니다. 계약 테스트가 `tests/fixtures/status-v1.json`으로 파서를 확인합니다(`tests/mod.test.sh`).
+
 ## 워커, 모델, 상한
 
 워커는 항상 headless입니다: `harness-run`이 `claude -p`를 detached로 돌리고, 완료는 `.harness/asks/<role>.exit.json`(프로세스 종료)입니다. 마감 시간에 run을 죽이지 않고 exit 4로 돌려줍니다. 한 번의 실행 상한은 `headless_max_minutes`(기본 60, implementer 90)이고, 이 키는 직접 만든 `.harness/config.json`에 두며(파일이 없으면 기본값) 설정하면 implementer를 포함한 모든 역할에 적용되고 환경변수 `HARNESS_HL_MAX_S`(초)가 이를 덮어씁니다. `--keep`이 아니면 매번 새 세션입니다. 원본 스트림 `.harness/log/*.jsonl`은 게이트가 conductor의 읽기를 막습니다.

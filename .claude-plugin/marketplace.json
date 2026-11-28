@@ -1,0 +1,11 @@
+{
+  "name": "my-claude-harness",
+  "owner": { "name": "geonhos" },
+  "plugins": [
+    {
+      "name": "harness-workers",
+      "source": "./mods/harness-workers",
+      "description": "Worker progress above the prompt, read from harness status --json --all."
+    }
+  ]
+}

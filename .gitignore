@@ -14,3 +14,6 @@
 
 # Local plans/specs (not versioned)
 docs/superpowers/
+
+# Mod: types the engine writes into a loaded mod folder
+mods/*/.claude-plugin/types/
