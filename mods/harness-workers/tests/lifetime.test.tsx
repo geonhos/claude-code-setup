@@ -11,6 +11,13 @@ if (golden === '') throw new Error('tests/golden.ts is the empty placeholder: ru
 type Opts = { failOnce?: 'fs' | 'env' | 'cwd'; slowStateMs?: number; slowSetMs?: number; env?: Record<string, string>; cwd?: string; dirs?: string[]; delayMs?: number; mode?: 'ok' | 'reject' | 'hang' }
 const SLOW = 30_000
 
+// The golden status with its running analyst turned into an exited one: the next poll toasts it.
+const exitedGolden = (() => {
+  const doc = JSON.parse(golden)
+  for (const f of doc.folders) for (const w of f.workers ?? []) if (w.state === 'running') Object.assign(w, { state: 'exited', now: null, exit: { cost_usd: 0.1, duration_s: 10, rc: 0, result: 'success', verdict: null } })
+  return JSON.stringify(doc)
+})()
+
 // `on` and `$` are the test kit's; a hook here stands for the engine beneath the plugin.
 // biome-ignore lint: the kit's types are structural
 function rig($: any, on: any, o: Opts = {}) {
@@ -25,7 +32,7 @@ function rig($: any, on: any, o: Opts = {}) {
   })
   const vars: Record<string, string> = { HOME: '/home/u', ...(o.env ?? {}) }
   let failed = false // the one failure of `failOnce`
-  const failNow = (what: string) => (o.failOnce === what && !failed ? ((failed = true), true) : false)
+  const failNow = (what: string) => (o.failOnce === what && !failed ? ((failed = true), (st.faults++, true)) : false)
   if (o.failOnce === 'env') {
     on('env.get', (_: unknown, e: { name: string }) => (failNow('env') ? { deny: 'env down' } : { value: vars[e.name] }))
   } else {
@@ -39,8 +46,8 @@ function rig($: any, on: any, o: Opts = {}) {
     })
   }
   const dirs = new Set(o.dirs ?? ['/w/repo/.harness/asks', '/w/repo/.git'])
-  const st = { runs: 0, active: 0, maxActive: 0, cwds: [] as string[], toasts: 0, mode: o.mode ?? 'ok', delayMs: o.delayMs ?? 0 }
-  on('session.cwd', () => (failNow('cwd') ? { deny: 'cwd down' } : { value: o.cwd ?? '/w/repo' }))
+  const st = { runs: 0, active: 0, maxActive: 0, cwds: [] as string[], toasts: 0, faults: 0, exited: false, cwd: o.cwd ?? '/w/repo', mode: o.mode ?? 'ok', delayMs: o.delayMs ?? 0 }
+  on('session.cwd', () => (failNow('cwd') ? { deny: 'cwd down' } : { value: st.cwd }))
   on('fs.exists', (_: unknown, e: { path: string }) => (failNow('fs') ? { deny: 'fs down' } : { value: dirs.has(e.path) }))
   on('ui.toast', () => (st.toasts++, { value: undefined }))
   on('ui.notify', () => ({ value: { isShown: true } }))
@@ -59,12 +66,12 @@ function rig($: any, on: any, o: Opts = {}) {
         return { deny: 'timed out' }
       }
       await clock.sleep(st.delayMs)
-      return { value: { exitCode: 0, stdout: golden, stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
+      return { value: { exitCode: 0, stdout: st.exited ? exitedGolden : golden, stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
     } finally {
       st.active--
     }
   })
-  const start = () => $.session.start({ cwd: o.cwd ?? '/w/repo', surface: 'terminal', isInteractive: true })
+  const start = () => $.session.start({ cwd: st.cwd, surface: 'terminal', isInteractive: true })
   const end = (reason: string) => $.session.end({ reason, sessionId: 's', resume: { id: 's' } })
   return { clock, st, start, end, everys }
 }
@@ -192,29 +199,86 @@ for (const what of ['fs', 'env', 'cwd'] as const) {
   })
 }
 
-test('a failed gate with HARNESS_ROLE=worker stays silent: no row, no runs', async ($, on) => {
-  const r = rig($, on, { env: { HARNESS_ROLE: 'worker' }, failOnce: 'fs' })
+const GATE_ROW = /harness-workers: start gate failed/
+async function hasGateRow($: any): Promise<boolean> {
+  const ui = await $.ui.mount(BAND)
+  const found = await ui.find({ type: 'Text', text: GATE_ROW })
+  await ui.unmount()
+  return !!found
+}
+
+// The release path after a failed gate: the retry finds no root. The row goes, the claim is released
+// (so a later /clear can start a loop), nothing polls. (review round 4, Q6/Q6b; mutants m10, m12)
+test('a gate that fails once outside a checkout: row, then gone and released; a later /clear in a checkout polls', async ($, on) => {
+  const r = rig($, on, { failOnce: 'fs', cwd: '/elsewhere/dir' })
+  await r.start()
+  await r.clock.advance(100)
+  expect(r.st.faults).toBe(1) // the injected fault fired
+  expect(await hasGateRow($)).toBe(true)
+  await r.clock.advance(SLOW + 1_000) // the retry finds no root
+  expect(await hasGateRow($)).toBe(false)
+  await r.clock.advance(120_000)
+  expect(r.st.runs).toBe(0)
+  r.st.cwd = '/w/repo' // the session moved into a checkout; only a /clear or resume looks again
+  await r.end('clear')
+  await r.clock.advance(100)
+  expect(r.st.runs).toBeGreaterThanOrEqual(1)
+  expect(r.st.faults).toBe(1)
+})
+
+test('env.get rejects once, then says worker: the row appears, then is gone, zero runs', async ($, on) => {
+  const r = rig($, on, { failOnce: 'env', env: { HARNESS_ROLE: 'worker' } })
+  await r.start()
+  await r.clock.advance(100)
+  expect(r.st.faults).toBe(1)
+  expect(await hasGateRow($)).toBe(true)
+  await r.clock.advance(SLOW + 1_000)
+  expect(await hasGateRow($)).toBe(false)
+  await r.clock.advance(120_000)
+  expect(r.st.runs).toBe(0)
+  await r.end('clear') // still a worker: stays silent
+  await r.clock.advance(SLOW + 1_000)
+  expect(r.st.runs).toBe(0)
+  expect(r.st.faults).toBe(1)
+})
+
+test('HARNESS_ROLE=worker never reaches the file check: zero runs, no row', async ($, on) => {
+  const r = rig($, on, { env: { HARNESS_ROLE: 'worker' } })
   await r.start()
   await r.clock.advance(120_000)
   expect(r.st.runs).toBe(0)
-  const ui = await $.ui.mount(BAND)
-  expect(await ui.find({ type: 'Text', text: /harness-workers/ })).toBeFalsy()
-  await ui.unmount()
+  expect(await hasGateRow($)).toBe(false)
 })
 
 // A retire that lands while the poll is inside its read/update awaits: nothing late is shown (review round 3, P5).
-test('retire during the store reads: no toast, no write, no clock afterwards', async ($, on) => {
+// A later poll sees the analyst go running → exited, which toasts; a retire landing while that poll reads
+// the store must stop the toast. `retireAt` null is the control: the same flow toasts.
+async function exitFlow($: any, on: any, retire: boolean) {
   const r = rig($, on, { slowStateMs: 400 })
   await r.start()
-  await r.clock.advance(100) // process.run answered; the poll waits in `read(snapshot)`
-  expect(r.st.runs).toBe(1)
-  await r.end('prompt_input_exit')
-  const toasts = r.st.toasts
+  await r.clock.advance(100)
+  expect(r.st.runs).toBe(1) // poll 1 answers golden (analyst running); its slow store writes take a while
+  r.st.exited = true
+  for (let i = 0; i < 100 && r.st.runs < 2; i++) await r.clock.advance(100)
+  await r.clock.advance(100) // poll 2 has its answer (exited) and waits in a store read
+  expect(r.st.runs).toBe(2)
+  if (retire) await r.end('prompt_input_exit')
+  await r.clock.advance(2_000) // a store call already in flight settles
   const writes = r.everys.writes
   await r.clock.advance(30_000)
-  expect(r.st.toasts).toBe(toasts)
+  return { r, writes }
+}
+
+test('control: without a retire the exit poll toasts', async ($, on) => {
+  const { r } = await exitFlow($, on, false)
+  expect(r.st.toasts).toBeGreaterThanOrEqual(1)
+})
+
+test('retire during the store reads of an exit poll: no toast, no write, no further run', async ($, on) => {
+  const { r, writes } = await exitFlow($, on, true)
+  expect(r.st.toasts).toBe(0)
   expect(r.everys.writes).toBe(writes)
-  expect(r.st.runs).toBe(1)
+  expect(r.st.runs).toBe(2)
 })
 
 // The retire-time clock race (review round 3, P7): the poll sees a running worker, is retired while it

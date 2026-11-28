@@ -21,7 +21,8 @@ version 1, `docs/reference.md`; golden `tests/fixtures/status-v1.json`).
   `harness-workers: <reason>` is drawn and polling continues slowly.
 - It does nothing when the session is not inside a harness checkout (no `.harness/asks` in the cwd or an
   ancestor up to the git root), or when `HARNESS_ROLE=worker`.
-- Polling: every 3 s while a worker runs, every 30 s otherwise, never two runs at once; a 1 s clock
+- Polling: every 3 s while a worker runs, every 30 s otherwise, one loop and one run at a time (a
+  run that a session end or reload leaves behind can overlap the next loop's first run); a 1 s clock
   tick only while a worker runs. It draws only: it never writes a file or puts text into the conversation.
 
 ## Known limits
@@ -30,6 +31,7 @@ version 1, `docs/reference.md`; golden `tests/fixtures/status-v1.json`).
   at once, and the old copy's loop runs on until the old copy unloads (the host documents `clock.after`
   loops as running on). For that overlap you may see a duplicate toast. The API gives the old copy no
   unload signal, so nothing retires it earlier.
+- A session started outside a checkout polls only after a `/clear` or resume; a `cd` inside the session does not start it.
 - A failed start (the environment, the cwd or the file check throws) is shown as
   `harness-workers: start gate failed: <message>` and retried every 30 s; it needs no `/clear`.
 
