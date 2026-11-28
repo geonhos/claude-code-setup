@@ -24,8 +24,12 @@ version 1, `docs/reference.md`; golden `tests/fixtures/status-v1.json`).
 
 ## Install
 
+Add the marketplace from the **primary** checkout, the folder where `./install.sh` was run, not from a
+lane folder (`harness lane`): a folder marketplace is read live from that folder, and `harness lane rm`
+deletes lane folders.
+
 ```
-/plugin marketplace add <path of this checkout>
+/plugin marketplace add ~/workspace/my-claude-harness
 /plugin install harness-workers@my-claude-harness
 ```
 

@@ -118,9 +118,9 @@ cd ~/workspace/my-claude-harness
 - 실행 중이거나 60초 안에 끝난 워커마다 한 줄이 나옵니다. 모든 작업 폴더가 대상이고, 줄에는 폴더(`#<이슈 번호>`, `main`), 현재 단계(`2/7 …`)나 지금 하는 일(`→ …`), 경과 시간이 들어 있습니다. 끝난 워커는 `exit`, verify, verdict, 소요 시간을 보여 줍니다.
 - 줄 왼쪽의 `▸`를 누르면 `▾`로 바뀌며 단계 목록이 펼쳐집니다. 다시 누르면 접힙니다. 펼침 상태는 세션 동안 유지됩니다.
 - 워커가 끝날 때마다 토스트가 뜨고, 실패(rc가 0이 아님, dead, verify fail)일 때만 macOS 알림이 더 뜹니다.
-- 설치(명령은 Claude Code 안에서 입력합니다):
+- 설치(명령은 Claude Code 안에서 입력합니다). marketplace는 `./install.sh`를 실행한 **기본 체크아웃**에서 추가합니다. 작업 폴더(`harness lane`)에서 추가하면 안 됩니다. 폴더 marketplace는 그 폴더를 계속 읽는데, 작업 폴더는 `harness lane rm`이 지웁니다.
   ```
-  /plugin marketplace add <이 체크아웃의 경로>
+  /plugin marketplace add ~/workspace/my-claude-harness
   /plugin install harness-workers@my-claude-harness
   ```
 - 제거: `/plugin uninstall harness-workers@my-claude-harness`, `/plugin marketplace remove my-claude-harness`. `install.sh`는 mod 설정을 건드리지 않습니다.

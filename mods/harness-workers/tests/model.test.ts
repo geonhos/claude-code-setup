@@ -1,7 +1,22 @@
 import { expect, test } from 'claude-code/testing'
 
 import type { Snapshot, Worker } from '../types'
-import { anyRunning, diffSnapshots, failureLine, layout, parseStatus, selectWorkers, truncate, width } from '../hooks/model'
+import {
+  anyRunning,
+  clean,
+  diffSnapshots,
+  failureLine,
+  failureSnapshot,
+  findHarnessRoot,
+  layout,
+  mergeDeadAt,
+  parseStatus,
+  selectWorkers,
+  sessionEndAction,
+  snapshotOf,
+  truncate,
+  width,
+} from '../hooks/model'
 
 const NOW = 10_000
 
@@ -216,4 +231,66 @@ test('anyRunning', () => {
   expect(anyRunning({ ok: false, reason: 'x' })).toBe(false)
   expect(anyRunning(snap(w({ state: 'exited' })))).toBe(false)
   expect(anyRunning(snap(w()))).toBe(true)
+})
+
+test('layout never returns more rows than maxRows', () => {
+  const many = Array.from({ length: 6 }, (_, i) => w({ key: `/p|r${i}`, role: `r${i}`, step: 2, steps: STEPS, now: 'editing' }))
+  for (const workers of [[many[0]!], many]) {
+    for (const maxRows of [1, 2]) {
+      for (const expanded of [false, true]) {
+        const out = layout(workers, { expanded, maxRows, columns: 80, nowS: NOW })
+        expect(out.lines.length <= maxRows).toBe(true)
+        expect(out.lines.length >= 1).toBe(true)
+      }
+    }
+  }
+  const one = layout([many[0]!], { expanded: true, maxRows: 1, columns: 80, nowS: NOW })
+  expect(one.lines.length).toBe(1)
+})
+
+test('clean strips whole escape sequences and control characters', () => {
+  expect(clean('a\x1b[31mred\x1b[0m')).toBe('ared')
+  expect(clean('x\x1b]0;title\x07y')).toBe('xy')
+  expect(clean('x\x1b]8;;http://a\x1b\\link\x1b]8;;\x1b\\')).toBe('xlink')
+  expect(clean('a\nb\tc')).toBe('a b c')
+})
+
+test('session.end: only the reasons that end the process retire the loop', () => {
+  for (const r of ['prompt_input_exit', 'logout', 'other']) expect(sessionEndAction(r)).toBe('retire')
+  for (const r of ['clear', 'resume']) expect(sessionEndAction(r)).toBe('continue')
+  expect(sessionEndAction('something_new')).toBe('continue')
+})
+
+test('poll stages: a result becomes a snapshot, a throw becomes a failure row', () => {
+  expect(snapshotOf('harness status timed out')).toEqual({ ok: false, reason: 'harness status timed out' })
+  expect(snapshotOf({ exitCode: 2, stdout: '' })).toEqual({ ok: false, reason: 'harness status failed (rc 2)' })
+  expect(snapshotOf({ exitCode: 0, stdout: 'not json' }).ok).toBe(false)
+  const f = failureSnapshot('update', new Error('boom'))
+  expect(f).toEqual({ ok: false, reason: 'update failed: boom' })
+  expect(failureLine((f as { reason: string }).reason, 80).text).toBe('harness-workers: update failed: boom')
+  expect(failureSnapshot('toast', 'x')).toEqual({ ok: false, reason: 'toast failed: x' })
+})
+
+test('deadAt merge keeps new times and drops old ones', () => {
+  expect(mergeDeadAt({ a: NOW - 400, b: NOW - 10 }, { c: NOW }, NOW)).toEqual({ b: NOW - 10, c: NOW })
+})
+
+test('harness root: nearest ancestor with .harness/asks, up to .git inclusive', async () => {
+  const fs = (paths: string[]) => async (p: string) => paths.includes(p)
+  // a subdirectory of a checkout
+  expect(await findHarnessRoot('/w/repo/src/deep', fs(['/w/repo/.harness/asks', '/w/repo/.git']))).toBe('/w/repo')
+  // the nearest one wins
+  expect(await findHarnessRoot('/w/repo/sub', fs(['/w/repo/.harness/asks', '/w/repo/sub/.harness/asks', '/w/repo/.git']))).toBe('/w/repo/sub')
+  // the search stops at the dir holding .git: an ancestor above it does not count
+  expect(await findHarnessRoot('/w/repo/src', fs(['/w/.harness/asks', '/w/repo/.git']))).toBe(null)
+  // outside git only the start dir counts
+  expect(await findHarnessRoot('/w/plain/src', fs(['/w/plain/.harness/asks']))).toBe(null)
+  expect(await findHarnessRoot('/w/plain', fs(['/w/plain/.harness/asks']))).toBe('/w/plain')
+  // the filesystem root, a relative path and the depth bound end the walk
+  expect(await findHarnessRoot('/', fs([]))).toBe(null)
+  expect(await findHarnessRoot('relative/dir', fs(['relative/dir/.harness/asks']))).toBe(null)
+  let calls = 0
+  const counting = async () => (calls++, false)
+  expect(await findHarnessRoot('/' + Array.from({ length: 200 }, () => 'd').join('/'), counting, 5)).toBe(null)
+  expect(calls <= 2 * 6 + 1).toBe(true)
 })

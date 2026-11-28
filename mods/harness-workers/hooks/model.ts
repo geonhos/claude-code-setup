@@ -13,9 +13,17 @@ export type ExitEvent = { key: string; text: string; notify: boolean }
 
 // ---------- text helpers ----------
 
-/** One line of plain text: control characters (newlines, ANSI escapes) become spaces. */
+/**
+ * One line of plain text: whole escape sequences (CSI `ESC [ … final`, OSC `ESC ] … BEL|ESC \`, and
+ * two-byte `ESC x`) are dropped, then any other control character (newline, tab) becomes a space.
+ */
 export function clean(s: string): string {
-  return s.replace(/[\u0000-\u001f\u007f-\u009f]+/g, ' ').trim()
+  return s
+    .replace(/\u001b\[[0-?]*[ -/]*[@-~]/g, '')
+    .replace(/\u001b\][^\u0007\u001b]*(?:\u0007|\u001b\\)?/g, '')
+    .replace(/\u001b[@-Z\\-_]/g, '')
+    .replace(/[\u0000-\u001f\u007f-\u009f]+/g, ' ')
+    .trim()
 }
 
 function cellWidth(cp: number): number {
@@ -325,9 +333,67 @@ export function layout(workers: Worker[], o: { expanded: boolean; maxRows: numbe
     for (const s of b.steps) if (s.dist === 0 || keep[i]?.has(s.n)) lines.push(s.line)
   })
   if (o.maxRows >= 1 && hidden > 0 && lines.length < o.maxRows) lines.push({ text: truncate(`  +${hidden} more`, cols), dim: true })
+  // Never more rows than allowed (maxRows 1 keeps the first header only); the header comes first.
+  if (lines.length > o.maxRows) lines.length = o.maxRows
   return { lines, hidden }
 }
 
 export function failureLine(reason: string, columns: number): Line {
   return { text: truncate(`harness-workers: ${clean(reason)}`, Math.max(10, columns)), dim: true }
+}
+
+// ---------- the poll loop's decisions (kept pure: register.tsx only calls these) ----------
+
+export const KEEP_DEAD_S = 300 // how long a dead worker's stop time is remembered
+
+/**
+ * What the loop does when `session.end` fires, by `SessionEndReason` (types of Claude Code 2.1.332:
+ * `'clear' | 'resume' | 'logout' | 'prompt_input_exit' | 'other'`):
+ * - `retire`: the process ends (`prompt_input_exit` /exit, ctrl+c; `logout`; `other` -p finish or a signal).
+ * - `continue`: the process goes on under a new session id and no `session.start` fires (`clear`, `resume`),
+ *   so the loop keeps running and its state stays: `expanded` survives, and the snapshot and `deadAt`
+ *   survive so an old exit is not toasted again.
+ * An unknown future reason continues: a timer of a process that is ending dies with it anyway.
+ */
+export function sessionEndAction(reason: string): 'retire' | 'continue' {
+  return reason === 'prompt_input_exit' || reason === 'logout' || reason === 'other' ? 'retire' : 'continue'
+}
+
+/** The snapshot of one finished `harness status` run: the process result, or a reason string. */
+export function snapshotOf(out: { exitCode: number; stdout: string } | string): Snapshot {
+  if (typeof out === 'string') return { ok: false, reason: out }
+  if (out.exitCode !== 0) return { ok: false, reason: `harness status failed (rc ${out.exitCode})` }
+  return parseStatus(out.stdout)
+}
+
+/** The snapshot for a stage of the poll that threw: shown as the dim `harness-workers: <reason>` row. */
+export function failureSnapshot(stage: string, err: unknown): Snapshot {
+  const msg = err instanceof Error ? err.message : String(err)
+  return { ok: false, reason: `${stage} failed${msg ? `: ${msg}` : ''}` }
+}
+
+/** `deadAt` after a poll: the old times, the new ones, minus those older than KEEP_DEAD_S. */
+export function mergeDeadAt(old: Record<string, number>, fresh: Record<string, number>, nowS: number): Record<string, number> {
+  const merged = { ...old, ...fresh }
+  for (const k of Object.keys(merged)) if (nowS - merged[k]! > KEEP_DEAD_S) delete merged[k]
+  return merged
+}
+
+/**
+ * The harness root for a session cwd, as lib/harness-root.sh finds it: the nearest dir at or above `cwd`
+ * with `.harness/asks`, searched up to the dir holding `.git` inclusive; outside git only `cwd` counts.
+ * `exists` is the host's `$.fs.exists`. The walk is bounded and stops at the filesystem root.
+ */
+export async function findHarnessRoot(cwd: string, exists: (path: string) => Promise<boolean>, maxDepth = 64): Promise<string | null> {
+  if (!cwd.startsWith('/')) return null
+  const parts = cwd.split('/').filter(Boolean)
+  let hit: string | null = null
+  for (let i = 0; i <= Math.min(parts.length, maxDepth); i++) {
+    const d = '/' + parts.slice(0, parts.length - i).join('/')
+    const dir = d === '//' ? '/' : d
+    const base = dir === '/' ? '' : dir
+    if (hit === null && (await exists(`${base}/.harness/asks`))) hit = dir
+    if (await exists(`${base}/.git`)) return hit
+  }
+  return (await exists(`${cwd.replace(/\/+$/, '')}/.harness/asks`)) ? cwd : null
 }

@@ -2,7 +2,7 @@
 type: decision
 status: active
 updated: 2026-11-28
-sources: ["#305", mods/harness-workers/hooks/model.ts, tests/mod.test.sh, tests/fixtures/status-v1.json]
+sources: ["https://github.com/geonhos/my-claude-harness/issues/305", "46a2c4a", mods/harness-workers/hooks/model.ts, tests/mod.test.sh, tests/fixtures/status-v1.json]
 verified_by: tests/mod.test.sh
 ---
 # 0019: worker progress is a mod in this repository, reading `status --json`
@@ -16,7 +16,7 @@ verified_by: tests/mod.test.sh
 - D4: the mod lives in this repository so that it cannot drift from the command: `tests/mod.test.sh` runs a contract test of its parser against `tests/fixtures/status-v1.json`, the file `tests/dash.test.sh` compares the real command with.
 - D5: installation is the user's `/plugin marketplace add <checkout>` and `/plugin install harness-workers@my-claude-harness`; `install.sh` does not edit plugin settings.
 
-**Removed in exchange.** The Ghostty and Terminal.app backends of `harness open-watch` (0 of 13 uses; amendment in 0013). Issue #315 was named in the brief without further detail; nothing else was removed here.
+**Removed in exchange.** The Ghostty and Terminal.app backends of `harness open-watch` (0 of 13 uses; amendment in 0013). PR #315 (46a2c4a) removed them in exchange for this mod; nothing else was removed here. The usage numbers above (6 %, 208, 74, 13) come from the analysis of 2026-11-27 of `progress.jsonl` and the conductor transcripts, made for issue #305.
 
 **Rejected alternatives.**
 - `statusLine`: edits a user setting (one line) and is unconfirmed outside the terminal.

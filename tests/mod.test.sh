@@ -42,6 +42,70 @@ while IFS= read -r path; do
 done < "$FIELDS"
 check "every field path exists in the golden (missing:${missing:- none})" test -z "$missing"
 
+# --- the Claude Code version gate: the mod API needs MIN_CLAUDE (the one place; the READMEs must name it)
+MIN_CLAUDE=2.1.332
+check "mod README names the minimum Claude Code version" grep -qF "$MIN_CLAUDE" "$MOD/README.md"
+check "root README names the minimum Claude Code version" grep -qF "$MIN_CLAUDE" "$ROOT/README.md"
+
+# claude_gate BIN -> 0 when `BIN --version` reports >= MIN_CLAUDE; else 1 with GATE_MSG set (older or unparsable)
+GATE_MSG=""
+claude_gate() {
+  local v
+  v=$("$1" --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -n 1)
+  if [ -z "$v" ]; then GATE_MSG="unparsable version"; return 1; fi
+  if [ "$(printf '%s\n%s\n' "$MIN_CLAUDE" "$v" | sort -t. -k1,1n -k2,2n -k3,3n | head -n 1)" != "$MIN_CLAUDE" ]; then
+    GATE_MSG="claude $v is older than $MIN_CLAUDE"
+    return 1
+  fi
+  return 0
+}
+
+# claude_checks BIN: `plugin validate` and `plugin test` of a copy of the mod, or SKIP lines.
+claude_checks() {
+  local bin=$1 cfg tmp rc
+  if ! claude_gate "$bin"; then
+    echo "SKIP claude plugin validate: $GATE_MSG"
+    echo "SKIP claude plugin test: $GATE_MSG"
+    return 0
+  fi
+  cfg=$(mktemp -d); WORKS="$WORKS $cfg"
+  tmp=$(mktemp -d); WORKS="$WORKS $tmp"
+  # a copy, so that the engine's generated .claude-plugin/types and the golden fixture stay out of the checkout
+  cp -R "$MOD" "$tmp/harness-workers"
+  rm -rf "$tmp/harness-workers/.claude-plugin/types"
+  {
+    printf 'export const golden: string = '; jq -Rs . "$GOLDEN"
+    printf 'export const fields: string[] = '; jq -Rsc 'split("\n") | map(select(. != ""))' "$FIELDS"
+  } > "$tmp/harness-workers/tests/golden.ts"
+
+  OUT=$(CLAUDE_CONFIG_DIR="$cfg" "$bin" plugin validate "$tmp/harness-workers" 2>&1); rc=$?
+  check "claude plugin validate passes" test "$rc" -eq 0
+  check "validate: no TypeScript warning in the mod" not has "error TS"
+
+  OUT=$(CLAUDE_CONFIG_DIR="$cfg" "$bin" plugin test "$tmp/harness-workers" 2>&1); rc=$?
+  check "claude plugin test passes (unit + contract)" test "$rc" -eq 0
+  check "plugin test ran the contract file" has "contract.test.ts"
+}
+
+# --- self-checks of the gate with stub claude binaries (they reject `plugin`, so a run would fail)
+STUBS=$(mktemp -d); WORKS="$WORKS $STUBS"
+mkstub() { # NAME VERSION-OUTPUT
+  mkdir -p "$STUBS/$1"
+  printf '#!/bin/sh\ncase "$1" in\n  --version) echo "%s" ;;\n  *) echo "plugin: unknown command" >&2; echo "$*" >> "%s/%s.calls"; exit 1 ;;\nesac\n' "$2" "$STUBS" "$1" > "$STUBS/$1/claude"
+  chmod +x "$STUBS/$1/claude"
+}
+mkstub old "2.1.300 (Claude Code)"
+mkstub garbage "not a version"
+mkstub new "2.1.332 (Claude Code)"
+claude_checks "$STUBS/old/claude" > "$STUBS/old.out"
+claude_checks "$STUBS/garbage/claude" > "$STUBS/garbage.out"
+cat "$STUBS/old.out" "$STUBS/garbage.out"
+check "gate: claude 2.1.300 prints SKIP lines" grep -q '^SKIP claude plugin validate: claude 2.1.300 is older than' "$STUBS/old.out"
+check "gate: claude 2.1.300 never ran plugin" test ! -e "$STUBS/old.calls"
+check "gate: a garbage version prints SKIP (unparsable)" grep -q '^SKIP claude plugin test: unparsable version' "$STUBS/garbage.out"
+check "gate: a garbage version never ran plugin" test ! -e "$STUBS/garbage.calls"
+check "gate: 2.1.332 passes the gate" claude_gate "$STUBS/new/claude"
+
 # --- the real claude binary (never tests/fake-claude on PATH)
 REAL=""
 for d in $(printf '%s' "$PATH" | tr ':' ' '); do
@@ -52,23 +116,7 @@ done
 if [ -z "$REAL" ]; then
   echo "SKIP claude plugin validate / plugin test: no real claude binary on PATH"
 else
-  CFG=$(mktemp -d); WORKS="$WORKS $CFG"
-  TMP=$(mktemp -d); WORKS="$WORKS $TMP"
-  # a copy, so that the engine's generated .claude-plugin/types and the golden fixture stay out of the checkout
-  cp -R "$MOD" "$TMP/harness-workers"
-  rm -rf "$TMP/harness-workers/.claude-plugin/types"
-  {
-    printf 'export const golden: string = '; jq -Rs . "$GOLDEN"
-    printf 'export const fields: string[] = '; jq -Rsc 'split("\n") | map(select(. != ""))' "$FIELDS"
-  } > "$TMP/harness-workers/tests/golden.ts"
-
-  OUT=$(CLAUDE_CONFIG_DIR="$CFG" "$REAL" plugin validate "$TMP/harness-workers" 2>&1); RC=$?
-  check "claude plugin validate passes" test "$RC" -eq 0
-  check "validate: no TypeScript warning in the mod" not has "error TS"
-
-  OUT=$(CLAUDE_CONFIG_DIR="$CFG" "$REAL" plugin test "$TMP/harness-workers" 2>&1); RC=$?
-  check "claude plugin test passes (unit + contract)" test "$RC" -eq 0
-  check "plugin test ran the contract file" has "contract.test.ts"
+  claude_checks "$REAL"
 fi
 
 echo "PASS $pass / FAIL $fail"
